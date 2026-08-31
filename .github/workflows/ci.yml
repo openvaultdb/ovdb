@@ -27,7 +27,7 @@ jobs:
     # (which is how a macOS signing gate came to no-op elsewhere in the
     # fleet). Verified at this exact tag (see .github/workflows/release.yml
     # for how) before use.
-    uses: strongo/cicd/.github/workflows/workflow.yml@v1.14.15
+    uses: strongo/cicd/.github/workflows/workflow.yml@v1.14.17
     permissions:
       contents: write
     secrets:
