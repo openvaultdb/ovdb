@@ -9,7 +9,7 @@ require (
 	github.com/openvaultdb/openvaultdb-go v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
-	github.com/strongo/deviceauth v0.1.0
+	github.com/strongo/deviceauth v0.0.1
 	golang.org/x/oauth2 v0.36.0
 )
 
