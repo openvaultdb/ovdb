@@ -1,12 +1,12 @@
 module github.com/openvaultdb/ovdb
 
-go 1.26.0
+go 1.26.1
 
 toolchain go1.27.0
 
 require (
 	charm.land/fang/v2 v2.0.1
-	github.com/openvaultdb/openvaultdb-go v0.1.0
+	github.com/openvaultdb/openvaultdb-go v0.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
 )
