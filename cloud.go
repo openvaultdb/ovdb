@@ -314,7 +314,7 @@ func normalizeCloudURL(raw string) (*url.URL, error) {
 	if address := net.ParseIP(hostname); address != nil {
 		loopback = address.IsLoopback()
 	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && loopback) {
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !loopback) {
 		return nil, errors.New("--host must use HTTPS (HTTP is allowed only for loopback development)")
 	}
 	parsed.Scheme = strings.ToLower(parsed.Scheme)
