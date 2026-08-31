@@ -38,6 +38,10 @@ ovdb --help
   a running server.
 - **`ovdb token`** — manage revocable, scoped API tokens against a running
   server (create, list, revoke).
+- **`ovdb cloud`** — sign in to OpenVaultDB Cloud through a browser, inspect
+  the current login, or revoke it (`login`, `status`, `logout`). Credentials
+  use the operating system keyring by default. Plaintext storage requires the
+  explicit `--insecure-storage` flag.
 
 Run `ovdb <command> --help` for the full flag reference of any subcommand,
 or `ovdb version` for build version/commit/date.

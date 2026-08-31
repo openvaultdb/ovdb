@@ -45,6 +45,7 @@ func main() {
 	fangOpts := fangcmd.Wire(root, info)
 
 	root.AddCommand(
+		newCloudCmd(),
 		newServeCmd(),
 		newInitCmd(),
 		newStatusCmd(),
