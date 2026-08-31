@@ -1,0 +1,110 @@
+# GoReleaser config for ovdb, driven by strongo/cicd's reusable release.yml
+# (see .github/workflows/release.yml). Scope: GitHub release + Homebrew cask
+# only — openvaultdb has no AUR/Scoop/WinGet/Chocolatey/Snapcraft repos or
+# tokens. Modeled on sneat-co/sneat-cli's .goreleaser.yaml (same scope) with
+# the notarize block mirrored from ingitdb/ingitdb-cli, the reference
+# implementation that ships verified-good notarized binaries.
+version: 2
+
+project_name: ovdb
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ovdb
+    # Module root, not ./cmd/ovdb: this repo was split out of
+    # openvaultdb-go's cmd/ovdb/ via `git subtree split`, so main is at the
+    # repo/module root here.
+    main: .
+    binary: ovdb
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      # Windows on arm64 is not published (fleet convention — see
+      # sneat-cli/ingitdb-cli).
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/strongo/buildinfo.version={{.Version}}
+      - -X github.com/strongo/buildinfo.commit={{.FullCommit}}
+      - -X github.com/strongo/buildinfo.date={{.Date}}
+
+archives:
+  - id: archive
+    ids: [ovdb]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # Stable, OS/arch-templated name so the Homebrew cask url_template
+    # resolves every platform the same way.
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# macOS signing + notarization, ACTIVE from this repo's first release —
+# openvaultdb/ovdb's release.yml sets require_notarized_macos: true from day
+# one, so a stale/missing credential HARD FAILS the release rather than
+# silently shipping an unsigned, Gatekeeper-blocked darwin binary via the
+# Homebrew cask below.
+#
+# `enabled` is gated on the MACOS_SIGN_P12 env var (forwarded by
+# .github/workflows/release.yml from the org-level secret). GoReleaser's
+# notarize step is pure Go (quill) and runs on the existing release job — no
+# macOS runner needed. Mirrors ingitdb/ingitdb-cli's .goreleaser.yaml, the
+# canonical reference for this block.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [ovdb]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        wait: true
+        issuer_id: "{{ .Env.NOTARIZE_ISSUER_ID }}"
+        key_id: "{{ .Env.NOTARIZE_KEY_ID }}"
+        key: "{{ .Env.NOTARIZE_KEY }}"
+        timeout: 20m
+
+release:
+  github:
+    owner: openvaultdb
+    name: ovdb
+
+# Homebrew cask (never a formula — standing rule). Cask publishing is a plain
+# git push to openvaultdb/homebrew-tap, which runs fine on Linux. Token
+# forwarded by release.yml as $GORELEASER_GITHUB_TOKEN (the default
+# GITHUB_TOKEN can't push to a different repo). Install path:
+# `brew install --cask openvaultdb/tap/ovdb` (Homebrew strips the
+# `homebrew-` prefix from the tap repo name).
+homebrew_casks:
+  - name: ovdb
+    ids: [archive]
+    description: "ovdb — the OpenVaultDB command-line interface"
+    homepage: https://github.com/openvaultdb/openvaultdb-go
+    license: Apache-2.0
+    repository:
+      owner: openvaultdb
+      name: homebrew-tap
+      token: "{{ .Env.GORELEASER_GITHUB_TOKEN }}"

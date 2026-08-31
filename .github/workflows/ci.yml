@@ -1,0 +1,53 @@
+name: Go CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**.yml'
+      - '**/go.*'
+      - '**/*.go'
+      - '**.md'
+  pull_request:
+    branches:
+      - '**'
+    paths:
+      - '.github/workflows/**.yml'
+      - '**/go.*'
+      - '**/*.go'
+      - '**.md'
+
+jobs:
+
+  strongo_workflow:
+    # Pinned to an exact tag, not the retired moving @v1 — an unpinned CI
+    # workflow silently takes whatever lands upstream, and @v1 previously
+    # lagged 14 patch releases behind while still accepting newer inputs
+    # (which is how a macOS signing gate came to no-op elsewhere in the
+    # fleet). Verified at this exact tag (see .github/workflows/release.yml
+    # for how) before use.
+    uses: strongo/cicd/.github/workflows/workflow.yml@v1.14.15
+    permissions:
+      contents: write
+    secrets:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    with:
+      # Version bump + release happen in release.yml (continuous delivery on
+      # push to main). This workflow only builds/lints/tests — disable its
+      # bump so it does not create a competing tag.
+      #
+      # Without this, CI would tag first; the Release workflow then computes
+      # the same proposed version, finds it already tagged, and publishes
+      # nothing — a green run with no release. This exact bug hit sneat-cli
+      # and cost it several no-op releases.
+      disable-version-bumping: true
+      cgo_enabled: false
+      code_coverage: true
+      # min_test_coverage_percent intentionally omitted: measured coverage
+      # on this brand-new split-out repo is ~3% (one small package with
+      # token_test.go as its only test file). A floor at or near that
+      # number would be nearly meaningless and brittle (see
+      # datatug-cli/.github/workflows/golangci.yml's own note about
+      # toolchain-driven coverage-counting swings) — better to add a real
+      # floor once test coverage is deliberately built out.
