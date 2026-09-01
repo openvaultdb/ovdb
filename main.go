@@ -44,6 +44,14 @@ func main() {
 	// set the process exit code.
 	fangOpts := fangcmd.Wire(root, info)
 
+	addRootCommands(root, info.Version)
+
+	if err := fang.Execute(context.Background(), root, fangOpts...); err != nil {
+		os.Exit(1)
+	}
+}
+
+func addRootCommands(root *cobra.Command, currentVersion string) {
 	root.AddCommand(
 		newCloudCmd(),
 		newServeCmd(),
@@ -51,9 +59,6 @@ func main() {
 		newStatusCmd(),
 		newDatabasesCmd(),
 		newTokenCmd(),
+		newSelfUpdateCmd(currentVersion),
 	)
-
-	if err := fang.Execute(context.Background(), root, fangOpts...); err != nil {
-		os.Exit(1)
-	}
 }

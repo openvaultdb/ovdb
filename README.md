@@ -42,6 +42,18 @@ ovdb --help
   the current login, or revoke it (`login`, `status`, `logout`). Credentials
   use the operating system keyring by default. Plaintext storage requires the
   explicit `--insecure-storage` flag.
+- **`ovdb self-update`** — check for or install a newer CLI release (alias:
+  `ovdb update`). Homebrew-managed installs are redirected to
+  `brew upgrade --cask ovdb`; manual installs are checksum-verified and
+  replaced atomically.
+
+```sh
+ovdb self-update --check
+ovdb self-update --check --format json
+ovdb self-update
+ovdb self-update --yes
+ovdb self-update --version v0.3.0
+```
 
 Run `ovdb <command> --help` for the full flag reference of any subcommand,
 or `ovdb version` for build version/commit/date.
