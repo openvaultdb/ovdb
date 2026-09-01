@@ -25,7 +25,8 @@ func newSelfUpdateConfig(currentVersion string) selfupdate.Config {
 		CurrentVersion:       currentVersion,
 		UndeterminedVersions: []string{"dev"},
 		Managers: []selfupdate.Manager{
-			selfupdate.Homebrew(selfUpdateHomebrewUpgradeCommand),
+			selfupdate.Homebrew(selfUpdateHomebrewUpgradeCommand).
+				WithExecutableUpgrade("brew", "upgrade", "--cask", "ovdb"),
 		},
 		SupportedPlatforms: []selfupdate.Platform{
 			{GOOS: "darwin", GOARCH: "amd64"},

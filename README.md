@@ -43,15 +43,20 @@ ovdb --help
   use the operating system keyring by default. Plaintext storage requires the
   explicit `--insecure-storage` flag.
 - **`ovdb self-update`** — check for or install a newer CLI release (alias:
-  `ovdb update`). Homebrew-managed installs are redirected to
-  `brew upgrade --cask ovdb`; manual installs are checksum-verified and
-  replaced atomically.
+  `ovdb update`). Homebrew-managed installs confirm, then run
+  `brew upgrade --cask ovdb` directly without a shell; manual installs are
+  checksum-verified and replaced atomically. `--yes` skips confirmation,
+  `--dry-run` shows the exact action without executing it, and `--version`
+  pins are supported only for manual installs because Homebrew does not
+  guarantee arbitrary historical cask releases.
 
 ```sh
 ovdb self-update --check
 ovdb self-update --check --format json
 ovdb self-update
 ovdb self-update --yes
+ovdb self-update --dry-run
+# Manual installs only:
 ovdb self-update --version v0.3.0
 ```
 

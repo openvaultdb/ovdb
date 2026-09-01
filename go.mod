@@ -10,7 +10,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
 	github.com/strongo/deviceauth v0.0.2
-	github.com/strongo/selfupdate v0.5.0
+	github.com/strongo/selfupdate v0.6.0
 	golang.org/x/oauth2 v0.36.0
 )
 

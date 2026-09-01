@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"charm.land/fang/v2"
@@ -47,8 +48,23 @@ func main() {
 	addRootCommands(root, info.Version)
 
 	if err := fang.Execute(context.Background(), root, fangOpts...); err != nil {
-		os.Exit(1)
+		os.Exit(commandExitCode(err))
 	}
+}
+
+// commandExitCode preserves an external command's nonzero process status when
+// an operation such as Homebrew-backed self-update delegates to it. All other
+// errors retain ovdb's existing general failure status. The portable process
+// status range is 1..255; a missing, zero, negative, or wider value is not a
+// valid failure status for os.Exit and falls back to 1.
+func commandExitCode(err error) int {
+	var exitCoder interface{ ExitCode() int }
+	if errors.As(err, &exitCoder) {
+		if code := exitCoder.ExitCode(); code > 0 && code <= 255 {
+			return code
+		}
+	}
+	return 1
 }
 
 func addRootCommands(root *cobra.Command, currentVersion string) {

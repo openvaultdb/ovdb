@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -78,6 +79,16 @@ func TestNewSelfUpdateConfigUsesHomebrewCask(t *testing.T) {
 	}
 	if got := cfg.Managers[0].UpgradeCommand; got != "brew upgrade --cask ovdb" {
 		t.Errorf("Homebrew upgrade command = %q, want %q", got, "brew upgrade --cask ovdb")
+	}
+	if !cfg.Managers[0].CanExecuteUpgrade() {
+		t.Fatal("Homebrew manager is redirect-only; ovdb self-update must delegate to brew")
+	}
+	if got := cfg.Managers[0].UpgradeExecutable; got != "brew" {
+		t.Errorf("Homebrew executable = %q, want brew", got)
+	}
+	wantArgs := []string{"upgrade", "--cask", "ovdb"}
+	if got := cfg.Managers[0].UpgradeArgs; !reflect.DeepEqual(got, wantArgs) {
+		t.Errorf("Homebrew argv = %v, want %v", got, wantArgs)
 	}
 }
 
