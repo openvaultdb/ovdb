@@ -39,6 +39,16 @@ func TestCloudCommandLoginStatusLogoutJourney(t *testing.T) {
 			if got := r.Form.Get("scope"); got != cloudScope {
 				t.Errorf("scope = %q", got)
 			}
+			for name, want := range map[string]string{
+				"device_name":    "test-device",
+				"os":             "test-os",
+				"arch":           "test-arch",
+				"client_version": "9.8.7",
+			} {
+				if got := r.Form.Get(name); got != want {
+					t.Errorf("%s = %q, want %q", name, got, want)
+				}
+			}
 			writeTestJSON(t, w, map[string]any{
 				"device_code":               "device-secret",
 				"user_code":                 "BCDF-GHJK",
@@ -109,6 +119,11 @@ func TestCloudCommandLoginStatusLogoutJourney(t *testing.T) {
 		openBrowser: func(rawURL string) error {
 			openedURL = rawURL
 			return nil
+		},
+		deviceInfo: func() deviceauth.DeviceInfo {
+			return deviceauth.DeviceInfo{
+				Name: "test-device", OS: "test-os", Arch: "test-arch", ClientVersion: "9.8.7",
+			}
 		},
 		userConfigDir: func() (string, error) { return configDir, nil },
 	}
@@ -207,6 +222,17 @@ func TestCloudCommandLoginStatusLogoutJourney(t *testing.T) {
 	}
 	if _, err := selection.store.Load(); !errors.Is(err, deviceauth.ErrCredentialNotFound) {
 		t.Fatalf("credential still exists after logout: %v", err)
+	}
+}
+
+func TestCloudDeviceInfo(t *testing.T) {
+	previousVersion := appVersion
+	appVersion = "1.2.3"
+	t.Cleanup(func() { appVersion = previousVersion })
+
+	info := cloudDeviceInfo()
+	if info.Name == "" || info.OS == "" || info.Arch == "" || info.ClientVersion != "1.2.3" {
+		t.Fatalf("cloud device info = %+v", info)
 	}
 }
 

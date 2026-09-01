@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ type cloudDependencies struct {
 	httpClient    *http.Client
 	login         func(context.Context, deviceauth.LoginOptions) (deviceauth.LoginResult, error)
 	openBrowser   func(string) error
+	deviceInfo    func() deviceauth.DeviceInfo
 	userConfigDir func() (string, error)
 }
 
@@ -58,6 +60,7 @@ func newCloudCmd() *cobra.Command {
 		httpClient:    &http.Client{Timeout: 15 * time.Second},
 		login:         deviceauth.Login,
 		openBrowser:   deviceauth.OpenBrowser,
+		deviceInfo:    cloudDeviceInfo,
 		userConfigDir: os.UserConfigDir,
 	})
 }
@@ -119,8 +122,13 @@ func newCloudLoginCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command 
 			}
 
 			loginContext := context.WithValue(cmd.Context(), oauth2.HTTPClient, deps.httpClient)
+			deviceInfo := deviceauth.DeviceInfo{}
+			if deps.deviceInfo != nil {
+				deviceInfo = deps.deviceInfo()
+			}
 			result, err := deps.login(loginContext, deviceauth.LoginOptions{
 				OAuthConfig: cloudOAuthConfig(baseURL),
+				DeviceInfo:  deviceInfo,
 				OpenBrowser: deps.openBrowser,
 				Output:      cmd.OutOrStdout(),
 				ErrorOutput: cmd.ErrOrStderr(),
@@ -177,6 +185,16 @@ func newCloudLoginCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command 
 			)
 			return nil
 		},
+	}
+}
+
+func cloudDeviceInfo() deviceauth.DeviceInfo {
+	hostname, _ := os.Hostname()
+	return deviceauth.DeviceInfo{
+		Name:          strings.TrimSpace(hostname),
+		OS:            runtime.GOOS,
+		Arch:          runtime.GOARCH,
+		ClientVersion: strings.TrimSpace(appVersion),
 	}
 }
 

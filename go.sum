@@ -201,8 +201,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/strongo/buildinfo v0.2.0 h1:4lVoCUfUbwJN8EbqFNQ1oYdBnjKrKRx6FlLVrTPSleI=
 github.com/strongo/buildinfo v0.2.0/go.mod h1:JpxZ3Jku81LJC1RNIqCNYwguDzLk90eemxUXx4JnSlA=
-github.com/strongo/deviceauth v0.0.1 h1:HEXjXOuRRlsL0KWPOzRsrYLj4p9rFNTS5z+MS8WqS58=
-github.com/strongo/deviceauth v0.0.1/go.mod h1:bPTivN2eqTgfphYuyB+WKvlBmRNfbyrpMOEGz5T172o=
+github.com/strongo/deviceauth v0.0.2 h1:Bi5SggVVj5HeqggbbOdGTgs8Ka3O4b092lRFbqjMxxM=
+github.com/strongo/deviceauth v0.0.2/go.mod h1:bPTivN2eqTgfphYuyB+WKvlBmRNfbyrpMOEGz5T172o=
 github.com/strongo/random v0.0.1 h1:OZHJBb/3uEa7OX8L2Dv2pLnSeewRmXMyTACoeto6O8I=
 github.com/strongo/random v0.0.1/go.mod h1:/pSI+SjBNLBkjljNtVdYr6ERddA+LqSa87o0/s+9iuU=
 github.com/strongo/validation v0.0.10 h1:DDydmPl6O8YmRmSEtz7VimX6k0Q3Vs1CsUEWqtZg9oc=
