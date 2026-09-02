@@ -210,8 +210,15 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 		return err
 	}
-	// cloudflared reads a protected file.  No token reaches argv, env, output, or URLs.
-	tunnel := deps.execCommand(ctx, "cloudflared", "tunnel", "run", "--token-file", tokenFile)
+	metricsAddr, err := reserveDemoMetricsAddr()
+	if err != nil {
+		shutdownLocal()
+		endDemoSession(client, credential.AccessToken, session.SessionID)
+		return err
+	}
+	// cloudflared reads a protected file. No token reaches argv, env, output, or URLs.
+	// The explicit loopback metrics listener is used only for its /ready signal.
+	tunnel := deps.execCommand(ctx, "cloudflared", "tunnel", "--metrics", metricsAddr, "run", "--token-file", tokenFile)
 	tunnel.Env = []string{"PATH=" + os.Getenv("PATH")}
 	if err := tunnel.Start(); err != nil {
 		_ = os.RemoveAll(temp)
@@ -221,15 +228,6 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 	}
 	connectorExit := make(chan error, 1)
 	go func() { connectorExit <- tunnel.Wait() }()
-	// cloudflared has no authenticated readiness endpoint for token-run mode;
-	// at least require it to remain alive through a bounded startup window.
-	select {
-	case err := <-connectorExit:
-		shutdownLocal()
-		endDemoSession(client, credential.AccessToken, session.SessionID)
-		return fmt.Errorf("cloudflared tunnel exited during startup: %w", err)
-	case <-time.After(250 * time.Millisecond):
-	}
 	cleanup := func() {
 		if tunnel.Process != nil && tunnel.ProcessState == nil {
 			_ = tunnel.Process.Signal(os.Interrupt)
@@ -245,6 +243,9 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 	}
 	defer cleanup()
+	if err := waitDemoTunnelReady(ctx, metricsAddr, connectorExit); err != nil {
+		return err
+	}
 	if !noOpen {
 		if u, e := listusDemoURL(session.SpaceID); e != nil {
 			return e
@@ -372,4 +373,44 @@ func endDemoSession(c demoSessionClient, token, id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = c.EndSession(ctx, token, id)
+}
+
+func reserveDemoMetricsAddr() (string, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", fmt.Errorf("reserve loopback cloudflared metrics listener: %w", err)
+	}
+	addr := l.Addr().String()
+	return addr, l.Close()
+}
+
+func waitDemoTunnelReady(ctx context.Context, metricsAddr string, connectorExit <-chan error) error {
+	deadline := time.NewTimer(20 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	client := &http.Client{Timeout: time.Second}
+	readyURL := "http://" + metricsAddr + "/ready"
+	for {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
+		if err != nil {
+			return err
+		}
+		response, err := client.Do(request)
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-connectorExit:
+			return fmt.Errorf("cloudflared tunnel exited before ready: %w", err)
+		case <-deadline.C:
+			return errors.New("timed out waiting for cloudflared tunnel readiness")
+		case <-tick.C:
+		}
+	}
 }

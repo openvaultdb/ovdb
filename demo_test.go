@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +13,43 @@ import (
 
 	"github.com/openvaultdb/openvaultdb-go/demo"
 )
+
+func TestWaitDemoTunnelReadyWaitsForReady(t *testing.T) {
+	ready := make(chan struct{})
+	s := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case <-ready:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Listener = l
+	s.Start()
+	defer s.Close()
+	go func() { time.Sleep(150 * time.Millisecond); close(ready) }()
+	exit := make(chan error)
+	if err := waitDemoTunnelReady(context.Background(), s.Listener.Addr().String(), exit); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWaitDemoTunnelReadyReturnsConnectorExitAndCancellation(t *testing.T) {
+	exit := make(chan error, 1)
+	exit <- errors.New("connector failed")
+	if err := waitDemoTunnelReady(context.Background(), "127.0.0.1:1", exit); err == nil {
+		t.Fatal("connector exit was ignored")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitDemoTunnelReady(ctx, "127.0.0.1:1", make(chan error)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v", err)
+	}
+}
 
 func TestValidateDemoSessionRejectsWrongOwnerAndUnsafeProxy(t *testing.T) {
 	s := demo.Session{SessionID: "s", OwnerUserID: "owner", SpaceID: "space", SpaceType: "group", DatabaseID: demoDatabaseID, ExpiresAt: time.Now().Add(time.Minute), ProxyURL: "https://proxy.example", AppURL: "https://listus.app", TunnelToken: "token"}
