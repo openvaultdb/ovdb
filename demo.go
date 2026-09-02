@@ -165,7 +165,8 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 	if err != nil {
 		return err
 	}
-	if err := store.CreateGrant(&auth.Grant{PrincipalID: demoApp, DatabaseID: demoDatabaseID, Capabilities: []auth.Capability{{Action: auth.CapRecordsRead}, {Action: auth.CapRecordsWrite}, {Action: auth.CapRecordsDelete}}, ExpiresAt: localDeadline}, origin); err != nil {
+	grant := &auth.Grant{PrincipalID: demoApp, DatabaseID: demoDatabaseID, Capabilities: []auth.Capability{{Action: auth.CapRecordsRead}, {Action: auth.CapRecordsWrite}, {Action: auth.CapRecordsDelete}}, ExpiresAt: localDeadline}
+	if err := store.CreateGrant(grant, origin); err != nil {
 		return err
 	}
 	listener, err := net.Listen("tcp", addr)
@@ -207,6 +208,9 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 		return errors.New("cloud returned an expired demo session")
 	}
+	// No local grant can outlive the cloud session, even if the control plane
+	// supplied an earlier expiry than our hard one-hour cap.
+	grant.ExpiresAt = deadline
 	tokenFile := filepath.Join(temp, "tunnel-token")
 	if err := os.WriteFile(tokenFile, []byte(session.TunnelToken), 0o600); err != nil {
 		_ = os.RemoveAll(temp)
@@ -231,15 +235,16 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		return fmt.Errorf("start cloudflared tunnel: %w", err)
 	}
 	connectorExit := make(chan error, 1)
-	go func() { connectorExit <- tunnel.Wait() }()
+	connectorDone := make(chan struct{})
+	go func() { connectorExit <- tunnel.Wait(); close(connectorDone) }()
 	cleanup := func() {
-		if tunnel.Process != nil && tunnel.ProcessState == nil {
+		if tunnel.Process != nil {
 			_ = tunnel.Process.Signal(os.Interrupt)
 			select {
-			case <-connectorExit:
+			case <-connectorDone:
 			case <-time.After(5 * time.Second):
 				_ = tunnel.Process.Kill()
-				<-connectorExit
+				<-connectorDone
 			}
 		}
 		_ = os.RemoveAll(temp)
@@ -247,8 +252,13 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 	}
 	defer cleanup()
-	if err := waitDemoTunnelReady(ctx, metricsAddr, connectorExit); err != nil {
+	readyContext, cancelReady := context.WithDeadline(ctx, deadline)
+	defer cancelReady()
+	if err := waitDemoTunnelReady(readyContext, metricsAddr, connectorExit); err != nil {
 		return err
+	}
+	if !deps.now().UTC().Before(deadline) {
+		return errors.New("demo session expired before tunnel became ready")
 	}
 	if !noOpen {
 		if u, e := listusDemoURL(session.SpaceID); e != nil {
@@ -280,7 +290,7 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 
 func restrictedDemoHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/v1/databases/"+demoDatabaseID+"/records/") && !strings.HasPrefix(r.URL.Path, "/v1/databases/"+demoDatabaseID+"/query") && !strings.HasPrefix(r.URL.Path, "/v1/databases/"+demoDatabaseID+"/batch") {
+		if !strings.HasPrefix(r.URL.Path, "/v1/databases/"+demoDatabaseID+"/records/") {
 			http.NotFound(w, r)
 			return
 		}

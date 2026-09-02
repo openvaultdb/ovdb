@@ -1,10 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -77,6 +78,7 @@ func TestRunListusDemoHarness(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var captured *exec.Cmd
+	var output bytes.Buffer
 	deps := defaultDemoDependencies()
 	deps.selectStore = func(*url.URL, bool) (cloudStoreSelection, error) { return cloudStoreSelection{store: store}, nil }
 	deps.client = func(string, ...demo.Option) (demoSessionClient, error) { return client, nil }
@@ -134,8 +136,8 @@ func TestRunListusDemoHarness(t *testing.T) {
 		return nil
 	}
 	cmd := &cobra.Command{}
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
 	err = runListusDemo(ctx, cmd, deps, dir, "127.0.0.1:0", "http://127.0.0.1", false, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("run error %v", err)
@@ -149,6 +151,19 @@ func TestRunListusDemoHarness(t *testing.T) {
 	args := strings.Join(captured.Args, " ")
 	if strings.Contains(args, "synthetic-tunnel-token") || strings.Contains(strings.Join(captured.Env, " "), "synthetic-tunnel-token") {
 		t.Fatal("tunnel token leaked")
+	}
+	if strings.Contains(output.String(), "synthetic-") {
+		t.Fatalf("credential leaked in output %q", output.String())
+	}
+	tokenPath := captured.Args[len(captured.Args)-1]
+	if _, err := os.Stat(tokenPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("token file remains: %v", err)
+	}
+	if err := syscall.Kill(captured.Process.Pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("connector is still live: %v", err)
+	}
+	if _, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/v1/databases", client.request.LocalPort)); err == nil {
+		t.Fatal("listener remains reachable")
 	}
 	after, _ := os.ReadFile(filepath.Join(dir, "lists", "lists.yaml"))
 	if string(before) != string(after) {
@@ -258,7 +273,7 @@ func TestListusDemoURLDoesNotAcceptControlCharacters(t *testing.T) {
 
 func TestRestrictedDemoHandlerDoesNotExposeAdminOrAuth(t *testing.T) {
 	h := restrictedDemoHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
-	for _, path := range []string{"/authorize", "/token", "/v1/tokens", "/v1/databases", "/v1/databases/other/records/x"} {
+	for _, path := range []string{"/authorize", "/token", "/v1/tokens", "/v1/databases", "/v1/databases/other/records/x", "/v1/databases/demo-sneat-space/query", "/v1/databases/demo-sneat-space/batch"} {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
