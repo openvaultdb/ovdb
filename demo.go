@@ -47,6 +47,7 @@ type demoDependencies struct {
 	openBrowser  func(string) error
 	now          func() time.Time
 	clone        func(context.Context, string, string) error
+	selectStore  func(*url.URL, bool) (cloudStoreSelection, error)
 }
 
 func defaultDemoDependencies() demoDependencies {
@@ -57,6 +58,9 @@ func defaultDemoDependencies() demoDependencies {
 		execLookPath: exec.LookPath, execCommand: exec.CommandContext,
 		openBrowser: deviceauth.OpenBrowser, now: time.Now,
 		clone: cloneDemoSeed,
+		selectStore: func(base *url.URL, insecure bool) (cloudStoreSelection, error) {
+			return selectCloudStore(base, insecure, os.UserConfigDir)
+		},
 	}
 }
 
@@ -115,7 +119,7 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		return errors.New("cloudflared is required for ovdb demo serve; install Cloudflare cloudflared and try again")
 	}
 
-	selection, err := selectCloudStore(base, insecure, os.UserConfigDir)
+	selection, err := deps.selectStore(base, insecure)
 	if err != nil {
 		return err
 	}
@@ -328,7 +332,11 @@ func validateDemoManifest(path string) error {
 	if err != nil {
 		return fmt.Errorf("validate demo manifest: %w", err)
 	}
-	if resolved != path {
+	parent, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("validate demo manifest parent: %w", err)
+	}
+	if resolved != filepath.Join(parent, filepath.Base(path)) {
 		return errors.New("demo manifest must not be a symlink")
 	}
 	m, err := manifest.Load(path)
