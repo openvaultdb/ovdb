@@ -230,8 +230,8 @@ func TestCloudCommandLoginStatusLogoutJourney(t *testing.T) {
 }
 
 func TestCloudDeviceInfo(t *testing.T) {
-	if cloudScope != "account:read databases:read" {
-		t.Fatalf("cloud scope = %q, want explicit account and database metadata scopes", cloudScope)
+	if cloudScope != "account:read databases:read demo:write" {
+		t.Fatalf("cloud scope = %q, want explicit account, database metadata, and demo scopes", cloudScope)
 	}
 	previousVersion := appVersion
 	appVersion = "1.2.3"
@@ -440,7 +440,7 @@ func TestCloudCatalogueInputAndTerminalSafety(t *testing.T) {
 	if !utf8.ValidString(long) || utf8.RuneCountInString(long) != 513 || !strings.HasSuffix(long, "…") {
 		t.Fatalf("long sanitization is not valid bounded Unicode: %q", long)
 	}
-	if got := cloudOAuthConfig(&url.URL{Scheme: "https", Host: "cloud.example"}).Scopes; !slices.Equal(got, []string{"account:read", "databases:read"}) {
+	if got := cloudOAuthConfig(&url.URL{Scheme: "https", Host: "cloud.example"}).Scopes; !slices.Equal(got, []string{"account:read", "databases:read", "demo:write"}) {
 		t.Fatalf("OAuth scopes = %v", got)
 	}
 

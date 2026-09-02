@@ -28,7 +28,10 @@ import (
 const (
 	defaultCloudURL = "https://cloud.openvaultdb.com"
 	cloudClientID   = "ovdb-cli"
-	cloudScope      = "account:read databases:read"
+	// demo:write is requested during device login so `ovdb demo serve` can
+	// provision its short-lived session. Existing credentials remain intact;
+	// callers missing this scope receive explicit re-login guidance.
+	cloudScope = "account:read databases:read demo:write"
 )
 
 type cloudFlags struct {
