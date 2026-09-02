@@ -28,15 +28,13 @@ import (
 const (
 	defaultCloudURL = "https://cloud.openvaultdb.com"
 	cloudClientID   = "ovdb-cli"
-	// demo:write is requested during device login so `ovdb demo serve` can
-	// provision its short-lived session. Existing credentials remain intact;
-	// callers missing this scope receive explicit re-login guidance.
-	cloudScope = "account:read databases:read demo:write"
+	cloudScope      = "account:read databases:read"
 )
 
 type cloudFlags struct {
-	host            string
-	insecureStorage bool
+	host             string
+	insecureStorage  bool
+	additionalScopes []string
 }
 
 type cloudStoreSelection struct {
@@ -94,6 +92,7 @@ func newCloudCmdWithDependencies(deps cloudDependencies) *cobra.Command {
 		false,
 		"store the cloud token in a plaintext 0600 file instead of the operating system keyring",
 	)
+	cmd.PersistentFlags().StringSliceVar(&flags.additionalScopes, "scope", nil, "additional OAuth scope to request during cloud login (repeatable)")
 	cmd.AddCommand(
 		newCloudLoginCmd(flags, deps),
 		newCloudStatusCmd(flags, deps),
@@ -135,7 +134,7 @@ func newCloudLoginCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command 
 				deviceInfo = deps.deviceInfo()
 			}
 			result, err := deps.login(loginContext, deviceauth.LoginOptions{
-				OAuthConfig: cloudOAuthConfig(baseURL),
+				OAuthConfig: cloudOAuthConfig(baseURL, flags.additionalScopes...),
 				DeviceInfo:  deviceInfo,
 				OpenBrowser: deps.openBrowser,
 				Output:      cmd.OutOrStdout(),
@@ -278,10 +277,16 @@ func newCloudLogoutCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command
 	}
 }
 
-func cloudOAuthConfig(baseURL *url.URL) oauth2.Config {
+func cloudOAuthConfig(baseURL *url.URL, additionalScopes ...string) oauth2.Config {
+	scopes := append([]string{}, strings.Fields(cloudScope)...)
+	for _, scope := range additionalScopes {
+		if scope = strings.TrimSpace(scope); scope != "" && !containsCloudScope(scopes, scope) {
+			scopes = append(scopes, scope)
+		}
+	}
 	return oauth2.Config{
 		ClientID: cloudClientID,
-		Scopes:   strings.Fields(cloudScope),
+		Scopes:   scopes,
 		Endpoint: oauth2.Endpoint{
 			DeviceAuthURL: baseURL.String() + "/oauth/device/code",
 			TokenURL:      baseURL.String() + "/oauth/token",

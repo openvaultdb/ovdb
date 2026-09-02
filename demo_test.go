@@ -3,8 +3,42 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/openvaultdb/openvaultdb-go/demo"
 )
+
+func TestValidateDemoSessionRejectsWrongOwnerAndUnsafeProxy(t *testing.T) {
+	s := demo.Session{SessionID: "s", OwnerUserID: "owner", SpaceID: "space", SpaceType: "group", DatabaseID: demoDatabaseID, ExpiresAt: time.Now().Add(time.Minute), ProxyURL: "https://proxy.example", AppURL: "https://listus.app", TunnelToken: "token"}
+	if err := validateDemoSession(s, "other"); err == nil {
+		t.Fatal("wrong owner accepted")
+	}
+	s.OwnerUserID = "owner"
+	s.ProxyURL = "http://proxy.example"
+	if err := validateDemoSession(s, "owner"); err == nil {
+		t.Fatal("insecure proxy accepted")
+	}
+}
+
+func TestValidateDemoManifestRejectsUnsafeBackendsBeforeMount(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ovdb.yaml")
+	if err := os.WriteFile(path, []byte("database:\n  id: demo-sneat-space\n  schema_mode: schemaless\nstorage:\n  engine: firestore\n  firestore:\n    project: should-not-connect\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDemoManifest(path); err == nil {
+		t.Fatal("remote engine accepted")
+	}
+	if err := os.Symlink(path, filepath.Join(dir, "linked.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDemoManifest(filepath.Join(dir, "linked.yaml")); err == nil {
+		t.Fatal("manifest symlink accepted")
+	}
+}
 
 func TestValidateDemoAddrRejectsPublicAndMalformedAddresses(t *testing.T) {
 	for _, addr := range []string{"0.0.0.0:6832", "example.com:6832", "6832", "127.0.0.1"} {

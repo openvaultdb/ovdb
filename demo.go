@@ -22,7 +22,9 @@ import (
 	"time"
 
 	"github.com/openvaultdb/openvaultdb-go/demo"
+	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
 	"github.com/openvaultdb/openvaultdb-go/pkg/core"
+	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 	"github.com/spf13/cobra"
@@ -86,6 +88,8 @@ func newDemoServeCmd(deps demoDependencies) *cobra.Command {
 }
 
 func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencies, rawDir, addr, rawHost string, insecure, noOpen bool) error {
+	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 	if deps.now == nil {
 		deps.now = time.Now
 	}
@@ -123,13 +127,43 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		return cloudStorageError(err)
 	}
 	if !containsCloudScope(credential.Scopes, "demo:write") {
-		return fmt.Errorf("cloud credential lacks demo:write; run %s to grant demo access", cloudLoginGuidance(&cloudFlags{host: base.String(), insecureStorage: insecure}))
+		return fmt.Errorf("cloud credential lacks demo:write; run 'ovdb cloud login --host %s --scope demo:write' to grant demo access", sanitizeCloudTerminalText(base.String()))
 	}
 	client, err := deps.client(base.String())
 	if err != nil {
 		return fmt.Errorf("configure demo client: %w", err)
 	}
 
+	started := deps.now().UTC()
+	localDeadline := started.Add(time.Hour)
+	origin, err := randomDemoSecret()
+	if err != nil {
+		return err
+	}
+	requestID, err := randomDemoSecret()
+	if err != nil {
+		return err
+	}
+	owner, err := randomDemoSecret()
+	if err != nil {
+		return err
+	}
+	temp, err := os.MkdirTemp("", "ovdb-demo-")
+	if err != nil {
+		return err
+	}
+	if err := os.Chmod(temp, 0o700); err != nil {
+		_ = os.RemoveAll(temp)
+		return err
+	}
+	defer os.RemoveAll(temp)
+	store, err := auth.OpenStore(filepath.Join(temp, "grants.json"))
+	if err != nil {
+		return err
+	}
+	if err := store.CreateGrant(&auth.Grant{PrincipalID: demoApp, DatabaseID: demoDatabaseID, Capabilities: []auth.Capability{{Action: auth.CapRecordsRead}, {Action: auth.CapRecordsWrite}, {Action: auth.CapRecordsDelete}}, ExpiresAt: localDeadline}, origin); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("bind demo listener %s: %w", addr, err)
@@ -140,7 +174,7 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		return err
 	}
 	defer db.Close()
-	local := restrictedDemoHandler(server.New(appVersion, map[string]*core.Database{demoDatabaseID: db}).Handler())
+	local := restrictedDemoHandler(server.New(appVersion, map[string]*core.Database{demoDatabaseID: db}, server.WithAuth(&auth.Config{OwnerToken: owner, Store: store})).Handler())
 	httpServer := &http.Server{Handler: local, ReadHeaderTimeout: 10 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.Serve(listener) }()
@@ -150,43 +184,24 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		_ = httpServer.Shutdown(c)
 	}
 
-	origin, err := randomDemoSecret()
-	if err != nil {
-		shutdownLocal()
-		return err
-	}
-	requestID, err := randomDemoSecret()
-	if err != nil {
-		shutdownLocal()
-		return err
-	}
-	started := deps.now().UTC()
-	localDeadline := started.Add(time.Hour)
 	session, err := client.CreateSession(ctx, credential.AccessToken, demo.CreateSessionRequest{RequestID: requestID, App: demoApp, LocalPort: listener.Addr().(*net.TCPAddr).Port, OriginToken: origin})
 	if err != nil {
 		shutdownLocal()
 		return fmt.Errorf("provision demo session: %w", err)
 	}
+	if err := validateDemoSession(session, credential.AccountID); err != nil {
+		shutdownLocal()
+		endDemoSession(client, credential.AccessToken, session.SessionID)
+		return err
+	}
 	deadline := session.ExpiresAt.UTC()
-	if deadline.IsZero() || deadline.After(localDeadline) {
+	if deadline.After(localDeadline) {
 		deadline = localDeadline
 	}
-	if err := validateDemoSession(session); err != nil {
+	if !deadline.After(deps.now().UTC()) {
 		shutdownLocal()
 		endDemoSession(client, credential.AccessToken, session.SessionID)
-		return err
-	}
-	temp, err := os.MkdirTemp("", "ovdb-demo-")
-	if err != nil {
-		shutdownLocal()
-		endDemoSession(client, credential.AccessToken, session.SessionID)
-		return err
-	}
-	if err := os.Chmod(temp, 0o700); err != nil {
-		_ = os.RemoveAll(temp)
-		shutdownLocal()
-		endDemoSession(client, credential.AccessToken, session.SessionID)
-		return err
+		return errors.New("cloud returned an expired demo session")
 	}
 	tokenFile := filepath.Join(temp, "tunnel-token")
 	if err := os.WriteFile(tokenFile, []byte(session.TunnelToken), 0o600); err != nil {
@@ -204,10 +219,26 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 		return fmt.Errorf("start cloudflared tunnel: %w", err)
 	}
+	connectorExit := make(chan error, 1)
+	go func() { connectorExit <- tunnel.Wait() }()
+	// cloudflared has no authenticated readiness endpoint for token-run mode;
+	// at least require it to remain alive through a bounded startup window.
+	select {
+	case err := <-connectorExit:
+		shutdownLocal()
+		endDemoSession(client, credential.AccessToken, session.SessionID)
+		return fmt.Errorf("cloudflared tunnel exited during startup: %w", err)
+	case <-time.After(250 * time.Millisecond):
+	}
 	cleanup := func() {
-		if tunnel.Process != nil {
+		if tunnel.Process != nil && tunnel.ProcessState == nil {
 			_ = tunnel.Process.Signal(os.Interrupt)
-			_ = tunnel.Wait()
+			select {
+			case <-connectorExit:
+			case <-time.After(5 * time.Second):
+				_ = tunnel.Process.Kill()
+				<-connectorExit
+			}
 		}
 		_ = os.RemoveAll(temp)
 		shutdownLocal()
@@ -224,9 +255,6 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Listus demo ready. Local changes are retained when the demo ends.")
 	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -237,8 +265,11 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 			return nil
 		}
 		return err
-	case <-signals:
-		return nil
+	case err := <-connectorExit:
+		if err == nil {
+			return errors.New("cloudflared tunnel exited unexpectedly")
+		}
+		return fmt.Errorf("cloudflared tunnel exited: %w", err)
 	}
 }
 
@@ -292,16 +323,21 @@ func cloneDemoSeed(ctx context.Context, repo, dir string) error {
 	return nil
 }
 func validateDemoManifest(path string) error {
-	db, err := mount.File(path)
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		return fmt.Errorf("validate demo manifest: %w", err)
 	}
-	defer db.Close()
-	m := db.Manifest
-	if db.ID() != demoDatabaseID {
+	if resolved != path {
+		return errors.New("demo manifest must not be a symlink")
+	}
+	m, err := manifest.Load(path)
+	if err != nil {
+		return fmt.Errorf("validate demo manifest: %w", err)
+	}
+	if m.Database.ID != demoDatabaseID {
 		return fmt.Errorf("demo manifest database id must be %q", demoDatabaseID)
 	}
-	if m.Storage.Engine != "ingitdb" || m.Storage.Path != "." || m.Storage.InGitDB == nil || m.Storage.InGitDB.PushMode() != "none" {
+	if m.Storage.Engine != "ingitdb" || m.Storage.Path != "." || m.Storage.InGitDB == nil || m.Storage.InGitDB.PushMode() != "none" || m.Storage.InGitDB.GitHub != nil {
 		return errors.New("demo manifest must use local inGitDB storage with push: none")
 	}
 	return nil
@@ -313,12 +349,12 @@ func randomDemoSecret() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-func validateDemoSession(s demo.Session) error {
-	if s.SessionID == "" || s.SpaceID == "" || s.DatabaseID != demoDatabaseID || s.SpaceType == "" || s.ProxyURL == "" || s.AppURL == "" || s.TunnelToken == "" {
+func validateDemoSession(s demo.Session, accountID string) error {
+	if s.SessionID == "" || s.OwnerUserID == "" || s.OwnerUserID != accountID || s.SpaceID == "" || s.DatabaseID != demoDatabaseID || s.SpaceType != "group" || s.ProxyURL == "" || s.AppURL == "" || s.TunnelToken == "" || s.ExpiresAt.IsZero() {
 		return errors.New("cloud returned an incomplete demo session")
 	}
-	_, e := url.ParseRequestURI(s.ProxyURL)
-	if e != nil {
+	u, e := url.ParseRequestURI(s.ProxyURL)
+	if e != nil || u.Scheme != "https" || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return errors.New("cloud returned an invalid proxy URL")
 	}
 	return nil
