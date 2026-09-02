@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -29,13 +30,18 @@ func (s *demoMemoryStore) Load() (deviceauth.Credential, error) { return s.crede
 func (s *demoMemoryStore) Delete() error                        { return nil }
 
 type demoFakeClient struct {
-	request demo.CreateSessionRequest
-	ended   int
+	request  demo.CreateSessionRequest
+	ended    int
+	lifetime time.Duration
 }
 
 func (c *demoFakeClient) CreateSession(_ context.Context, _ string, r demo.CreateSessionRequest) (demo.Session, error) {
 	c.request = r
-	return demo.Session{SessionID: "session", OwnerUserID: "owner", SpaceID: "space", SpaceType: "group", DatabaseID: demoDatabaseID, ExpiresAt: time.Now().Add(time.Minute), ProxyURL: "https://proxy.example", AppURL: "https://listus.app", TunnelToken: "synthetic-tunnel-token"}, nil
+	lifetime := c.lifetime
+	if lifetime == 0 {
+		lifetime = time.Minute
+	}
+	return demo.Session{SessionID: "session", OwnerUserID: "owner", SpaceID: "space", SpaceType: "group", DatabaseID: demoDatabaseID, ExpiresAt: time.Now().Add(lifetime), ProxyURL: "https://proxy.example", AppURL: "https://listus.app", TunnelToken: "synthetic-tunnel-token"}, nil
 }
 func (c *demoFakeClient) EndSession(context.Context, string, string) error { c.ended++; return nil }
 
@@ -44,7 +50,11 @@ func TestDemoConnectorHelper(t *testing.T) {
 		return
 	}
 	var metrics string
+	ready := true
 	for i, a := range os.Args {
+		if a == "--demo-test-not-ready" {
+			ready = false
+		}
 		if a == "--metrics" && i+1 < len(os.Args) {
 			metrics = os.Args[i+1]
 		}
@@ -54,6 +64,10 @@ func TestDemoConnectorHelper(t *testing.T) {
 	}
 	s := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/ready" {
+			if !ready {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -168,6 +182,76 @@ func TestRunListusDemoHarness(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(dir, "lists", "lists.yaml"))
 	if string(before) != string(after) {
 		t.Fatal("seed changed")
+	}
+}
+
+func TestRunListusDemoExpiresWhileConnectorIsNotReady(t *testing.T) {
+	dir := t.TempDir()
+	writeDemoFixture(t, dir)
+	store := &demoMemoryStore{credential: deviceauth.Credential{AccessToken: "synthetic-cloud", AccountID: "owner", Scopes: []string{"demo:write"}}}
+	client := &demoFakeClient{lifetime: 400 * time.Millisecond}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	deps := defaultDemoDependencies()
+	deps.selectStore = func(*url.URL, bool) (cloudStoreSelection, error) { return cloudStoreSelection{store: store}, nil }
+	deps.client = func(string, ...demo.Option) (demoSessionClient, error) { return client, nil }
+	deps.execLookPath = func(string) (string, error) { return "cloudflared", nil }
+	var connector *exec.Cmd
+	deps.execCommand = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		connector = exec.CommandContext(ctx, os.Args[0], "-test.run=TestDemoConnectorHelper", "--", "--demo-test-not-ready")
+		connector.Args = append(connector.Args, args...)
+		return connector
+	}
+	opened := false
+	deps.openBrowser = func(string) error { opened = true; return nil }
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	err := runListusDemo(ctx, cmd, deps, dir, "127.0.0.1:0", "http://127.0.0.1", false, false)
+	if err == nil || ctx.Err() != nil {
+		t.Fatalf("session deadline did not stop readiness: %v (parent: %v)", err, ctx.Err())
+	}
+	if opened || strings.Contains(output.String(), "demo ready") {
+		t.Fatal("unready session opened Listus or announced readiness")
+	}
+	if client.ended != 1 {
+		t.Fatalf("EndSession=%d", client.ended)
+	}
+	if connector == nil || connector.ProcessState == nil {
+		t.Fatal("connector was not started and reaped")
+	}
+	tokenPath := connector.Args[len(connector.Args)-1]
+	if _, err := os.Stat(filepath.Dir(tokenPath)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("token directory remains: %v", err)
+	}
+	connection, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", client.request.LocalPort), time.Second)
+	if err == nil {
+		_ = connection.Close()
+		t.Fatal("local listener remains reachable")
+	}
+	for _, secret := range []string{"synthetic-cloud", "synthetic-tunnel-token", client.request.OriginToken} {
+		if secret != "" && strings.Contains(output.String(), secret) {
+			t.Fatal("credential appeared in output")
+		}
+	}
+}
+
+func TestDemoDeadlineClampsActiveHandlerAtEquality(t *testing.T) {
+	now := time.Now()
+	var expiry atomic.Int64
+	expiry.Store(now.Add(time.Hour).UnixNano())
+	h := withDemoDeadline(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }), &expiry, func() time.Time { return now })
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("active status %d", w.Code)
+	}
+	expiry.Store(now.UnixNano())
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expired status %d", w.Code)
 	}
 }
 

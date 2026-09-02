@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -180,13 +181,17 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 	}
 	defer db.Close()
 	local := restrictedDemoHandler(server.New(appVersion, map[string]*core.Database{demoDatabaseID: db}, server.WithAuth(&auth.Config{OwnerToken: owner, Store: store})).Handler())
-	httpServer := &http.Server{Handler: local, ReadHeaderTimeout: 10 * time.Second}
+	var localExpiry atomic.Int64
+	localExpiry.Store(localDeadline.UnixNano())
+	httpServer := &http.Server{Handler: withDemoDeadline(local, &localExpiry, deps.now), ReadHeaderTimeout: 10 * time.Second}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.Serve(listener) }()
 	shutdownLocal := func() {
 		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = httpServer.Shutdown(c)
+		if httpServer.Shutdown(c) != nil {
+			_ = httpServer.Close()
+		}
 	}
 
 	session, err := client.CreateSession(ctx, credential.AccessToken, demo.CreateSessionRequest{RequestID: requestID, App: demoApp, LocalPort: listener.Addr().(*net.TCPAddr).Port, OriginToken: origin})
@@ -208,9 +213,11 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 		return errors.New("cloud returned an expired demo session")
 	}
-	// No local grant can outlive the cloud session, even if the control plane
-	// supplied an earlier expiry than our hard one-hour cap.
-	grant.ExpiresAt = deadline
+	// The handler is already serving: clamp access atomically, never mutate a
+	// grant that the auth store may be reading concurrently.
+	localExpiry.Store(deadline.UnixNano())
+	sessionContext, cancelSession := context.WithDeadline(ctx, deadline)
+	defer cancelSession()
 	tokenFile := filepath.Join(temp, "tunnel-token")
 	if err := os.WriteFile(tokenFile, []byte(session.TunnelToken), 0o600); err != nil {
 		_ = os.RemoveAll(temp)
@@ -226,7 +233,7 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 	}
 	// cloudflared reads a protected file. No token reaches argv, env, output, or URLs.
 	// The explicit loopback metrics listener is used only for its /ready signal.
-	tunnel := deps.execCommand(ctx, "cloudflared", "tunnel", "--metrics", metricsAddr, "run", "--token-file", tokenFile)
+	tunnel := deps.execCommand(sessionContext, "cloudflared", "tunnel", "--metrics", metricsAddr, "run", "--token-file", tokenFile)
 	tunnel.Env = []string{"PATH=" + os.Getenv("PATH")}
 	if err := tunnel.Start(); err != nil {
 		_ = os.RemoveAll(temp)
@@ -252,9 +259,7 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		endDemoSession(client, credential.AccessToken, session.SessionID)
 	}
 	defer cleanup()
-	readyContext, cancelReady := context.WithDeadline(ctx, deadline)
-	defer cancelReady()
-	if err := waitDemoTunnelReady(readyContext, metricsAddr, connectorExit); err != nil {
+	if err := waitDemoTunnelReady(sessionContext, metricsAddr, connectorExit); err != nil {
 		return err
 	}
 	if !deps.now().UTC().Before(deadline) {
@@ -286,6 +291,17 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		}
 		return fmt.Errorf("cloudflared tunnel exited: %w", err)
 	}
+}
+
+func withDemoDeadline(next http.Handler, expiry *atomic.Int64, now func() time.Time) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if now().UnixNano() >= expiry.Load() {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "demo session expired", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func restrictedDemoHandler(next http.Handler) http.Handler {
