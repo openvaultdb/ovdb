@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	openvaultdbcloud "github.com/openvaultdb/openvaultdb-go/cloud"
 	"github.com/strongo/deviceauth"
@@ -319,7 +322,8 @@ func TestCloudDatabasesJSONAndGetResponseErrors(t *testing.T) {
 			})
 		case "/api/databases/database_2":
 			writeTestJSON(t, w, map[string]any{"database": openvaultdbcloud.Database{
-				ID: "database_2", Name: "Second database", SpaceID: "space", SpaceType: "team", Provider: "github", Status: "active",
+				ID: "database_2", Name: "Second database", SpaceID: "space", SpaceName: "Team", SpaceType: "team", Provider: "github", Status: "active",
+				ServerURL: "https://server.example", ServerDatabaseID: "server_db", Repository: "acme/repository", Branch: "main", Path: "spaces/team",
 			}})
 		default:
 			http.NotFound(w, request)
@@ -345,9 +349,18 @@ func TestCloudDatabasesJSONAndGetResponseErrors(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &database); err != nil || database.ID != "database_2" {
 		t.Fatalf("JSON stdout = %q, database = %#v, error = %v", stdout, database, err)
 	}
+	stdout, stderr, err = executeCloudCommand(deps, "databases", "get", "database_2", "--host", server.URL, "--insecure-storage")
+	if err != nil {
+		t.Fatalf("databases get: %v\nstderr: %s", err, stderr)
+	}
+	for _, wanted := range []string{"Name:", "Space ID:", "Server URL:", "Repository:", "Branch:", "Path:"} {
+		if !strings.Contains(stdout, wanted) {
+			t.Errorf("detail does not contain %q:\n%s", wanted, stdout)
+		}
+	}
 
 	_, _, err = executeCloudCommand(deps, "databases", "get", "database_1", "--host", server.URL, "--insecure-storage")
-	if err == nil || !strings.Contains(err.Error(), "run 'ovdb cloud login'") {
+	if err == nil || !strings.Contains(err.Error(), "ovdb cloud login --host") {
 		t.Fatalf("get error = %v", err)
 	}
 	if strings.Contains(err.Error(), "\x1b") || strings.Contains(err.Error(), "untrusted") {
@@ -365,6 +378,9 @@ func TestCloudDatabasesRejectsOldScopeAndPaginationLoops(t *testing.T) {
 		_, _, err := executeCloudCommand(deps, "databases", "list", "--host", server.URL, "--insecure-storage")
 		if err == nil || !strings.Contains(err.Error(), "lacks databases:read") || !strings.Contains(err.Error(), "ovdb cloud login") {
 			t.Fatalf("old credential error = %v", err)
+		}
+		if !strings.Contains(err.Error(), "--host "+server.URL) || !strings.Contains(err.Error(), "--insecure-storage") {
+			t.Fatalf("old credential error loses custom host guidance: %v", err)
 		}
 		if called.Load() {
 			t.Fatal("old credential made a catalogue request")
@@ -398,7 +414,52 @@ func TestCloudDatabasesRejectsOldScopeAndPaginationLoops(t *testing.T) {
 		if strings.TrimSpace(stdout) != "No cloud databases found." {
 			t.Fatalf("empty list output = %q", stdout)
 		}
+		stdout, stderr, err = executeCloudCommand(deps, "databases", "list", "--json", "--host", server.URL, "--insecure-storage")
+		if err != nil {
+			t.Fatalf("empty list JSON: %v\nstderr: %s", err, stderr)
+		}
+		if stdout != "[]\n" {
+			t.Fatalf("empty JSON output = %q, want []", stdout)
+		}
 	})
+}
+
+func TestCloudCatalogueInputAndTerminalSafety(t *testing.T) {
+	if !isCloudSpaceSelector("spot~abc") {
+		t.Fatal("Spot Space ID with ~ was rejected")
+	}
+	if isCloudSpaceSelector("space\u009bcontrol") || isCloudSpaceSelector("space\u202eright-to-left") {
+		t.Fatal("Space ID with a terminal control was accepted")
+	}
+	unsafe := "line\u009bcontrol\u202eright-to-left"
+	sanitized := sanitizeCloudTerminalText(unsafe)
+	if strings.Contains(sanitized, "\u009b") || strings.Contains(sanitized, "\u202e") || !strings.Contains(sanitized, "\\u009B") || !strings.Contains(sanitized, "\\u202E") {
+		t.Fatalf("sanitized = %q", sanitized)
+	}
+	long := sanitizeCloudTerminalText(strings.Repeat("界", 600))
+	if !utf8.ValidString(long) || utf8.RuneCountInString(long) != 513 || !strings.HasSuffix(long, "…") {
+		t.Fatalf("long sanitization is not valid bounded Unicode: %q", long)
+	}
+	if got := cloudOAuthConfig(&url.URL{Scheme: "https", Host: "cloud.example"}).Scopes; !slices.Equal(got, []string{"account:read", "databases:read"}) {
+		t.Fatalf("OAuth scopes = %v", got)
+	}
+
+	writer := failingCloudWriter{err: errors.New("writer failed")}
+	database := openvaultdbcloud.Database{ID: "db", Name: "Database", SpaceID: "space", SpaceType: "team", Provider: "server", Status: "active"}
+	if err := writeCloudDatabaseTable(writer, []openvaultdbcloud.Database{database}); !errors.Is(err, writer.err) {
+		t.Fatalf("table write error = %v", err)
+	}
+	if err := writeCloudDatabaseDetail(writer, database); !errors.Is(err, writer.err) {
+		t.Fatalf("detail write error = %v", err)
+	}
+}
+
+type failingCloudWriter struct {
+	err error
+}
+
+func (writer failingCloudWriter) Write([]byte) (int, error) {
+	return 0, writer.err
 }
 
 func catalogueTestDependencies(server *httptest.Server, configDir string) cloudDependencies {
