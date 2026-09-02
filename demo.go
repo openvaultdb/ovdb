@@ -161,7 +161,11 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		_ = os.RemoveAll(temp)
 		return err
 	}
-	defer os.RemoveAll(temp)
+	defer func() {
+		if err := os.RemoveAll(temp); err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not remove temporary demo credentials from %s.\n", sanitizeCloudTerminalText(temp))
+		}
+	}()
 	store, err := auth.OpenStore(filepath.Join(temp, "grants.json"))
 	if err != nil {
 		return err
@@ -179,7 +183,11 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		_ = listener.Close()
 		return err
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Warning: could not close the demo database cleanly.")
+		}
+	}()
 	local := restrictedDemoHandler(server.New(appVersion, map[string]*core.Database{demoDatabaseID: db}, server.WithAuth(&auth.Config{OwnerToken: owner, Store: store})).Handler())
 	var localExpiry atomic.Int64
 	localExpiry.Store(localDeadline.UnixNano())
