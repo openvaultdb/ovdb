@@ -237,6 +237,29 @@ func TestRunListusDemoExpiresWhileConnectorIsNotReady(t *testing.T) {
 	}
 }
 
+func TestRunListusDemoReturnsNilAtNormalExpiry(t *testing.T) {
+	dir := t.TempDir()
+	writeDemoFixture(t, dir)
+	store := &demoMemoryStore{credential: deviceauth.Credential{AccessToken: "synthetic-cloud", AccountID: "owner", Scopes: []string{"demo:write"}}}
+	client := &demoFakeClient{lifetime: 400 * time.Millisecond}
+	deps := defaultDemoDependencies()
+	deps.selectStore = func(*url.URL, bool) (cloudStoreSelection, error) { return cloudStoreSelection{store: store}, nil }
+	deps.client = func(string, ...demo.Option) (demoSessionClient, error) { return client, nil }
+	deps.execLookPath = func(string) (string, error) { return "cloudflared", nil }
+	deps.execCommand = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		connector := exec.CommandContext(ctx, os.Args[0], "-test.run=TestDemoConnectorHelper", "--")
+		connector.Args = append(connector.Args, args...)
+		return connector
+	}
+	cmd := &cobra.Command{}
+	if err := runListusDemo(context.Background(), cmd, deps, dir, "127.0.0.1:0", "http://127.0.0.1", false, true); err != nil {
+		t.Fatalf("normal expiry returned %v", err)
+	}
+	if client.ended != 1 {
+		t.Fatalf("EndSession=%d", client.ended)
+	}
+}
+
 func TestDemoDeadlineClampsActiveHandlerAtEquality(t *testing.T) {
 	now := time.Now()
 	var expiry atomic.Int64

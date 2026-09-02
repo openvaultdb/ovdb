@@ -286,6 +286,11 @@ func runListusDemo(ctx context.Context, cmd *cobra.Command, deps demoDependencie
 		}
 		return err
 	case err := <-connectorExit:
+		// Session expiry cancels the connector's context. The timer and the
+		// resulting process exit race here, but expiry is still a normal end.
+		if ctx.Err() == nil && !deps.now().UTC().Before(deadline) {
+			return nil
+		}
 		if err == nil {
 			return errors.New("cloudflared tunnel exited unexpectedly")
 		}
