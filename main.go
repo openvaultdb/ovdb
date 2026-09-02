@@ -70,6 +70,7 @@ func commandExitCode(err error) int {
 func addRootCommands(root *cobra.Command, currentVersion string) {
 	root.AddCommand(
 		newCloudCmd(),
+		newDemoCmd(),
 		newServeCmd(),
 		newInitCmd(),
 		newStatusCmd(),
