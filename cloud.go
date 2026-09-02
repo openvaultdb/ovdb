@@ -14,8 +14,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/tabwriter"
 	"time"
 
+	openvaultdbcloud "github.com/openvaultdb/openvaultdb-go/cloud"
 	"github.com/spf13/cobra"
 	"github.com/strongo/deviceauth"
 	"golang.org/x/oauth2"
@@ -24,7 +26,7 @@ import (
 const (
 	defaultCloudURL = "https://cloud.openvaultdb.com"
 	cloudClientID   = "ovdb-cli"
-	cloudScope      = "account:read"
+	cloudScope      = "account:read databases:read"
 )
 
 type cloudFlags struct {
@@ -91,6 +93,7 @@ func newCloudCmdWithDependencies(deps cloudDependencies) *cobra.Command {
 		newCloudLoginCmd(flags, deps),
 		newCloudStatusCmd(flags, deps),
 		newCloudLogoutCmd(flags, deps),
+		newCloudDatabasesCmd(flags, deps),
 	)
 	return cmd
 }
@@ -441,6 +444,238 @@ func cloudStorageError(err error) error {
 		"access cloud credential storage: %w; use --insecure-storage only if plaintext token storage is acceptable",
 		err,
 	)
+}
+
+func newCloudDatabasesCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command {
+	var space string
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:     "databases",
+		Aliases: []string{"database"},
+		Short:   "List database registrations accessible in OpenVaultDB Cloud",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runCloudDatabasesList(cmd, flags, deps, space, jsonOut)
+		},
+	}
+	cmd.Flags().StringVar(&space, "space", "", "limit results to personal or an opaque Space ID")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON data only")
+	cmd.AddCommand(newCloudDatabasesListCmd(flags, deps), newCloudDatabasesGetCmd(flags, deps))
+	return cmd
+}
+
+func newCloudDatabasesListCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command {
+	var space string
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List database registrations accessible in OpenVaultDB Cloud",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runCloudDatabasesList(cmd, flags, deps, space, jsonOut)
+		},
+	}
+	cmd.Flags().StringVar(&space, "space", "", "limit results to personal or an opaque Space ID")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON data only")
+	return cmd
+}
+
+func newCloudDatabasesGetCmd(flags *cloudFlags, deps cloudDependencies) *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "get <id>",
+		Short: "Show one OpenVaultDB Cloud database registration",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, credential, err := cloudCatalogueClient(flags, deps)
+			if err != nil {
+				return err
+			}
+			response, err := client.GetDatabase(cmd.Context(), credential.AccessToken, args[0])
+			if err != nil {
+				return cloudCatalogueError(err)
+			}
+			if jsonOut {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(response.Database)
+			}
+			writeCloudDatabaseTable(cmd.OutOrStdout(), []openvaultdbcloud.Database{response.Database})
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print JSON data only")
+	return cmd
+}
+
+func runCloudDatabasesList(
+	cmd *cobra.Command,
+	flags *cloudFlags,
+	deps cloudDependencies,
+	space string,
+	jsonOut bool,
+) error {
+	if space != "" && space != "personal" && !isCloudIdentifier(space) {
+		return errors.New("--space must be personal or a URL-safe Space ID")
+	}
+	client, credential, err := cloudCatalogueClient(flags, deps)
+	if err != nil {
+		return err
+	}
+	databases, err := listCloudDatabases(cmd.Context(), client, credential.AccessToken, space)
+	if err != nil {
+		return cloudCatalogueError(err)
+	}
+	if jsonOut {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(databases)
+	}
+	if len(databases) == 0 {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No cloud databases found.")
+		return nil
+	}
+	writeCloudDatabaseTable(cmd.OutOrStdout(), databases)
+	return nil
+}
+
+func cloudCatalogueClient(flags *cloudFlags, deps cloudDependencies) (*openvaultdbcloud.Client, deviceauth.Credential, error) {
+	baseURL, err := normalizeCloudURL(flags.host)
+	if err != nil {
+		return nil, deviceauth.Credential{}, err
+	}
+	selection, err := selectCloudStore(baseURL, flags.insecureStorage, deps.userConfigDir)
+	if err != nil {
+		return nil, deviceauth.Credential{}, err
+	}
+	credential, err := selection.store.Load()
+	if errors.Is(err, deviceauth.ErrCredentialNotFound) {
+		return nil, deviceauth.Credential{}, fmt.Errorf("not logged in to %s; run 'ovdb cloud login'", baseURL.Host)
+	}
+	if err != nil {
+		return nil, deviceauth.Credential{}, cloudStorageError(err)
+	}
+	if !containsCloudScope(credential.Scopes, "databases:read") {
+		return nil, deviceauth.Credential{}, errors.New("cloud credential lacks databases:read; run 'ovdb cloud login' to grant database metadata access")
+	}
+	client, err := openvaultdbcloud.NewClient(baseURL.String(), openvaultdbcloud.WithHTTPClient(deps.httpClient))
+	if err != nil {
+		return nil, deviceauth.Credential{}, fmt.Errorf("configure cloud catalogue client: %w", err)
+	}
+	return client, credential, nil
+}
+
+func listCloudDatabases(
+	ctx context.Context,
+	client *openvaultdbcloud.Client,
+	accessToken string,
+	space string,
+) ([]openvaultdbcloud.Database, error) {
+	seenTokens := map[string]bool{"": true}
+	var databases []openvaultdbcloud.Database
+	pageToken := ""
+	for {
+		response, err := client.ListDatabases(ctx, accessToken, openvaultdbcloud.ListDatabasesRequest{
+			Space:     space,
+			PageSize:  openvaultdbcloud.MaxPageSize,
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		databases = append(databases, response.Databases...)
+		if response.NextPageToken == "" {
+			return databases, nil
+		}
+		if seenTokens[response.NextPageToken] {
+			return nil, errors.New("cloud catalogue pagination returned a repeated page token")
+		}
+		seenTokens[response.NextPageToken] = true
+		pageToken = response.NextPageToken
+	}
+}
+
+func writeCloudDatabaseTable(writer io.Writer, databases []openvaultdbcloud.Database) {
+	table := tabwriter.NewWriter(writer, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(table, "ID\tNAME\tSPACE\tPROVIDER\tSTATUS")
+	for _, database := range databases {
+		space := database.SpaceName
+		if space == "" {
+			space = database.SpaceID
+		}
+		_, _ = fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n",
+			sanitizeCloudTerminalText(database.ID),
+			sanitizeCloudTerminalText(database.Name),
+			sanitizeCloudTerminalText(space),
+			sanitizeCloudTerminalText(database.Provider),
+			sanitizeCloudTerminalText(database.Status),
+		)
+	}
+	_ = table.Flush()
+}
+
+func cloudCatalogueError(err error) error {
+	var apiError *openvaultdbcloud.APIError
+	if errors.As(err, &apiError) {
+		switch apiError.Code {
+		case "insufficient_scope":
+			return errors.New("cloud access requires databases:read; run 'ovdb cloud login' to grant database metadata access")
+		case "invalid_token":
+			return errors.New("cloud credential is expired, revoked, or invalid; run 'ovdb cloud login'")
+		}
+		if apiError.StatusCode == http.StatusUnauthorized {
+			return errors.New("cloud credential is expired, revoked, or invalid; run 'ovdb cloud login'")
+		}
+		return fmt.Errorf("cloud database catalogue request failed: %s", sanitizeCloudTerminalText(apiError.Error()))
+	}
+	return fmt.Errorf("cloud database catalogue request failed: %s", sanitizeCloudTerminalText(err.Error()))
+}
+
+func containsCloudScope(scopes []string, wanted string) bool {
+	for _, scope := range scopes {
+		if scope == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func isCloudIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, byteValue := range []byte(value) {
+		if (byteValue >= 'a' && byteValue <= 'z') || (byteValue >= 'A' && byteValue <= 'Z') ||
+			(byteValue >= '0' && byteValue <= '9') || byteValue == '-' || byteValue == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func sanitizeCloudTerminalText(value string) string {
+	const maxLength = 512
+	var sanitized strings.Builder
+	for _, character := range value {
+		switch character {
+		case '\n':
+			sanitized.WriteString("\\n")
+		case '\r':
+			sanitized.WriteString("\\r")
+		case '\t':
+			sanitized.WriteString("\\t")
+		case 0x1b:
+			sanitized.WriteString("\\x1b")
+		default:
+			if character < 0x20 || character == 0x7f {
+				fmt.Fprintf(&sanitized, "\\x%02x", character)
+			} else {
+				sanitized.WriteRune(character)
+			}
+		}
+		if sanitized.Len() >= maxLength {
+			return sanitized.String()[:maxLength]
+		}
+	}
+	return sanitized.String()
 }
 
 func cleanupIssuedTokenError(primary, cleanup error) error {

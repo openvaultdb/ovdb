@@ -39,9 +39,10 @@ ovdb --help
 - **`ovdb token`** — manage revocable, scoped API tokens against a running
   server (create, list, revoke).
 - **`ovdb cloud`** — sign in to OpenVaultDB Cloud through a browser, inspect
-  the current login, or revoke it (`login`, `status`, `logout`). Credentials
-  use the operating system keyring by default. Plaintext storage requires the
-  explicit `--insecure-storage` flag.
+  the current login, revoke it, or list safe database registration metadata
+  (`login`, `status`, `logout`, `databases`). Credentials use the operating
+  system keyring by default. Plaintext storage requires the explicit
+  `--insecure-storage` flag.
 - **`ovdb self-update`** — check for or install a newer CLI release (alias:
   `ovdb update`). Homebrew-managed installs confirm, then run
   `brew upgrade --cask ovdb` directly without a shell; manual installs are
@@ -57,8 +58,17 @@ ovdb self-update
 ovdb self-update --yes
 ovdb self-update --dry-run
 # Manual installs only:
-ovdb self-update --version v0.3.0
+ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
 ```
+
+### Cloud database catalogue
+
+`ovdb cloud databases list` (or `ls`) lists registrations in every accessible
+Space. Use `--space personal` for the personal Space, `--space <id>` for one
+Space, and `--json` for machine-readable data. `ovdb cloud databases get <id>`
+shows one registration. These commands need the explicit `databases:read`
+scope, which grants registration metadata only—not records or credentials. If
+you signed in before this scope was requested, run `ovdb cloud login` again.
 
 Run `ovdb <command> --help` for the full flag reference of any subcommand,
 or `ovdb version` for build version/commit/date.

@@ -6,7 +6,7 @@ toolchain go1.27.0
 
 require (
 	charm.land/fang/v2 v2.0.1
-	github.com/openvaultdb/openvaultdb-go v0.1.1
+	github.com/openvaultdb/openvaultdb-go v0.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
 	github.com/strongo/deviceauth v0.0.2
