@@ -592,12 +592,52 @@ func (s *localServer) exploreDataTug(w http.ResponseWriter, r *http.Request) {
 			WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: setup.ActionDatabases}))
 		return
 	}
-	result, err := explore.Prepare(s.opts.DataTugLookPath, s.opts.Dirs.Home, setup.FallbackAddress(s.opts.Record.Port), db, r.URL.Query().Get("collection"))
+	collections, err := s.rootCollections(r.Context(), db)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	isDemo := explore.IsDemo(s.opts.Dirs.Home, db, databases)
+	collection, collectionErr := explore.ResolveCollection(isDemo, r.URL.Query().Get("collection"), collections, db)
+	if collectionErr != nil {
+		writeError(w, collectionErr)
+		return
+	}
+	result, err := explore.Prepare(s.opts.DataTugLookPath, s.opts.Dirs.Home, setup.FallbackAddress(s.opts.Record.Port), db, collection)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, result)
+}
+
+// rootCollections lists db's root collections through the data API, as the
+// owner, so Explore data can require --collection when there is more than
+// one and default when there is exactly one (review-inc-7.md F5).
+func (s *localServer) rootCollections(ctx context.Context, db string) ([]string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "/v1/databases/"+url.PathEscape(db), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+s.opts.Secret)
+	recorder := httptest.NewRecorder()
+	s.data.ServeHTTP(recorder, request)
+	if recorder.Code >= http.StatusMultipleChoices {
+		var failure v1Error
+		_ = json.Unmarshal(recorder.Body.Bytes(), &failure)
+		message := failure.Error.Message
+		if message == "" {
+			message = http.StatusText(recorder.Code)
+		}
+		return nil, fmt.Errorf("%s", message)
+	}
+	var document struct {
+		Collections []string `json:"collections"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
+		return nil, err
+	}
+	return document.Collections, nil
 }
 
 // seedData writes the demo's records in one batch through the data API, as

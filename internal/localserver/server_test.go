@@ -17,6 +17,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
 )
 
 const (
@@ -238,7 +239,10 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 	case e.path == "/api/local/v1/explore/datatug":
 		// "credentials" itself is removed by the DELETE endpoint's own
 		// subtest earlier in the table; "credentials-connect" is not.
-		path += "?db=credentials-connect"
+		// &collection= names one explicitly: "credentials-connect" is an
+		// empty inGitDB folder with no root collections to default from
+		// (F5).
+		path += "?db=credentials-connect&collection=items"
 	}
 	return path, body
 }
@@ -474,7 +478,7 @@ func TestExploreDataTug(t *testing.T) {
 	// datatug missing (AC:datatug-missing): install commands shown, and the
 	// prepared command still printed for afterwards.
 	onPath = false
-	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=notes", bearer: testSecret})
+	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
 	document.InstallCommands = nil
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("explore datatug missing = %d %s", rec.Code, rec.Body)
@@ -485,6 +489,69 @@ func TestExploreDataTug(t *testing.T) {
 
 	// An unregistered database is a clean not_found, naming ovdb databases.
 	assertEnvelope(t, f.do(t, request{path: "/api/local/v1/explore/datatug?db=nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
+}
+
+// TestExploreDataTugCollectionResolution is review-inc-7.md F5: the demo
+// always defaults to "lists"; any other database with exactly one root
+// collection defaults to it; with several, --collection is required and the
+// choices are named; a value naming a path, not a root collection, is
+// refused (datatug-cli reads root collections only — datatug-cli#256).
+func TestExploreDataTugCollectionResolution(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	create := func(id string) {
+		data, err := json.Marshal(setup.CreateRequest{ID: id, Path: filepath.Join(f.dirs.Data, id)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d %s", id, rec.Code, rec.Body)
+		}
+	}
+	insert := func(db, key string) {
+		body := `{"message":"seed","ops":[{"op":"insert","key":"` + key + `","data":{}}]}`
+		if rec := f.do(t, request{method: http.MethodPost, path: "/v1/databases/" + db + "/batch", body: body, bearer: testSecret}); rec.Code >= 300 {
+			t.Fatalf("insert %s/%s = %d %s", db, key, rec.Code, rec.Body)
+		}
+	}
+
+	// Exactly one root collection: it is the default.
+	create("sole")
+	insert("sole", "customers/a")
+	rec := f.do(t, request{path: "/api/local/v1/explore/datatug?db=sole", bearer: testSecret})
+	var document explore.DataTugCLI
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("sole collection = %d %s", rec.Code, rec.Body)
+	}
+	if document.Collection != "customers" {
+		t.Errorf("sole collection default = %q, want customers", document.Collection)
+	}
+
+	// Several root collections: --collection is required, naming both.
+	create("several")
+	insert("several", "customers/a")
+	insert("several", "orders/a")
+	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=several", bearer: testSecret})
+	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
+	body := rec.Body.String()
+	for _, name := range []string{"customers", "orders"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("ambiguous-collection body lacks %q: %s", name, body)
+		}
+	}
+	// An explicit, valid choice among several works.
+	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=several&collection=orders", bearer: testSecret})
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil || document.Collection != "orders" {
+		t.Errorf("explicit choice = %d %s", rec.Code, rec.Body)
+	}
+
+	// A path, not a root collection name, is refused — not silently sent
+	// through to come back empty (spike S4; datatug-cli#256).
+	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=several&collection=customers/a", bearer: testSecret})
+	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
+	if body := rec.Body.String(); !strings.Contains(body, "root collections only") {
+		t.Errorf("nested-collection body = %s, want it to say root collections only", body)
+	}
 }
 
 func TestDatabaseOf(t *testing.T) {

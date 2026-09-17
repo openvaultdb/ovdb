@@ -5,7 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/openvaultdb/ovdb/internal/envelope"
 )
 
 // TestDescriptorHasExactlyFourKeysAndNoToken is
@@ -187,5 +190,51 @@ func TestNewMenuDemoCopy(t *testing.T) {
 		if key == "explore.menu.datatug_cli" || key == "explore.menu.datatug_app" {
 			t.Errorf("description key %q is a label key, not a description", key)
 		}
+	}
+}
+
+// F5 (review-inc-7.md): the demo always defaults to "lists"; any other
+// database with exactly one root collection defaults to it; with several
+// (or none), --collection is required, naming the choices; a value with a
+// "/" is refused (datatug-cli reads root collections only — datatug-cli#256).
+func TestResolveCollection(t *testing.T) {
+	if got, err := ResolveCollection(true, "", nil, "todo"); err != nil || got != "lists" {
+		t.Errorf("demo default = %q, %v", got, err)
+	}
+	if got, err := ResolveCollection(false, "", []string{"customers"}, "notes"); err != nil || got != "customers" {
+		t.Errorf("sole collection default = %q, %v", got, err)
+	}
+	if got, err := ResolveCollection(false, "orders", []string{"customers", "orders"}, "notes"); err != nil || got != "orders" {
+		t.Errorf("explicit choice = %q, %v", got, err)
+	}
+	_, err := ResolveCollection(false, "", []string{"customers", "orders"}, "notes")
+	if err == nil || err.Code != envelope.InvalidArgument {
+		t.Fatalf("ambiguous collections: err = %v, want invalid_argument", err)
+	}
+	if len(err.Next) != 2 {
+		t.Errorf("ambiguous collections next = %+v, want one per root collection", err.Next)
+	}
+	for _, name := range []string{"customers", "orders"} {
+		found := false
+		for _, n := range err.Next {
+			if strings.Contains(n.Command, "--collection "+name) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("next lacks a choice for %q: %+v", name, err.Next)
+		}
+	}
+	_, err = ResolveCollection(false, "", nil, "notes")
+	if err == nil || err.Code != envelope.InvalidArgument {
+		t.Fatalf("no collections: err = %v, want invalid_argument", err)
+	}
+
+	_, err = ResolveCollection(true, "lists/to-buy/items", nil, "todo")
+	if err == nil || err.Code != envelope.InvalidArgument {
+		t.Fatalf("nested collection: err = %v, want invalid_argument", err)
+	}
+	if !strings.Contains(err.Reason, "root collections only") {
+		t.Errorf("nested collection reason = %q, want it to say root collections only", err.Reason)
 	}
 }

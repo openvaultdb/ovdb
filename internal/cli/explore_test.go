@@ -110,7 +110,7 @@ func TestExploreDataTugCLIWritesFourKeyDescriptor(t *testing.T) {
 // are always shown here.
 func TestExploreDataTugCLIMissingShowsInstallCommands(t *testing.T) {
 	e, _, _ := dataEnv(t)
-	r := e.ok("explore", "datatug-cli", "--db", "notes", "--json")
+	r := e.ok("explore", "datatug-cli", "--db", "notes", "--collection", "items", "--json")
 	var document explore.DataTugCLI
 	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
 		t.Fatalf("decode: %v\n%s", err, r.stdout)
@@ -121,7 +121,7 @@ func TestExploreDataTugCLIMissingShowsInstallCommands(t *testing.T) {
 	if len(document.InstallCommands) != 2 || document.QueryCommand == "" {
 		t.Errorf("missing result = %+v", document)
 	}
-	human := e.ok("explore", "datatug-cli", "--db", "notes")
+	human := e.ok("explore", "datatug-cli", "--db", "notes", "--collection", "items")
 	for _, want := range []string{explore.InstallCommands[0], explore.InstallCommands[1], document.QueryCommand} {
 		if !strings.Contains(human.stdout, want) {
 			t.Errorf("human output lacks %q:\n%s", want, human.stdout)
@@ -161,7 +161,7 @@ func TestExploreDataTugCLIChecksTheClientsOwnPath(t *testing.T) {
 	// process explore.OnPath(nil) checks from.
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+originalPath)
 
-	r := e.ok("explore", "datatug-cli", "--db", "notes", "--json")
+	r := e.ok("explore", "datatug-cli", "--db", "notes", "--collection", "items", "--json")
 	var document explore.DataTugCLI
 	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
 		t.Fatalf("decode: %v\n%s", err, r.stdout)
@@ -172,7 +172,7 @@ func TestExploreDataTugCLIChecksTheClientsOwnPath(t *testing.T) {
 	if len(document.InstallCommands) != 0 {
 		t.Errorf("install_commands = %v, want none once the client sees datatug", document.InstallCommands)
 	}
-	human := e.ok("explore", "datatug-cli", "--db", "notes")
+	human := e.ok("explore", "datatug-cli", "--db", "notes", "--collection", "items")
 	if strings.Contains(human.stdout, "isn't on your PATH") {
 		t.Errorf("human output still claims datatug is missing:\n%s", human.stdout)
 	}

@@ -41,6 +41,43 @@ const PrincipalID = "local-owner"
 // other database (nested collections are not reachable — REQ table).
 const DefaultCollection = "lists"
 
+// ResolveCollection picks the root collection to query (review-inc-7.md
+// F5): the demo always defaults to DefaultCollection; any other database
+// with exactly one root collection defaults to it; with several, or none
+// registered, --collection is required and the error names the choices. A
+// value containing "/" is refused: datatug-cli's --from builds a single
+// root-collection reference (datatug-cli#256), so a path is silently sent
+// as one literal collection name and always comes back empty, never an
+// error — the exact trap spike S4 documented.
+func ResolveCollection(isDemo bool, requested string, collections []string, db string) (string, *envelope.Error) {
+	if strings.Contains(requested, "/") {
+		return "", envelope.New(envelope.InvalidArgument, uicopy.T("explore.failed", nil)).
+			WithReason(uicopy.T("explore.collection_nested", map[string]string{"collection": requested})).
+			WithNext(envelope.Next{Label: uicopy.T("next.help", nil), Command: "ovdb explore datatug-cli --db " + db + " --help"})
+	}
+	if requested != "" {
+		return requested, nil
+	}
+	if isDemo {
+		return DefaultCollection, nil
+	}
+	if len(collections) == 1 {
+		return collections[0], nil
+	}
+	if len(collections) == 0 {
+		return "", envelope.New(envelope.InvalidArgument, uicopy.T("explore.failed", nil)).
+			WithReason(uicopy.T("explore.collection_none", nil)).
+			WithNext(envelope.Next{Label: uicopy.T("next.help", nil), Command: "ovdb explore datatug-cli --db " + db + " --help"})
+	}
+	next := make([]envelope.Next, 0, len(collections))
+	for _, c := range collections {
+		next = append(next, envelope.Next{Label: c, Command: "ovdb explore datatug-cli --db " + db + " --collection " + c})
+	}
+	return "", envelope.New(envelope.InvalidArgument, uicopy.T("explore.failed", nil)).
+		WithReason(uicopy.T("explore.collection_required", map[string]string{"collections": strings.Join(collections, ", ")})).
+		WithNext(next...)
+}
+
 // InstallCommands are shown when datatug is not on PATH
 // (REQ:prepare-datatug-cli-connection).
 var InstallCommands = []string{
