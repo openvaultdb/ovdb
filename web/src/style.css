@@ -1,1 +1,46 @@
 @import "tailwindcss";
+
+@import "./tokens.css";
+
+@theme inline {
+  --color-bg: var(--ov-bg);
+  --color-surface: var(--ov-surface);
+  --color-surface-2: var(--ov-surface-2);
+  --color-ink: var(--ov-ink);
+  --color-muted: var(--ov-muted);
+  --color-line: var(--ov-line);
+  --color-accent: var(--ov-accent);
+  --color-accent-hover: var(--ov-accent-hover);
+  --color-on-accent: var(--ov-on-accent);
+  --color-accent-soft: var(--ov-accent-soft);
+  --color-ok: var(--ov-ok);
+  --color-ok-soft: var(--ov-ok-soft);
+  --color-warn: var(--ov-warn);
+  --color-warn-soft: var(--ov-warn-soft);
+  --color-danger: var(--ov-danger);
+  --color-danger-soft: var(--ov-danger-soft);
+  --color-code: var(--ov-code);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--ov-bg);
+    color: var(--ov-ink);
+    font-family: var(--font-sans);
+    font-size: 1.0625rem;
+    line-height: 1.55;
+  }
+  :focus-visible {
+    outline: 3px solid var(--ov-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  [tabindex="-1"]:focus {
+    outline: none;
+  }
+}

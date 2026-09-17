@@ -3,9 +3,11 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
+	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
@@ -76,8 +78,20 @@ func TestConfigRoundTrip(t *testing.T) {
 	if config, _ := LoadConfig(dirs.Home); config.Server.Port != 7001 {
 		t.Errorf("reloaded port = %d", config.Server.Port)
 	}
-	if _, err := ApplyConfigChange(dirs, ConfigChange{Key: "server.cors", Value: "x"}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
+	if _, err := ApplyConfigChange(dirs, ConfigChange{Key: "server.bogus", Value: "x"}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
 		t.Errorf("unknown key: %v", err)
+	}
+	document, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerCORS, Value: " http://localhost:5173, HTTPS://App.Example "}, true)
+	if err != nil || !slices.Equal(document.Config.Server.CORS, []string{"http://localhost:5173", "https://app.example"}) || document.Config.Server.Port != 7001 {
+		t.Fatalf("server.cors = %+v, %v", document.Config, err)
+	}
+	for _, bad := range []string{"localhost:5173", "ftp://x.example", "http://x.example/path", "http://u:p@x.example", "http://x.example?q", "*"} {
+		if _, err := ApplyConfigChange(dirs, ConfigChange{Key: KeyServerCORS, Value: bad}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
+			t.Errorf("server.cors %q accepted: %v", bad, err)
+		}
+	}
+	if document, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerCORS, Value: ""}, true); err != nil || document.Config.Server.CORS != nil {
+		t.Errorf("clearing server.cors = %+v, %v", document.Config, err)
 	}
 	if err := os.WriteFile(filepath.Join(dirs.Home, ConfigFile), []byte("server: [\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -100,8 +114,86 @@ func TestStatusNextListsImplementedOptionsInOrder(t *testing.T) {
 		t.Errorf("running next = %+v", running.Next)
 	}
 	want := `{"schema":1,"server":{"state":"not_running","address":"http://ovdb.localhost:6832","fallback_address":"http://127.0.0.1:6832","port":6832,"log":"` +
-		filepath.ToSlash(runtime.LogPath(dirs.Runtime)) + `"}}` + "\n"
+		filepath.ToSlash(runtime.LogPath(dirs.Runtime)) + `"},"next":[{"label":"Start the OVDB server","command":"ovdb server start"}]}` + "\n"
 	if got := string(envelope.Marshal(NewServerDocument(StoppedServer(6832, dirs)))); filepath.Separator == '/' && got != want {
 		t.Errorf("stopped server document:\n got %s\nwant %s", got, want)
+	}
+}
+
+// first-run-onboarding#REQ:home-menu-options: the implemented options in
+// the founder's order, with the E1 web wording and a badge from real state.
+// Every copy key the document names must exist.
+func TestHomeDocument(t *testing.T) {
+	t.Parallel()
+	dirs := testDirs(t)
+	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
+	running := NewHome(RunningServer(record, dirs))
+	stopped := NewHome(StoppedServer(6832, dirs))
+	for _, home := range []HomeDocument{running, stopped} {
+		ids := []string{}
+		keys := []string{home.QuestionKey}
+		for _, line := range home.StatusLine {
+			keys = append(keys, line.Key)
+		}
+		for _, option := range home.Options {
+			ids = append(ids, option.ID+"/"+option.Group)
+			keys = append(keys, option.LabelKey)
+			for _, key := range []string{option.WebLabelKey, option.DescriptionKey} {
+				if key != "" {
+					keys = append(keys, key)
+				}
+			}
+			if option.Badge != nil {
+				keys = append(keys, option.Badge.LabelKey)
+			}
+		}
+		if !slices.Equal(ids, []string{"server/primary", "settings/secondary"}) {
+			t.Errorf("options = %v", ids)
+		}
+		for _, key := range keys {
+			func() {
+				defer func() {
+					if recover() != nil {
+						t.Errorf("copy key %q is not in copy/en.json", key)
+					}
+				}()
+				uicopy.T(key, nil)
+			}()
+		}
+	}
+	if line := running.StatusLine[0]; line.Key != "home.status.server_running" || line.Params["address"] != "http://ovdb.localhost:7000" {
+		t.Errorf("running status line = %+v", line)
+	}
+	if badge := running.Options[0].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
+		t.Errorf("running badge = %+v", badge)
+	}
+	if badge := stopped.Options[0].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
+		t.Errorf("stopped home = %+v", stopped)
+	}
+	if option := running.Options[0]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
+		t.Errorf("server option = %+v", option)
+	}
+}
+
+func TestConfigChangeReportsNoChange(t *testing.T) {
+	t.Parallel()
+	dirs := testDirs(t)
+	if err := paths.EnsurePrivateDir(dirs.Home); err != nil {
+		t.Fatal(err)
+	}
+	first, err := ApplyConfigChange(dirs, ConfigChange{Key: KeyServerPort, Value: "7000"}, true)
+	if err != nil || first.Changed == nil || !*first.Changed || len(first.Next) != 1 {
+		t.Fatalf("first change = %+v, %v", first, err)
+	}
+	again, err := ApplyConfigChange(dirs, ConfigChange{Key: KeyServerPort, Value: "7000"}, true)
+	if err != nil || again.Changed == nil || *again.Changed || len(again.Next) != 0 {
+		t.Errorf("unchanged = %+v, %v", again, err)
+	}
+	_, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerPort, Value: "abc"}, true)
+	if e := envelope.As(err); e == nil || len(e.Next) != 1 || e.Next[0].Command != "ovdb config get server.port" {
+		t.Errorf("bad port next = %+v", e)
+	}
+	if got := NormalizeOrigins([]string{" HTTPS://App.Example/ ", "not an origin", "http://localhost:5173"}); !slices.Equal(got, []string{"https://app.example", "http://localhost:5173"}) {
+		t.Errorf("NormalizeOrigins = %v", got)
 	}
 }

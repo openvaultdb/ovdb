@@ -26,13 +26,22 @@ const (
 )
 
 type fixture struct {
-	handler   http.Handler
+	handler   *Handler
 	dirs      paths.Dirs
 	token     string // a valid scoped token from auth.json
 	shutdowns int
+	now       time.Time
+	options   func(*Options) // adjusts Options before each (re)start
 }
 
-func newFixture(t *testing.T) *fixture {
+// consoleStub stands in for the embedded console so tests see which
+// requests reached it.
+var consoleStub = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, "console:"+r.URL.Path)
+})
+
+func newFixture(t *testing.T, options ...func(*Options)) *fixture {
 	t.Helper()
 	base := t.TempDir()
 	dirs := paths.Dirs{Home: filepath.Join(base, "home"), Runtime: filepath.Join(base, "run"), Data: filepath.Join(base, "data")}
@@ -49,25 +58,44 @@ func newFixture(t *testing.T) *fixture {
 	if err := store.CreateGrant(&auth.Grant{DatabaseID: "todo", Capabilities: []auth.Capability{{Action: "read"}}}, f.token); err != nil {
 		t.Fatal(err)
 	}
+	f.now = time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	f.options = func(o *Options) {
+		for _, option := range options {
+			option(o)
+		}
+	}
+	f.restart(t)
+	return f
+}
+
+// restart builds a new handler over the same directories, as a server
+// restart does.
+func (f *fixture) restart(t *testing.T) {
+	t.Helper()
 	started := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
-	f.handler, err = New(Options{
-		Dirs: dirs,
+	opts := Options{
+		Dirs: f.dirs,
 		Record: runtime.Record{
-			Schema: 1, InstanceID: "instance-1", Home: dirs.Home, PID: 42, ProcessIdentity: "id",
+			Schema: 1, InstanceID: "instance-1", Home: f.dirs.Home, PID: 42, ProcessIdentity: "id",
 			Port: testPort, Version: "1.2.3", StartedAt: started,
 		},
 		Secret:          testSecret,
 		RequestShutdown: func() { f.shutdowns++ },
-		Now:             func() time.Time { return started },
-	})
+		Now:             func() time.Time { return f.now },
+		Console:         consoleStub,
+	}
+	f.options(&opts)
+	handler, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f
+	f.handler = handler
 }
 
 type request struct {
 	method, path, host, bearer, contentType, body string
+	cookie                                        string            // session cookie value
+	header                                        map[string]string // extra headers
 }
 
 func (f *fixture) do(t *testing.T, r request) *httptest.ResponseRecorder {
@@ -87,6 +115,12 @@ func (f *fixture) do(t *testing.T, r request) *httptest.ResponseRecorder {
 	if r.bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+r.bearer)
 	}
+	if r.cookie != "" {
+		req.AddCookie(&http.Cookie{Name: SessionCookieName(testPort), Value: r.cookie})
+	}
+	for name, value := range r.header {
+		req.Header.Set(name, value)
+	}
 	if r.contentType != "" {
 		req.Header.Set("Content-Type", r.contentType)
 	} else if r.method != http.MethodGet {
@@ -102,7 +136,7 @@ func assertSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 	for header, want := range map[string]string{
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "no-referrer",
-		"Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 		"X-Frame-Options":         "DENY",
 	} {
 		if got := rec.Header().Get(header); got != want {
@@ -285,7 +319,7 @@ func TestLocalAPIDocuments(t *testing.T) {
 	assertEnvelope(t, owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"7000"}`, contentType: "text/plain"}),
 		http.StatusUnsupportedMediaType, envelope.InvalidArgument)
 	rec = owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"7000"}`})
-	if want := `{"schema":1,"config":{"server":{"port":7000}},"next":[{"label":"Restart the OVDB server to use it","command":"ovdb server restart"}]}` + "\n"; rec.Body.String() != want {
+	if want := `{"schema":1,"config":{"server":{"port":7000}},"changed":true,"next":[{"label":"Restart the OVDB server to use it","command":"ovdb server restart"}]}` + "\n"; rec.Body.String() != want {
 		t.Errorf("PUT config = %s", rec.Body)
 	}
 	if config, _ := setup.LoadConfig(f.dirs.Home); config.Server.Port != 7000 {

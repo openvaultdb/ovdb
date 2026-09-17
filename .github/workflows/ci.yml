@@ -47,7 +47,7 @@ jobs:
   # in the ovdb binary. A red run here means a release would ship the
   # "web console isn't built" fallback instead of the real console.
   web:
-    name: Web build, test and embed
+    name: Web build, test, embed and browser tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -91,6 +91,31 @@ jobs:
           distribution: goreleaser
           version: '~> v2'
           args: build --snapshot --clean --single-target
+
+      # spec/features/configuration-parity#REQ:ci-matrix: Playwright
+      # (Chromium) journeys on Linux, against a real ovdb binary with the
+      # console embedded, started in an isolated temporary OVDB home by
+      # web/e2e/global-setup.ts.
+      - name: Build ovdb for the browser tests
+        run: go build -o "$RUNNER_TEMP/ovdb" .
+
+      - name: Install Chromium for Playwright
+        run: pnpm -C web exec playwright install --with-deps chromium
+
+      - name: Playwright (smoke and screens)
+        run: pnpm -C web e2e --workers=1
+        env:
+          OVDB_E2E_BIN: ${{ runner.temp }}/ovdb
+
+      - name: Upload Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            web/test-results/
+            web/e2e/screenshots/
+          retention-days: 7
 
   # spec/features/configuration-parity#REQ:ci-matrix: lifecycle and path
   # tests on every OS the local server supports. They start real detached

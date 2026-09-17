@@ -37,6 +37,7 @@ import (
 const (
 	ServerPath     = "/api/local/v1/server"
 	StatusPath     = "/api/local/v1/status"
+	HomePath       = "/api/local/v1/home"
 	LoginLinksPath = "/api/local/v1/login-links"
 	ConfigPath     = "/api/local/v1/config"
 )
@@ -157,6 +158,15 @@ func (l *Local) Server(ctx context.Context) ([]byte, error) {
 func (l *Local) Status(ctx context.Context) ([]byte, error) {
 	return l.read(ctx, StatusPath, func() any {
 		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs))
+	})
+}
+
+// Home is the Home menu document the TUI and web console render
+// (first-run-onboarding#REQ:home-menu-options): from the server when it
+// runs, otherwise built for a stopped server without starting one.
+func (l *Local) Home(ctx context.Context) ([]byte, error) {
+	return l.read(ctx, HomePath, func() any {
+		return setup.NewHome(setup.StoppedServer(l.Port, l.Dirs))
 	})
 }
 

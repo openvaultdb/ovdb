@@ -36,6 +36,8 @@ type App struct {
 	Executable string
 	// ChildEnv is appended to the detached server's environment (tests).
 	ChildEnv []string
+	// OpenBrowser launches a URL; browser.Opener{}.Open when nil.
+	OpenBrowser func(url string) error
 }
 
 func (a *App) getenv(key string) string {

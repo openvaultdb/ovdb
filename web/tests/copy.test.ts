@@ -8,13 +8,12 @@ describe('t()', () => {
   })
 
   it('substitutes a {name} placeholder', () => {
-    const rendered = t('console.placeholder.body', { name: 'ovdb' })
-    expect(rendered).toContain('ovdb')
-    expect(rendered).not.toContain('{name}')
+    const rendered = t('server.also_at', { address: 'http://127.0.0.1:6832' })
+    expect(rendered).toBe('Also at http://127.0.0.1:6832')
   })
 
   it('leaves an unsubstituted placeholder in place', () => {
-    expect(t('console.placeholder.body')).toContain('{name}')
+    expect(t('server.also_at')).toContain('{address}')
   })
 
   it('throws on an unknown key', () => {

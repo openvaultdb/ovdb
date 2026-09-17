@@ -27,7 +27,7 @@ func TestPureReadsWithoutServer(t *testing.T) {
 	t.Parallel()
 	l, _ := testLocal(t)
 	ctx := context.Background()
-	for name, read := range map[string]func(context.Context) ([]byte, error){"server": l.Server, "status": l.Status, "config": l.Config} {
+	for name, read := range map[string]func(context.Context) ([]byte, error){"server": l.Server, "status": l.Status, "config": l.Config, "home": l.Home} {
 		body, err := read(ctx)
 		if err != nil || !strings.HasPrefix(string(body), `{"schema":1,`) {
 			t.Errorf("%s = %s, %v", name, body, err)

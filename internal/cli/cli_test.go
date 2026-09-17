@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -49,10 +50,13 @@ func newRoot(app *cli.App) *cobra.Command {
 }
 
 type env struct {
-	t    *testing.T
-	dirs paths.Dirs
-	vars map[string]string
-	app  *cli.App
+	t      *testing.T
+	dirs   paths.Dirs
+	vars   map[string]string
+	app    *cli.App
+	opened []string // URLs `ovdb open` launched
+	// browserErr is what the fake browser launch returns.
+	browserErr error
 }
 
 func newEnv(t *testing.T) *env {
@@ -68,6 +72,10 @@ func newEnv(t *testing.T) *env {
 	e.app = &cli.App{
 		Version: testVersion, Getenv: func(key string) string { return e.vars[key] },
 		Executable: os.Args[0], ChildEnv: []string{childEnv + "=1"},
+		OpenBrowser: func(url string) error {
+			e.opened = append(e.opened, url)
+			return e.browserErr
+		},
 	}
 	t.Cleanup(func() { _, _ = runtime.Stop(context.Background(), e.dirs.Runtime, 0) })
 	return e
@@ -198,8 +206,33 @@ func TestJSONEqualsAPIThroughLifecycle(t *testing.T) {
 		!strings.HasPrefix(link.URL, "http://ovdb.localhost:") || !strings.HasPrefix(link.FallbackURL, "http://127.0.0.1:") {
 		t.Errorf("open --json = %+v", open)
 	}
+	if len(e.opened) != 0 {
+		t.Errorf("--print-url launched a browser: %v", e.opened)
+	}
+
+	// Without --print-url the browser opens the primary link, or the
+	// fallback with --host 127.0.0.1; both links are printed either way.
+	launched := e.run("open")
+	if launched.code != 0 || len(e.opened) != 1 || !strings.HasPrefix(e.opened[0], "http://ovdb.localhost:") ||
+		!strings.Contains(launched.stdout, "Opening your browser…") || !strings.Contains(launched.stdout, "http://127.0.0.1:") {
+		t.Errorf("open = %+v, opened %v", launched, e.opened)
+	}
+	if fallback := e.run("open", "--host", "127.0.0.1", "--json"); fallback.code != 0 || len(e.opened) != 2 || !strings.HasPrefix(e.opened[1], "http://127.0.0.1:") {
+		t.Errorf("open --host 127.0.0.1 = %+v, opened %v", fallback, e.opened)
+	}
+	e.browserErr = errors.New("no display")
+	if printOnly := e.run("open"); printOnly.code != 0 || strings.Contains(printOnly.stdout, "Opening") ||
+		!strings.Contains(printOnly.stdout, "sign-in link") || !strings.Contains(printOnly.stdout, "/login?code=") {
+		t.Errorf("open without a browser = %+v", printOnly)
+	}
+	e.browserErr = nil
 
 	set := e.run("config", "set", "server.port", "7777")
+	defer func() {
+		if same := e.run("config", "set", "server.port", "7777"); !strings.Contains(same.stdout, "server.port is already 7777. No change.") || strings.Contains(same.stdout, "restart") {
+			t.Errorf("unchanged config set = %+v", same)
+		}
+	}()
 	if set.code != 0 || !strings.Contains(set.stdout, "Saved server.port = 7777.") || !strings.Contains(set.stdout, "ovdb server restart") {
 		t.Errorf("config set = %+v", set)
 	}
@@ -279,8 +312,10 @@ func TestUsageErrorsAreInvalidArgument(t *testing.T) {
 		{"config", "get", "--json"},
 		{"config", "set", "server.port", "--json"},
 		{"config", "set", "server.port", "zero", "--json"},
-		{"config", "get", "server.cors", "--json"},
+		{"config", "get", "server.bogus", "--json"},
+		{"config", "set", "server.cors", "ftp://x.example", "--json"},
 		{"open", "--port", "1", "--json"},
+		{"open", "--host", "evil.example", "--json"},
 		{"server", "status", "--port", "--json"},
 	} {
 		failure := decodeError(t, e.run(args...), envelope.InvalidArgument)

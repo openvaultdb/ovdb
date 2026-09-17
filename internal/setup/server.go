@@ -39,10 +39,13 @@ type Server struct {
 }
 
 // ServerDocument is the body of GET /api/local/v1/server and the --json
-// output of `ovdb server start|stop|restart|status`.
+// output of `ovdb server start|stop|restart|status`. Next holds the
+// commands that change the server's state, so every presentation shows the
+// same ones (the web console cannot run them itself: parity E1 and E2).
 type ServerDocument struct {
-	Schema int    `json:"schema"`
-	Server Server `json:"server"`
+	Schema int             `json:"schema"`
+	Server Server          `json:"server"`
+	Next   []envelope.Next `json:"next"`
 }
 
 // PrimaryAddress is the address people open.
@@ -71,7 +74,81 @@ func StoppedServer(port int, dirs paths.Dirs) Server {
 
 // NewServerDocument wraps server in its document.
 func NewServerDocument(server Server) ServerDocument {
-	return ServerDocument{Schema: envelope.Schema, Server: server}
+	next := []envelope.Next{}
+	switch server.State {
+	case StateRunning:
+		next = append(next,
+			envelope.Next{Label: uicopy.T("next.stop_server", nil), Command: "ovdb server stop"},
+			envelope.Next{Label: uicopy.T("next.restart_server", nil), Command: "ovdb server restart"})
+	case StateNotRunning:
+		next = append(next, envelope.Next{Label: uicopy.T("home.menu.start_server", nil), Command: "ovdb server start"})
+	}
+	return ServerDocument{Schema: envelope.Schema, Server: server, Next: next}
+}
+
+// Badge is a server state as presentations show it: a tone and a copy key.
+type Badge struct {
+	Tone     string `json:"tone"` // ok, warn, neutral
+	LabelKey string `json:"label_key"`
+}
+
+// StateBadge maps a server state to its badge.
+func StateBadge(state string) Badge {
+	switch state {
+	case StateRunning:
+		return Badge{Tone: "ok", LabelKey: "server.badge.running"}
+	case StateStopping:
+		return Badge{Tone: "warn", LabelKey: "server.badge.stopping"}
+	default:
+		return Badge{Tone: "neutral", LabelKey: "server.badge.not_running"}
+	}
+}
+
+// CopyRef is copy a presentation renders: a catalogue key and its params.
+type CopyRef struct {
+	Key    string            `json:"key"`
+	Params map[string]string `json:"params,omitempty"`
+}
+
+// HomeOption is one Home menu option. LabelKey is the terminal wording;
+// WebLabelKey, when set, replaces it in the web console, which cannot start
+// the server that serves it (parity E1).
+type HomeOption struct {
+	ID             string `json:"id"`
+	Group          string `json:"group"` // primary, secondary
+	LabelKey       string `json:"label_key"`
+	WebLabelKey    string `json:"web_label_key,omitempty"`
+	DescriptionKey string `json:"description_key,omitempty"`
+	Badge          *Badge `json:"badge,omitempty"`
+}
+
+// HomeDocument is the body of GET /api/local/v1/home: the status line and
+// the implemented Home options in the founder's order
+// (first-run-onboarding#REQ:home-menu-options, REQ:home-status-line). The
+// TUI and the web console both render it, so neither builds the menu.
+type HomeDocument struct {
+	Schema      int          `json:"schema"`
+	StatusLine  []CopyRef    `json:"status_line"`
+	QuestionKey string       `json:"question_key"`
+	Options     []HomeOption `json:"options"`
+}
+
+// NewHome builds Home for server. Options appear here only once they are
+// implemented; later increments insert theirs in the founder's order.
+func NewHome(server Server) HomeDocument {
+	line := CopyRef{Key: "home.status.server_not_running"}
+	if server.State == StateRunning {
+		line = CopyRef{Key: "home.status.server_running", Params: map[string]string{"address": server.Address}}
+	}
+	badge := StateBadge(server.State)
+	return HomeDocument{
+		Schema: envelope.Schema, StatusLine: []CopyRef{line}, QuestionKey: "home.question",
+		Options: []HomeOption{
+			{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
+				DescriptionKey: "home.menu.server_help", Badge: &badge},
+			{ID: "settings", Group: "secondary", LabelKey: "home.menu.settings"},
+		},
+	}
 }
 
 // Status is the body of GET /api/local/v1/status and of `ovdb status --json`
