@@ -251,19 +251,6 @@ func stateOf(skillsDir string, d Definition) string {
 // files changed since it installed them.
 const modifiedTarget = "modified target"
 
-// installed reports whether d is installed in skillsDir: skillsync records
-// the skill's plugin and the skill's folder is there.
-func installed(skillsDir string, d Definition) bool {
-	status, err := skillsync.ReadStatus(skillsDir)
-	if err != nil || !status.Installed {
-		return false
-	}
-	if _, ok := status.Plugins[d.Plugin().String()]; !ok {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(skillsDir, d.Dir, "SKILL.md"))
-	return err == nil && info.Mode().IsRegular()
-}
 
 // Targets are the harnesses shown for d: every one found, plus Claude Code and
 // Codex, in cobracmd.DefaultHarnesses order.
