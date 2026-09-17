@@ -10,13 +10,17 @@ func TestString(t *testing.T) {
 	for _, tc := range []struct {
 		in, want string
 	}{
-		{"dial postgres://u:s3cret@nohost/db: no such host", "dial postgres://[redacted]@nohost/db: no such host"},
-		{"mysql://root@localhost:3306/x", "mysql://[redacted]@localhost:3306/x"},
-		{"postgres://u:p@s3cret@host/db", "postgres://[redacted]@host/db"},
-		{"postgres://u:a/s3cret@host/db failed", "postgres://[redacted]@host/db failed"},
-		{"open u:s3cret@tcp(localhost:3306)/db?parseTime=true", "open [redacted]@tcp(localhost:3306)/db?parseTime=true"},
-		{"u:p@s3cret@unix(/tmp/mysql.sock)/db", "[redacted]@unix(/tmp/mysql.sock)/db"},
-		{"host=db user=u password=s3cret dbname=x", "host=db user=u password=[redacted] dbname=x"},
+		{"dial postgres://u:s3cret@nohost/db: no such host", "dial postgres://[redacted]: no such host"},
+		{"mysql://root@localhost:3306/x", "mysql://[redacted]"},
+		{"postgres://u:p@s3cret@host/db", "postgres://[redacted]"},
+		{"postgres://u:a/s3cret@host/db failed", "postgres://[redacted] failed"},
+		{"open u:s3cret@tcp(localhost:3306)/db?parseTime=true", "open [redacted]"},
+		{"u:p@s3cret@unix(/tmp/mysql.sock)/db", "[redacted]"},
+		{"host=db user=u password=s3cret dbname=x", "host=[redacted] user=[redacted] password=[redacted] dbname=[redacted]"},
+		// Review L7: pgx and net errors echo the DSN's user, database and host.
+		{"failed to connect to `user=ann database=payroll`: 10.0.0.5:5432 (db.internal): dial error: dial tcp 10.0.0.5:5432: connect: connection refused",
+			"failed to connect to `user=[redacted] database=[redacted]`: [redacted]: dial error: dial tcp [redacted]: connect: connection refused"},
+		{"dial tcp: lookup db.internal on 127.0.0.53:53: no such host", "dial tcp: lookup [redacted] on 127.0.0.53:53: no such host"},
 		{`api_key: "abc def"`, `api_key: [redacted]`},
 		{`{"password":"s3cret","user":"u"}`, `{"password":[redacted],"user":"u"}`},
 		{`{"client_secret": "s3cret"}`, `{"client_secret": [redacted]}`},
@@ -33,7 +37,7 @@ func TestString(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("String(%q)\n got %q\nwant %q", tc.in, got, tc.want)
 		}
-		for _, secret := range []string{"s3cret", "tok123", "abc.def", "dTpzM2NyZXQ"} {
+		for _, secret := range []string{"s3cret", "tok123", "abc.def", "dTpzM2NyZXQ", "ann", "payroll", "10.0.0.5", "db.internal", "nohost", "localhost:3306"} {
 			if strings.Contains(got, secret) {
 				t.Errorf("String(%q) leaks %q", tc.in, secret)
 			}
