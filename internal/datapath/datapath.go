@@ -9,12 +9,16 @@
 package datapath
 
 import (
+	"fmt"
+	goruntime "runtime"
 	"strings"
+	"unicode"
 
 	"github.com/dal-go/record"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/paths"
 )
 
 // Kind is what a path names.
@@ -62,6 +66,15 @@ func (p Path) String() string {
 	}
 	return "/" + strings.Join(parts, "/")
 }
+
+// Display is String made safe to print (see Printable); paths built from
+// names the server returned may hold characters input never allows.
+func (p Path) Display() string { return Printable(p.String()) }
+
+// Arg is Display as one shell argument, quoted when needed (POSIX quoting;
+// PowerShell's on Windows), for commands people copy
+// (paths.QuoteArg is the one quoting rule).
+func (p Path) Arg() string { return paths.QuoteArg(goruntime.GOOS, p.Display()) }
 
 // Key is p as the server's key path: escaped segments without the leading
 // slash ("lists/to-buy"); "" for the root.
@@ -140,12 +153,49 @@ func Resolve(base Path, input string) (Path, error) {
 			continue
 		}
 		segment, err := unescape(part)
+		if err == nil {
+			err = checkSegment(segment)
+		}
 		if err != nil {
-			return Path{}, invalid(input, err.Error())
+			return Path{}, invalid(Printable(input), err.Error())
 		}
 		segments = append(segments, segment)
 	}
 	return Path{segments: segments}, nil
+}
+
+// checkSegment refuses decoded segments storage could mistake for a place
+// instead of a name: an id may contain `/` (written %2F), but no
+// `/`-separated part of it may be empty, `.` or `..`, and no segment may hold
+// a control character (U+0000–U+001F, U+007F). This guards storages that
+// map ids to file paths against escaping their collection, and terminals
+// against escape sequences.
+func checkSegment(segment string) error {
+	for _, r := range segment {
+		if r < 0x20 || r == 0x7f {
+			return badEscape(uicopy.T("path.control_character", map[string]string{"segment": Printable(segment)}))
+		}
+	}
+	for _, part := range strings.Split(segment, "/") {
+		if part == "" || part == "." || part == ".." {
+			return badEscape(uicopy.T("path.dot_segment", map[string]string{"segment": Printable(record.EscapeID(segment))}))
+		}
+	}
+	return nil
+}
+
+// Printable is s safe to print in a terminal: every non-printable rune
+// (control characters, including ESC and BEL) is shown as \uXXXX.
+func Printable(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsPrint(r) || r == ' ' {
+			b.WriteRune(r)
+			continue
+		}
+		fmt.Fprintf(&b, "\\u%04X", r)
+	}
+	return b.String()
 }
 
 type badEscape string
@@ -166,7 +216,7 @@ func unescape(part string) (string, error) {
 				continue
 			}
 		}
-		return "", badEscape(uicopy.T("path.bad_percent", map[string]string{"segment": part}))
+		return "", badEscape(uicopy.T("path.bad_percent", map[string]string{"segment": Printable(part)}))
 	}
 	return b.String(), nil
 }

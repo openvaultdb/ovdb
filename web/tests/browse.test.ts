@@ -6,7 +6,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetConnection } from '../src/api'
-import { browseRoute, display, escapeId, parseBrowseRoute, recordURL, unescapeSegment } from '../src/datapath'
+import { browseRoute, display, escapeId, parseBrowseRoute, quoteArg, recordURL, unescapeSegment } from '../src/datapath'
 import { currentPath } from '../src/router'
 import BrowseScreen from '../src/screens/BrowseScreen.vue'
 import { defaultRoutes, installFetch, json, type Handler } from './fakeServer'
@@ -51,9 +51,15 @@ function routes(extra: Record<string, Handler> = {}): Record<string, Handler> {
     'GET /api/local/v1/databases': () => json(200, databases),
     'GET /api/local/v1/context': () => json(200, context('todo')),
     'GET /v1/databases/notes': () => json(200, { id: 'notes', engine: 'ingitdb', schemaMode: 'schemaless', collections: ['items'] }),
+    'POST /v1/databases/notes/dtql': (init) => {
+      const doc = String(init.body)
+      const limit = Number(/limit: (\d+)/.exec(doc)![1])
+      const offset = Number(/offset: (\d+)/.exec(doc)![1])
+      return json(200, { records: items.slice(offset, offset + limit) })
+    },
     'POST /v1/databases/notes/query': (init) => {
       const limit = JSON.parse(String(init.body)).limit as number
-      return json(200, { records: items.slice(0, limit) })
+      return json(200, { records: items.slice(0, limit).map((r) => ({ ...r, key: r.key.replace('items/', 'sub/') })) })
     },
     'GET /v1/databases/notes/records/items/x': () =>
       json(200, { key: 'items/x', data: { title: '<script>alert(1)</script>', note: '<img src=x onerror=alert(2)>' } }),
@@ -83,6 +89,32 @@ describe('paths', () => {
     expect(parseBrowseRoute('/browse')).toBeNull()
     expect(recordURL('notes', ['x', 'hello world?'])).toBe('/v1/databases/notes/records/x/hello%20world%3F')
   })
+
+  it('refuses dot parts and control characters in decoded ids (review F1, F2)', () => {
+    const esc = String.fromCharCode(0x1b)
+    const bel = String.fromCharCode(0x07)
+    for (const segment of [
+      '%2E%2E%2F%2E%2E',
+      '%2E%2E%2F%2E%2E%2Fp2',
+      '%2E%2E%2F%2E%2E%2F.git%2Fhooks%2Fp4',
+      '%2E%2E%2F%2E%2E%2Fsecrets%2F%24records%2Fs1',
+      `c${esc}[31mol`,
+      `a${esc}]0;PWNED${bel}b`,
+      '%2E', '%2E%2E', 'a%2F', '%2Fa', 'a%2F%2Fb', 'nul' + String.fromCharCode(0), 'del' + String.fromCharCode(0x7f),
+    ]) {
+      expect(unescapeSegment(segment), segment).toBeNull()
+    }
+    expect(unescapeSegment('a%2Fb%2Etxt')).toBe('a/b.txt')
+    expect(unescapeSegment('a..b')).toBe('a..b')
+    expect(parseBrowseRoute('/browse/notes/items/%252E%252E%252F%252E%252E')).toEqual({ db: 'notes', segments: null })
+  })
+
+  it('quotes shown commands for the shell (review F7)', () => {
+    expect(quoteArg('/items/a%2Fb', false)).toBe('/items/a%2Fb')
+    expect(quoteArg('/items/x;rm -rf ~', false)).toBe("'/items/x;rm -rf ~'")
+    expect(quoteArg("/items/it's", false)).toBe("'/items/it'\\''s'")
+    expect(quoteArg("/items/it's", true)).toBe("'/items/it''s'")
+  })
 })
 
 describe('Browse data', () => {
@@ -103,7 +135,7 @@ describe('Browse data', () => {
     const { wrapper, calls } = await open('/browse/notes/items')
     expect(wrapper.findAll('[data-record]')).toHaveLength(50)
     expect(wrapper.get('[data-testid="page"]').text()).toBe('Records 1–50')
-    expect(calls.find((c) => c.path.endsWith('/query'))?.body).toEqual({ collection: 'items', limit: 51 })
+    // Pages on the server: 51 records from the page's offset (review F8).
     expect(wrapper.text()).toContain('ovdb list /items --db notes')
     await wrapper.findAll('button').find((b) => b.text() === 'Next page')!.trigger('click')
     await flushPromises()
@@ -113,6 +145,17 @@ describe('Browse data', () => {
     expect(wrapper.findAll('[data-record]')).toHaveLength(20)
     expect(wrapper.findAll('button').some((b) => b.text() === 'Next page')).toBe(false)
     expect(wrapper.findAll('button').some((b) => b.text() === 'Previous page')).toBe(true)
+    // Each page asks the server for 51 records from its offset (review F8).
+    expect(calls.filter((c) => c.path.endsWith('/dtql')).map((c) => c.body)).toEqual([0, 50, 100].map(
+      (offset) => `from: {name: "items"}\nlimit: 51\noffset: ${offset}\n`,
+    ))
+  })
+
+  it('pages a nested collection through the query endpoint', async () => {
+    const { wrapper, calls } = await open('/browse/notes/items/x/sub')
+    expect(wrapper.findAll('[data-record]')).toHaveLength(50)
+    expect(calls.find((c) => c.path.endsWith('/query'))?.body).toEqual({ collection: 'sub', limit: 51, parent: 'items/x' })
+    expect(wrapper.get('[data-record="r000"]').attributes('href')).toBe('/browse/notes/items/x/sub/r000')
   })
 
   it('renders record values as text, never HTML (AC:browse-own-data)', async () => {

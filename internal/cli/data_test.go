@@ -78,8 +78,9 @@ func dataEnv(t *testing.T) (e *env, a, b string) {
 
 // AC:use-is-project-scoped, AC:precedence-ladder, AC:no-context-error,
 // AC:cd-examples and REQ:database-named-in-output through the CLI.
-func TestUseCdPwdThroughTheServer(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
+//
+// It writes no records, so it runs on Windows too (review F12).
+func TestUseAndPwdThroughTheServer(t *testing.T) {
 	e, a, b := dataEnv(t)
 
 	// No context with two databases: not_found listing both.
@@ -127,6 +128,42 @@ func TestUseCdPwdThroughTheServer(t *testing.T) {
 	}
 	delete(e.vars, dbcontext.EnvPath)
 
+	// A bad OVDB_PATH is refused, never read as / (review F3).
+	e.vars[dbcontext.EnvDatabase], e.vars[dbcontext.EnvPath] = "todo", "bad%zz"
+	if r := e.fails("pwd"); !strings.Contains(r.stderr, "OVDB_PATH isn't a valid path: bad%zz") {
+		t.Errorf("bad OVDB_PATH:\n%s", r.stderr)
+	}
+	delete(e.vars, dbcontext.EnvDatabase)
+	delete(e.vars, dbcontext.EnvPath)
+	if r := e.ok("use", "--clear"); r.stdout != "Cleared the project context for "+a+".\n" {
+		t.Errorf("use --clear = %q", r.stdout)
+	}
+	if r := e.ok("use", "--clear"); r.stdout != "No context to clear.\n" {
+		t.Errorf("use --clear again = %q", r.stdout)
+	}
+
+	// Global default and removal clearing contexts.
+	e.in(filepath.Dir(a))
+	e.ok("use", "--global", "todo")
+	if r := e.ok("pwd"); r.stdout != "todo:/ (global default)\n" {
+		t.Errorf("global = %q", r.stdout)
+	}
+	e.ok("databases", "remove", "todo", "--yes")
+	if r := e.ok("pwd"); r.stdout != "notes:/ (the only registered database)\n" {
+		t.Errorf("after removing todo = %q", r.stdout)
+	}
+	if r := e.fails("cd", "items", "--db", "notes"); !strings.Contains(r.stderr, "unknown flag") {
+		t.Errorf("cd --db = %+v", r)
+	}
+}
+
+// AC:cd-examples through the CLI, and cd on the only-database rung saying
+// it saved a project context (review F5).
+func TestCdThroughTheServer(t *testing.T) {
+	skipInGitDBWritesOnWindows(t)
+	e, a, _ := dataEnv(t)
+	e.in(a)
+	e.ok("use", "todo")
 	// cd from todo:/lists/to-buy.
 	e.ok("set", "/lists/to-buy/items/tea", `{"title":"Tea"}`)
 	e.ok("cd", "/lists/to-buy")
@@ -158,21 +195,14 @@ func TestUseCdPwdThroughTheServer(t *testing.T) {
 		t.Errorf("use resets the path: %q", r.stdout)
 	}
 
-	// Global default and removal clearing contexts.
-	e.in(filepath.Dir(a))
-	e.ok("use", "--global", "todo")
-	if r := e.ok("pwd"); r.stdout != "todo:/ (global default)\n" {
-		t.Errorf("global = %q", r.stdout)
+	e.ok("use", "--clear")
+	e.ok("databases", "remove", "notes", "--yes")
+	r := e.ok("cd", "/lists")
+	if !strings.HasPrefix(r.stdout, "todo:/lists (project context from "+a+")\nSaved as the project context for "+a+".\n") {
+		t.Errorf("cd on the only database = %q", r.stdout)
 	}
-	e.ok("databases", "remove", "todo", "--yes")
-	if r := e.ok("pwd"); r.stdout != "notes:/ (the only registered database)\n" {
-		t.Errorf("after removing todo = %q", r.stdout)
-	}
-	if r := e.ok("delete", "/nothing/here"); r.stdout != "notes: deleted /nothing/here\n" {
-		t.Errorf("only database is named: %q", r.stdout)
-	}
-	if r := e.fails("cd", "items", "--db", "notes"); !strings.Contains(r.stderr, "unknown flag") {
-		t.Errorf("cd --db = %+v", r)
+	if r := e.ok("delete", "/lists/to-buy/items/tea"); r.stdout != "todo: deleted /lists/to-buy/items/tea\n" {
+		t.Errorf("delete names the database: %q", r.stdout)
 	}
 }
 
@@ -198,13 +228,27 @@ func TestDataCommandsThroughTheServer(t *testing.T) {
 	if r := e.ok("set", p, "--field", "done=true", "--db", "todo", "--json"); r.stdout != `{"key":"`+p+`"}`+"\n" {
 		t.Errorf("set --json = %q", r.stdout)
 	}
+	// Reads keep the /v1 key and add the absolute path (review F4).
 	get := e.ok("get", p, "--db", "todo", "--json")
-	if want := e.api(http.MethodGet, "/v1/databases/todo/records"+p); get.stdout != want || !strings.Contains(get.stdout, `"done":true`) {
-		t.Errorf("get --json = %s, want the /v1 body %s", get.stdout, want)
+	var server, got map[string]any
+	_ = json.Unmarshal([]byte(e.api(http.MethodGet, "/v1/databases/todo/records"+p)), &server)
+	if err := json.Unmarshal([]byte(get.stdout), &got); err != nil || got["key"] != server["key"] || got["path"] != p ||
+		!strings.Contains(get.stdout, `"done":true`) || len(got) != 3 {
+		t.Errorf("get --json = %s, want the /v1 body %v plus path", get.stdout, server)
 	}
 	if r := e.ok("delete", p, "--db", "todo", "--json"); r.stdout != `{"key":"`+p+`"}`+"\n" {
 		t.Errorf("delete --json = %q", r.stdout)
 	}
+	// Deleting it again is not_found unless --if-exists (review F10).
+	if r := e.fails("delete", p, "--db", "todo"); !strings.Contains(r.stderr, "Couldn't delete todo:"+p) {
+		t.Errorf("second delete:\n%s", r.stderr)
+	}
+	if r := e.ok("delete", p, "--db", "todo", "--if-exists"); r.stdout != "todo: no record at "+p+", nothing to delete\n" {
+		t.Errorf("delete --if-exists = %q", r.stdout)
+	}
+	// A missing record exits 1 with and without --json (review F9).
+	e.fails("list", p, "--db", "todo")
+	e.fails("list", p, "--db", "todo", "--json")
 	gone := e.fails("get", p, "--db", "todo")
 	if !strings.Contains(gone.stderr, "Couldn't read todo:"+p) || gone.stdout != "" {
 		t.Errorf("get after delete = %+v", gone)
@@ -243,7 +287,8 @@ func TestDataCommandsThroughTheServer(t *testing.T) {
 		}
 	}
 	items := e.ok("list", "/lists/to-buy/items", "--db", "todo", "--json")
-	if !strings.HasPrefix(items.stdout, `{"records":[`) || strings.Count(items.stdout, `"key"`) != 2 {
+	if !strings.HasPrefix(items.stdout, `{"records":[`) || strings.Count(items.stdout, `"key":"items/`) != 2 ||
+		!strings.Contains(items.stdout, `"path":"/lists/to-buy/items/bread"`) {
 		t.Errorf("list --json = %s", items.stdout)
 	}
 	if r := e.ok("list", "/lists/to-buy/items", "--db", "todo", "--limit", "1"); !strings.Contains(r.stdout, "… more records; show more with --limit 2") {

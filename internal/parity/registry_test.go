@@ -60,6 +60,13 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 			t.Errorf("capability %s (%s): web route %q is not in web/routes.json", row.ID, row.Capability, row.Web)
 		}
 		for _, endpoint := range row.API {
+			if strings.Contains(endpoint, " /v1/") {
+				// The data API is openvaultdb-go's; only its shape is checked.
+				if !strings.HasPrefix(strings.Fields(endpoint)[1], "/v1/databases/{db}") {
+					t.Errorf("capability %s (%s): data endpoint %q is not under /v1/databases/{db}", row.ID, row.Capability, endpoint)
+				}
+				continue
+			}
 			if !slices.Contains(endpoints, endpoint) {
 				t.Errorf("capability %s (%s): endpoint %q does not exist", row.ID, row.Capability, endpoint)
 			}

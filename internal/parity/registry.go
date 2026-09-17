@@ -60,15 +60,24 @@ var Rows = []Row{
 	// write (E3).
 	{ID: "13", Capability: "Choose current database", CLI: []string{"ovdb use"}, TUI: "databases", Web: "/databases",
 		API: []string{"PUT /api/local/v1/context"}, Exceptions: []string{"E3"}, Implemented: true},
+	// Home's status line shows what applies: in the TUI the project it
+	// started in; in the web console, which has no project, the global
+	// default or the only database (E3).
 	{ID: "14", Capability: "Show current database", CLI: []string{"ovdb use", "ovdb pwd"}, TUI: "home", Web: "/",
 		API: []string{"GET /api/local/v1/context", "GET /api/local/v1/home", "GET /api/local/v1/status"}, Implemented: true},
 	// Reads go through the existing /v1 data API in every interface.
-	{ID: "15", Capability: "Browse data (read-only)", CLI: []string{"ovdb list", "ovdb get"}, TUI: "browse", Web: "/browse", Implemented: true},
+	{ID: "15", Capability: "Browse data (read-only)", CLI: []string{"ovdb list", "ovdb get"}, TUI: "browse", Web: "/browse",
+		API:         []string{"GET /v1/databases/{db}", "POST /v1/databases/{db}/query", "POST /v1/databases/{db}/dtql", "GET /v1/databases/{db}/records/{key}"},
+		Implemented: true},
 	// A working directory is a shell concept; the TUI and web console show a
 	// browsable tree instead (E4).
-	{ID: "16", Capability: "Navigate paths", CLI: []string{"ovdb cd", "ovdb pwd"}, Exceptions: []string{"E4"}, Implemented: true},
+	{ID: "16", Capability: "Navigate paths", CLI: []string{"ovdb cd", "ovdb pwd"},
+		API:        []string{"GET /api/local/v1/context", "PUT /api/local/v1/context", "GET /v1/databases/{db}", "POST /v1/databases/{db}/query", "GET /v1/databases/{db}/records/{key}"},
+		Exceptions: []string{"E4"}, Implemented: true},
 	// Editing records is for the CLI, agents and apps (E5).
-	{ID: "17", Capability: "Write records", CLI: []string{"ovdb set", "ovdb add", "ovdb delete"}, Exceptions: []string{"E5"}, Implemented: true},
+	{ID: "17", Capability: "Write records", CLI: []string{"ovdb set", "ovdb add", "ovdb delete"},
+		API:        []string{"PUT /v1/databases/{db}/records/{key}", "PATCH /v1/databases/{db}/records/{key}", "POST /v1/databases/{db}/records/{key}", "DELETE /v1/databases/{db}/records/{key}"},
+		Exceptions: []string{"E5"}, Implemented: true},
 	// Tokens and CORS origins are developer settings: CLI only, and a console
 	// session gets 403 on server.cors and /v1/tokens (E7).
 	{ID: "25", Capability: "Access tokens and browser app origins",

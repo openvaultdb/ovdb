@@ -156,7 +156,7 @@ func privacyFix(goos, dir string) string {
 // quotes in both PowerShell (” escapes a quote) and POSIX shells ('\”
 // does).
 func QuoteArg(goos, s string) string {
-	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-:") == "" {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-:%") == "" {
 		return s
 	}
 	if goos == "windows" {

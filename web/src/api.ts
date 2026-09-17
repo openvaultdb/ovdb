@@ -174,14 +174,22 @@ export function resetConnection() {
   serverMoving = false
 }
 
+/** A body sent as is, such as a DTQL YAML document. */
+export interface RawBody {
+  text: string
+  contentType: string
+}
+
 export async function api<T>(method: 'GET' | 'PUT' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<Result<T>> {
+  const raw = body as RawBody | undefined
+  const isRaw = raw !== undefined && typeof raw === 'object' && raw !== null && 'contentType' in raw && 'text' in raw
   let response: Response
   try {
     response = await fetch(path, {
       method,
       credentials: 'same-origin',
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: body === undefined ? {} : { 'Content-Type': isRaw ? raw.contentType : 'application/json' },
+      body: body === undefined ? undefined : isRaw ? raw.text : JSON.stringify(body),
     })
   } catch {
     connection.value = serverMoving ? 'session-ended' : 'unreachable'

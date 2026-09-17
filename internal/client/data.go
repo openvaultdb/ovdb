@@ -37,6 +37,9 @@ type DataRequest struct {
 	// "/v1/databases/todo/records/lists/to-buy".
 	URLPath string
 	Body    any
+	// Raw is sent as the body instead of Body, with ContentType.
+	Raw         []byte
+	ContentType string
 }
 
 // DatabaseURL is the data API path of database id.
@@ -64,6 +67,37 @@ func (l *Local) Query(ctx context.Context, op DataOp, limit int, noStart bool) (
 		body["limit"] = limit
 	}
 	return l.Data(ctx, DataRequest{Op: op, Method: http.MethodPost, URLPath: DatabaseURL(op.Database) + "/query", Body: body}, noStart)
+}
+
+// Page reads limit records of the collection at op.Path starting at offset.
+// A root collection pages on the server with a DTQL offset; openvaultdb-go
+// v0.6.0's DTQL takes root collections only, so a nested collection reads
+// offset+limit records and drops the first offset (review F8; the query
+// endpoint has no offset).
+func (l *Local) Page(ctx context.Context, op DataOp, offset, limit int, noStart bool) ([]Record, error) {
+	if op.Path.Parent().Kind() != datapath.Root || offset > 10000 {
+		body, err := l.Query(ctx, op, offset+limit, noStart)
+		if err != nil {
+			return nil, err
+		}
+		var records Records
+		if err := json.Unmarshal(body, &records); err != nil {
+			return nil, err
+		}
+		return records.Records[min(offset, len(records.Records)):], nil
+	}
+	name, _ := json.Marshal(op.Path.Name()) // a JSON string is a YAML string
+	doc := fmt.Sprintf("from: {name: %s}\nlimit: %d\noffset: %d\n", name, limit, offset)
+	body, err := l.Data(ctx, DataRequest{Op: op, Method: http.MethodPost, URLPath: DatabaseURL(op.Database) + "/dtql",
+		Raw: []byte(doc), ContentType: "application/yaml"}, noStart)
+	if err != nil {
+		return nil, err
+	}
+	var records Records
+	if err := json.Unmarshal(body, &records); err != nil {
+		return nil, err
+	}
+	return records.Records, nil
 }
 
 // Get reads the record at op.Path.
@@ -132,7 +166,9 @@ func (l *Local) Data(ctx context.Context, request DataRequest, noStart bool) ([]
 		return nil, err
 	}
 	var payload io.Reader
-	if request.Body != nil {
+	if request.Raw != nil {
+		payload = bytes.NewReader(request.Raw)
+	} else if request.Body != nil {
 		data, err := json.Marshal(request.Body)
 		if err != nil {
 			return nil, err
@@ -144,7 +180,9 @@ func (l *Local) Data(ctx context.Context, request DataRequest, noStart bool) ([]
 		return nil, err
 	}
 	httpRequest.Header.Set("Authorization", "Bearer "+c.state.Secret)
-	if payload != nil {
+	if request.Raw != nil {
+		httpRequest.Header.Set("Content-Type", request.ContentType)
+	} else if payload != nil {
 		httpRequest.Header.Set("Content-Type", "application/json")
 	}
 	response, err := c.http.Do(httpRequest)
@@ -205,7 +243,7 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 	case !known:
 		code = envelope.Internal
 	}
-	params := map[string]string{"database": op.Database, "path": op.Path.String()}
+	params := map[string]string{"database": op.Database, "path": op.Path.Display()}
 	var message string
 	switch op.Verb {
 	case "list":
@@ -221,7 +259,7 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 	}
 	e := envelope.New(code, message)
 	if v1Message != "" {
-		e = e.WithReason(redact.String(v1Message))
+		e = e.WithReason(datapath.Printable(redact.String(v1Message)))
 	} else if code == envelope.Internal {
 		e = e.WithReason(fmt.Sprintf("HTTP %d", status))
 	}
@@ -235,12 +273,12 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 			WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases"},
 				envelope.Next{Label: uicopy.T("next.use_database", nil), Command: "ovdb use <database>"})
 	case code == envelope.NotFound:
-		e = e.WithNext(envelope.Next{Label: uicopy.T("next.list_records", nil), Command: "ovdb list " + collection.String() + op.Suffix})
+		e = e.WithNext(envelope.Next{Label: uicopy.T("next.list_records", nil), Command: "ovdb list " + collection.Arg() + op.Suffix})
 	case code == envelope.AlreadyExists:
-		e = e.WithNext(envelope.Next{Label: uicopy.T("next.replace_record", nil), Command: "ovdb set " + op.Path.String() + " '<json>'" + op.Suffix})
+		e = e.WithNext(envelope.Next{Label: uicopy.T("next.replace_record", nil), Command: "ovdb set " + op.Path.Arg() + " '<json>'" + op.Suffix})
 	case code == envelope.SchemaRequired:
 		e = e.WithNext(
-			envelope.Next{Label: uicopy.T("next.describe_collection", map[string]string{"collection": collection.Name(), "database": op.Database}), Command: "ovdb databases reload " + op.Database},
+			envelope.Next{Label: uicopy.T("next.describe_collection", map[string]string{"collection": datapath.Printable(collection.Name()), "database": op.Database}), Command: "ovdb databases reload " + op.Database},
 			envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases"})
 	case code == envelope.ValidationFailed:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.check_schema", nil), Command: "ovdb databases"})

@@ -81,7 +81,8 @@ func (d dataTarget) requireKind(want datapath.Kind) error {
 	if got == want {
 		return nil
 	}
-	path, suffix := d.path.String(), d.suffix()
+	path, suffix := d.path.Display(), d.suffix()
+	arg := d.path.Arg()
 	var e *envelope.Error
 	switch got {
 	case datapath.Root:
@@ -92,7 +93,7 @@ func (d dataTarget) requireKind(want datapath.Kind) error {
 		e = envelope.New(envelope.InvalidArgument, uicopy.T("data.kind.record", map[string]string{"path": path}))
 	}
 	if want == datapath.Collection {
-		sub := path + "/<collection>"
+		sub := arg + "/<collection>"
 		if got == datapath.Root {
 			sub = "/<collection>"
 		}
@@ -102,9 +103,9 @@ func (d dataTarget) requireKind(want datapath.Kind) error {
 	case datapath.Root:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.see_collections", nil), Command: "ovdb list /" + suffix})
 	case datapath.Collection:
-		e = e.WithNext(envelope.Next{Label: uicopy.T("next.see_records", nil), Command: "ovdb list " + path + suffix})
+		e = e.WithNext(envelope.Next{Label: uicopy.T("next.see_records", nil), Command: "ovdb list " + arg + suffix})
 	default:
-		e = e.WithNext(envelope.Next{Label: uicopy.T("next.see_record", nil), Command: "ovdb get " + path + suffix})
+		e = e.WithNext(envelope.Next{Label: uicopy.T("next.see_record", nil), Command: "ovdb get " + arg + suffix})
 	}
 	return e
 }
@@ -173,6 +174,42 @@ func indentJSON(v map[string]any) string {
 	return strings.TrimSuffix(buf.String(), "\n")
 }
 
+// rawRecord is a /v1 record with its data kept byte for byte.
+type rawRecord struct {
+	Key  string          `json:"key"`
+	Path string          `json:"path"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
+// withPaths adds to a /v1 read body (a record, or {"records":[…]}) each
+// record's absolute escaped `path` next to the untouched server `key`. The
+// server's keys have no leading slash and, in nested collections, no
+// parent; `path` is what `ovdb get` and `ovdb set` take, the same form writes
+// print as {"key"} (review F4).
+func withPaths(body []byte, collection datapath.Path, single bool) ([]byte, error) {
+	if single {
+		var rec rawRecord
+		if err := json.Unmarshal(body, &rec); err != nil {
+			return nil, err
+		}
+		rec.Path = collection.String()
+		return envelope.Marshal(rec), nil
+	}
+	var list struct {
+		Records []rawRecord `json:"records"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, err
+	}
+	if list.Records == nil {
+		list.Records = []rawRecord{}
+	}
+	for i := range list.Records {
+		list.Records[i].Path = collection.Child(client.KeyID(list.Records[i].Key)).String()
+	}
+	return envelope.Marshal(list), nil
+}
+
 func (a *App) listCmd() *cobra.Command {
 	var flags dataFlags
 	limit := 50
@@ -180,6 +217,8 @@ func (a *App) listCmd() *cobra.Command {
 		Use:     "list [path]",
 		Aliases: []string{"ls"},
 		Short:   "List collections, a collection's records, or show a record",
+		Long: "List collections, a collection's records, or show a record. With --json, records carry the " +
+			"server's key and an absolute \"path\" to pass to ovdb get, set and delete.",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return exactArgs(1)(cmd, args)
@@ -198,7 +237,7 @@ func (a *App) listCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			w, prefix := cmd.OutOrStdout(), d.context.Database+":"+d.path.String()
+			prefix := d.context.Database + ":" + d.path.Display()
 			switch d.path.Kind() {
 			case datapath.Root:
 				body, err := d.local.Collections(cmd.Context(), d.op("list"), flags.noStart)
@@ -215,7 +254,7 @@ func (a *App) listCmd() *cobra.Command {
 						say(w, uicopy.T("data.nothing_here", nil))
 					}
 					for _, name := range parsed.Collections {
-						say(w, "  "+datapath.Path{}.Child(name).String())
+						say(w, "  "+datapath.Path{}.Child(name).Display())
 					}
 				})
 			case datapath.Collection:
@@ -231,6 +270,9 @@ func (a *App) listCmd() *cobra.Command {
 				if err := json.Unmarshal(body, &parsed); err != nil {
 					return err
 				}
+				if body, err = withPaths(body, d.path, false); err != nil {
+					return err
+				}
 				printer{cmd: cmd, json: flags.json}.document(body, func(w io.Writer) {
 					say(w, prefix)
 					if len(parsed.Records) == 0 {
@@ -241,21 +283,20 @@ func (a *App) listCmd() *cobra.Command {
 							say(w, "  "+uicopy.T("data.more", map[string]string{"limit": strconv.Itoa(limit * 2)}))
 							break
 						}
-						say(w, "  "+d.path.Child(client.KeyID(rec.Key)).String()+"  "+compactJSON(rec.Data))
+						say(w, "  "+d.path.Child(client.KeyID(rec.Key)).Display()+"  "+compactJSON(rec.Data))
 					}
 				})
 			default:
+				// A missing record fails the same way with and without --json.
 				body, err := d.local.Get(cmd.Context(), d.op("list"), flags.noStart)
-				if client.MissingRecord(err) && !flags.json {
-					say(w, prefix)
-					say(w, uicopy.T("data.nothing_here", nil))
-					return nil
-				}
 				if err != nil {
 					return err
 				}
 				var parsed client.Record
 				if err := json.Unmarshal(body, &parsed); err != nil {
+					return err
+				}
+				if body, err = withPaths(body, d.path, true); err != nil {
 					return err
 				}
 				printer{cmd: cmd, json: flags.json}.document(body, func(w io.Writer) {
@@ -277,6 +318,7 @@ func (a *App) getCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <path>",
 		Short: "Print one record",
+		Long:  "Print one record. With --json it is the server's {\"key\",\"data\"} plus the absolute \"path\".",
 		Args:  exactArgs(1),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			d, err := a.dataTarget(cmd, flags, args[0])
@@ -294,8 +336,11 @@ func (a *App) getCmd() *cobra.Command {
 			if err := json.Unmarshal(body, &parsed); err != nil {
 				return err
 			}
+			if body, err = withPaths(body, d.path, true); err != nil {
+				return err
+			}
 			printer{cmd: cmd, json: flags.json}.document(body, func(w io.Writer) {
-				say(w, d.context.Database+":"+d.path.String())
+				say(w, d.context.Database+":"+d.path.Display())
 				say(w, indentJSON(parsed.Data))
 			})
 			return nil
@@ -390,7 +435,7 @@ func (a *App) setCmd() *cobra.Command {
 			if _, err := d.local.Data(cmd.Context(), request, flags.noStart); err != nil {
 				return err
 			}
-			params := map[string]string{"database": d.context.Database, "path": d.path.String()}
+			params := map[string]string{"database": d.context.Database, "path": d.path.Display()}
 			if len(fields) > 0 {
 				written(cmd, d, uicopy.T("data.updated", params))
 			} else {
@@ -439,11 +484,12 @@ func (a *App) addCmd() *cobra.Command {
 			} else {
 				// --id is written escaped, like a path segment.
 				record, err := datapath.Parse("/c/" + id)
-				if err == nil && record.Kind() != datapath.Record {
-					err = usageError(cmd, uicopy.T("data.id_invalid", map[string]string{"id": id}))
-				}
-				if err != nil {
-					return err
+				if err != nil || record.Kind() != datapath.Record {
+					e := usageError(cmd, uicopy.T("data.id_invalid", map[string]string{"id": datapath.Printable(id)}))
+					if parsed := envelope.As(err); parsed != nil {
+						e.Reason = parsed.Reason
+					}
+					return e
 				}
 				d.path = d.path.Child(record.Name())
 			}
@@ -451,7 +497,7 @@ func (a *App) addCmd() *cobra.Command {
 			if _, err := d.local.Data(cmd.Context(), request, flags.noStart); err != nil {
 				return err
 			}
-			written(cmd, d, uicopy.T("data.added", map[string]string{"database": d.context.Database, "path": d.path.String()}))
+			written(cmd, d, uicopy.T("data.added", map[string]string{"database": d.context.Database, "path": d.path.Display()}))
 			return nil
 		}),
 	}
@@ -462,6 +508,7 @@ func (a *App) addCmd() *cobra.Command {
 
 func (a *App) deleteCmd() *cobra.Command {
 	var flags dataFlags
+	var ifExists bool
 	cmd := &cobra.Command{
 		Use:     "delete <path>",
 		Aliases: []string{"rm"},
@@ -475,14 +522,23 @@ func (a *App) deleteCmd() *cobra.Command {
 			if err := d.requireKind(datapath.Record); err != nil {
 				return err
 			}
+			// /v1 DELETE succeeds for a missing record too; say what happened.
+			if _, err := d.local.Get(cmd.Context(), d.op("delete"), flags.noStart); err != nil {
+				if !client.MissingRecord(err) || !ifExists {
+					return err
+				}
+				written(cmd, d, uicopy.T("data.nothing_to_delete", map[string]string{"database": d.context.Database, "path": d.path.Display()}))
+				return nil
+			}
 			request := client.DataRequest{Op: d.op("delete"), Method: http.MethodDelete, URLPath: client.RecordURL(d.context.Database, d.path)}
 			if _, err := d.local.Data(cmd.Context(), request, flags.noStart); err != nil {
 				return err
 			}
-			written(cmd, d, uicopy.T("data.deleted", map[string]string{"database": d.context.Database, "path": d.path.String()}))
+			written(cmd, d, uicopy.T("data.deleted", map[string]string{"database": d.context.Database, "path": d.path.Display()}))
 			return nil
 		}),
 	}
 	flags.register(cmd)
+	cmd.Flags().BoolVar(&ifExists, "if-exists", false, "succeed when there is no record at the path")
 	return cmd
 }

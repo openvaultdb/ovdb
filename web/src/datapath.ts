@@ -20,8 +20,18 @@ export function escapeId(id: string): string {
   return reverse.reduce((s, [raw, escaped]) => s.split(raw).join(escaped), id)
 }
 
-/** The id an escaped segment names, or null when it has a stray %. */
+/**
+ * The id an escaped segment names, or null when it can't be one: a stray %,
+ * a control character (U+0000–U+001F, U+007F), or a `/`-separated part that
+ * is empty, `.` or `..` (the same rules as internal/datapath).
+ */
 export function unescapeSegment(segment: string): string | null {
+  const id = decodeSegment(segment)
+  if (id === null || /[\u0000-\u001f\u007f]/.test(id)) return null
+  return id.split('/').some((part) => part === '' || part === '.' || part === '..') ? null : id
+}
+
+function decodeSegment(segment: string): string | null {
   let out = ''
   for (let i = 0; i < segment.length; i++) {
     if (segment[i] !== '%') {
@@ -71,6 +81,19 @@ function urlSegment(escaped: string): string {
       return /[A-Za-z0-9\-_.~%]/.test(c) ? c : '%' + byte.toString(16).toUpperCase().padStart(2, '0')
     })
     .join('')
+}
+
+/**
+ * One shell argument for a command people copy, quoted when needed: POSIX
+ * single quotes, or PowerShell's on Windows (paths.QuoteArg in Go).
+ */
+export function quoteArg(value: string, windows = isWindows()): string {
+  if (value !== '' && /^[A-Za-z0-9/._:%-]+$/.test(value)) return value
+  return windows ? `'${value.split("'").join("''")}'` : `'${value.split("'").join("'\\''")}'`
+}
+
+function isWindows(): boolean {
+  return typeof navigator !== 'undefined' && /win/i.test(navigator.platform ?? '')
 }
 
 /** The console route for a database path: /browse/<db>/<escaped segments>. */

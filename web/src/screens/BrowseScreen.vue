@@ -16,7 +16,7 @@ import OvStatusBadge from '../components/OvStatusBadge.vue'
 import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
-import { browseRoute, display, keyId, keyOf, kindOf, parseBrowseRoute, recordURL, unescapeSegment } from '../datapath'
+import { browseRoute, display, keyId, keyOf, kindOf, parseBrowseRoute, quoteArg, recordURL, unescapeSegment } from '../datapath'
 import { currentPath, navigate } from '../router'
 
 const pageSize = 50
@@ -43,7 +43,9 @@ const nested = ref('')
 const nestedInvalid = ref(false)
 
 const command = computed(() =>
-  kind.value === 'record' ? `ovdb get ${path.value} --db ${db.value}` : `ovdb list ${path.value} --db ${db.value}`,
+  kind.value === 'record'
+    ? `ovdb get ${quoteArg(path.value)} --db ${quoteArg(db.value)}`
+    : `ovdb list ${quoteArg(path.value)} --db ${quoteArg(db.value)}`,
 )
 const crumbs = computed(() =>
   segments.value.map((segment, index) => ({
@@ -88,17 +90,27 @@ async function load() {
     if (result.ok) collections.value = result.data.collections ?? []
     else problem.value = result.error
   } else if (kind.value === 'collection') {
-    const query: Record<string, unknown> = {
-      collection: segments.value[segments.value.length - 1],
-      limit: (page.value + 1) * pageSize + 1,
+    // One record more than a page says whether there is a next one. A root
+    // collection pages on the server (DTQL offset); DTQL takes root
+    // collections only, so a nested one reads up to the page's end.
+    const offset = page.value * pageSize
+    const name = segments.value[segments.value.length - 1]
+    // `from` is where this page starts in what came back.
+    let result
+    let from = 0
+    if (segments.value.length === 1 && offset <= 10000) {
+      const doc = `from: {name: ${JSON.stringify(name)}}\nlimit: ${pageSize + 1}\noffset: ${offset}\n`
+      result = await api<{ records: DataRecord[] }>('POST', base + '/dtql', { text: doc, contentType: 'application/yaml' })
+    } else {
+      const query = { collection: name, limit: offset + pageSize + 1, parent: keyOf(segments.value.slice(0, -1)) }
+      result = await api<{ records: DataRecord[] }>('POST', base + '/query', query)
+      from = offset
     }
-    if (segments.value.length > 1) query.parent = keyOf(segments.value.slice(0, -1))
-    const result = await api<{ records: DataRecord[] }>('POST', base + '/query', query)
     if (target !== currentPath.value) return
     if (result.ok) {
-      const all = result.data.records
-      const shown = all.slice(page.value * pageSize, (page.value + 1) * pageSize)
-      more.value = all.length > (page.value + 1) * pageSize
+      const rows = result.data.records.slice(from)
+      const shown = rows.slice(0, pageSize)
+      more.value = rows.length > pageSize
       records.value = shown.map((r) => ({ id: keyId(r.key), preview: JSON.stringify(r.data ?? {}) }))
     } else {
       problem.value = result.error

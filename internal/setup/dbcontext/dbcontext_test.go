@@ -134,11 +134,18 @@ func TestSymlinkedProjectSharesContext(t *testing.T) {
 	}
 }
 
-// Windows paths differ only in case (drive letter included) share a key.
-func TestWindowsKeysIgnoreCase(t *testing.T) {
+// Windows and macOS paths differing only in case (drive letter included)
+// share a key (review F6).
+func TestWindowsAndMacKeysIgnoreCase(t *testing.T) {
 	t.Parallel()
 	if key("windows", `C:\Work\Shop`) != key("windows", `c:\work\shop`) {
 		t.Error("windows keys differ by case")
+	}
+	if key("darwin", "/Users/ann/Shop") != key("darwin", "/Users/ann/shop") {
+		t.Error("darwin keys differ by case")
+	}
+	if goruntime.GOOS == "darwin" && Key("/Users/Ann") != Key("/users/ann") {
+		t.Error("Key on macOS is case-sensitive")
 	}
 	if key("linux", "/Work") == key("linux", "/work") {
 		t.Error("linux keys fold case")
@@ -181,6 +188,40 @@ func TestLadder(t *testing.T) {
 	// AC:no-context-error's envelope lists both databases.
 	if e := NoContext(ids); e.Code != envelope.NotFound || e.Reason != "Registered databases: notes, todo." || e.Next[0].Command != "ovdb use <database>" {
 		t.Errorf("NoContext = %+v", e)
+	}
+}
+
+// Review F5, F10 and F11: no project context for the home folder or a disk
+// root, clearing nothing says so, and a skipped context is reported.
+func TestBroadRootsNothingToClearAndSkipped(t *testing.T) {
+	home := Canonical(t.TempDir())
+	userHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { userHomeDir = os.UserHomeDir })
+	store := t.TempDir()
+	ids := []string{"notes", "todo"}
+	root := filepath.VolumeName(home) + string(filepath.Separator)
+	for _, dir := range []string{home, root} {
+		_, err := Apply(store, ids, Change{Scope: ScopeProject, Dir: dir, Database: "todo"})
+		e := envelope.As(err)
+		if e == nil || e.Code != envelope.InvalidArgument || len(e.Next) != 2 || e.Next[1].Command != "ovdb use --global <database>" {
+			t.Errorf("Apply in %s = %+v", dir, e)
+		}
+	}
+	project := mkdir(t, home, "shop")
+	use(t, store, ids, Change{Scope: ScopeProject, Dir: project, Database: "todo"})
+	if document := use(t, store, ids, Change{Scope: ScopeProject, Dir: home, Clear: true}); document.Message != "No context to clear." {
+		t.Errorf("clearing nothing = %q", document.Message)
+	}
+	if document := use(t, store, ids, Change{Scope: ScopeGlobal, Clear: true}); document.Message != "No context to clear." {
+		t.Errorf("clearing no global = %q", document.Message)
+	}
+	use(t, store, ids, Change{Scope: ScopeGlobal, Database: "notes"})
+	deep := mkdir(t, project, "src")
+	use(t, store, ids, Change{Scope: ScopeProject, Dir: deep, Database: "notes"})
+	document := Resolve(store, []string{"todo"}, Request{Dirs: []string{deep, project}})
+	if document.Context == nil || document.Context.Dir != project ||
+		len(document.Notices) != 1 || document.Notices[0] != "Skipping the project context for "+deep+": database notes isn't registered." {
+		t.Errorf("skipped = %+v %v", document.Context, document.Notices)
 	}
 }
 

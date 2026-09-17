@@ -48,8 +48,19 @@ func (a *App) lookup() dbcontext.Lookup {
 // warning on stderr.
 func (a *App) contextFor(cmd *cobra.Command, local *client.Local, flagDB string) (dbcontext.Document, error) {
 	local.Where = a.where(flagDB)
-	if flagDB == "" && a.getenv(dbcontext.EnvDatabase) == "" && a.getenv(dbcontext.EnvPath) != "" {
+	envPath := a.getenv(dbcontext.EnvPath)
+	switch {
+	case flagDB == "" && a.getenv(dbcontext.EnvDatabase) == "" && envPath != "":
 		say(cmd.ErrOrStderr(), uicopy.T("context.path_ignored", nil))
+	case flagDB == "" && envPath != "":
+		// A bad OVDB_PATH must not quietly become / (review F3).
+		if _, err := datapath.Parse(envPath); err != nil {
+			e := envelope.New(envelope.InvalidArgument, uicopy.T("context.bad_ovdb_path", map[string]string{"path": datapath.Printable(envPath)}))
+			if parsed := envelope.As(err); parsed != nil {
+				e = e.WithReason(parsed.Reason).WithNext(parsed.Next...)
+			}
+			return dbcontext.Document{}, e
+		}
 	}
 	body, err := local.Context(cmd.Context())
 	if err != nil {
@@ -58,6 +69,9 @@ func (a *App) contextFor(cmd *cobra.Command, local *client.Local, flagDB string)
 	var document dbcontext.Document
 	if err := json.Unmarshal(body, &document); err != nil {
 		return document, err
+	}
+	for _, notice := range document.Notices {
+		say(cmd.ErrOrStderr(), notice)
 	}
 	if document.Context == nil {
 		return document, dbcontext.NoContext(document.Databases)
@@ -99,6 +113,9 @@ func (a *App) useCmd() *cobra.Command {
 				var document dbcontext.Document
 				if err := json.Unmarshal(body, &document); err != nil {
 					return err
+				}
+				for _, notice := range document.Notices {
+					say(cmd.ErrOrStderr(), notice)
 				}
 				out.document(body, func(w io.Writer) {
 					if document.Context != nil {
@@ -206,8 +223,8 @@ func (a *App) cdCmd() *cobra.Command {
 			switch current.Scope {
 			case dbcontext.ScopeFlag, dbcontext.ScopeEnvironment:
 				return envelope.New(envelope.InvalidArgument, uicopy.T("context.cd_environment", nil)).
-					WithNext(envelope.Next{Label: uicopy.T("next.set_ovdb_path", nil), Command: "OVDB_PATH=" + target.String()},
-						envelope.Next{Label: uicopy.T("next.use_absolute_paths", nil), Command: "ovdb list " + target.String()})
+					WithNext(envelope.Next{Label: uicopy.T("next.set_ovdb_path", nil), Command: "OVDB_PATH=" + target.Arg()},
+						envelope.Next{Label: uicopy.T("next.use_absolute_paths", nil), Command: "ovdb list " + target.Arg()})
 			case dbcontext.ScopeProject:
 				change.Scope, change.Dir = dbcontext.ScopeProject, current.Dir
 			case dbcontext.ScopeGlobal:
@@ -230,6 +247,10 @@ func (a *App) cdCmd() *cobra.Command {
 			}
 			printer{cmd: cmd, json: jsonOut}.document(body, func(w io.Writer) {
 				say(w, contextLine(*changed.Context))
+				if current.Scope == dbcontext.ScopeOnly {
+					// Nothing chose this project before; say it is now saved.
+					say(w, uicopy.T("context.saved_for_project", map[string]string{"dir": changed.Context.Dir}))
+				}
 				if empty {
 					say(w, uicopy.T("data.nothing_here", nil))
 				}

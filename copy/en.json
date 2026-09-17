@@ -346,5 +346,15 @@
   "browse.nested.label": "Collection inside this record",
   "browse.nested.help": "Records can hold collections of their own. Type one's name to open it.",
   "browse.nested.open": "Open",
-  "browse.read_only": "Browsing is read-only. Change records with `ovdb set`, `ovdb add` and `ovdb delete`, or in your apps."
+  "browse.read_only": "Browsing is read-only. Change records with `ovdb set`, `ovdb add` and `ovdb delete`, or in your apps.",
+  "path.control_character": "\"{segment}\" has a control character, which can't be part of a name or id.",
+  "path.dot_segment": "\"{segment}\" has an empty, . or .. part between slashes, which can't be part of an id.",
+  "data.nothing_to_delete": "{database}: no record at {path}, nothing to delete",
+  "context.skipped": "Skipping the project context for {dir}: database {name} isn't registered.",
+  "context.dir_too_broad": "{dir} is your home folder or the top of the disk, so every folder inside it would share this choice.",
+  "next.use_in_project_folder": "Run it inside a project folder",
+  "next.use_global": "Or make it the default for all projects",
+  "context.nothing_to_clear": "No context to clear.",
+  "context.bad_ovdb_path": "OVDB_PATH isn't a valid path: {path}",
+  "context.saved_for_project": "Saved as the project context for {dir}."
 }

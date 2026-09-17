@@ -59,7 +59,10 @@ type Document struct {
 	// Databases are the registered ids, for choosing one.
 	Databases []string `json:"databases"`
 	// Message says what a change did, naming its scope.
-	Message string          `json:"message,omitempty"`
+	Message string `json:"message,omitempty"`
+	// Notices are one-line warnings, such as a project context skipped
+	// because its database is no longer registered.
+	Notices []string        `json:"notices,omitempty"`
 	Next    []envelope.Next `json:"next"`
 }
 
@@ -161,6 +164,7 @@ func Resolve(home string, ids []string, request Request) Document {
 				document.Context = &Context{Database: id, Path: cleanPath(project.Path), Scope: ScopeProject, Dir: dir}
 				break
 			}
+			document.Notices = append(document.Notices, uicopy.T("context.skipped", map[string]string{"dir": dir, "name": project.Database}))
 		}
 		switch {
 		case document.Context != nil:
@@ -220,6 +224,13 @@ func Apply(home string, ids []string, change Change) (Document, error) {
 			return Document{}, envelope.New(envelope.InvalidArgument, failed).
 				WithReason(uicopy.T("context.dir_required", nil))
 		}
+		if !change.Clear && tooBroad(change.Dir) {
+			// Every directory below would share it (review F5).
+			return Document{}, envelope.New(envelope.InvalidArgument, failed).
+				WithReason(uicopy.T("context.dir_too_broad", map[string]string{"dir": change.Dir})).
+				WithNext(envelope.Next{Label: uicopy.T("next.use_in_project_folder", nil)},
+					envelope.Next{Label: uicopy.T("next.use_global", nil), Command: "ovdb use --global <database>"})
+		}
 		file = projectFile(home, change.Dir)
 	case ScopeGlobal:
 		file = globalPath(home)
@@ -230,12 +241,17 @@ func Apply(home string, ids []string, change Change) (Document, error) {
 	sort.Strings(ids)
 	document := Document{Schema: envelope.Schema, Databases: append([]string{}, ids...), Next: []envelope.Next{}}
 	if change.Clear {
-		if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		err := os.Remove(file)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return Document{}, envelope.New(envelope.StorageUnavailable, failed).WithReason(err.Error())
 		}
-		document.Message = uicopy.T("context.cleared.global", nil)
-		if change.Scope == ScopeProject {
+		switch {
+		case err != nil:
+			document.Message = uicopy.T("context.nothing_to_clear", nil)
+		case change.Scope == ScopeProject:
 			document.Message = uicopy.T("context.cleared.project", map[string]string{"dir": change.Dir})
+		default:
+			document.Message = uicopy.T("context.cleared.global", nil)
 		}
 		document.Global = Resolve(home, ids, Request{}).Global
 		return document, nil
@@ -264,6 +280,19 @@ func Apply(home string, ids []string, change Change) (Document, error) {
 	document.Global = Resolve(home, ids, Request{}).Global
 	document.Message = UsingMessage(context)
 	return document, nil
+}
+
+// userHomeDir is os.UserHomeDir; tests replace it.
+var userHomeDir = os.UserHomeDir
+
+// tooBroad reports whether dir is the user's home directory or a file
+// system root, where a project context would apply to everything below.
+func tooBroad(dir string) bool {
+	if filepath.Dir(dir) == dir {
+		return true
+	}
+	home, err := userHomeDir()
+	return err == nil && home != "" && Key(Canonical(home)) == Key(Canonical(dir))
 }
 
 func write(file string, record stored) error {

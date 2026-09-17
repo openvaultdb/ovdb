@@ -71,10 +71,11 @@ func isGitRoot(dir string) bool {
 // Key is the file name a project directory's context is stored under.
 func Key(dir string) string { return key(goruntime.GOOS, dir) }
 
-// key hashes dir. Windows paths ignore case (C:\Work and c:\work are one
-// directory), so they are folded first.
+// key hashes dir. Windows and macOS paths ignore case by default (C:\Work
+// and c:\work, ~/Shop and ~/shop are one directory), and os.Getwd returns
+// the case as typed, so they are folded first.
 func key(goos, dir string) string {
-	if goos == "windows" {
+	if goos == "windows" || goos == "darwin" {
 		dir = strings.ToLower(dir)
 	}
 	sum := sha256.Sum256([]byte(dir))

@@ -142,18 +142,13 @@ func (m Model) loadBrowseCmd(db string, path datapath.Path, page int) tea.Cmd {
 				msg.items = append(msg.items, browseItem{path: path.Child(name)})
 			}
 		case datapath.Collection:
-			body, err := local.Query(ctx, op, (page+1)*browsePage+1, false)
+			// One more than a page says whether there is a next one.
+			records, err := local.Page(ctx, op, page*browsePage, browsePage+1, false)
 			if err != nil {
 				return browseLoadedMsg{path: path, err: err}
 			}
-			var records client.Records
-			if err := json.Unmarshal(body, &records); err != nil {
-				return browseLoadedMsg{path: path, err: err}
-			}
-			first := min(page*browsePage, len(records.Records))
-			last := min(first+browsePage, len(records.Records))
-			msg.more = len(records.Records) > last
-			for _, record := range records.Records[first:last] {
+			msg.more = len(records) > browsePage
+			for _, record := range records[:min(len(records), browsePage)] {
 				msg.items = append(msg.items, browseItem{path: path.Child(client.KeyID(record.Key)), detail: oneLineJSON(record.Data)})
 			}
 		default:
@@ -282,9 +277,9 @@ func (m Model) updateBrowse(key string) (tea.Model, tea.Cmd) {
 // browseCommand is the CLI command showing the same thing.
 func (b browseScreen) command() string {
 	if b.path.Kind() == datapath.Record {
-		return "ovdb get " + b.path.String() + " --db " + b.db
+		return "ovdb get " + b.path.Arg() + " --db " + b.db
 	}
-	return "ovdb list " + b.path.String() + " --db " + b.db
+	return "ovdb list " + b.path.Arg() + " --db " + b.db
 }
 
 func (m Model) viewBrowse() string {
@@ -318,7 +313,7 @@ func (m Model) viewBrowse() string {
 		return out.String() + strings.Join(window(lines, b.cursor, m.bodyHeight()-4), "\n")
 	}
 
-	out.WriteString(itemStyle.Render(truncateStart(b.db+":"+b.path.String(), width)))
+	out.WriteString(itemStyle.Render(truncateStart(b.db+":"+b.path.Display(), width)))
 	out.WriteString("\n")
 	out.WriteString(mutedStyle.Render(truncateStart(b.command(), width)))
 	out.WriteString("\n\n")
@@ -340,7 +335,7 @@ func (m Model) viewBrowse() string {
 		}
 		out.WriteString("\n")
 		if b.typing {
-			out.WriteString(truncateStart(uicopy.T("browse.collection_input", map[string]string{"value": b.input + "_"}), width))
+			out.WriteString(truncateStart(uicopy.T("browse.collection_input", map[string]string{"value": datapath.Printable(b.input) + "_"}), width))
 			if b.invalid {
 				out.WriteString("\n")
 				out.WriteString(errorStyle.Render(wordWrap(uicopy.T("browse.collection_invalid", nil), width)))
@@ -383,7 +378,7 @@ func (m Model) viewBrowse() string {
 // itemLabel is how a list shows an item: the collection name at the root, the
 // escaped id in a collection.
 func itemLabel(path datapath.Path) string {
-	segments := strings.Split(path.String(), "/")
+	segments := strings.Split(path.Display(), "/")
 	return segments[len(segments)-1]
 }
 
