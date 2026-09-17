@@ -9,10 +9,15 @@ export const port = () => Number(process.env.OVDB_PORT)
 export const primary = () => `http://ovdb.localhost:${port()}`
 export const fallback = () => `http://127.0.0.1:${port()}`
 
+const harnessVariables = ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'DSH_HOME', 'GEMINI_CLI_HOME', 'JUNIE_HOME']
+
 /** The environment ovdb runs with: the test's own HOME, so skills never reach the real one. */
 export function ovdbEnv(): NodeJS.ProcessEnv {
   const home = process.env.OVDB_E2E_USER_HOME!
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home }
+  // Every variable that moves an AI agent's skills folder
+  // (cobracmd.DefaultHarnesses' ConfigEnv and HomeEnv; web/e2e_env_test.go).
+  for (const name of harnessVariables) delete env[name]
   if (process.env.OVDB_E2E_GIT_CONFIG) env.GIT_CONFIG_GLOBAL = process.env.OVDB_E2E_GIT_CONFIG
   return env
 }

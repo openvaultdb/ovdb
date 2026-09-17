@@ -50,6 +50,7 @@ export default async function globalSetup() {
     }
   }
   Object.assign(process.env, {
+    OVDB_E2E_BIN: binary,
     OVDB_E2E_USER_HOME: user,
     OVDB_E2E_GIT_CONFIG: gitConfig,
     OVDB_HOME: join(base, 'home'),
