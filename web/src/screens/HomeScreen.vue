@@ -11,10 +11,12 @@ import OvOptionList, { type Option } from '../components/OvOptionList.vue'
 import { t } from '../copy'
 import routes from '../../routes.json'
 import { navigate } from '../router'
+import { recordStart, recordUsage } from '../usage'
 
 const home = ref<HomeDocument | null>(null)
 
 onMounted(async () => {
+  recordStart()
   const result = await api<HomeDocument>('GET', '/api/local/v1/home')
   if (result.ok) home.value = result.data
 })
@@ -37,6 +39,8 @@ const running = computed(() => home.value?.status_line.some((part) => part.key =
 function open(event: MouseEvent, to: string) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
+  const option = routes.find((route) => route.path === to)?.screen
+  if (option) recordUsage({ event: 'onboarding_option_selected', option })
   navigate(to)
 }
 </script>

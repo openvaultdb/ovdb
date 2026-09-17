@@ -18,6 +18,7 @@ import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
 import { filterEngines, nameFromLocation } from '../engines'
+import { offerUsagePrompt, recordUsage } from '../usage'
 
 const engines = ref<Engine[]>([])
 const loading = ref(true)
@@ -67,6 +68,7 @@ function editName(value: string) {
 
 async function choose(engine: Engine | null) {
   chosen.value = engine
+  if (engine) recordUsage({ event: 'engine_selected', engine: engine.id })
   withManifest.value = engine === null || engine.setup === 'manifest'
   problem.value = null
   result.value = null
@@ -98,10 +100,18 @@ async function connect() {
   const body = withManifest.value
     ? { manifest: manifest.value.trim() }
     : { id: name.value.trim(), engine: chosen.value?.id, path: location.value.trim() }
+  const started = Date.now()
   const response = await api<DatabaseResult>('POST', '/api/local/v1/databases/connect', body)
   saving.value = false
-  if (response.ok) result.value = response.data
-  else problem.value = response.error
+  const engine = response.ok ? response.data.database.engine : chosen.value?.id
+  recordUsage({ event: 'existing_database_connected', engine, success: response.ok, duration_ms: Date.now() - started }, true)
+  if (response.ok) {
+    result.value = response.data
+    offerUsagePrompt()
+  } else {
+    recordUsage({ event: 'onboarding_error', step: 'connect', error_code: response.error.code }, true)
+    problem.value = response.error
+  }
   await nextTick()
   outcome.value?.focus()
 }

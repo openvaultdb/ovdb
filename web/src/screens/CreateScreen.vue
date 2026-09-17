@@ -27,6 +27,7 @@ import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
 import { defaultLocation, filterEngines, suggestedName } from '../engines'
 import { navigate } from '../router'
+import { offerUsagePrompt, recordUsage } from '../usage'
 
 const engines = ref<Engine[]>([])
 const dataHome = ref('')
@@ -79,6 +80,7 @@ function editLocation(value: string) {
 
 async function choose(engine: Engine) {
   chosen.value = engine
+  recordUsage({ event: 'engine_selected', engine: engine.id })
   problem.value = null
   result.value = null
   await nextTick()
@@ -108,11 +110,16 @@ async function create() {
   saving.value = true
   const id = name.value.trim()
   const path = location.value.trim() || (id ? suggested.value : '')
-  const response = await api<DatabaseResult>('POST', '/api/local/v1/databases', { id, engine: chosen.value.id, path })
+  const started = Date.now()
+  const engine = chosen.value.id
+  const response = await api<DatabaseResult>('POST', '/api/local/v1/databases', { id, engine, path })
   saving.value = false
+  recordUsage({ event: 'database_created', engine, success: response.ok, duration_ms: Date.now() - started }, true)
   if (response.ok) {
     result.value = response.data
+    offerUsagePrompt()
   } else {
+    recordUsage({ event: 'onboarding_error', step: 'create', error_code: response.error.code }, true)
     problem.value = response.error
   }
   await nextTick()

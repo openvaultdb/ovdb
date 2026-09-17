@@ -14,8 +14,10 @@ import OvCard from '../components/OvCard.vue'
 import OvCommand from '../components/OvCommand.vue'
 import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
+import OvUsagePrompt from '../components/OvUsagePrompt.vue'
 import { t } from '../copy'
 import { navigate } from '../router'
+import { offerUsagePrompt, recordUsage } from '../usage'
 
 const document = ref<DemoDocument | null>(null)
 const loadProblem = ref<ApiError | null>(null)
@@ -40,8 +42,14 @@ async function install() {
   installing.value = true
   const response = await api<DemoDocument>('POST', '/api/local/v1/demo/install', {})
   installing.value = false
-  if (response.ok) result.value = response.data
-  else problem.value = response.error
+  recordUsage({ event: 'demo_installed', success: response.ok, already_installed: response.ok && response.data.already_installed === true }, true)
+  if (response.ok) {
+    result.value = response.data
+    offerUsagePrompt()
+  } else {
+    recordUsage({ event: 'onboarding_error', step: 'demo', error_code: response.error.code }, true)
+    problem.value = response.error
+  }
   await nextTick()
   outcome.value?.focus()
 }
@@ -87,6 +95,7 @@ function explore(event: MouseEvent) {
         <p class="break-words">{{ t('demo.ready.stored', { path: result.location }) }}</p>
         <p>{{ t('demo.ready.shared') }}</p>
       </OvNotice>
+      <OvUsagePrompt />
       <section class="flex flex-col gap-4" aria-labelledby="demo-next">
         <h2 id="demo-next" class="text-lg font-semibold tracking-tight">{{ t('home.what_next') }}</h2>
         <div class="flex flex-wrap gap-3">
@@ -95,6 +104,7 @@ function explore(event: MouseEvent) {
               v-if="item.action === 'open_app'"
               :href="result.app_path"
               data-testid="open-todo-app"
+              @click="recordUsage({ event: 'demo_opened', success: true })"
               class="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-hover"
               >{{ item.label }}</a
             >

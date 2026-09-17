@@ -12,6 +12,7 @@ import OvButton from './OvButton.vue'
 import OvCommand from './OvCommand.vue'
 import OvNotice from './OvNotice.vue'
 import OvText from './OvText.vue'
+import OvUsagePrompt from './OvUsagePrompt.vue'
 
 const props = defineProps<{
   result: DatabaseResult
@@ -53,6 +54,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
     <OvNotice live tone="success" :title="title">
       <p class="break-words"><OvText :text="stored" /></p>
     </OvNotice>
+    <OvUsagePrompt />
     <section class="flex flex-col gap-4" aria-labelledby="what-next">
       <h2 id="what-next" class="text-lg font-semibold tracking-tight">{{ t('home.what_next') }}</h2>
       <ul v-if="commands.length" class="flex flex-col gap-4">
