@@ -156,13 +156,16 @@ function goHome() {
         <OvCard>
           <div class="flex flex-col gap-4">
             <p class="break-words">{{ t('explore.datatug_cli.descriptor_saved', { database: menu!.database, path: cli.descriptor_path }) }}</p>
-            <div class="flex flex-col gap-2">
-              <p class="font-semibold">{{ t('explore.datatug_cli.env_vars') }}</p>
-              <OvCommand :command="cli.shell_text" />
-            </div>
+            <!-- F11 (review-inc-7.md): the token command first — the env vars
+            block's own token line points at it — then env vars, then the
+            query command. -->
             <div class="flex flex-col gap-2">
               <p class="font-semibold">{{ t('explore.datatug_cli.token_intro') }}</p>
               <OvCommand :command="cli.token_command" />
+            </div>
+            <div class="flex flex-col gap-2">
+              <p class="font-semibold">{{ t('explore.datatug_cli.env_vars') }}</p>
+              <OvCommand :command="cli.shell_text" />
             </div>
             <div class="flex flex-col gap-2">
               <p class="font-semibold">{{ t('explore.datatug_cli.query_intro') }}</p>

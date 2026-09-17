@@ -122,6 +122,18 @@ func TestExploreDataTugCLIWritesFourKeyDescriptor(t *testing.T) {
 			t.Errorf("human output lacks %q:\n%s", want, human.stdout)
 		}
 	}
+	// F11 (review-inc-7.md): the token command comes first — the env vars
+	// block's own token line points at it — then the env vars, then the
+	// query command.
+	tokenAt := strings.Index(human.stdout, "Create a read-only token first:")
+	envAt := strings.Index(human.stdout, "Set these environment variables:")
+	queryAt := strings.Index(human.stdout, "Then run:")
+	if tokenAt < 0 || envAt < 0 || queryAt < 0 {
+		t.Fatalf("human output is missing a section:\n%s", human.stdout)
+	}
+	if tokenAt >= envAt || envAt >= queryAt {
+		t.Errorf("wrong order (token=%d, env=%d, query=%d):\n%s", tokenAt, envAt, queryAt, human.stdout)
+	}
 }
 
 // AC:datatug-missing: nothing in this test environment puts a real datatug

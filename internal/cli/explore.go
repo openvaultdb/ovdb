@@ -103,11 +103,14 @@ func (a *App) exploreDataTugCLICmd() *cobra.Command {
 				say(w, "")
 				say(w, uicopy.T("explore.datatug_cli.descriptor_saved", map[string]string{"database": database, "path": document.DescriptorPath}))
 				say(w, "")
-				say(w, uicopy.T("explore.datatug_cli.env_vars", nil))
-				say(w, document.ShellText)
-				say(w, "")
+				// F11 (review-inc-7.md): the token command first — the env
+				// vars block's own token line points at it — then the env
+				// vars, then the query command.
 				say(w, uicopy.T("explore.datatug_cli.token_intro", nil))
 				say(w, "  "+document.TokenCommand)
+				say(w, "")
+				say(w, uicopy.T("explore.datatug_cli.env_vars", nil))
+				say(w, document.ShellText)
 				say(w, "")
 				say(w, uicopy.T("explore.datatug_cli.query_intro", nil))
 				say(w, document.QueryCommand)
