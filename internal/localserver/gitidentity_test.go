@@ -1,7 +1,11 @@
 package localserver
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -53,5 +57,31 @@ func TestWriteWithoutGitIdentityExplainsTheFix(t *testing.T) {
 	// Reads are served as they are.
 	if rec := f.do(t, request{method: http.MethodPost, path: "/v1/databases/notes/query", bearer: testSecret, body: `{"collection":"items"}`}); rec.Code == http.StatusServiceUnavailable {
 		t.Errorf("query = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// F9: only git's own missing-identity failure becomes git_identity_missing;
+// any other internal error on a Git-backed database stays what it is.
+func TestGitIdentityFailureIsRecognisedOnlyFromGit(t *testing.T) {
+	t.Parallel()
+	identity := "dalgo2ingitdb: create transaction commit: exit status 128: Author identity unknown\n\n*** Please tell me who you are."
+	for text, want := range map[string]bool{
+		identity: true,
+		"dalgo2ingitdb: create transaction commit: exit status 128: fatal: empty ident name (for <a@b>) not allowed": true,
+		"write items/$records/a.yaml: no space left on device":                                                       false,
+		"": false,
+	} {
+		if got := gitIdentityFailure(text); got != want {
+			t.Errorf("gitIdentityFailure(%q) = %v, want %v", text, got, want)
+		}
+	}
+
+	// The data server's logged error reaches the request that caused it.
+	slot := &loggedError{}
+	logger := slog.New(captureErrors(slog.NewTextHandler(io.Discard, nil)))
+	logger.ErrorContext(context.WithValue(context.Background(), loggedErrorKey{}, slot), "internal server error", slog.Any("error", errors.New(identity)))
+	logger.ErrorContext(context.Background(), "internal server error", slog.Any("error", errors.New("other request")))
+	if !gitIdentityFailure(slot.text()) {
+		t.Errorf("captured = %q", slot.text())
 	}
 }

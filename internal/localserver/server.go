@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/http/httptest"
@@ -124,7 +125,8 @@ func New(opts Options) (*Handler, error) {
 		return nil, err
 	}
 	dataServer := server.New(opts.Record.Version, opts.Databases,
-		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}))
+		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}),
+		server.WithLogger(slog.New(captureErrors(slog.Default().Handler()))))
 	registry, err := setup.OpenRegistry(opts.Dirs, dataServer, logf(opts.ErrorLog, opts.Now), setup.RegistryOptions{MountTimeout: opts.MountTimeout})
 	if err != nil {
 		return nil, err
@@ -288,17 +290,18 @@ func isWrite(r *http.Request) bool {
 	return !strings.HasSuffix(r.URL.Path, "/query") && !strings.HasSuffix(r.URL.Path, "/dtql")
 }
 
-// serveWrite serves a data write, and when it fails inside openvaultdb-go
-// because Git has no name and email for commits in the database's inGitDB
-// folder (openvaultdb-go answers only "internal server error"), says so and
-// how to fix it: OVDB never sets an identity in a person's folder.
+// serveWrite serves a data write. When it fails inside openvaultdb-go
+// (which answers only "internal server error") because git has no name and
+// email to commit to the database's inGitDB folder, as the error it logged
+// for this request says, the answer says so and how to fix it: OVDB never
+// sets an identity in a person's folder. Any other failure is passed on.
 func (s *localServer) serveWrite(w http.ResponseWriter, r *http.Request, id string) {
+	logged := &loggedError{}
+	r = r.WithContext(context.WithValue(r.Context(), loggedErrorKey{}, logged))
 	recorder := httptest.NewRecorder()
 	s.data.ServeHTTP(recorder, r)
-	if recorder.Code == http.StatusInternalServerError {
-		ctx, cancel := context.WithTimeout(r.Context(), setup.DefaultMountTimeout)
-		defer cancel()
-		if dir, ok := s.registry.GitStorage(id); ok && setup.GitIdentityMissing(ctx, dir) {
+	if recorder.Code == http.StatusInternalServerError && gitIdentityFailure(logged.text()) {
+		if dir, ok := s.registry.GitStorage(id); ok {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write(envelope.Marshal(v1Error{Error: v1ErrorDetail{
