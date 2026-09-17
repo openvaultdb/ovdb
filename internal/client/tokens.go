@@ -69,10 +69,10 @@ func MapTokens(status int, body []byte, verb string) *V1Error {
 	if parsed.Error.Message != "" {
 		e = e.WithReason(redact.String(parsed.Error.Message))
 	}
-	switch {
-	case code == envelope.NotFound:
+	switch code {
+	case envelope.NotFound:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.token_list", nil), Command: "ovdb token list"})
-	case code == envelope.InvalidArgument:
+	case envelope.InvalidArgument:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.help", nil), Command: "ovdb token " + verb + " --help"})
 	default:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.server_status", nil), Command: "ovdb server status"})
