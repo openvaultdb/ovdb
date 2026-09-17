@@ -93,8 +93,11 @@ terminal, outside the sandbox, then try again.
 
 ## 8. Usage statistics are the person's decision
 
-Never turn usage statistics on by yourself or on the person's behalf. If the person asks about
-them, tell them it is their choice and relay what OVDB shows them; don't decide for them.
+Never turn usage statistics on by yourself or on the person's behalf, and never infer that
+they agreed. `ovdb telemetry status --json` shows the state and what is and isn't collected;
+relay that and ask the person whether they want to share usage statistics. Run
+`ovdb telemetry enable --confirmed-by-user` only after the person said yes to that question.
+`ovdb telemetry disable` turns them off whenever the person asks.
 
 ## 9. Relay errors as OVDB reports them
 
