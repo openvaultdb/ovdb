@@ -21,7 +21,8 @@ func ApplyTelemetryChange(dirs paths.Dirs, change telemetry.Change, channel tele
 	switch change.State {
 	case telemetry.StateEnabled:
 		if !change.ConfirmedByUser {
-			return consent, false, TelemetryConfirmationRequired()
+			// Local API callers read JSON: agent-directed.
+			return consent, false, TelemetryConfirmationRequired(true)
 		}
 	case telemetry.StateDisabled:
 	default:
@@ -51,9 +52,15 @@ func ApplyTelemetryChange(dirs paths.Dirs, change telemetry.Change, channel tele
 	return next, true, nil
 }
 
-// TelemetryConfirmationRequired is enabling without the person's yes.
-func TelemetryConfirmationRequired() *envelope.Error {
+// TelemetryConfirmationRequired is enabling without the person's yes. Only
+// the agent-directed (JSON) form names the relay flag, and says it may be
+// passed only after the person said yes.
+func TelemetryConfirmationRequired(forAgents bool) *envelope.Error {
+	reason := uicopy.T("telemetry.enable.confirm_needed", nil)
+	if forAgents {
+		reason += " " + telemetry.AgentGuidance()
+	}
 	return envelope.New(envelope.ConfirmationRequired, uicopy.T("telemetry.failed", nil)).
-		WithReason(uicopy.T("telemetry.enable.confirm_needed", nil)).
-		WithNext(envelope.Next{Label: uicopy.T("telemetry.next.ask_person", nil), Command: telemetry.EnableCommand})
+		WithReason(reason).
+		WithNext(envelope.Next{Label: uicopy.T("telemetry.next.enable", nil), Command: telemetry.EnableCommand})
 }

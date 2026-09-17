@@ -146,7 +146,7 @@ func (a *App) telemetryEnableCmd() *cobra.Command {
 				// the agent must relay the person's yes explicitly (review F3).
 				agent := telemetry.DetectChannel(a.getenv, a.Environ) == telemetry.ChannelAgent
 				if agent || jsonOut || a.getenv(EnvNonInteractive) != "" || !isFile || !a.isTerminal(in.Fd()) {
-					return setup.TelemetryConfirmationRequired()
+					return setup.TelemetryConfirmationRequired(jsonOut)
 				}
 				_, _ = io.WriteString(cmd.ErrOrStderr(), uicopy.T("telemetry.enable.confirm", nil))
 				answer, _ := bufio.NewReader(in).ReadString('\n')

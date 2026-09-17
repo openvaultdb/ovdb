@@ -16,11 +16,14 @@ type Status struct {
 	Reason     string `json:"reason,omitempty"`
 	ReasonText string `json:"reason_text,omitempty"`
 	// Available is false in a build without a PostHog key.
-	Available      bool     `json:"available"`
-	Provider       string   `json:"provider"`
-	DecidedAt      string   `json:"decided_at,omitempty"`
-	Channel        string   `json:"channel,omitempty"`
-	HasInstallID   bool     `json:"has_install_id"`
+	Available    bool   `json:"available"`
+	Provider     string `json:"provider"`
+	DecidedAt    string `json:"decided_at,omitempty"`
+	Channel      string `json:"channel,omitempty"`
+	HasInstallID bool   `json:"has_install_id"`
+	// AgentGuidance tells AI agents how to relay a person's answer; JSON
+	// only, never printed for people.
+	AgentGuidance  string   `json:"agent_guidance,omitempty"`
 	Collected      []string `json:"collected"`
 	NeverCollected []string `json:"never_collected"`
 }
@@ -74,8 +77,12 @@ func ReasonText(reason string) string {
 	return ""
 }
 
-// EnableCommand is the command an agent runs only after the person agreed.
-const EnableCommand = "ovdb telemetry enable --confirmed-by-user"
+// EnableCommand turns telemetry on in a terminal, asking the person first.
+// The relay flag is named only in AgentGuidance (review F6).
+const EnableCommand = "ovdb telemetry enable"
+
+// AgentGuidance is the JSON-only instruction for AI agents.
+func AgentGuidance() string { return uicopy.T("telemetry.agent_guidance", nil) }
 
 // NewDocument describes d for a process whose build has key.
 func NewDocument(d Decision, available bool) Document {
@@ -94,9 +101,11 @@ func NewDocument(d Decision, available bool) Document {
 	case StateEnabled:
 		next = append(next, envelope.Next{Label: uicopy.T("telemetry.next.disable", nil), Command: "ovdb telemetry disable"})
 	default:
-		// Agents read next: turning it on is the person's answer to relay,
-		// never an inference (decision 0009, point 7).
-		next = append(next, envelope.Next{Label: uicopy.T("telemetry.next.ask_person", nil), Command: EnableCommand})
+		// Turning it on is the person's answer, never an agent's inference
+		// (decision 0009, point 7): next offers the prompting command, and
+		// agents get the relay rule in agent_guidance.
+		status.AgentGuidance = AgentGuidance()
+		next = append(next, envelope.Next{Label: uicopy.T("telemetry.next.enable", nil), Command: EnableCommand})
 		if d.State == StateNotAsked {
 			next = append(next, envelope.Next{Label: uicopy.T("telemetry.next.disable", nil), Command: "ovdb telemetry disable"})
 		}
