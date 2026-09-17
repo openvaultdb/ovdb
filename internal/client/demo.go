@@ -24,7 +24,7 @@ const (
 func (l *Local) Demo(ctx context.Context) ([]byte, error) {
 	return l.readErr(ctx, DemoPath, func() (any, error) {
 		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
-		return demo.Inspect(l.Dirs.Data, databases), err
+		return demo.Inspect(l.Dirs, databases), err
 	})
 }
 

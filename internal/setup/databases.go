@@ -593,6 +593,15 @@ func within(path, dir string) bool {
 // it overlaps OVDB's own folders or another database's storage, or it holds
 // data (a folder with files, an existing file or SQLite sidecar).
 func (r *Registry) locationInUse(request CreateRequest, registrations []Registration) string {
+	if reason := r.locationOverlaps(request, registrations); reason != "" {
+		return reason
+	}
+	return locationHoldsData(request)
+}
+
+// locationOverlaps is why request's location cannot hold a database because
+// it overlaps OVDB's own folders or another database's storage, or "".
+func (r *Registry) locationOverlaps(request CreateRequest, registrations []Registration) string {
 	target := resolved(request.Path)
 	for _, own := range []string{r.dirs.Home, r.dirs.Runtime} {
 		if dir := resolved(own); within(target, dir) || within(dir, target) {
@@ -609,6 +618,12 @@ func (r *Registry) locationInUse(request CreateRequest, registrations []Registra
 			}
 		}
 	}
+	return ""
+}
+
+// locationHoldsData is why request's location already holds data (a folder
+// with files, an existing file or SQLite sidecar), or "".
+func locationHoldsData(request CreateRequest) string {
 	params := map[string]string{"path": request.Path}
 	info, err := os.Stat(request.Path)
 	switch {
@@ -733,6 +748,71 @@ func (r *Registry) provision(request CreateRequest) (string, error) {
 			WithNext(envelope.Next{Label: uicopy.T("next.restart_server", nil), Command: "ovdb server restart"}), err)
 	}
 	return manifestPath, nil
+}
+
+// Reconnect registers and serves an existing inGitDB folder without
+// touching its files: a database OVDB created and a person later removed
+// from OVDB (its data kept), such as the TODO demo installed again into its
+// own folder. Connecting any other storage is `ovdb databases connect`.
+func (r *Registry) Reconnect(request CreateRequest) (DatabaseResult, error) {
+	request.Engine = EngineInGitDB
+	if err := ValidateCreate(&request); err != nil {
+		return DatabaseResult{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	registrations, err := ReadRegistry(r.dirs.Home)
+	if err != nil {
+		return DatabaseResult{}, err
+	}
+	if _, ok := find(registrations, request.ID); ok || slices.ContainsFunc(registrations, func(reg Registration) bool {
+		return strings.EqualFold(filepath.Base(reg.Manifest), request.ID+".yaml")
+	}) {
+		return DatabaseResult{}, envelope.New(envelope.AlreadyExists, createFailed()).
+			WithReason(uicopy.T("database.create.already_exists", map[string]string{"name": request.ID}))
+	}
+	if reason := r.locationOverlaps(request, registrations); reason != "" {
+		return DatabaseResult{}, envelope.New(envelope.LocationNotEmpty, createFailed()).WithReason(reason)
+	}
+	if info, err := os.Stat(request.Path); err != nil || !info.IsDir() {
+		if err == nil {
+			err = fs.ErrExist
+		}
+		return DatabaseResult{}, storageUnavailable(request, err)
+	}
+	for _, dir := range []string{RegistryDir(r.dirs.Home), CatalogueDir(r.dirs.Home)} {
+		if err := paths.EnsurePrivateDir(dir); err != nil && !errors.Is(err, paths.ErrNotPrivate) {
+			return DatabaseResult{}, storageUnavailable(request, err)
+		}
+	}
+	staging := filepath.Join(RegistryDir(r.dirs.Home), "."+request.ID+".creating")
+	if err := paths.WriteFilePrivate(staging, []byte(newManifest(request))); err != nil {
+		return DatabaseResult{}, storageUnavailable(request, err)
+	}
+	db, err := mount.FileWithOptions(staging, mount.Options{CatalogueDir: CatalogueDir(r.dirs.Home), SkipGitIdentity: true})
+	if err != nil {
+		_ = os.Remove(staging)
+		return DatabaseResult{}, storageUnavailable(request, errors.New(mountReason(err, staging)))
+	}
+	manifestPath := ManifestPath(r.dirs.Home, request.ID)
+	if err := os.Rename(staging, manifestPath); err != nil {
+		_ = db.Close()
+		_ = os.Remove(staging)
+		return DatabaseResult{}, storageUnavailable(request, err)
+	}
+	if err := r.server.Mount(db); err != nil {
+		_ = db.Close()
+		_ = os.Remove(manifestPath)
+		return DatabaseResult{}, envelope.New(envelope.Internal, createFailed()).
+			WithReason(uicopy.T("database.create.serve_failed", map[string]string{"name": request.ID, "error": redact.String(err.Error())}))
+	}
+	r.setMount(MountRecord{ID: request.ID, Manifest: manifestPath, State: MountMounted})
+	if err := r.writeMounts(); err != nil {
+		r.logf("writing mounts.json: %s", redact.String(err.Error()))
+	}
+	r.logf("registered database %s again (%s)", request.ID, request.Engine)
+	database := Database{ID: request.ID, Engine: request.Engine, Location: request.Path, State: MountMounted, Manifest: manifestPath}
+	return DatabaseResult{Schema: envelope.Schema, Database: database, Next: CreatedNext(database)}, nil
 }
 
 // missingDirs lists dir and its missing parents, deepest first.

@@ -467,7 +467,7 @@ func (s *localServer) getDemo(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, err)
 		return
 	}
-	envelope.WriteJSON(w, http.StatusOK, demo.Inspect(s.opts.Dirs.Data, databases))
+	envelope.WriteJSON(w, http.StatusOK, demo.Inspect(s.opts.Dirs, databases))
 }
 
 // installDemo installs the TODO demo (capability 18). A console session may

@@ -119,6 +119,12 @@ func TestStatusNextListsImplementedOptionsInOrder(t *testing.T) {
 	}
 	// With the demo installed, trying it is no longer suggested.
 	demoDB := Database{ID: "todo", Engine: EngineInGitDB, Location: filepath.Join(dirs.Data, "demos", "todo")}
+	if unrecorded := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil); unrecorded.Demo.Installed {
+		t.Errorf("a database in demos/todo that install did not record = %+v", unrecorded.Demo)
+	}
+	if err := RecordDemo(dirs.Home, DemoRecord{App: "todo", Database: "todo", Location: demoDB.Location}); err != nil {
+		t.Fatal(err)
+	}
 	if installed := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil); !installed.Demo.Installed ||
 		installed.Demo.Database != "todo" || len(installed.Next) != 2 {
 		t.Errorf("status with the demo = %+v", installed)

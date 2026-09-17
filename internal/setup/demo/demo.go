@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
@@ -75,16 +76,18 @@ type Document struct {
 	Next    []envelope.Next `json:"next"`
 }
 
-// Find is the installed demo database among databases.
-func Find(databases []setup.Database) (setup.Database, bool) { return setup.FindDemo(databases) }
-
-func isDemo(db setup.Database) bool { return setup.IsDemo(db) }
+// Find is the installed demo among databases: the registered database a
+// demo install recorded in OVDB home, never one that merely lives in a
+// folder named demos.
+func Find(home string, databases []setup.Database) (setup.Database, bool) {
+	return setup.FindDemo(home, databases)
+}
 
 // Inspect is the demo document for the registered databases, with the
-// default location under dataHome when the demo is not installed.
-func Inspect(dataHome string, databases []setup.Database) Document {
-	doc := Document{Schema: envelope.Schema, App: App, AppPath: AppPath, Lists: Lists, Location: Location(dataHome, DefaultID)}
-	if db, ok := Find(databases); ok {
+// default location under the data home when the demo is not installed.
+func Inspect(dirs paths.Dirs, databases []setup.Database) Document {
+	doc := Document{Schema: envelope.Schema, App: App, AppPath: AppPath, Lists: Lists, Location: Location(dirs.Data, DefaultID)}
+	if db, ok := Find(dirs.Home, databases); ok {
 		doc.Installed, doc.Database, doc.Location, doc.State = true, db.ID, db.Location, db.State
 	}
 	doc.Next = next(doc)
@@ -116,6 +119,7 @@ type InstallRequest struct {
 // Registry is the part of setup.Registry installing uses.
 type Registry interface {
 	Create(request setup.CreateRequest) (setup.DatabaseResult, error)
+	Reconnect(request setup.CreateRequest) (setup.DatabaseResult, error)
 	Remove(ctx context.Context, id string) (setup.DatabaseResult, error)
 	List() ([]setup.Database, error)
 }
@@ -129,21 +133,29 @@ type Op struct {
 // Seeder writes ops to database id in one batch through the data API.
 type Seeder func(ctx context.Context, id string, ops []Op) error
 
-// Service installs the demo on a running server.
+// Service installs the demo on a running server. Only the server holding
+// home.lock owns one, and every client (CLI, TUI, web console, agents)
+// installs through it, so its mutex serialises every install for the home.
 type Service struct {
 	Dirs     paths.Dirs
 	Registry Registry
 	Seed     Seeder
 	Now      func() time.Time // time.Now when nil
 	Logf     func(format string, args ...any)
+
+	mu sync.Mutex
 }
 
 func installFailed() string { return uicopy.T("demo.install.failed", nil) }
 
-// Install registers the demo database, writes the seed lists, and returns the
-// installed demo (REQ:demo-install-idempotent). An installed demo is reported
-// with AlreadyInstalled and nothing written.
+// Install registers the demo database, writes the seed lists, records the
+// install, and returns the installed demo (REQ:demo-install-idempotent). An
+// installed demo is reported with AlreadyInstalled and nothing written.
+// Installs run one at a time, so one that finds the demo installed returns
+// only once its lists exist.
 func (s *Service) Install(ctx context.Context, request InstallRequest) (Document, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	explicitID := request.ID != ""
 	if !explicitID {
 		request.ID = DefaultID
@@ -154,15 +166,19 @@ func (s *Service) Install(ctx context.Context, request InstallRequest) (Document
 	create := setup.CreateRequest{ID: request.ID, Engine: setup.EngineInGitDB, Path: request.Path}
 	if err := setup.ValidateCreate(&create); err != nil {
 		err.Message = installFailed()
-		err.Next = []envelope.Next{{Label: uicopy.T("next.choose_name", nil), Command: "ovdb demo install --id <name>"}}
+		if len(err.Next) > 0 && err.Next[0].Action == setup.ActionEditName {
+			err.Next = []envelope.Next{{Label: uicopy.T("next.choose_name", nil), Command: "ovdb demo install --id <name>", Action: setup.ActionEditName}}
+		} else {
+			err.Next = []envelope.Next{{Label: uicopy.T("demo.next.default_location", nil), Command: "ovdb demo install --yes"}}
+		}
 		return Document{}, err
 	}
 	databases, err := s.Registry.List()
 	if err != nil {
 		return Document{}, err
 	}
-	if done, ok := s.alreadyInstalled(databases, create, explicitID); ok {
-		return done, nil
+	if db, ok := Find(s.Dirs.Home, databases); ok && (!explicitID || strings.EqualFold(db.ID, create.ID)) {
+		return s.installed(db, true), nil
 	}
 	for _, db := range databases {
 		if strings.EqualFold(db.ID, create.ID) {
@@ -175,6 +191,11 @@ func (s *Service) Install(ctx context.Context, request InstallRequest) (Document
 	if entries, err := os.ReadDir(create.Path); errors.Is(err, fs.ErrNotExist) {
 		existed = false
 	} else if err == nil && len(entries) > 0 {
+		// The demo's own folder, left behind by `ovdb databases remove`: serve
+		// it again as it is (F5). Anything else in the way is refused.
+		if record, ok := setup.DemoRecordFor(s.Dirs.Home, create.Path); ok && strings.EqualFold(record.Database, create.ID) {
+			return s.reconnect(create)
+		}
 		return Document{}, envelope.New(envelope.LocationNotEmpty, installFailed()).
 			WithReason(uicopy.T("demo.install.folder_not_empty", map[string]string{"path": create.Path})).
 			WithNext(s.anotherID(databases))
@@ -182,14 +203,6 @@ func (s *Service) Install(ctx context.Context, request InstallRequest) (Document
 
 	result, err := s.Registry.Create(create)
 	if err != nil {
-		// Another install won the race: report what is there now.
-		if e := envelope.As(err); e != nil && e.Code == envelope.AlreadyExists {
-			if databases, listErr := s.Registry.List(); listErr == nil {
-				if done, ok := s.alreadyInstalled(databases, create, true); ok {
-					return done, nil
-				}
-			}
-		}
 		if e := envelope.As(err); e != nil {
 			e.Message = installFailed()
 			return Document{}, e
@@ -203,35 +216,44 @@ func (s *Service) Install(ctx context.Context, request InstallRequest) (Document
 			WithReason(uicopy.T("demo.install.seed_failed", map[string]string{"path": create.Path, "error": redact.String(err.Error())})).
 			WithNext(envelope.Next{Label: uicopy.T("demo.next.try_again", nil), Command: "ovdb demo install --yes"})
 	}
-	s.logf("installed the TODO demo as %s", create.ID)
-	db := result.Database
-	doc := Document{Schema: envelope.Schema, App: App, Installed: true, Database: db.ID, Location: db.Location, State: db.State, AppPath: AppPath, Lists: Lists}
-	doc.Next = next(doc)
-	return doc, nil
-}
-
-// alreadyInstalled reports an installed demo that matches the request: the
-// same id at the same place, or, when no id was asked for, any installed demo.
-func (s *Service) alreadyInstalled(databases []setup.Database, create setup.CreateRequest, explicitID bool) (Document, bool) {
-	for _, db := range databases {
-		sameID := strings.EqualFold(db.ID, create.ID)
-		samePlace := db.Engine == setup.EngineInGitDB && sameLocation(db.Location, create.Path)
-		if sameID && samePlace || !explicitID && isDemo(db) {
-			doc := Inspect(s.Dirs.Data, []setup.Database{db})
-			if !isDemo(db) {
-				// The same id and place, registered by hand.
-				doc = Document{Schema: envelope.Schema, App: App, Installed: true, Database: db.ID, Location: db.Location, State: db.State, AppPath: AppPath, Lists: Lists}
-				doc.Next = next(doc)
-			}
-			doc.AlreadyInstalled = true
-			return doc, true
-		}
+	if err := s.record(result.Database); err != nil {
+		s.undo(create, existed)
+		return Document{}, err
 	}
-	return Document{}, false
+	s.logf("installed the TODO demo as %s", create.ID)
+	return s.installed(result.Database, false), nil
 }
 
-func sameLocation(a, b string) bool {
-	return a != "" && b != "" && filepath.Clean(a) == filepath.Clean(b)
+func (s *Service) reconnect(create setup.CreateRequest) (Document, error) {
+	result, err := s.Registry.Reconnect(create)
+	if err != nil {
+		if e := envelope.As(err); e != nil {
+			e.Message = installFailed()
+			return Document{}, e
+		}
+		return Document{}, err
+	}
+	if err := s.record(result.Database); err != nil {
+		return Document{}, err
+	}
+	s.logf("registered the TODO demo %s again", create.ID)
+	return s.installed(result.Database, true), nil
+}
+
+func (s *Service) record(db setup.Database) error {
+	err := setup.RecordDemo(s.Dirs.Home, setup.DemoRecord{App: App, Database: db.ID, Location: db.Location})
+	if err != nil {
+		return envelope.New(envelope.StorageUnavailable, installFailed()).
+			WithReason(redact.String(err.Error()))
+	}
+	return nil
+}
+
+func (s *Service) installed(db setup.Database, already bool) Document {
+	doc := Document{Schema: envelope.Schema, App: App, Installed: true, AlreadyInstalled: already,
+		Database: db.ID, Location: db.Location, State: db.State, AppPath: AppPath, Lists: Lists}
+	doc.Next = next(doc)
+	return doc
 }
 
 // anotherID suggests the first free todo-demo[-N] with a free folder

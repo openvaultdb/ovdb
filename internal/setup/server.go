@@ -262,7 +262,7 @@ func NewStatus(version string, dirs paths.Dirs, server Server, databases []Datab
 	next = append(next,
 		envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
 		envelope.Next{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"})
-	demo := NewDemoStatus(dirs.Data, databases)
+	demo := NewDemoStatus(dirs, databases)
 	if !demo.Installed {
 		next = append(next, envelope.Next{Label: uicopy.T("next.try_demo", nil), Command: "ovdb demo install --yes"})
 	}

@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -115,16 +117,26 @@ func (f *fixture) items(t *testing.T, id, list string) map[string]map[string]any
 
 func TestInspectBeforeAndAfterInstall(t *testing.T) {
 	t.Parallel()
-	data := filepath.Join(t.TempDir(), "data")
-	doc := Inspect(data, []setup.Database{{ID: "notes", Engine: setup.EngineInGitDB, Location: filepath.Join(data, "notes")}})
+	base := t.TempDir()
+	dirs := paths.Dirs{Home: filepath.Join(base, "home"), Data: filepath.Join(base, "data")}
+	data := dirs.Data
+	doc := Inspect(dirs, []setup.Database{{ID: "notes", Engine: setup.EngineInGitDB, Location: filepath.Join(data, "notes")}})
 	if doc.Installed || doc.Location != filepath.Join(data, "demos", "todo") || doc.AppPath != "/apps/todo/" ||
 		len(doc.Next) != 1 || doc.Next[0].Command != "ovdb demo install --yes" {
 		t.Errorf("not installed = %+v", doc)
 	}
-	doc = Inspect(data, []setup.Database{
+	databases := []setup.Database{
 		{ID: "todo-demo", Engine: setup.EngineInGitDB, Location: filepath.Join(data, "demos", "todo-demo"), State: setup.MountMounted},
 		{ID: "todo", Engine: setup.EngineInGitDB, Location: filepath.Join(data, "todo")},
-	})
+	}
+	// Folders alone make nothing a demo (review F1).
+	if doc := Inspect(dirs, databases); doc.Installed {
+		t.Errorf("unrecorded database taken for the demo: %+v", doc)
+	}
+	if err := setup.RecordDemo(dirs.Home, setup.DemoRecord{App: App, Database: "todo-demo", Location: filepath.Join(data, "demos", "todo-demo")}); err != nil {
+		t.Fatal(err)
+	}
+	doc = Inspect(dirs, databases)
 	if !doc.Installed || doc.Database != "todo-demo" || doc.State != setup.MountMounted {
 		t.Errorf("installed = %+v", doc)
 	}
@@ -134,6 +146,110 @@ func TestInspectBeforeAndAfterInstall(t *testing.T) {
 	}
 	if !slices.Equal(commands, []string{"Open TODO app|ovdb demo open", "Done|"}) {
 		t.Errorf("next = %v", commands)
+	}
+	// The record names a place: the same id elsewhere is not the demo.
+	moved := []setup.Database{{ID: "todo-demo", Engine: setup.EngineInGitDB, Location: filepath.Join(data, "todo-demo")}}
+	if doc := Inspect(dirs, moved); doc.Installed {
+		t.Errorf("same id elsewhere taken for the demo: %+v", doc)
+	}
+}
+
+// Review F1: a user's database in a folder named demos is not the demo, and
+// installing the demo still installs it.
+func TestUserDatabaseInADemosFolderIsNotTheDemo(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	notes := filepath.Join(f.dirs.Data, "work", "demos", "notes")
+	if _, err := f.registry.Create(setup.CreateRequest{ID: "notes", Engine: setup.EngineInGitDB, Path: notes}); err != nil {
+		t.Fatal(err)
+	}
+	if response := f.do(t, http.MethodPut, "/v1/databases/notes/records/customers/acme", `{"data":{"name":"ACME"}}`); response.Code >= 300 {
+		t.Fatalf("add customer: %d %s", response.Code, response.Body)
+	}
+	list, _ := f.registry.List()
+	if doc := Inspect(f.dirs, list); doc.Installed {
+		t.Fatalf("notes taken for the demo: %+v", doc)
+	}
+	if status := setup.NewDemoStatus(f.dirs, list); status.Installed {
+		t.Errorf("status = %+v", status)
+	}
+	doc, err := f.service.Install(context.Background(), InstallRequest{})
+	if err != nil || doc.AlreadyInstalled || doc.Database != "todo" {
+		t.Fatalf("install = %+v, %v", doc, err)
+	}
+	if buy := f.items(t, "todo", "to-buy"); len(buy) != 3 {
+		t.Errorf("to-buy = %v", buy)
+	}
+}
+
+// Review F2: installs run one at a time, so every one returns only once the
+// lists exist, however many arrive together.
+func TestConcurrentInstallsReturnOnceTheListsExist(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	seed := f.service.Seed
+	f.service.Seed = func(ctx context.Context, id string, ops []Op) error {
+		time.Sleep(150 * time.Millisecond)
+		return seed(ctx, id, ops)
+	}
+	var wg sync.WaitGroup
+	results := make(chan string, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			doc, err := f.service.Install(context.Background(), InstallRequest{})
+			if err != nil {
+				results <- "error: " + err.Error()
+				return
+			}
+			// What an agent does right after exit 0.
+			results <- fmt.Sprintf("%v %d", doc.AlreadyInstalled, len(f.items(t, "todo", "to-buy")))
+		}()
+	}
+	wg.Wait()
+	close(results)
+	fresh := 0
+	for result := range results {
+		switch result {
+		case "false 3":
+			fresh++
+		case "true 3":
+		default:
+			t.Errorf("install = %s", result)
+		}
+	}
+	if fresh != 1 {
+		t.Errorf("%d installs created the demo, want 1", fresh)
+	}
+}
+
+// Review F5: the demo's own folder, left behind by `ovdb databases remove`, is
+// served again with its data; someone else's files there are still refused.
+func TestReinstallAfterRemoveReconnectsTheFolder(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if _, err := f.service.Install(context.Background(), InstallRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if response := f.do(t, http.MethodPut, "/v1/databases/todo/records/lists/to-buy/items/tea", `{"data":{"title":"Tea","done":false}}`); response.Code >= 300 {
+		t.Fatalf("add Tea: %d %s", response.Code, response.Body)
+	}
+	if _, err := f.registry.Remove(context.Background(), "todo"); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := f.registry.List(); Inspect(f.dirs, list).Installed {
+		t.Fatal("still installed after remove")
+	}
+	doc, err := f.service.Install(context.Background(), InstallRequest{})
+	if err != nil || !doc.AlreadyInstalled || doc.Database != "todo" || doc.State != setup.MountMounted {
+		t.Fatalf("reinstall = %+v, %v", doc, err)
+	}
+	if buy := f.items(t, "todo", "to-buy"); buy["tea"]["title"] != "Tea" || len(buy) != 4 {
+		t.Errorf("to-buy after reconnect = %v", buy)
+	}
+	if list, _ := f.registry.List(); !Inspect(f.dirs, list).Installed {
+		t.Error("not installed after reconnect")
 	}
 }
 
@@ -254,11 +370,17 @@ func TestInstallUndoesAFailedSeed(t *testing.T) {
 	}
 }
 
-func TestInstallValidatesTheName(t *testing.T) {
+func TestInstallValidatesTheNameAndPath(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	_, err := f.service.Install(context.Background(), InstallRequest{ID: "bad name"})
-	if e := envelope.As(err); e == nil || e.Code != envelope.InvalidArgument || e.Message != "Couldn't install the TODO demo" {
+	if e := envelope.As(err); e == nil || e.Code != envelope.InvalidArgument || e.Message != "Couldn't install the TODO demo" ||
+		e.Next[0].Command != "ovdb demo install --id <name>" {
 		t.Errorf("bad name = %#v", err)
+	}
+	// A relative path is not a naming problem (review F9).
+	_, err = f.service.Install(context.Background(), InstallRequest{ID: "pathy", Path: "rel/dir"})
+	if e := envelope.As(err); e == nil || e.Code != envelope.InvalidArgument || len(e.Next) != 1 || e.Next[0].Command != "ovdb demo install --yes" {
+		t.Errorf("relative path = %#v", err)
 	}
 }
