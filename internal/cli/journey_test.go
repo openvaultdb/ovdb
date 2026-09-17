@@ -24,6 +24,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/client"
+	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/tui"
 )
@@ -119,13 +120,14 @@ func TestJourneyATerminal(t *testing.T) {
 }
 
 // Journey C (partial): an agent without a skill, stdin closed and no
-// terminal, reads the status, creates a database, selects it for the
-// project and round-trips a record with absolute paths; no command waits
-// for input (AC:journey-c-passes).
+// terminal, reads the status and its five options, creates a database,
+// selects it for the project and round-trips a record with absolute paths;
+// no command waits for input (AC:journey-c-passes). Telemetry joins in
+// increment 9.
 func TestJourneyCAgent(t *testing.T) {
 	e := previewEnv(t)
 	e.vars["CLAUDECODE"] = "1"
-	e.vars[cli.EnvNonInteractive] = "1"
+	e.app.IsTerminal = func(uintptr) bool { return false } // stdin closed, no terminal
 	e.in(t.TempDir())
 
 	// `ovdb status` lives in package main; its preview branch is App.Status.
@@ -143,7 +145,8 @@ func TestJourneyCAgent(t *testing.T) {
 	if err := json.Unmarshal([]byte(status.stdout), &document); err != nil || len(document.Next) == 0 {
 		t.Fatalf("status --json = %s (%v)", status.stdout, err)
 	}
-	for _, want := range []string{"ovdb open", "ovdb databases create <name>"} {
+	// The five options an agent relays (ai-agent-skills#AC:skill-less-agent-learns-options).
+	for _, want := range []string{"ovdb", "ovdb open", "ovdb databases create <name>", "ovdb demo install --yes", "ovdb skills install openvaultdb --yes"} {
 		found := false
 		for _, n := range document.Next {
 			found = found || n.Command == want
@@ -152,6 +155,11 @@ func TestJourneyCAgent(t *testing.T) {
 			t.Errorf("status next lacks %q: %+v", want, document.Next)
 		}
 	}
+	if last := document.Next[len(document.Next)-1]; !strings.HasSuffix(last.Label, "(ask the person first)") {
+		t.Errorf("skill entry label = %q", last.Label)
+	}
+	// Without the person's yes an agent cannot install it, and nothing waits.
+	decodeError(t, e.run("skills", "install", "openvaultdb", "--json"), envelope.ConfirmationRequired)
 	e.ok("databases", "create", "notes", "--json")
 	if r := e.ok("use", "notes", "--json"); !strings.Contains(r.stdout, `"scope":"project"`) {
 		t.Errorf("use --json = %s", r.stdout)

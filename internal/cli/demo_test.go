@@ -77,7 +77,7 @@ func TestDemoInstallThroughTheServer(t *testing.T) {
 	install := e.ok("demo", "install", "--yes")
 	want := "The TODO demo is ready\n\nTwo lists, To buy and To watch, are stored as files in " + location + ".\n" +
 		"Your apps and AI agents can use them through the OVDB server.\n\nWhat next?\n" +
-		"  • Open TODO app   ovdb demo open\n  • Done\n"
+		"  • Open TODO app           ovdb demo open\n  • Install TODO AI skill   ovdb skills install todo-demo\n  • Done\n"
 	if install.stdout != want {
 		t.Errorf("install =\n%s\nwant\n%s", install.stdout, want)
 	}

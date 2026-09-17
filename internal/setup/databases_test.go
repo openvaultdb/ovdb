@@ -209,7 +209,7 @@ func TestCreateInGitDBServesWithoutRestart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(want, "items")); err != nil {
 		t.Errorf("record not stored as files: %v", err)
 	}
-	if got := commands(result.Next); !slices.Equal(got, []string{"ovdb list / --db notes", "ovdb use notes", "ovdb databases", ""}) {
+	if got := commands(result.Next); !slices.Equal(got, []string{"ovdb list / --db notes", "ovdb use notes", "ovdb databases", "ovdb skills list", ""}) {
 		t.Errorf("next = %+v", result.Next)
 	}
 	mounts, _ := ReadMounts(f.dirs.Runtime)

@@ -220,7 +220,7 @@ func TestConnectInGitDBRepositoryLeavesItUntouched(t *testing.T) {
 	if db := result.Database; db.ID != "notes" || db.Engine != EngineInGitDB || db.Location != repo || db.State != MountMounted || db.Manifest != ManifestPath(f.dirs.Home, "notes") {
 		t.Errorf("result database = %+v", db)
 	}
-	if got := commands(result.Next); !slices.Equal(got, []string{"ovdb list / --db notes", "ovdb use notes", "ovdb databases", ""}) {
+	if got := commands(result.Next); !slices.Equal(got, []string{"ovdb list / --db notes", "ovdb use notes", "ovdb databases", "ovdb skills list", ""}) {
 		t.Errorf("next = %q", got)
 	}
 	if recorder := f.data(t, http.MethodGet, "/v1/databases/notes/records/items/milk", ""); recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Milk") {

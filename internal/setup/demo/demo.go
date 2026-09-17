@@ -29,6 +29,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/redact"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 // The TODO demo's fixed names.
@@ -106,15 +107,17 @@ func Inspect(dirs paths.Dirs, databases []setup.Database) Document {
 	return doc
 }
 
-// next is what to do with the demo: install it, or open its app. Installing
-// the TODO AI skill and Explore data join as increments 7 and 8 land
-// (REQ:demo-next-actions); only implemented actions are offered.
+// next is what to do with the demo: install it, or open its app and install
+// the TODO AI skill, which goes through the skill consent step
+// (REQ:demo-next-actions). Explore data joins as increment 7 lands; only
+// implemented actions are offered.
 func next(doc Document) []envelope.Next {
 	if !doc.Installed {
 		return []envelope.Next{{Label: uicopy.T("demo.next.install", nil), Command: "ovdb demo install --yes", Action: ActionInstall}}
 	}
 	return []envelope.Next{
 		{Label: uicopy.T("demo.next.open_app", nil), Command: "ovdb demo open", Action: ActionOpenApp},
+		skills.InstallNext(skills.Todo),
 		{Label: uicopy.T("next.done", nil), Action: setup.ActionDone},
 	}
 }

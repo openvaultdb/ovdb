@@ -13,6 +13,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 func testDirs(t *testing.T) paths.Dirs {
@@ -106,27 +107,43 @@ func TestConfigRoundTrip(t *testing.T) {
 func TestStatusNextListsImplementedOptionsInOrder(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
-	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs), nil, nil)
-	if len(stopped.Next) != 4 || stopped.Next[0].Command != "ovdb server start" || stopped.Next[1].Command != "ovdb open" ||
-		stopped.Next[2].Command != "ovdb databases create <name>" || stopped.Next[3].Command != "ovdb demo install --yes" {
+	commands := func(status Status) []string {
+		var out []string
+		for _, n := range status.Next {
+			out = append(out, n.Command)
+		}
+		return out
+	}
+	// ai-agent-skills#AC:skill-less-agent-learns-options: terminal, web,
+	// commands, demo and skill, the last one labelled to ask first.
+	bootstrap := []string{"ovdb", "ovdb open", "ovdb databases create <name>", "ovdb demo install --yes", "ovdb skills install openvaultdb --yes"}
+	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs), nil, nil, nil)
+	if got := commands(stopped); !slices.Equal(got, append([]string{"ovdb server start"}, bootstrap...)) {
 		t.Errorf("stopped next = %+v", stopped.Next)
 	}
+	if label := stopped.Next[5].Label; label != "Install the OpenVaultDB skill for your AI assistant (ask the person first)" {
+		t.Errorf("skill label = %q", label)
+	}
+	if stopped.Skills == nil {
+		t.Error("skills must be a list")
+	}
 	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
-	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs), nil, nil)
-	if len(running.Next) != 3 || running.Next[0].Command != "ovdb open" || running.Demo.Installed ||
+	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs), nil, nil, nil)
+	if got := commands(running); !slices.Equal(got, bootstrap) || running.Demo.Installed ||
 		running.Demo.Location != filepath.Join(dirs.Data, "demos", "todo") {
 		t.Errorf("running next = %+v", running.Next)
 	}
-	// With the demo installed, trying it is no longer suggested.
+	// With the demo and the storage skill installed, neither is suggested.
 	demoDB := Database{ID: "todo", Engine: EngineInGitDB, Location: filepath.Join(dirs.Data, "demos", "todo")}
-	if unrecorded := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil); unrecorded.Demo.Installed {
+	if unrecorded := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil, nil); unrecorded.Demo.Installed {
 		t.Errorf("a database in demos/todo that install did not record = %+v", unrecorded.Demo)
 	}
 	if err := RecordDemo(dirs.Home, DemoRecord{App: "todo", Database: "todo", Location: demoDB.Location}); err != nil {
 		t.Fatal(err)
 	}
-	if installed := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil); !installed.Demo.Installed ||
-		installed.Demo.Database != "todo" || len(installed.Next) != 2 {
+	installedSkills := []skills.Installed{{ID: skills.Storage, InstalledFor: []string{"claude"}}, {ID: skills.Todo, InstalledFor: []string{}}}
+	if installed := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil, installedSkills); !installed.Demo.Installed ||
+		installed.Demo.Database != "todo" || !slices.Equal(commands(installed), bootstrap[:3]) {
 		t.Errorf("status with the demo = %+v", installed)
 	}
 	want := `{"schema":1,"server":{"state":"not_running","address":"http://ovdb.localhost:6832","fallback_address":"http://127.0.0.1:6832","port":6832,"log":"` +
@@ -163,7 +180,7 @@ func TestHomeDocument(t *testing.T) {
 				keys = append(keys, option.Badge.LabelKey)
 			}
 		}
-		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "connect/primary", "server/primary", "browse/secondary", "settings/secondary"}) {
+		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "connect/primary", "server/primary", "browse/secondary", "skills/secondary", "settings/secondary"}) {
 			t.Errorf("options = %v", ids)
 		}
 		for _, key := range keys {

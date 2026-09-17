@@ -27,6 +27,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/redact"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 // Mounter is the part of the openvaultdb-go server the registry drives.
@@ -539,8 +540,9 @@ func CreatedNext(database Database) []envelope.Next {
 
 // resultNext is the Result of creating or connecting database
 // (database-setup-and-providers#REQ:create-result-next-actions). Only
-// implemented commands are offered; Explore data and AI agent skills join
-// as their increments land.
+// implemented commands are offered; Explore data joins as its increment
+// lands. "Connect an app or AI assistant" opens AI agent skills
+// (ai-agent-skills#REQ:skills-offered-at-the-right-moment).
 func resultNext(database Database, describeSchema bool) []envelope.Next {
 	var next []envelope.Next
 	if describeSchema {
@@ -552,6 +554,7 @@ func resultNext(database Database, describeSchema bool) []envelope.Next {
 		envelope.Next{Label: uicopy.T("home.menu.browse", nil), Command: "ovdb list / --db " + database.ID, Action: ActionBrowse},
 		envelope.Next{Label: uicopy.T("next.use_in_project", nil), Command: "ovdb use " + database.ID, Action: ActionUse},
 		envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases},
+		envelope.Next{Label: uicopy.T("next.connect_agent", nil), Command: "ovdb skills list", Action: skills.ActionSkills},
 		envelope.Next{Label: uicopy.T("next.done", nil), Action: ActionDone})
 }
 

@@ -68,6 +68,9 @@ type Local struct {
 	// ConsoleBuilt reports whether this binary embeds the web console and
 	// TODO app; web.Built when nil.
 	ConsoleBuilt func() bool
+	// Getenv resolves this client's environment-dependent values, such as AI
+	// agent skill directories; os.Getenv when nil.
+	Getenv func(string) string
 }
 
 func (l *Local) notice(line string) {
@@ -174,7 +177,7 @@ func (l *Local) Status(ctx context.Context) ([]byte, error) {
 	return l.readErr(ctx, l.withWhere(StatusPath), func() (any, error) {
 		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
 		context := dbcontext.Resolve(l.Dirs.Home, setup.DatabaseIDs(databases), l.Where).Context
-		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases, context), err
+		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases, context, l.installedSkills()), err
 	})
 }
 

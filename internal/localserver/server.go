@@ -60,6 +60,9 @@ type Options struct {
 	// MountTimeout bounds each registered database's mount;
 	// setup.DefaultMountTimeout when zero.
 	MountTimeout time.Duration
+	// Getenv is the server's environment, for the AI agent skill directories
+	// the web console offers; os.Getenv when nil.
+	Getenv func(string) string
 }
 
 type localServer struct {
@@ -179,6 +182,8 @@ var endpoints = []endpoint{
 	{http.MethodPut, "/api/local/v1/context", accessOwner, (*localServer).putContext},
 	{http.MethodGet, "/api/local/v1/demo", accessOwner, (*localServer).getDemo},
 	{http.MethodPost, "/api/local/v1/demo/install", accessOwner, (*localServer).installDemo},
+	{http.MethodGet, "/api/local/v1/skills", accessOwner, (*localServer).getSkills},
+	{http.MethodPost, "/api/local/v1/skills/install", accessOwner, (*localServer).installSkill},
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -415,7 +420,7 @@ func (s *localServer) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	context := s.resolveContext(r, databases).Context
-	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context))
+	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context, s.installedSkills()))
 }
 
 func (s *localServer) home(w http.ResponseWriter, r *http.Request) {
