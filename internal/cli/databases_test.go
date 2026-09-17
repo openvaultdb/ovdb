@@ -406,3 +406,30 @@ func tree(t *testing.T, root string) string {
 	}
 	return b.String()
 }
+
+// F1 through the CLI: a manifest naming a variable with a non-URL value
+// never shows that value in connect --json, databases --json or server.log.
+func TestConnectNeverShowsANamedVariablesValue(t *testing.T) {
+	const secret = "s3cretjunk-Tok"
+	e := previewEnv(t)
+	e.app.ChildEnv = append(e.app.ChildEnv, "OVDB_TEST_JUNK_DSN="+secret)
+	manifestPath := filepath.Join(t.TempDir(), "junk.yaml")
+	if err := os.WriteFile(manifestPath, []byte("database:\n  id: junk\n  schema_mode: strict\nstorage:\n  engine: postgres\n"+
+		"  postgres:\n    dsn_env: OVDB_TEST_JUNK_DSN\nschemas:\n  collections:\n    contacts:\n      fields:\n        name: {type: string}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	connected := e.run("databases", "connect", "--manifest", manifestPath, "--json")
+	_ = decodeError(t, connected, envelope.StorageUnavailable)
+	status := e.run("databases", "--json")
+	logText, _ := os.ReadFile(filepath.Join(e.dirs.Runtime, "server.log"))
+	for _, where := range []struct{ name, text string }{
+		{"connect --json", connected.stdout + connected.stderr}, {"databases --json", status.stdout}, {"server.log", string(logText)},
+	} {
+		if strings.Contains(where.text, "s3cretjunk") {
+			t.Errorf("%s shows the value: %s", where.name, where.text)
+		}
+	}
+	if !strings.Contains(string(logText), "connecting database junk failed") {
+		t.Errorf("server.log lacks the failure: %s", logText)
+	}
+}

@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -22,6 +23,7 @@ import (
 	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/paths"
 )
 
 // snapshot is every file under root with its content hash, .git included.
@@ -432,5 +434,57 @@ func TestEnginesPointManifestSetupAtConnect(t *testing.T) {
 		if got := commands(engine.ManifestSteps); !slices.Equal(got, []string{"ovdb init --engine " + engine.ID + " --id <name>", "ovdb databases connect --manifest <absolute path>", ""}) {
 			t.Errorf("%s steps = %q", engine.ID, got)
 		}
+	}
+}
+
+// F1: the value of any variable a manifest names never appears in an error,
+// log line, list reason or mounts.json, whatever its shape (not only URLs
+// with a password): connect, startup mounting and reload alike.
+func TestNamedEnvironmentValuesNeverLeak(t *testing.T) {
+	// openvaultdb-go reads the variable from the process environment.
+	t.Setenv("JUNK_DSN", "s3cretjunk-Tok")
+	f := &registryFixture{dirs: testDirs(t)}
+	for _, dir := range []string{f.dirs.Home, f.dirs.Runtime} {
+		if err := paths.EnsurePrivateDir(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := "database:\n  id: crm\n  schema_mode: strict\nstorage:\n  engine: postgres\n  postgres:\n    dsn_env: JUNK_DSN\nschemas:\n  collections:\n    contacts:\n      fields:\n        name: {type: string}\n"
+	// Mounted at startup and on reload from the registry.
+	f.writeManifest(t, "crm.yaml", text)
+	f.open(t)
+	if _, err := f.registry.Reload(context.Background(), "crm"); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := json.Marshal(f.state(t, "crm"))
+	mounts, _ := os.ReadFile(MountsPath(f.dirs.Runtime))
+
+	// Connected from a manifest file.
+	manifestPath := filepath.Join(t.TempDir(), "crm2.yaml")
+	if err := os.WriteFile(manifestPath, []byte(strings.Replace(text, "id: crm", "id: crm2", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.registry.Connect(ConnectRequest{Manifest: manifestPath})
+	e := envelope.As(err)
+	if e == nil || e.Code != envelope.StorageUnavailable {
+		t.Fatalf("connect = %v", err)
+	}
+	for _, where := range []struct{ name, text string }{
+		{"connect error", string(envelope.MarshalError(e))}, {"list", string(list)}, {"mounts.json", string(mounts)}, {"log", f.logText()},
+	} {
+		if strings.Contains(where.text, "s3cretjunk") {
+			t.Errorf("%s shows the variable's value: %s", where.name, where.text)
+		}
+	}
+	if !strings.Contains(string(list), "JUNK_DSN") && !strings.Contains(string(envelope.MarshalError(e)), "JUNK_DSN") {
+		t.Errorf("the variable's name is gone too: %s", list)
+	}
+}
+
+func TestMaskEnvironmentValues(t *testing.T) {
+	t.Parallel()
+	got := maskValues(`parse "a\"b s3cret" failed: a"b s3cret; short ab`, []string{`a"b s3cret`, "ab", ""})
+	if strings.Contains(got, "s3cret") || !strings.Contains(got, "short ab") {
+		t.Errorf("masked = %q", got)
 	}
 }

@@ -185,7 +185,7 @@ func (r *Registry) mountOne(ctx context.Context, registration Registration, gen 
 	select {
 	case result := <-outcome:
 		if result.err != nil {
-			record.Reason = mountReason(result.err, registration.Manifest)
+			record.Reason = mountReason(result.err, registration.Manifest, EnvironmentValues(registration.Parsed, r.getenv)...)
 			r.settle(record, gen, nil)
 			return
 		}
@@ -267,9 +267,10 @@ func (r *Registry) settle(record MountRecord, gen int, db *core.Database) {
 	}
 }
 
-// mountReason is a mount error as people read it: redacted, on one line,
-// without the manifest path the error starts with.
-func mountReason(err error, manifestPath string) string {
+// mountReason is a mount error as people read it: the values of the
+// manifest's variables (secrets) masked, redacted, on one line, without the
+// manifest path the error starts with.
+func mountReason(err error, manifestPath string, secrets ...string) string {
 	if err == nil {
 		return ""
 	}
@@ -281,7 +282,7 @@ func mountReason(err error, manifestPath string) string {
 		}
 		text = trimmed
 	}
-	return redact.String(strings.Join(strings.Fields(text), " "))
+	return redact.String(maskValues(strings.Join(strings.Fields(text), " "), secrets))
 }
 
 func (r *Registry) writeMounts() error {

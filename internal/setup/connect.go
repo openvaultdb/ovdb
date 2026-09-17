@@ -175,7 +175,7 @@ func (r *Registry) Connect(request ConnectRequest) (DatabaseResult, error) {
 	if err := paths.WriteFilePrivate(staging, plan.manifest); err != nil {
 		return DatabaseResult{}, r.connectUnavailable(request, plan, err.Error())
 	}
-	db, reason := r.mountStaging(staging)
+	db, reason := r.mountStaging(staging, EnvironmentValues(plan.parsed, r.getenv))
 	if db == nil {
 		cleanup()
 		return DatabaseResult{}, r.connectUnavailable(request, plan, reason)
@@ -220,7 +220,7 @@ func (r *Registry) Connect(request ConnectRequest) (DatabaseResult, error) {
 
 // mountStaging mounts a manifest once within the mount deadline, returning
 // the database or a redacted reason.
-func (r *Registry) mountStaging(staging string) (*core.Database, string) {
+func (r *Registry) mountStaging(staging string, secrets []string) (*core.Database, string) {
 	outcome := make(chan mountOutcome, 1)
 	go func() {
 		db, err := mount.FileWithOptions(staging, mount.Options{CatalogueDir: CatalogueDir(r.dirs.Home), SkipGitIdentity: true})
@@ -231,7 +231,7 @@ func (r *Registry) mountStaging(staging string) (*core.Database, string) {
 	select {
 	case result := <-outcome:
 		if result.err != nil {
-			return nil, mountReason(result.err, staging)
+			return nil, mountReason(result.err, staging, secrets...)
 		}
 		return result.db, ""
 	case <-timer.C:
@@ -244,7 +244,7 @@ func (r *Registry) mountStaging(staging string) (*core.Database, string) {
 // connectUnavailable is storage_unavailable for a storage that did not
 // mount, with the reason redacted and logged.
 func (r *Registry) connectUnavailable(request ConnectRequest, plan connectPlan, reason string) *envelope.Error {
-	reason = redact.String(reason)
+	reason = redact.String(maskValues(reason, EnvironmentValues(plan.parsed, r.getenv)))
 	r.logf("connecting database %s failed: %s", plan.id, reason)
 	next := connectChooseLocation(request)
 	if request.Manifest != "" {
