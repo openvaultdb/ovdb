@@ -263,19 +263,28 @@ func NewStatus(version string, dirs paths.Dirs, server Server, databases []Datab
 	if databases == nil {
 		databases = []Database{}
 	}
+	status := Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Demo: NewDemoStatus(dirs, databases)}
+	status.SetSkills(installed)
+	return status
+}
+
+// SetSkills replaces the skills field group and the next entries that
+// depend on it. A client calls it with the skills it resolved itself, so
+// `ovdb status` agrees with `ovdb skills list` whichever shell started the
+// server (local-server-and-web-console#REQ:client-values-and-mismatch).
+func (s *Status) SetSkills(installed []skills.Installed) {
 	if installed == nil {
 		installed = []skills.Installed{}
 	}
 	next := []envelope.Next{}
-	if server.State != StateRunning {
+	if s.Server.State != StateRunning {
 		next = append(next, envelope.Next{Label: uicopy.T("home.menu.start_server", nil), Command: "ovdb server start"})
 	}
 	next = append(next,
 		envelope.Next{Label: uicopy.T("next.setup_terminal", nil), Command: "ovdb"},
 		envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
 		envelope.Next{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"})
-	demo := NewDemoStatus(dirs, databases)
-	if !demo.Installed {
+	if !s.Demo.Installed {
 		next = append(next, envelope.Next{Label: uicopy.T("next.try_demo", nil), Command: "ovdb demo install --yes"})
 	}
 	storage := false
@@ -285,5 +294,5 @@ func NewStatus(version string, dirs paths.Dirs, server Server, databases []Datab
 	if !storage {
 		next = append(next, envelope.Next{Label: uicopy.T("skills.next.install_storage", nil), Command: "ovdb skills install " + skills.Storage + " --yes"})
 	}
-	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Demo: demo, Skills: installed, Next: next}
+	s.Skills, s.Next = installed, next
 }

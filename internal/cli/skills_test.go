@@ -1,6 +1,8 @@
 package cli_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -8,8 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
@@ -170,5 +175,50 @@ func TestSkillChangedSinceInstall(t *testing.T) {
 	e.ok("skills", "install", "todo-demo", "--harness", "claude", "--replace-changed", "--yes")
 	if data, _ := os.ReadFile(edited); string(data) == "my notes" {
 		t.Error("not replaced")
+	}
+}
+
+// Review F3: status and skills list agree, both from the client's
+// environment, even when the running server was started from a shell with
+// another home where the skill is installed.
+func TestStatusSkillsFromClientEnvironment(t *testing.T) {
+	e := previewEnv(t)
+	serverHome := e.userHome()
+	e.app.ChildEnv = append(e.app.ChildEnv, "HOME="+serverHome, "USERPROFILE="+serverHome, "CLAUDE_CONFIG_DIR=")
+	e.ok("server", "start")
+	e.ok("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+
+	clientHome := filepath.Join(t.TempDir(), "client")
+	e.vars["HOME"], e.vars["USERPROFILE"] = clientHome, clientHome
+	statusCmd := &cobra.Command{Use: "status"}
+	var out bytes.Buffer
+	statusCmd.SetOut(&out)
+	statusCmd.SetContext(context.Background())
+	if err := e.app.Status(statusCmd, true); err != nil {
+		t.Fatal(err)
+	}
+	var status setup.Status
+	if err := json.Unmarshal(out.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Skills) != 2 || len(status.Skills[0].InstalledFor) != 0 {
+		t.Errorf("status skills = %+v", status.Skills)
+	}
+	if last := status.Next[len(status.Next)-1]; last.Command != "ovdb skills install openvaultdb --yes" {
+		t.Errorf("status next lacks the skill: %+v", status.Next)
+	}
+	var listed skills.Document
+	if err := json.Unmarshal([]byte(e.ok("skills", "list", "--json").stdout), &listed); err != nil || len(listed.Skills[0].InstalledFor) != 0 {
+		t.Errorf("list = %+v", listed)
+	}
+
+	// Back in the server's home both say installed.
+	e.vars["HOME"], e.vars["USERPROFILE"] = serverHome, serverHome
+	out.Reset()
+	if err := e.app.Status(statusCmd, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `{"id":"openvaultdb","installed_for":["claude"]`) {
+		t.Errorf("status in the server's home = %s", out.String())
 	}
 }
