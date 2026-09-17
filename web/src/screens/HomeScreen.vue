@@ -19,19 +19,20 @@ onMounted(async () => {
   if (result.ok) home.value = result.data
 })
 
-function toOption(option: HomeOption): Option {
+function toOption(option: HomeOption): Option & { disabled?: boolean } {
   return {
     id: option.id,
     label: t(option.web_label_key ?? option.label_key),
     help: option.description_key ? t(option.description_key) : undefined,
     badge: option.badge ? { tone: option.badge.tone, label: t(option.badge.label_key) } : undefined,
     to: routes.find((route) => route.screen === option.id)?.path ?? '/',
+    disabled: option.disabled,
   }
 }
 
 const primary = computed(() => home.value?.options.filter((o) => o.group === 'primary').map(toOption) ?? [])
 const secondary = computed(() => home.value?.options.filter((o) => o.group === 'secondary').map(toOption) ?? [])
-const running = computed(() => home.value?.status_line[0]?.key === 'home.status.server_running')
+const running = computed(() => home.value?.status_line.some((part) => part.key === 'home.status.server_running') ?? false)
 
 function open(event: MouseEvent, to: string) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
@@ -67,16 +68,15 @@ function open(event: MouseEvent, to: string) {
       </h1>
       <OvOptionList v-if="primary.length" :options="primary" :label="t('home.question')" />
       <nav v-if="secondary.length" :aria-label="t('home.menu.more')" class="flex flex-wrap gap-x-6 gap-y-2 px-1">
-        <a
-          v-for="item in secondary"
-          :key="item.id"
-          :href="item.to"
-          :data-option="item.id"
-          class="font-medium text-accent hover:underline"
-          @click="open($event, item.to)"
-        >
-          {{ item.label }}
-        </a>
+        <template v-for="item in secondary" :key="item.id">
+          <!-- A disabled option says why instead of linking. -->
+          <span v-if="item.disabled" :data-option="item.id" aria-disabled="true" class="text-muted">
+            <span class="font-medium">{{ item.label }}</span> · {{ item.help }}
+          </span>
+          <a v-else :href="item.to" :data-option="item.id" class="font-medium text-accent hover:underline" @click="open($event, item.to)">
+            {{ item.label }}
+          </a>
+        </template>
       </nav>
     </section>
   </div>

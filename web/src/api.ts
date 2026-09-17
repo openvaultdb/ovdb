@@ -53,6 +53,7 @@ export interface HomeOption {
   web_label_key?: string
   description_key?: string
   badge?: Badge
+  disabled?: boolean
 }
 
 export interface HomeDocument {
@@ -107,6 +108,37 @@ export interface DatabaseResult {
   schema: number
   database: Database
   next: Next[]
+}
+
+export interface Context {
+  database: string
+  path: string
+  scope: 'flag' | 'environment' | 'project' | 'global' | 'only'
+  dir?: string
+}
+
+/** GET and PUT /api/local/v1/context (the console sees and sets only the global default: parity E3). */
+export interface ContextDocument {
+  schema: number
+  context: Context | null
+  global: Context | null
+  databases: string[]
+  message?: string
+  next: Next[]
+}
+
+/** GET /v1/databases/{db} */
+export interface DatabaseInfo {
+  id: string
+  engine: string
+  schemaMode: string
+  collections: string[] | null
+}
+
+/** A record from GET /v1/databases/{db}/records/{key} or a query. */
+export interface DataRecord {
+  key: string
+  data?: Record<string, unknown>
 }
 
 export interface ConfigDocument {
@@ -168,7 +200,8 @@ export async function api<T>(method: 'GET' | 'PUT' | 'POST' | 'DELETE', path: st
   }
   if (!response.ok) {
     const error = (document as { error?: ApiError }).error
-    return { ok: false, error: error ?? { code: 'internal', message: t('api.internal'), next: [] } }
+    // /v1 error bodies carry no next list.
+    return { ok: false, error: error ? { ...error, next: error.next ?? [] } : { code: 'internal', message: t('api.internal'), next: [] } }
   }
   return { ok: true, data: document as T }
 }

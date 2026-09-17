@@ -10,6 +10,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   api,
   type ApiError,
+  type ContextDocument,
   type DatabaseResult,
   type Engine,
   type EnginesDocument,
@@ -24,6 +25,7 @@ import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
+import { browseRoute } from '../datapath'
 import { defaultLocation, filterEngines, suggestedName } from '../engines'
 import { navigate } from '../router'
 
@@ -153,7 +155,21 @@ function storedText(db: DatabaseResult['database']) {
     : t('database.created.stored.ingitdb', { path: (db.location ?? '') + separator })
 }
 
+const using = ref(false)
+const usedDefault = ref<string | null>(null)
+
+// The console makes a database the default for all projects; choosing one
+// for a project happens in a terminal (parity E3).
+async function useAsDefault(id: string) {
+  using.value = true
+  const response = await api<ContextDocument>('PUT', '/api/local/v1/context', { scope: 'global', database: id })
+  using.value = false
+  if (response.ok) usedDefault.value = response.data.message ?? null
+  else problem.value = response.error
+}
+
 function another() {
+  usedDefault.value = null
   result.value = null
   chosen.value = null
   name.value = ''
@@ -198,6 +214,17 @@ function go(event: MouseEvent, path: string) {
               @click="go($event, '/databases')"
               >{{ item.label }}</a
             >
+            <template v-else-if="item.action === 'use'">
+              <a
+                :href="browseRoute(result.database.id)"
+                class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
+                @click="go($event, browseRoute(result.database.id))"
+                >{{ t('home.menu.browse') }}</a
+              >
+              <OvButton v-if="!usedDefault" variant="secondary" data-testid="use-as-default" :busy="using" @click="useAsDefault(result.database.id)">
+                {{ t('browse.use_as_default') }}
+              </OvButton>
+            </template>
             <a
               v-else-if="item.action === 'done'"
               href="/"
@@ -207,6 +234,7 @@ function go(event: MouseEvent, path: string) {
             >
           </template>
         </div>
+        <OvNotice v-if="usedDefault" live tone="success" :title="usedDefault" />
         <p>
           <button type="button" class="font-medium text-accent hover:underline" @click="another">{{ t('create.another') }}</button>
         </p>

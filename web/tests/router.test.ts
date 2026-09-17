@@ -9,6 +9,10 @@ describe('router', () => {
       currentPath.value = route.path
       expect(screen.value).toBe(route.screen)
     }
+    currentPath.value = '/browse/notes/items/x'
+    expect(screen.value).toBe('browse')
+    currentPath.value = '/browsers'
+    expect(screen.value).toBe('not-found')
     currentPath.value = '/missing'
     expect(screen.value).toBe('not-found')
   })
