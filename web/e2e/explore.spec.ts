@@ -88,9 +88,9 @@ test('Explore data names the demo database, shows demo-specific DataTug CLI copy
   expect(descriptor).not.toHaveProperty('token')
 
   if (datatugOnPath()) {
-    await expect(result).toContainText('datatug is on your PATH.')
+    await expect(result).toContainText('datatug is on the PATH the OVDB server sees.')
   } else {
-    await expect(result).toContainText("datatug isn't on your PATH yet")
+    await expect(result).toContainText("datatug isn't on the PATH the OVDB server sees")
     await expect(result).toContainText('brew tap datatug/tap && brew install datatug')
   }
 

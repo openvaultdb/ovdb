@@ -187,7 +187,13 @@ type DataTugCLI struct {
 
 // Prepare builds and writes the DataTug CLI connection for db (capability
 // row 22), on the server at baseURL, with collection (DefaultCollection
-// when empty).
+// when empty). lookPath checks the calling process's own PATH; a caller
+// that instead wants the answer relayed by a different process (the local
+// server, over HTTP) should pass nil and let ApplyOnPath override it — see
+// review-inc-7.md F2: an agent's or shell's PATH commonly differs from
+// whatever PATH started the detached OVDB server, so a check made inside
+// the server is not the client's PATH and must never be presented as if it
+// were.
 func Prepare(lookPath LookPath, home, baseURL, db, collection string) (DataTugCLI, error) {
 	if collection == "" {
 		collection = DefaultCollection
@@ -197,20 +203,30 @@ func Prepare(lookPath LookPath, home, baseURL, db, collection string) (DataTugCL
 	if err := WriteDescriptor(path, descriptor); err != nil {
 		return DataTugCLI{}, err
 	}
-	onPath := OnPath(lookPath)
 	tokenCommand := TokenCommand(db)
 	lines := EnvLines(descriptor, tokenCommand)
 	result := DataTugCLI{
-		OnPath: onPath, Collection: collection, DescriptorPath: path, Descriptor: descriptor, EnvLines: lines,
+		Collection: collection, DescriptorPath: path, Descriptor: descriptor, EnvLines: lines,
 		Shell: shellFamily(goruntime.GOOS), ShellText: ShellText(goruntime.GOOS, lines),
 		TokenCommand: tokenCommand, QueryCommand: QueryCommand(goruntime.GOOS, path, collection),
-		Next: []envelope.Next{{Label: uicopy.T("explore.next.create_token", nil), Command: tokenCommand}},
 	}
-	if !onPath {
-		result.InstallCommands = InstallCommands
-		result.Next = append([]envelope.Next{{Label: uicopy.T("explore.next.install_datatug", nil), Command: InstallCommands[0]}}, result.Next...)
-	}
+	ApplyOnPath(&result, OnPath(lookPath))
 	return result, nil
+}
+
+// ApplyOnPath sets document's OnPath, InstallCommands and Next from onPath,
+// the one place both Prepare (the server's own check) and a client
+// overriding it with its own process's PATH (F2) compute them, so the two
+// can never drift into different wording for the same boolean.
+func ApplyOnPath(document *DataTugCLI, onPath bool) {
+	document.OnPath = onPath
+	document.InstallCommands = nil
+	next := []envelope.Next{{Label: uicopy.T("explore.next.create_token", nil), Command: document.TokenCommand}}
+	if !onPath {
+		document.InstallCommands = InstallCommands
+		next = append([]envelope.Next{{Label: uicopy.T("explore.next.install_datatug", nil), Command: InstallCommands[0]}}, next...)
+	}
+	document.Next = next
 }
 
 func shellFamily(goos string) string {

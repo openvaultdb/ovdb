@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 
@@ -36,7 +37,19 @@ func (l *Local) ExploreDataTugApp(db string) []byte {
 
 // PrepareDataTugCLI chooses DataTug CLI (REQ:prepare-datatug-cli-connection):
 // starts the server unless noStart (the descriptor's baseUrl needs its real
-// port), checks datatug on PATH, and writes the four-key descriptor.
+// port), writes the four-key descriptor, and reports whether datatug is on
+// PATH.
+//
+// The PATH check happens twice: the server, writing the descriptor,
+// necessarily checks its own; the CLI and TUI run in a different process
+// (a shell, an agent harness) that commonly has a different PATH from
+// whatever started the detached server (go install into a fresh shell,
+// brew's prefix missing from the server's launch environment, …), so this
+// client overrides on_path, install_commands and next with its own
+// process's answer (review-inc-7.md F2) — the person is told about the
+// PATH they can actually fix. l.DataTugLookPath stands in for exec.LookPath
+// in tests; the web console has no client process, so it keeps the
+// server's own check (worded accordingly in its copy).
 func (l *Local) PrepareDataTugCLI(ctx context.Context, db, collection string, noStart bool) ([]byte, error) {
 	c, err := l.Connect(ctx, noStart)
 	if err != nil {
@@ -50,5 +63,12 @@ func (l *Local) PrepareDataTugCLI(ctx context.Context, db, collection string, no
 	if err != nil {
 		return nil, err
 	}
-	return response.Body, nil
+	var document explore.DataTugCLI
+	if err := json.Unmarshal(response.Body, &document); err != nil {
+		// Not a schema-1 document (a V1Error already returned above as err
+		// would have short-circuited); pass the body through unchanged.
+		return response.Body, nil
+	}
+	explore.ApplyOnPath(&document, explore.OnPath(l.DataTugLookPath))
+	return envelope.Marshal(document), nil
 }

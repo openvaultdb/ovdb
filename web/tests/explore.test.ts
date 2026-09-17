@@ -84,7 +84,7 @@ describe('Explore data', () => {
     await flushPromises()
     expect(calls.find((c) => c.path.startsWith('/api/local/v1/explore/datatug'))?.path).toBe('/api/local/v1/explore/datatug?db=notes')
     const result = wrapper.get('[data-testid="explore-datatug-cli"]')
-    expect(result.text()).toContain('datatug is on your PATH.')
+    expect(result.text()).toContain('datatug is on the PATH the OVDB server sees.')
     expect(result.text()).not.toContain('ovdb_') // never a token value
     expect(result.text()).toContain('--no-policies')
     expect(result.text()).toContain('ovdb token create --db notes --scope read-only')

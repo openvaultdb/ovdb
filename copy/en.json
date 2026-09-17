@@ -526,6 +526,8 @@
   "explore.datatug_cli.title": "DataTug CLI",
   "explore.datatug_cli.ready": "datatug is on your PATH.",
   "explore.datatug_cli.missing": "datatug isn't on your PATH yet. Install it, then run the command below.",
+  "explore.datatug_cli.ready_server": "datatug is on the PATH the OVDB server sees.",
+  "explore.datatug_cli.missing_server": "datatug isn't on the PATH the OVDB server sees. Install it, then run the command below.",
   "explore.datatug_cli.descriptor_saved": "A connection descriptor for {database} was saved to {path}. It holds no token.",
   "explore.datatug_cli.env_vars": "Set these environment variables:",
   "explore.datatug_cli.token_intro": "Create a read-only token first:",

@@ -106,7 +106,14 @@ function backToMenu() {
       <p v-if="cliLoading" class="text-muted">{{ t('console.loading') }}</p>
       <OvNotice v-else-if="cliProblem" live tone="problem" :title="cliProblem.message" :reason="cliProblem.reason" :next="cliProblem.next" />
       <div v-else-if="cli" data-testid="explore-datatug-cli" class="flex flex-col gap-4">
-        <OvNotice live :tone="cli.on_path ? 'success' : 'problem'" :title="cli.on_path ? t('explore.datatug_cli.ready') : t('explore.datatug_cli.missing')">
+        <!-- The web console has no client process of its own to check PATH from,
+        so this is the OVDB server's PATH, which can differ from the person's
+        shell PATH (review-inc-7.md F2) — worded accordingly. -->
+        <OvNotice
+          live
+          :tone="cli.on_path ? 'success' : 'problem'"
+          :title="cli.on_path ? t('explore.datatug_cli.ready_server') : t('explore.datatug_cli.missing_server')"
+        >
           <div v-if="!cli.on_path" class="flex flex-col gap-2">
             <OvCommand v-for="install in cli.install_commands" :key="install" :command="install" />
           </div>

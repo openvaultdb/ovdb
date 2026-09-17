@@ -2,6 +2,9 @@ package cli_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -106,6 +109,58 @@ func TestExploreDataTugCLIMissingShowsInstallCommands(t *testing.T) {
 		if !strings.Contains(human.stdout, want) {
 			t.Errorf("human output lacks %q:\n%s", want, human.stdout)
 		}
+	}
+}
+
+// stubDatatug creates an executable named datatug (datatug.exe on Windows)
+// in a fresh directory and returns the directory, for putting on a PATH so
+// exec.LookPath finds it without needing a real datatug build.
+func stubDatatug(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	name := "datatug"
+	if goruntime.GOOS == "windows" {
+		name = "datatug.exe"
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// F2 (review-inc-7.md): the detached server's PATH is not necessarily this
+// process's PATH (a fresh shell after `go install`, an agent harness with a
+// minimal PATH, …). The CLI must report on_path from ITS OWN process, not
+// whatever the server saw, even when they differ.
+func TestExploreDataTugCLIChecksTheClientsOwnPath(t *testing.T) {
+	e, _, _ := dataEnv(t)
+	originalPath := os.Getenv("PATH")
+	stubDir := stubDatatug(t)
+	// The child (detached server) keeps the PATH this test had before the
+	// stub was added — datatug is not on it. Appended last, so it wins over
+	// the PATH os.Environ() already carries when the child's Env is built.
+	e.app.ChildEnv = append(e.app.ChildEnv, "PATH="+originalPath)
+	// This test process (standing in for the CLI/TUI) gets the stub — same
+	// process explore.OnPath(nil) checks from.
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+originalPath)
+
+	r := e.ok("explore", "datatug-cli", "--db", "notes", "--json")
+	var document explore.DataTugCLI
+	if err := json.Unmarshal([]byte(r.stdout), &document); err != nil {
+		t.Fatalf("decode: %v\n%s", err, r.stdout)
+	}
+	if !document.OnPath {
+		t.Errorf("on_path = false, want true (client's own PATH has datatug): %+v", document)
+	}
+	if len(document.InstallCommands) != 0 {
+		t.Errorf("install_commands = %v, want none once the client sees datatug", document.InstallCommands)
+	}
+	human := e.ok("explore", "datatug-cli", "--db", "notes")
+	if strings.Contains(human.stdout, "isn't on your PATH") {
+		t.Errorf("human output still claims datatug is missing:\n%s", human.stdout)
+	}
+	if !strings.Contains(human.stdout, "datatug is on your PATH.") {
+		t.Errorf("human output lacks the ready copy:\n%s", human.stdout)
 	}
 }
 
