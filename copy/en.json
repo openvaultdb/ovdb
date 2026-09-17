@@ -452,7 +452,7 @@
   "connect.manifest_option_help": "Any storage: inGitDB, SQLite, Firestore, MySQL or PostgreSQL.",
   "connect.location.label.ingitdb": "Folder",
   "connect.location.label.sqlite": "File",
-  "connect.location.help.ingitdb": "The full path of an inGitDB database folder (it has a .ingitdb folder inside). OVDB changes nothing in it.",
+  "connect.location.help.ingitdb": "The full path of an inGitDB database folder (it has a .ingitdb folder inside). OVDB doesn't change your files or Git history.",
   "connect.location.help.sqlite": "The full path of a SQLite file you already have. OVDB changes nothing in it.",
   "connect.manifest.label": "Manifest file",
   "connect.manifest.help": "The full path of the manifest file. OVDB keeps a copy and leaves the original as it is.",

@@ -21,7 +21,7 @@ func (a *App) databasesConnectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "connect (<name> --engine <ingitdb or sqlite> --path <absolute path> | --manifest <absolute path>)",
 		Short: "Connect an existing inGitDB folder, SQLite file or manifest file",
-		Long: `Connect an existing database to OVDB without changing anything in it.
+		Long: `Connect an existing database to OVDB without changing your data or its Git history.
 
   ovdb databases connect notes --engine ingitdb --path /home/me/notes
   ovdb databases connect shop --engine sqlite --path /home/me/shop.sqlite

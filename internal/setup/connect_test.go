@@ -87,20 +87,19 @@ func requireGit(t *testing.T) {
 }
 
 // ingitdbRepo is an existing inGitDB Git repository with one committed
-// record, made outside OVDB.
+// record, made outside OVDB: the records are written through a mount of a
+// separate seed folder and copied in, so nothing has ever mounted the
+// repository itself before a test snapshots it.
 func ingitdbRepo(t *testing.T) string {
 	t.Helper()
 	requireGit(t)
 	base := t.TempDir()
-	repo := filepath.Join(base, "notes-repo")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
+	seed := filepath.Join(base, "seed")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v %s", err, out)
-	}
 	manifestPath := filepath.Join(base, "notes.yaml")
-	text := "database: {id: notes, schema_mode: schemaless}\nstorage: {engine: ingitdb, path: " + yamlScalar(repo) + "}\n"
+	text := "database: {id: notes, schema_mode: schemaless}\nstorage: {engine: ingitdb, path: " + yamlScalar(seed) + "}\n"
 	if err := os.WriteFile(manifestPath, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -116,34 +115,100 @@ func ingitdbRepo(t *testing.T) string {
 	srv.Handler().ServeHTTP(recorder, request)
 	_ = db.Close()
 	if recorder.Code >= 300 {
-		t.Fatalf("seeding the repository: %d %s", recorder.Code, recorder.Body)
+		t.Fatalf("seeding: %d %s", recorder.Code, recorder.Body)
+	}
+
+	repo := filepath.Join(base, "notes-repo")
+	err = filepath.WalkDir(seed, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(seed, path)
+		if rel == ".git" {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(filepath.Join(repo, rel), 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(repo, rel), data, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	// A repository as a person clones it: everything committed.
-	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "Seed notes"}} {
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-q", "-m", "Seed notes"}} {
 		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	if out, _ := exec.Command("git", "-C", repo, "status", "--porcelain").Output(); len(out) != 0 {
-		t.Fatalf("fixture repository not clean: %s", out)
+	if _, err := os.Stat(filepath.Join(repo, ".git", "dalgo2ingitdb")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the fixture repository was mounted before the test: %v", err)
 	}
 	return repo
 }
 
+// gitState is what a person's repository must keep across a connect: its
+// working tree and every .git file (index, HEAD, config and objects
+// included), except what the inGitDB driver keeps under .git/dalgo2ingitdb.
+type gitState struct {
+	files map[string]string
+	head  string
+}
+
+func repoState(t *testing.T, repo string) gitState {
+	t.Helper()
+	head, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return gitState{files: snapshot(t, repo), head: string(head)}
+}
+
+// sameRepository fails unless after equals before, allowing only additions
+// under .git/dalgo2ingitdb (the driver's transaction lock).
+func sameRepository(t *testing.T, what string, before, after gitState) {
+	t.Helper()
+	driver := filepath.Join(".git", "dalgo2ingitdb")
+	for path, sum := range after.files {
+		if old, ok := before.files[path]; ok {
+			if old != sum && path != ".git" {
+				t.Errorf("%s: %s changed", what, path)
+			}
+			continue
+		}
+		if path != driver && !strings.HasPrefix(path, driver+string(filepath.Separator)) {
+			t.Errorf("%s: %s added", what, path)
+		}
+	}
+	for path := range before.files {
+		if _, ok := after.files[path]; !ok {
+			t.Errorf("%s: %s removed", what, path)
+		}
+	}
+	if before.head != after.head {
+		t.Errorf("%s: HEAD moved from %s to %s", what, before.head, after.head)
+	}
+}
+
 // AC:connect-leaves-folder-untouched, the inGitDB half: an existing Git
-// repository with records and only a global git identity registers with no
-// file added or changed, .git/config included, and serves its records.
+// repository with records and only a global git identity registers with its
+// working tree, index, HEAD and .git/config unchanged (the only addition is
+// the driver's lock under .git/dalgo2ingitdb), and serves its records.
 func TestConnectInGitDBRepositoryLeavesItUntouched(t *testing.T) {
 	withGlobalGitIdentity(t)
 	repo := ingitdbRepo(t)
-	before := snapshot(t, repo)
+	before := repoState(t, repo)
 	f := newRegistry(t)
 
 	result, err := f.registry.Connect(ConnectRequest{ID: "notes", Engine: EngineInGitDB, Path: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sameSnapshot(t, "connect", before, snapshot(t, repo))
+	sameRepository(t, "connect", before, repoState(t, repo))
 	if out, _ := exec.Command("git", "-C", repo, "status", "--porcelain", "--ignored").Output(); len(out) != 0 {
 		t.Errorf("git status after connect: %s", out)
 	}
@@ -167,7 +232,7 @@ func TestConnectInGitDBRepositoryLeavesItUntouched(t *testing.T) {
 	if state := f.state(t, "notes"); state.State != MountMounted {
 		t.Errorf("after a restart = %+v", state)
 	}
-	sameSnapshot(t, "remount", before, snapshot(t, repo))
+	sameRepository(t, "remount", before, repoState(t, repo))
 }
 
 // AC:connect-leaves-folder-untouched, the SQLite half: a text file named
