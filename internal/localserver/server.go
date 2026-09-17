@@ -9,12 +9,15 @@
 package localserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,6 +34,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
+	"github.com/openvaultdb/ovdb/internal/setup/demo"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -64,6 +68,7 @@ type localServer struct {
 	logins   *loginLinks
 	sessions *sessions
 	registry *setup.Registry
+	demo     *demo.Service
 	// contextMu serialises context writes.
 	contextMu sync.Mutex
 }
@@ -129,6 +134,7 @@ func New(opts Options) (*Handler, error) {
 		logins: newLoginLinks(opts.Now), sessions: newSessions(opts.Dirs.Runtime, opts.Now),
 		registry: registry,
 	}
+	s.demo = &demo.Service{Dirs: opts.Dirs, Registry: registry, Seed: s.seedData, Now: opts.Now, Logf: logf(opts.ErrorLog, opts.Now)}
 
 	var h http.Handler = http.HandlerFunc(s.route)
 	h = cors(setup.NormalizeOrigins(config.Server.CORS))(h)
@@ -167,6 +173,8 @@ var endpoints = []endpoint{
 	{http.MethodDelete, "/api/local/v1/databases/{id}", accessOwner, (*localServer).removeDatabase},
 	{http.MethodGet, "/api/local/v1/context", accessOwner, (*localServer).getContext},
 	{http.MethodPut, "/api/local/v1/context", accessOwner, (*localServer).putContext},
+	{http.MethodGet, "/api/local/v1/demo", accessOwner, (*localServer).getDemo},
+	{http.MethodPost, "/api/local/v1/demo/install", accessOwner, (*localServer).installDemo},
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -433,6 +441,74 @@ func (s *localServer) removeDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	envelope.WriteJSON(w, http.StatusOK, result)
+}
+
+// getDemo is the TODO demo document (capabilities 18 and 19); the TODO app
+// finds its database here (todo-demo#REQ:todo-app-same-origin).
+func (s *localServer) getDemo(w http.ResponseWriter, _ *http.Request) {
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, demo.Inspect(s.opts.Dirs.Data, databases))
+}
+
+// installDemo installs the TODO demo (capability 18). A console session may
+// install it too: the request passed cross-origin protection.
+func (s *localServer) installDemo(w http.ResponseWriter, r *http.Request) {
+	var request demo.InstallRequest
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	document, err := s.demo.Install(r.Context(), request)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if document.AlreadyInstalled {
+		status = http.StatusOK
+	}
+	envelope.WriteJSON(w, status, document)
+}
+
+// seedData writes the demo's records in one batch through the data API, as
+// the owner: the files are exactly what any client writing them produces.
+func (s *localServer) seedData(ctx context.Context, id string, ops []demo.Op) error {
+	type op struct {
+		Op   string         `json:"op"`
+		Key  string         `json:"key"`
+		Data map[string]any `json:"data"`
+	}
+	batch := struct {
+		Message string `json:"message"`
+		Ops     []op   `json:"ops"`
+	}{Message: "Install the TODO demo"}
+	for _, o := range ops {
+		batch.Ops = append(batch.Ops, op{Op: "insert", Key: strings.TrimPrefix(o.Path, "/"), Data: o.Data})
+	}
+	body, err := json.Marshal(batch)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "/v1/databases/"+url.PathEscape(id)+"/batch", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+s.opts.Secret)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	s.data.ServeHTTP(recorder, request)
+	if recorder.Code >= http.StatusMultipleChoices {
+		var failure v1Error
+		_ = json.Unmarshal(recorder.Body.Bytes(), &failure)
+		if failure.Error.Message == "" {
+			failure.Error.Message = http.StatusText(recorder.Code)
+		}
+		return fmt.Errorf("%s", failure.Error.Message)
+	}
+	return nil
 }
 
 func (s *localServer) serverInfo(w http.ResponseWriter, _ *http.Request) {

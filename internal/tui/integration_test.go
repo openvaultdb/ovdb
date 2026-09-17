@@ -91,6 +91,7 @@ func TestHomeServerStartOpenBrowserStop(t *testing.T) {
 	port := freePort(t)
 	m := realModel(t, port)
 
+	m = send(t, m, key("down"))  // past Try a demo
 	m = send(t, m, key("down"))  // past Create a database
 	m = send(t, m, key("enter")) // Home -> Server (not running)
 	if m.screen != ScreenServer || m.server.server.State != setup.StateNotRunning {
@@ -144,6 +145,7 @@ func TestPortConflictProblemThenUsePortRemedy(t *testing.T) {
 	t.Cleanup(func() { _ = occupied.Close() })
 
 	m := realModel(t, port)
+	m = send(t, m, key("down"))  // past Try a demo
 	m = send(t, m, key("down"))  // past Create a database
 	m = send(t, m, key("enter")) // Home -> Server
 	m = send(t, m, key("enter")) // Start -> fails: port in use

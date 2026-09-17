@@ -78,6 +78,15 @@ var Rows = []Row{
 	{ID: "17", Capability: "Write records", CLI: []string{"ovdb set", "ovdb add", "ovdb delete"},
 		API:        []string{"PUT /v1/databases/{db}/records/{key}", "PATCH /v1/databases/{db}/records/{key}", "POST /v1/databases/{db}/records/{key}", "DELETE /v1/databases/{db}/records/{key}"},
 		Exceptions: []string{"E5"}, Implemented: true},
+	// Try a demo: the CLI installs with `ovdb demo install` (and reports with
+	// `ovdb demo status`); the TUI's and web console's Try a demo show where the
+	// lists will be stored, then install through the same endpoint.
+	{ID: "18", Capability: "Install TODO demo", CLI: []string{"ovdb demo install", "ovdb demo status"}, TUI: "demo", Web: "/demo",
+		API: []string{"GET /api/local/v1/demo", "POST /api/local/v1/demo/install"}, Implemented: true},
+	// Open TODO app: the CLI and TUI create a login link that lands on
+	// /apps/todo/; the web console, already signed in, links to it.
+	{ID: "19", Capability: "Open TODO app", CLI: []string{"ovdb demo open"}, TUI: "demo", Web: "/demo",
+		API: []string{"GET /api/local/v1/demo", "POST /api/local/v1/login-links"}, Implemented: true},
 	// Tokens and CORS origins are developer settings: CLI only, and a console
 	// session gets 403 on server.cors and /v1/tokens (E7).
 	{ID: "25", Capability: "Access tokens and browser app origins",

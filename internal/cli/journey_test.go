@@ -1,9 +1,11 @@
 package cli_test
 
 // The journey regression gate (configuration-parity#REQ:journey-a-terminal,
-// REQ:journey-c-agent), as far as increment 3 reaches: Journey A without the
-// telemetry prompt (increment 9) and Journey C without skills (increment 7)
-// or the demo (increment 4).
+// REQ:journey-c-agent, REQ:journey-d-todo-demo), as far as increment 4
+// reaches: Journey A without the telemetry prompt (increment 9), Journey C
+// without skills (increment 7), and Journey D without the TODO skill
+// (increment 7) or Explore data (increment 8). Journey D's browser half, the
+// agent's change appearing in the open app, is web/e2e/todo.spec.ts.
 
 import (
 	"bytes"
@@ -86,10 +88,10 @@ func TestJourneyATerminal(t *testing.T) {
 			m = drive(t, m, tea.KeyPressMsg{Text: k})
 		}
 	}
-	if view := screenText(m); !strings.Contains(view, "What would you like to do?") || !strings.Contains(view, "> Create a database") {
+	if view := screenText(m); !strings.Contains(view, "What would you like to do?") || !strings.Contains(view, "> Try a demo") {
 		t.Fatalf("Home:\n%s", view)
 	}
-	press("enter", "enter") // Create a database → inGitDB
+	press("down", "enter", "enter") // Create a database → inGitDB
 	press("n", "o", "t", "e", "s")
 	// A long location wraps, so compare without whitespace.
 	if view := strings.ReplaceAll(screenText(m), " ", ""); !strings.Contains(view, filepath.Join(e.dirs.Data, "notes")) {
@@ -163,5 +165,54 @@ func TestJourneyCAgent(t *testing.T) {
 	}
 	if r := e.ok("get", key.Key, "--db", "notes", "--json"); !strings.Contains(r.stdout, `"data":{"title":"Hello"}`) {
 		t.Errorf("get --json = %s", r.stdout)
+	}
+}
+
+// Journey D (partial): `ovdb` → Try a demo → install → Open TODO app signs
+// the browser in to /apps/todo/; an agent (no terminal) then changes the
+// same lists with data commands and reads them back (AC:journey-d-passes).
+func TestJourneyDTodoDemo(t *testing.T) {
+	skipInGitDBWritesOnWindows(t)
+	e := previewEnv(t)
+	e.in(t.TempDir())
+	var opened []string
+	local := &client.Local{
+		Dirs: e.dirs, Version: testVersion, Port: e.port(), ConsoleBuilt: func() bool { return true },
+		Command: func(port int) *exec.Cmd {
+			command := exec.Command(os.Args[0], "server", "run", "--port", strconv.Itoa(port))
+			command.Env = append(append(os.Environ(), childEnv+"=1"), e.dirs.Env()...)
+			return command
+		},
+	}
+	var m tea.Model = tui.New(context.Background(), local, func(link string) error { opened = append(opened, link); return nil }, 80, 24)
+	m = drive(t, m, m.Init()())
+	press := func(keys ...string) {
+		for _, k := range keys {
+			m = drive(t, m, tea.KeyPressMsg{Text: k})
+		}
+	}
+	if view := screenText(m); !strings.Contains(view, "> Try a demo") {
+		t.Fatalf("Home:\n%s", view)
+	}
+	press("enter", "enter") // Try a demo → install
+	if view := screenText(m); !strings.Contains(view, "The TODO demo is ready") || !strings.Contains(view, "Open TODO app ovdb demo open") {
+		t.Fatalf("Result:\n%s", view)
+	}
+	press("o")
+	if len(opened) != 1 || !strings.Contains(opened[0], "next=%2Fapps%2Ftodo%2F") {
+		t.Fatalf("opened %v", opened)
+	}
+	press("enter", "q")
+
+	e.vars[cli.EnvNonInteractive] = "1"
+	e.ok("add", "/lists/to-buy/items", `{"title":"Tea","done":false}`, "--db", "todo")
+	e.ok("add", "/lists/to-watch/items", `{"title":"Arrival","done":false}`, "--db", "todo")
+	for path, titles := range map[string][]string{"/lists/to-buy/items": {"Milk", "Bananas", "Coffee", "Tea"}, "/lists/to-watch/items": {"The Matrix", "Interstellar", "Arrival"}} {
+		list := e.ok("list", path, "--db", "todo", "--json").stdout
+		for _, title := range titles {
+			if !strings.Contains(list, `"title":"`+title+`"`) {
+				t.Errorf("%s lacks %s: %s", path, title, list)
+			}
+		}
 	}
 }

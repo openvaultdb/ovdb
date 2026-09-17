@@ -63,6 +63,9 @@ type Local struct {
 	// the walk-up directories and any --db or OVDB_DATABASE. The web console
 	// has no such thing; CLI and TUI send it with every context read.
 	Where dbcontext.Request
+	// ConsoleBuilt reports whether this binary embeds the web console and
+	// TODO app; web.Built when nil.
+	ConsoleBuilt func() bool
 }
 
 func (l *Local) notice(line string) {

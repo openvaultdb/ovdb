@@ -152,6 +152,7 @@ func NewHome(server Server, databases []Database, context *dbcontext.Context) Ho
 		serverHelp = "home.menu.server_help"
 	}
 	options := []HomeOption{
+		{ID: "demo", Group: "primary", LabelKey: "home.menu.try_demo", DescriptionKey: "home.menu.try_demo_help"},
 		{ID: "create", Group: "primary", LabelKey: "home.menu.create_database", DescriptionKey: "home.menu.create_database_help"},
 		{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
 			DescriptionKey: serverHelp, Badge: &badge},
@@ -242,7 +243,9 @@ type Status struct {
 	// Context is the database and path that apply where the client runs
 	// (capability 14); null when none does.
 	Context *dbcontext.Context `json:"context"`
-	Next    []envelope.Next    `json:"next"`
+	// Demo says whether the TODO demo is installed, and where.
+	Demo DemoStatus      `json:"demo"`
+	Next []envelope.Next `json:"next"`
 }
 
 // NewStatus builds the status for this ovdb version, locations, server and
@@ -259,5 +262,9 @@ func NewStatus(version string, dirs paths.Dirs, server Server, databases []Datab
 	next = append(next,
 		envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
 		envelope.Next{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"})
-	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Next: next}
+	demo := NewDemoStatus(dirs.Data, databases)
+	if !demo.Installed {
+		next = append(next, envelope.Next{Label: uicopy.T("next.try_demo", nil), Command: "ovdb demo install --yes"})
+	}
+	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Demo: demo, Next: next}
 }

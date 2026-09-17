@@ -373,6 +373,63 @@ func TestCrossOriginProtection(t *testing.T) {
 	}
 }
 
+// todo-demo through the local API: a console session installs the demo
+// (the web console's Try a demo) and reads where it is; a cross-site page
+// cannot install it with the browser's cookie
+// (local-server-and-web-console#AC:cross-site-cookie-post-blocked, the
+// cookie half).
+func TestDemoEndpoints(t *testing.T) {
+	// TODO(ingitdb/dalgo2ingitdb#13): runs on Windows once inGitDB writes work there.
+	if goruntime.GOOS == "windows" {
+		t.Skip("inGitDB writes fail on Windows: ingitdb/dalgo2ingitdb#13")
+	}
+	t.Parallel()
+	f := newFixture(t)
+	session := f.signIn(t)
+	install := func(header map[string]string) *httptest.ResponseRecorder {
+		return f.do(t, request{method: http.MethodPost, path: "/api/local/v1/demo/install", body: `{}`, cookie: session, header: header})
+	}
+
+	for _, header := range []map[string]string{crossSite, {"Origin": "https://evil.example"}} {
+		assertEnvelope(t, install(header), http.StatusForbidden, envelope.Forbidden)
+	}
+	rec := f.do(t, request{path: "/api/local/v1/demo", cookie: session})
+	location := filepath.Join(f.dirs.Data, "demos", "todo")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"installed":false`) {
+		t.Fatalf("demo after cross-site install = %d %s", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(location); !os.IsNotExist(err) {
+		t.Fatalf("a cross-site request wrote %s: %v", location, err)
+	}
+
+	rec = install(sameOrigin(testHost))
+	var document struct {
+		Installed        bool   `json:"installed"`
+		AlreadyInstalled bool   `json:"already_installed"`
+		Database         string `json:"database"`
+		Location         string `json:"location"`
+		AppPath          string `json:"app_path"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusCreated || err != nil ||
+		!document.Installed || document.Database != "todo" || document.Location != location || document.AppPath != "/apps/todo/" {
+		t.Fatalf("session install = %d %s", rec.Code, rec.Body)
+	}
+	// The seed went through the data API: the app reads it the same way.
+	items := f.do(t, request{method: http.MethodPost, path: "/v1/databases/todo/query", body: `{"collection":"items","parent":"lists/to-buy"}`, bearer: testSecret})
+	for _, title := range []string{"Milk", "Bananas", "Coffee"} {
+		if !strings.Contains(items.Body.String(), `"title":"`+title+`"`) {
+			t.Errorf("to-buy lacks %s: %s", title, items.Body)
+		}
+	}
+	rec = install(sameOrigin(testHost))
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil || !document.AlreadyInstalled {
+		t.Errorf("second install = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(t, request{path: "/api/local/v1/demo"}); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous GET demo = %d", rec.Code)
+	}
+}
+
 // AC:cross-site-cookie-post-blocked, the bearer half: server.cors origins get
 // CORS headers on /v1/… and /token, for bearer requests only.
 func TestCORSForBearerRequestsOnly(t *testing.T) {

@@ -17,6 +17,8 @@ type resultScreen struct {
 	// next are the server's next actions, each with its command; creating
 	// and removing databases fill it.
 	next []envelope.Next
+	// opened is the TODO app's sign-in links once Open TODO app ran.
+	opened []string
 }
 
 // newStopResult builds the Result screen for `ovdb server stop`, reusing
@@ -38,6 +40,18 @@ func (m Model) viewResult() string {
 	for _, line := range m.result.lines {
 		b.WriteString(wordWrap(line, width))
 		b.WriteString("\n")
+	}
+	if len(m.result.opened) > 0 {
+		b.WriteString("\n")
+		for _, line := range m.result.opened {
+			if link, ok := strings.CutPrefix(line, "  "); ok {
+				line = indentWrap("  ", link, width)
+			} else {
+				line = wordWrap(line, width)
+			}
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
 	}
 	if next := resultNext(m.result.next); len(next) > 0 {
 		b.WriteString("\n")
