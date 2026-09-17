@@ -131,3 +131,37 @@ func TestExploreDataTugAppIsHonest(t *testing.T) {
 		t.Errorf("human output = %s", human.stdout)
 	}
 }
+
+// F1 (review-inc-7.md): DataTug.app is not the TODO demo — its own honesty
+// copy must never borrow the demo's sign-in-link wording, with or without
+// --print-url, and for both a demo and a non-demo database.
+func TestExploreDataTugAppNeverBorrowsDemoSignInCopy(t *testing.T) {
+	demoEnv := previewEnv(t)
+	demoEnv.in(t.TempDir())
+	demoEnv.ok("demo", "install", "--yes")
+	dataEnvironment, _, _ := dataEnv(t)
+
+	for _, tc := range []struct {
+		name string
+		e    *env
+		db   string
+	}{
+		{"demo database", demoEnv, "todo"},
+		{"non-demo database", dataEnvironment, "notes"},
+	} {
+		for _, args := range [][]string{
+			{"explore", "datatug-app", "--db", tc.db, "--print-url"},
+			{"explore", "datatug-app", "--db", tc.db},
+		} {
+			human := tc.e.ok(args...)
+			for _, forbidden := range []string{"TODO app", "sign-in", "single use"} {
+				if strings.Contains(human.stdout, forbidden) {
+					t.Errorf("%s %v output leaks demo copy %q:\n%s", tc.name, args, forbidden, human.stdout)
+				}
+			}
+			if !strings.Contains(human.stdout, "https://datatug.app") {
+				t.Errorf("%s %v output lacks the URL:\n%s", tc.name, args, human.stdout)
+			}
+		}
+	}
+}

@@ -166,7 +166,7 @@ func (m Model) updateExplore(key string) (tea.Model, tea.Cmd) {
 			m.busy = &busyState{label: uicopy.T("console.loading", nil)}
 			return m, tea.Batch(m.loadExploreCLICmd(), tickCmd())
 		case "o":
-			m.busy = &busyState{label: uicopy.T("demo.opening", nil)}
+			m.busy = &busyState{label: uicopy.T("explore.datatug_app.opening", nil)}
 			return m, tea.Batch(m.openDataTugAppCmd(), tickCmd())
 		case "esc", "backspace":
 			m.explore.view = exploreMenuView

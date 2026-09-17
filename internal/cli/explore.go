@@ -152,9 +152,9 @@ func (a *App) exploreDataTugAppCmd() *cobra.Command {
 				say(w, uicopy.T("explore.datatug_app.honesty", nil))
 				say(w, "")
 				if opened {
-					say(w, uicopy.T("demo.open.opened", nil))
+					say(w, uicopy.T("explore.datatug_app.opened", nil))
 				} else {
-					say(w, uicopy.T("demo.open.intro", nil))
+					say(w, uicopy.T("explore.datatug_app.url_intro", nil))
 				}
 				say(w, "  "+document.URL)
 				say(w, "")
