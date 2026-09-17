@@ -53,10 +53,10 @@ onMounted(async () => {
   const demo = await api<DemoDocument>('GET', '/api/local/v1/demo')
   const isDemo = demo.ok && demo.data.installed && demo.data.database === db
   // Mirrors internal/setup/explore.NewMenu exactly: there is no read-only
-  // menu endpoint (GET .../explore/datatug also writes the descriptor, so
-  // the menu step never calls it — REQ:intent-first-menu's "before any file
-  // is written"), so the two keys are real "what works today" copy, never
-  // the option's own label (review-inc-7.md F3).
+  // menu endpoint (POST .../explore/datatug writes the descriptor, so the
+  // menu step never calls it — REQ:intent-first-menu's "before any file is
+  // written"), so the two keys are real "what works today" copy, never the
+  // option's own label (review-inc-7.md F3).
   menu.value = {
     schema: 1,
     database: db,
@@ -71,7 +71,9 @@ async function chooseDataTugCLI() {
   if (cli.value || !database.value) return
   cliLoading.value = true
   cliProblem.value = null
-  const response = await api<DataTugCLIDocument>('GET', `/api/local/v1/explore/datatug?db=${encodeURIComponent(database.value)}`)
+  // POST, not GET: this writes the descriptor, and only now that the
+  // person has actually chosen DataTug CLI (review-inc-7.md F9).
+  const response = await api<DataTugCLIDocument>('POST', `/api/local/v1/explore/datatug?db=${encodeURIComponent(database.value)}`, {})
   cliLoading.value = false
   if (response.ok) cli.value = response.data
   else cliProblem.value = response.error

@@ -104,5 +104,5 @@ var Rows = []Row{
 	// and command are prepared on the server; DataTug.app's honesty copy is
 	// static and needs no endpoint.
 	{ID: "22", Capability: "Explore data (DataTug guidance)", CLI: []string{"ovdb explore"}, TUI: "explore", Web: "/explore",
-		API: []string{"GET /api/local/v1/explore/datatug"}, Implemented: true},
+		API: []string{"POST /api/local/v1/explore/datatug"}, Implemented: true},
 }

@@ -92,7 +92,7 @@ describe('Explore data', () => {
     const calls = installFetch({
       ...defaultRoutes,
       'GET /api/local/v1/demo': () => json(200, notesDemo),
-      'GET /api/local/v1/explore/datatug?db=notes': () => json(200, cliReady),
+      'POST /api/local/v1/explore/datatug?db=notes': () => json(200, cliReady),
     })
     const wrapper = mount(ExploreScreen)
     await flushPromises()
@@ -111,7 +111,7 @@ describe('Explore data', () => {
     installFetch({
       ...defaultRoutes,
       'GET /api/local/v1/demo': () => json(200, notesDemo),
-      'GET /api/local/v1/explore/datatug?db=notes': () => json(200, cliMissing),
+      'POST /api/local/v1/explore/datatug?db=notes': () => json(200, cliMissing),
     })
     const wrapper = mount(ExploreScreen)
     await flushPromises()

@@ -428,7 +428,7 @@ func TestExploreDataTug(t *testing.T) {
 		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
 	}
 
-	rec := f.do(t, request{path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
 	var document struct {
 		OnPath         bool              `json:"on_path"`
 		Collection     string            `json:"collection"`
@@ -478,7 +478,7 @@ func TestExploreDataTug(t *testing.T) {
 	// datatug missing (AC:datatug-missing): install commands shown, and the
 	// prepared command still printed for afterwards.
 	onPath = false
-	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
 	document.InstallCommands = nil
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("explore datatug missing = %d %s", rec.Code, rec.Body)
@@ -488,7 +488,7 @@ func TestExploreDataTug(t *testing.T) {
 	}
 
 	// An unregistered database is a clean not_found, naming ovdb databases.
-	assertEnvelope(t, f.do(t, request{path: "/api/local/v1/explore/datatug?db=nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
+	assertEnvelope(t, f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
 }
 
 // TestExploreDataTugCollectionResolution is review-inc-7.md F5: the demo
@@ -518,7 +518,7 @@ func TestExploreDataTugCollectionResolution(t *testing.T) {
 	// Exactly one root collection: it is the default.
 	create("sole")
 	insert("sole", "customers/a")
-	rec := f.do(t, request{path: "/api/local/v1/explore/datatug?db=sole", bearer: testSecret})
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=sole", bearer: testSecret})
 	var document explore.DataTugCLI
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("sole collection = %d %s", rec.Code, rec.Body)
@@ -531,7 +531,7 @@ func TestExploreDataTugCollectionResolution(t *testing.T) {
 	create("several")
 	insert("several", "customers/a")
 	insert("several", "orders/a")
-	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=several", bearer: testSecret})
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several", bearer: testSecret})
 	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
 	body := rec.Body.String()
 	for _, name := range []string{"customers", "orders"} {
@@ -540,17 +540,52 @@ func TestExploreDataTugCollectionResolution(t *testing.T) {
 		}
 	}
 	// An explicit, valid choice among several works.
-	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=several&collection=orders", bearer: testSecret})
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several&collection=orders", bearer: testSecret})
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil || document.Collection != "orders" {
 		t.Errorf("explicit choice = %d %s", rec.Code, rec.Body)
 	}
 
 	// A path, not a root collection name, is refused — not silently sent
 	// through to come back empty (spike S4; datatug-cli#256).
-	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=several&collection=customers/a", bearer: testSecret})
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several&collection=customers/a", bearer: testSecret})
 	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
 	if body := rec.Body.String(); !strings.Contains(body, "root collections only") {
 		t.Errorf("nested-collection body = %s, want it to say root collections only", body)
+	}
+}
+
+// TestExploreDataTugIsAPostNotAGet is review-inc-7.md F9: a cross-site
+// top-level GET navigation (safe under http.CrossOriginProtection, sent
+// with the session cookie by any link) must not be able to write the
+// descriptor; only an explicit POST, the action of actually choosing
+// DataTug CLI, may.
+func TestExploreDataTugIsAPostNotAGet(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	data, err := json.Marshal(setup.CreateRequest{ID: "notes", Path: filepath.Join(f.dirs.Data, "notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
+	}
+
+	// A GET no longer prepares (or even reaches) the endpoint.
+	get := f.do(t, request{method: http.MethodGet, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	if get.Code == http.StatusOK {
+		t.Errorf("GET explore/datatug = %d, want it refused", get.Code)
+	}
+	if _, err := os.Stat(filepath.Join(f.dirs.Home, "explore", "datatug", "notes.json")); !os.IsNotExist(err) {
+		t.Errorf("a GET wrote the descriptor: %v", err)
+	}
+
+	// The POST — choosing DataTug CLI — does prepare it.
+	post := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	if post.Code != http.StatusOK {
+		t.Fatalf("POST explore/datatug = %d %s", post.Code, post.Body)
+	}
+	if _, err := os.Stat(filepath.Join(f.dirs.Home, "explore", "datatug", "notes.json")); err != nil {
+		t.Errorf("POST did not write the descriptor: %v", err)
 	}
 }
 

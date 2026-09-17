@@ -65,7 +65,11 @@ func (l *Local) PrepareDataTugCLI(ctx context.Context, db, collection string, no
 	if collection != "" {
 		query.Set("collection", collection)
 	}
-	response, err := c.Do(ctx, http.MethodGet, ExploreDataTugPath+"?"+query.Encode(), nil)
+	// POST, not GET: this writes the descriptor, and only when the person
+	// actually chooses DataTug CLI (review-inc-7.md F9). struct{}{}, not
+	// nil, so Content-Type: application/json is set — the local API refuses
+	// any non-GET/DELETE request without it.
+	response, err := c.Do(ctx, http.MethodPost, ExploreDataTugPath+"?"+query.Encode(), struct{}{})
 	if err != nil {
 		return nil, err
 	}

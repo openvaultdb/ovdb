@@ -184,7 +184,7 @@ var endpoints = []endpoint{
 	{http.MethodPut, "/api/local/v1/context", accessOwner, (*localServer).putContext},
 	{http.MethodGet, "/api/local/v1/demo", accessOwner, (*localServer).getDemo},
 	{http.MethodPost, "/api/local/v1/demo/install", accessOwner, (*localServer).installDemo},
-	{http.MethodGet, "/api/local/v1/explore/datatug", accessOwner, (*localServer).exploreDataTug},
+	{http.MethodPost, "/api/local/v1/explore/datatug", accessOwner, (*localServer).exploreDataTug},
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -578,7 +578,10 @@ func (s *localServer) installDemo(w http.ResponseWriter, r *http.Request) {
 // explore-data-handoff#REQ:prepare-datatug-cli-connection): it checks
 // datatug on PATH, and writes db's four-key descriptor with no token, so it
 // is called only when the person actually chooses DataTug CLI, never while
-// the Explore data menu itself is open.
+// the Explore data menu itself is open. It is a POST, not a GET, precisely
+// because it writes: a GET is a safe method under
+// http.CrossOriginProtection and would otherwise let a plain cross-site
+// top-level navigation (any link) write the descriptor (review-inc-7.md F9).
 func (s *localServer) exploreDataTug(w http.ResponseWriter, r *http.Request) {
 	databases, err := s.registry.List()
 	if err != nil {
