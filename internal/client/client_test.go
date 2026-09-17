@@ -3,12 +3,16 @@ package client
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
@@ -71,5 +75,43 @@ func TestVersionNotice(t *testing.T) {
 	got := VersionNotice("0.7.0", "0.8.0")
 	if want := "OVDB server is running version 0.7.0; restart it to use version 0.8.0: ovdb server restart"; got != want {
 		t.Errorf("VersionNotice = %q", got)
+	}
+}
+
+// REQ:version-mismatch-notice: an older server without an endpoint is
+// server_version_mismatch with the restart command, not "nothing here";
+// the same server's own not_found (a missing database) stays not_found.
+func TestUnknownEndpointOnOtherVersionIsVersionMismatch(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/databases/gone") {
+			envelope.Write(w, envelope.New(envelope.NotFound, "Couldn't remove the database"))
+			return
+		}
+		envelope.Write(w, envelope.New(envelope.NotFound, uicopy.T("api.not_found", nil)))
+	}))
+	defer server.Close()
+	port, _ := strconv.Atoi(server.URL[strings.LastIndex(server.URL, ":")+1:])
+	l, _ := testLocal(t)
+	for _, tc := range []struct {
+		serverVersion, path string
+		want                envelope.Code
+	}{
+		{"0.9.0", DatabasesPath, envelope.ServerVersionMismatch},
+		{"1.0.0", DatabasesPath, envelope.NotFound},
+		{"0.9.0", DatabasesPath + "/gone", envelope.NotFound},
+	} {
+		c := l.newClient(runtime.State{Running: true, Record: &runtime.Record{Port: port}, Secret: "s", Whoami: &runtime.Whoami{Version: tc.serverVersion}})
+		response, err := c.Do(context.Background(), http.MethodGet, tc.path, nil)
+		e := envelope.As(err)
+		if e == nil || e.Code != tc.want {
+			t.Errorf("%s on %s = %v", tc.path, tc.serverVersion, err)
+			continue
+		}
+		if tc.want == envelope.ServerVersionMismatch {
+			if e.Next[0].Command != "ovdb server restart" || envelope.Decode(response.Body).Code != envelope.ServerVersionMismatch {
+				t.Errorf("mismatch = %+v body %s", e, response.Body)
+			}
+		}
 	}
 }

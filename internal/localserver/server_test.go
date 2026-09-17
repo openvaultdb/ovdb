@@ -170,11 +170,7 @@ func TestCredentialTable(t *testing.T) {
 	forbidden := cell{http.StatusForbidden, envelope.Forbidden}
 
 	for _, endpoint := range endpoints {
-		body := ""
-		switch endpoint.path {
-		case "/api/local/v1/config":
-			body = `{"key":"server.port","value":"7000"}`
-		}
+		path, body := endpointRequest(f, endpoint)
 		for _, tc := range []struct {
 			name, bearer string
 			want         cell
@@ -185,10 +181,11 @@ func TestCredentialTable(t *testing.T) {
 			{"instance secret", testSecret, ok},
 		} {
 			t.Run(endpoint.method+" "+endpoint.path+"/"+tc.name, func(t *testing.T) {
-				rec := f.do(t, request{method: endpoint.method, path: endpoint.path, bearer: tc.bearer, body: body})
+				rec := f.do(t, request{method: endpoint.method, path: path, bearer: tc.bearer, body: body})
 				assertSecurityHeaders(t, rec)
 				if tc.want.code == "" {
-					if rec.Code != tc.want.status {
+					created := tc.want.status == http.StatusOK && rec.Code == http.StatusCreated
+					if rec.Code != tc.want.status && !created {
 						t.Errorf("status = %d, want %d (body %s)", rec.Code, tc.want.status, rec.Body)
 					}
 					return
@@ -217,6 +214,20 @@ func TestCredentialTable(t *testing.T) {
 	assertEnvelope(t, f.do(t, request{path: "/api/local/v1/nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
 	assertEnvelope(t, f.do(t, request{method: http.MethodDelete, path: "/api/local/v1/status", bearer: testSecret}),
 		http.StatusMethodNotAllowed, envelope.InvalidArgument)
+}
+
+// endpointRequest is a valid request path and body for endpoint: a new
+// database to create, then the same one to remove.
+func endpointRequest(f *fixture, e endpoint) (path, body string) {
+	path = strings.ReplaceAll(e.path, "{id}", "credentials")
+	switch {
+	case e.path == "/api/local/v1/config":
+		body = `{"key":"server.port","value":"7000"}`
+	case e.method == http.MethodPost && e.path == "/api/local/v1/databases":
+		data, _ := json.Marshal(setup.CreateRequest{ID: "credentials", Path: filepath.Join(f.dirs.Data, "credentials")})
+		body = string(data)
+	}
+	return path, body
 }
 
 func TestConnectFlowIsNotSupported(t *testing.T) {
@@ -302,7 +313,7 @@ func TestLocalAPIDocuments(t *testing.T) {
 	if got, want := owner(request{path: "/api/local/v1/server"}).Body.String(), string(envelope.Marshal(setup.NewServerDocument(server))); got != want {
 		t.Errorf("server = %s, want %s", got, want)
 	}
-	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(setup.NewStatus("1.2.3", f.dirs, server))); got != want {
+	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(setup.NewStatus("1.2.3", f.dirs, server, nil))); got != want {
 		t.Errorf("status = %s, want %s", got, want)
 	}
 

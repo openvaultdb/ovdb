@@ -84,6 +84,7 @@ func Run(ctx context.Context, opts RunOptions) error {
 	}
 	if err := instance.Publish(record); err != nil {
 		_ = server.Close()
+		handler.Close()
 		return fail(err)
 	}
 	for _, listener := range listeners {
@@ -107,6 +108,7 @@ func Run(ctx context.Context, opts RunOptions) error {
 	if err := handler.Flush(); err != nil {
 		logf("saving sessions: %v", err)
 	}
+	handler.Close()
 	logf("stopped")
 	return result
 }

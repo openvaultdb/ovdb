@@ -35,6 +35,19 @@ func (a *App) Status(cmd *cobra.Command, jsonOut bool) error {
 			say(w, uicopy.T("status.runtime", map[string]string{"dir": status.Locations.Runtime}))
 			say(w, uicopy.T("status.data", map[string]string{"dir": status.Locations.Data}))
 			say(w, "")
+			if len(status.Databases) == 0 {
+				say(w, uicopy.T("home.status.databases_none", nil))
+			} else {
+				say(w, uicopy.T("databases.title", nil)+":")
+				for _, db := range status.Databases {
+					line := "  " + db.ID + " · " + EngineName(db.Engine) + " · " + StateLabel(db.State)
+					if db.Reason != "" {
+						line += " · " + db.Reason
+					}
+					say(w, line)
+				}
+			}
+			say(w, "")
 			say(w, uicopy.T("problem.what_you_can_do", nil))
 			writeNext(w, status.Next)
 		})

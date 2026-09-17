@@ -177,15 +177,12 @@ func TestSessionCredentialTable(t *testing.T) {
 	}
 
 	for _, endpoint := range endpoints {
-		body := ""
-		if endpoint.path == "/api/local/v1/config" {
-			body = `{"key":"server.port","value":"7000"}`
-		}
-		rec := browser(request{method: endpoint.method, path: endpoint.path, body: body})
+		path, body := endpointRequest(f, endpoint)
+		rec := browser(request{method: endpoint.method, path: path, body: body})
 		assertSecurityHeaders(t, rec)
 		if endpoint.access == accessInstanceSecret {
 			assertEnvelope(t, rec, http.StatusForbidden, envelope.Forbidden)
-		} else if rec.Code != http.StatusOK {
+		} else if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
 			t.Errorf("session %s %s = %d %s", endpoint.method, endpoint.path, rec.Code, rec.Body)
 		}
 	}
@@ -525,7 +522,7 @@ func TestNoStoreVaryAndHome(t *testing.T) {
 	}
 	rec := f.do(t, request{path: "/api/local/v1/home", cookie: f.signIn(t)})
 	want := string(envelope.Marshal(setup.NewHome(setup.RunningServer(&runtime.Record{Port: testPort, Version: "1.2.3", PID: 42,
-		StartedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, f.dirs))))
+		StartedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, f.dirs), nil)))
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("home = %d %s\nwant %s", rec.Code, rec.Body, want)
 	}

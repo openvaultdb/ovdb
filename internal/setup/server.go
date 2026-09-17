@@ -133,21 +133,49 @@ type HomeDocument struct {
 	Options     []HomeOption `json:"options"`
 }
 
-// NewHome builds Home for server. Options appear here only once they are
-// implemented; later increments insert theirs in the founder's order.
-func NewHome(server Server) HomeDocument {
+// NewHome builds Home for server and the registered databases. Options
+// appear here only once they are implemented; later increments insert theirs
+// in the founder's order.
+func NewHome(server Server, databases []Database) HomeDocument {
 	line := CopyRef{Key: "home.status.server_not_running"}
 	if server.State == StateRunning {
 		line = CopyRef{Key: "home.status.server_running", Params: map[string]string{"address": server.Address}}
 	}
 	badge := StateBadge(server.State)
+	options := []HomeOption{
+		{ID: "create", Group: "primary", LabelKey: "home.menu.create_database", DescriptionKey: "home.menu.create_database_help"},
+		{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
+			DescriptionKey: "home.menu.server_help", Badge: &badge},
+	}
+	if len(databases) > 0 {
+		options = append(options, HomeOption{ID: "databases", Group: "secondary", LabelKey: "home.menu.databases"})
+	}
+	options = append(options, HomeOption{ID: "settings", Group: "secondary", LabelKey: "home.menu.settings"})
 	return HomeDocument{
-		Schema: envelope.Schema, StatusLine: []CopyRef{line}, QuestionKey: "home.question",
-		Options: []HomeOption{
-			{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
-				DescriptionKey: "home.menu.server_help", Badge: &badge},
-			{ID: "settings", Group: "secondary", LabelKey: "home.menu.settings"},
-		},
+		Schema: envelope.Schema, StatusLine: []CopyRef{line, DatabasesStatus(databases)}, QuestionKey: "home.question",
+		Options: options,
+	}
+}
+
+// DatabasesStatus is the status line part counting databases and how many
+// need attention (first-run-onboarding#REQ:home-status-line).
+func DatabasesStatus(databases []Database) CopyRef {
+	attention := 0
+	for _, db := range databases {
+		if db.State == MountNeedsAttention {
+			attention++
+		}
+	}
+	count := map[string]string{"count": strconv.Itoa(len(databases)), "attention": strconv.Itoa(attention)}
+	switch {
+	case len(databases) == 0:
+		return CopyRef{Key: "home.status.databases_none"}
+	case attention > 0:
+		return CopyRef{Key: "home.status.databases_attention", Params: count}
+	case len(databases) == 1:
+		return CopyRef{Key: "home.status.database_one"}
+	default:
+		return CopyRef{Key: "home.status.databases_many", Params: count}
 	}
 }
 
@@ -159,16 +187,23 @@ type Status struct {
 	Version   string          `json:"version"`
 	Locations paths.Dirs      `json:"locations"`
 	Server    Server          `json:"server"`
+	Databases []Database      `json:"databases"`
 	Next      []envelope.Next `json:"next"`
 }
 
-// NewStatus builds the status for this ovdb version, locations and server.
-// next lists only implemented options, in the founder's order.
-func NewStatus(version string, dirs paths.Dirs, server Server) Status {
+// NewStatus builds the status for this ovdb version, locations, server and
+// registered databases. next lists only implemented options, in the
+// founder's order.
+func NewStatus(version string, dirs paths.Dirs, server Server, databases []Database) Status {
+	if databases == nil {
+		databases = []Database{}
+	}
 	next := []envelope.Next{}
 	if server.State != StateRunning {
 		next = append(next, envelope.Next{Label: uicopy.T("home.menu.start_server", nil), Command: "ovdb server start"})
 	}
-	next = append(next, envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"})
-	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Next: next}
+	next = append(next,
+		envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
+		envelope.Next{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"})
+	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Next: next}
 }

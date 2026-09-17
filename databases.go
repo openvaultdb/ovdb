@@ -5,9 +5,11 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/openvaultdb/ovdb/internal/cli"
 )
 
-func newDatabasesCmd() *cobra.Command {
+func newDatabasesCmd(app *cli.App) *cobra.Command {
 	var url string
 	cmd := &cobra.Command{
 		Use:   "databases",
@@ -23,6 +25,10 @@ func newDatabasesCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "http://"+DefaultAddr, "server base URL")
-	cmd.AddCommand(newDatabasesCreateCmd())
+	create := newDatabasesCreateCmd()
+	cmd.AddCommand(create)
+	// With OVDB_PREVIEW=1 both use the local OVDB server unless --url or
+	// --addr asks for today's behaviour.
+	app.DatabasesPreview(cmd, create)
 	return cmd
 }

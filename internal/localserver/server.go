@@ -4,12 +4,13 @@
 // exists only in local mode; legacy `ovdb serve` never uses it
 // (REQ:local-mode-only-for-new-surfaces).
 //
-// The registry arrives in a later increment; until then the data API serves
-// an empty database map.
+// The data API serves the databases registered in <OVDB home>/databases,
+// mounted by the setup.Registry this server owns.
 package localserver
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/redact"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/web"
@@ -45,8 +47,7 @@ type Options struct {
 	// Console serves the web console and apps to signed-in browsers;
 	// web.Handler() when nil.
 	Console http.Handler
-	// Databases is the data API's database map; empty when nil. Tests use it
-	// until the registry increment mounts databases/.
+	// Databases are mounted next to the registry's (tests).
 	Databases map[string]*core.Database
 }
 
@@ -56,6 +57,7 @@ type localServer struct {
 	console  http.Handler
 	logins   *loginLinks
 	sessions *sessions
+	registry *setup.Registry
 }
 
 // Handler is the local-mode handler with its full middleware chain.
@@ -66,6 +68,21 @@ type Handler struct {
 
 // Flush writes pending session renewals; call it when the server stops.
 func (h *Handler) Flush() error { return h.server.sessions.flush() }
+
+// Close unmounts every registered database, releasing engine resources, and
+// removes mounts.json. Call it after the HTTP server has shut down.
+func (h *Handler) Close() { h.server.registry.Close() }
+
+// logf writes one redacted, timestamped line to w (server.log).
+func logf(w io.Writer, now func() time.Time) func(format string, args ...any) {
+	return func(format string, args ...any) {
+		if w == nil {
+			return
+		}
+		line := redact.String(fmt.Sprintf(format, args...))
+		_, _ = fmt.Fprintf(w, "%s %s\n", now().UTC().Format(time.RFC3339), line)
+	}
+}
 
 // New builds the local-mode handler. It reads server.cors from config.yaml
 // once: like the port, a change applies at the next start.
@@ -87,11 +104,16 @@ func New(opts Options) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	data := server.New(opts.Record.Version, opts.Databases,
-		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store})).Handler()
+	dataServer := server.New(opts.Record.Version, opts.Databases,
+		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}))
+	registry, err := setup.OpenRegistry(opts.Dirs, dataServer, logf(opts.ErrorLog, opts.Now))
+	if err != nil {
+		return nil, err
+	}
 	s := &localServer{
-		opts: opts, data: data, console: opts.Console,
+		opts: opts, data: dataServer.Handler(), console: opts.Console,
 		logins: newLoginLinks(opts.Now), sessions: newSessions(opts.Dirs.Runtime, opts.Now),
+		registry: registry,
 	}
 
 	var h http.Handler = http.HandlerFunc(s.route)
@@ -123,6 +145,36 @@ var endpoints = []endpoint{
 	{http.MethodPost, "/api/local/v1/login-links", accessInstanceSecret, (*localServer).loginLink},
 	{http.MethodGet, "/api/local/v1/config", accessOwner, (*localServer).getConfig},
 	{http.MethodPut, "/api/local/v1/config", accessOwner, (*localServer).putConfig},
+	{http.MethodGet, "/api/local/v1/engines", accessOwner, (*localServer).engines},
+	{http.MethodGet, "/api/local/v1/databases", accessOwner, (*localServer).databases},
+	{http.MethodPost, "/api/local/v1/databases", accessOwner, (*localServer).createDatabase},
+	{http.MethodDelete, "/api/local/v1/databases/{id}", accessOwner, (*localServer).removeDatabase},
+}
+
+// matchPath reports whether path matches pattern, where a "{name}" segment
+// matches one non-empty path segment, and returns the matched values.
+func matchPath(pattern, path string) (map[string]string, bool) {
+	patternParts, pathParts := strings.Split(pattern, "/"), strings.Split(path, "/")
+	if len(patternParts) != len(pathParts) {
+		return nil, false
+	}
+	var values map[string]string
+	for i, part := range patternParts {
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			if pathParts[i] == "" {
+				return nil, false
+			}
+			if values == nil {
+				values = map[string]string{}
+			}
+			values[part[1:len(part)-1]] = pathParts[i]
+			continue
+		}
+		if part != pathParts[i] {
+			return nil, false
+		}
+	}
+	return values, true
 }
 
 // Endpoints lists the local API as "METHOD path".
@@ -186,7 +238,8 @@ func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {
 	credential := credentialOf(r)
 	pathKnown := false
 	for _, e := range endpoints {
-		if e.path != r.URL.Path {
+		values, matched := matchPath(e.path, r.URL.Path)
+		if !matched {
 			continue
 		}
 		pathKnown = true
@@ -196,10 +249,14 @@ func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {
 		if !allow(w, credential, e.access) {
 			return
 		}
-		if r.Method != http.MethodGet && !isJSON(r) {
+		// DELETE carries no body; a plain HTML form cannot send it.
+		if r.Method != http.MethodGet && r.Method != http.MethodDelete && !isJSON(r) {
 			envelope.WriteStatus(w, http.StatusUnsupportedMediaType,
 				envelope.New(envelope.InvalidArgument, uicopy.T("api.json_required", nil)))
 			return
+		}
+		for name, value := range values {
+			r.SetPathValue(name, value)
 		}
 		e.handle(s, w, r)
 		return
@@ -244,11 +301,56 @@ func (s *localServer) server() setup.Server {
 }
 
 func (s *localServer) status(w http.ResponseWriter, _ *http.Request) {
-	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server()))
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases))
 }
 
 func (s *localServer) home(w http.ResponseWriter, _ *http.Request) {
-	envelope.WriteJSON(w, http.StatusOK, setup.NewHome(s.server()))
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, setup.NewHome(s.server(), databases))
+}
+
+func (s *localServer) engines(w http.ResponseWriter, _ *http.Request) {
+	envelope.WriteJSON(w, http.StatusOK, setup.NewEnginesDocument())
+}
+
+func (s *localServer) databases(w http.ResponseWriter, _ *http.Request) {
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, setup.NewDatabasesDocument(databases))
+}
+
+func (s *localServer) createDatabase(w http.ResponseWriter, r *http.Request) {
+	var request setup.CreateRequest
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	result, err := s.registry.Create(request)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusCreated, result)
+}
+
+func (s *localServer) removeDatabase(w http.ResponseWriter, r *http.Request) {
+	result, err := s.registry.Remove(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, result)
 }
 
 func (s *localServer) serverInfo(w http.ResponseWriter, _ *http.Request) {
@@ -309,10 +411,11 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-// writeError sends an envelope error as is and anything else as internal,
-// without the raw text (REQ:redacted-errors).
+// writeError sends an envelope error, with its reason redacted, and
+// anything else as internal, without the raw text (REQ:redacted-errors).
 func writeError(w http.ResponseWriter, err error) {
 	if e := envelope.As(err); e != nil {
+		e.Reason = redact.String(e.Reason)
 		envelope.Write(w, e)
 		return
 	}

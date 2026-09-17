@@ -30,9 +30,16 @@ const childEnv = "OVDB_CLI_TEST_CHILD"
 
 const testVersion = "1.0.0-test"
 
+// childVersionEnv makes the detached test server report another version.
+const childVersionEnv = "OVDB_CLI_TEST_SERVER_VERSION"
+
 func TestMain(m *testing.M) {
 	if os.Getenv(childEnv) == "1" {
-		root := newRoot(&cli.App{Version: testVersion})
+		version := testVersion
+		if override := os.Getenv(childVersionEnv); override != "" {
+			version = override
+		}
+		root := newRoot(&cli.App{Version: version})
 		root.SetArgs(os.Args[1:])
 		if err := root.Execute(); err != nil {
 			cli.Render(err, os.Args[1:], os.Stdout, os.Stderr)
@@ -45,6 +52,16 @@ func TestMain(m *testing.M) {
 
 func newRoot(app *cli.App) *cobra.Command {
 	root := &cobra.Command{Use: "ovdb", SilenceUsage: true, SilenceErrors: true}
+	// Stand-ins for the legacy `ovdb databases` and `ovdb databases create`
+	// in package main, wired the same way.
+	databases := &cobra.Command{Use: "databases", RunE: func(*cobra.Command, []string) error { return errors.New("legacy databases") }}
+	databases.Flags().String("url", "", "")
+	create := &cobra.Command{Use: "create <id>", RunE: func(*cobra.Command, []string) error { return errors.New("legacy create") }}
+	create.Flags().String("addr", "", "")
+	create.Flags().Bool("json", false, "")
+	databases.AddCommand(create)
+	root.AddCommand(databases)
+	app.DatabasesPreview(databases, create)
 	app.AddCommands(root)
 	return root
 }
@@ -111,19 +128,28 @@ func (e *env) run(args ...string) result {
 // api calls the local API with the instance secret, as a reference body.
 func (e *env) api(method, path string) string {
 	e.t.Helper()
+	return e.apiBody(method, path, "")
+}
+
+// apiBody is api with a JSON request body.
+func (e *env) apiBody(method, path, body string) string {
+	e.t.Helper()
 	state, err := runtime.Inspect(context.Background(), e.dirs.Runtime)
 	if err != nil || !state.Running {
 		e.t.Fatalf("server not running: %+v %v", state, err)
 	}
-	request, _ := http.NewRequest(method, runtime.BaseURL(state.Record.Port)+path, nil)
+	request, _ := http.NewRequest(method, runtime.BaseURL(state.Record.Port)+path, strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer "+state.Secret)
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	body, _ := io.ReadAll(response.Body)
-	return string(body)
+	answer, _ := io.ReadAll(response.Body)
+	return string(answer)
 }
 
 func freePort(t *testing.T) int {

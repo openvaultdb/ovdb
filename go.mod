@@ -14,13 +14,14 @@ ignore ./web/node_modules
 require (
 	charm.land/fang/v2 v2.0.1
 	github.com/dal-go/record v0.1.3
-	github.com/openvaultdb/openvaultdb-go v0.5.1
+	github.com/openvaultdb/openvaultdb-go v0.6.0
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
 	github.com/strongo/cli-helpers v0.13.0
 	github.com/strongo/deviceauth v0.0.2
 	github.com/strongo/selfupdate v0.6.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -105,7 +106,6 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.292.0 // indirect

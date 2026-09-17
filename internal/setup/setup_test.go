@@ -104,13 +104,14 @@ func TestConfigRoundTrip(t *testing.T) {
 func TestStatusNextListsImplementedOptionsInOrder(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
-	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs))
-	if len(stopped.Next) != 2 || stopped.Next[0].Command != "ovdb server start" || stopped.Next[1].Command != "ovdb open" {
+	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs), nil)
+	if len(stopped.Next) != 3 || stopped.Next[0].Command != "ovdb server start" || stopped.Next[1].Command != "ovdb open" ||
+		stopped.Next[2].Command != "ovdb databases create <name>" {
 		t.Errorf("stopped next = %+v", stopped.Next)
 	}
 	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
-	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs))
-	if len(running.Next) != 1 || running.Next[0].Command != "ovdb open" {
+	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs), nil)
+	if len(running.Next) != 2 || running.Next[0].Command != "ovdb open" {
 		t.Errorf("running next = %+v", running.Next)
 	}
 	want := `{"schema":1,"server":{"state":"not_running","address":"http://ovdb.localhost:6832","fallback_address":"http://127.0.0.1:6832","port":6832,"log":"` +
@@ -127,8 +128,8 @@ func TestHomeDocument(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
 	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
-	running := NewHome(RunningServer(record, dirs))
-	stopped := NewHome(StoppedServer(6832, dirs))
+	running := NewHome(RunningServer(record, dirs), nil)
+	stopped := NewHome(StoppedServer(6832, dirs), nil)
 	for _, home := range []HomeDocument{running, stopped} {
 		ids := []string{}
 		keys := []string{home.QuestionKey}
@@ -147,7 +148,7 @@ func TestHomeDocument(t *testing.T) {
 				keys = append(keys, option.Badge.LabelKey)
 			}
 		}
-		if !slices.Equal(ids, []string{"server/primary", "settings/secondary"}) {
+		if !slices.Equal(ids, []string{"create/primary", "server/primary", "settings/secondary"}) {
 			t.Errorf("options = %v", ids)
 		}
 		for _, key := range keys {
@@ -164,13 +165,13 @@ func TestHomeDocument(t *testing.T) {
 	if line := running.StatusLine[0]; line.Key != "home.status.server_running" || line.Params["address"] != "http://ovdb.localhost:7000" {
 		t.Errorf("running status line = %+v", line)
 	}
-	if badge := running.Options[0].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
+	if badge := running.Options[1].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
 		t.Errorf("running badge = %+v", badge)
 	}
-	if badge := stopped.Options[0].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
+	if badge := stopped.Options[1].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
 		t.Errorf("stopped home = %+v", stopped)
 	}
-	if option := running.Options[0]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
+	if option := running.Options[1]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
 		t.Errorf("server option = %+v", option)
 	}
 }

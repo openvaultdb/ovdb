@@ -85,7 +85,7 @@ func addRootCommands(root *cobra.Command, currentVersion string) {
 		newServeCmd(),
 		newInitCmd(),
 		newStatusCmd(app),
-		newDatabasesCmd(),
+		newDatabasesCmd(app),
 		newTokenCmd(),
 		newSelfUpdateCmd(currentVersion),
 	)

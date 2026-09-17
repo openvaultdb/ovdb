@@ -7,7 +7,8 @@
 // A row stays Implemented=false — and its surface stays behind the preview
 // gate — until every non-exception cell exists (REQ:increments-keep-parity).
 // Increment 1a filled the CLI and API cells of rows 2–7 and 1b the web
-// routes (web/routes.json); 1c adds the TUI screens.
+// routes (web/routes.json); 1c adds the TUI screens. Increment 2 adds rows
+// 8, 9, 11 and 12.
 package parity
 
 // Row is one capability.
@@ -37,6 +38,14 @@ var Rows = []Row{
 		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}},
 	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"}, Web: "/settings",
 		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}},
+	{ID: "8", Capability: "Storage choices", CLI: []string{"ovdb engines"}, Web: "/databases/new",
+		API: []string{"GET /api/local/v1/engines"}},
+	{ID: "9", Capability: "Create database (inGitDB, SQLite)", CLI: []string{"ovdb databases create"}, Web: "/databases/new",
+		API: []string{"POST /api/local/v1/databases"}},
+	{ID: "11", Capability: "List databases", CLI: []string{"ovdb databases"}, Web: "/databases",
+		API: []string{"GET /api/local/v1/databases"}},
+	{ID: "12", Capability: "Remove database registration", CLI: []string{"ovdb databases remove"}, Web: "/databases",
+		API: []string{"DELETE /api/local/v1/databases/{id}"}},
 	// Tokens and CORS origins are developer settings: CLI only, and a console
 	// session gets 403 on server.cors and /v1/tokens (E7).
 	{ID: "25", Capability: "Access tokens and browser app origins",
