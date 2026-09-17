@@ -13,9 +13,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
 	"github.com/openvaultdb/openvaultdb-go/pkg/core"
@@ -646,5 +648,53 @@ func TestConnectManifestResolvesMergeKeys(t *testing.T) {
 	})
 	if len(found) != 0 {
 		t.Errorf("storage created in OVDB home: %v", found)
+	}
+}
+
+// F5: two connects of one storage under different ids, both past their
+// checks before either registers, end with one registration.
+func TestConcurrentConnectsOfOneStorageRegisterOnce(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	folder := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(folder, InGitDBDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	f.registry.beforeCommit = func() {
+		arrived <- struct{}{}
+		<-release
+	}
+	errs := make(chan error, 2)
+	for _, id := range []string{"first", "second"} {
+		go func() {
+			path := folder
+			if id == "second" && (goruntime.GOOS == "windows" || goruntime.GOOS == "darwin") {
+				path = strings.ToUpper(folder[:1]) + folder[1:] // another spelling of the same place
+			}
+			_, err := f.registry.Connect(ConnectRequest{ID: id, Engine: EngineInGitDB, Path: path})
+			errs <- err
+		}()
+	}
+	for range 2 {
+		select {
+		case <-arrived:
+		case <-time.After(10 * time.Second):
+			t.Fatal("connects did not both reach the commit")
+		}
+	}
+	close(release)
+	var refused int
+	for range 2 {
+		if err := <-errs; err != nil {
+			if e := envelope.As(err); e == nil || e.Code != envelope.InvalidArgument || !strings.Contains(e.Reason, "overlaps") {
+				t.Errorf("refusal = %v", err)
+			}
+			refused++
+		}
+	}
+	if list, _ := f.registry.List(); refused != 1 || len(list) != 1 {
+		t.Errorf("refused %d, registered %+v", refused, list)
 	}
 }

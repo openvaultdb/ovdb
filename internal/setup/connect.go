@@ -181,13 +181,16 @@ func (r *Registry) Connect(request ConnectRequest) (DatabaseResult, error) {
 		return DatabaseResult{}, r.connectUnavailable(request, plan, reason)
 	}
 
+	if r.beforeCommit != nil {
+		r.beforeCommit()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Checked again under the lock: another create or connect may have
+	// registered this id or this storage while it mounted.
 	registrations, err := ReadRegistry(r.dirs.Home)
 	if err == nil {
-		if existing := registeredAs(registrations, plan.id); existing != "" {
-			err = alreadyConnected(request, existing)
-		}
+		err = r.checkAvailable(request, plan, registrations)
 	}
 	if err != nil {
 		_ = db.Close()
@@ -290,17 +293,10 @@ func (r *Registry) planConnect(request ConnectRequest) (connectPlan, error) {
 	if err != nil {
 		return connectPlan{}, err
 	}
-	if existing := registeredAs(registrations, plan.id); existing != "" {
-		return connectPlan{}, alreadyConnected(request, existing)
+	if err := r.checkAvailable(request, plan, registrations); err != nil {
+		return connectPlan{}, err
 	}
 	if plan.location != "" {
-		if reason := r.locationOverlaps(CreateRequest{ID: plan.id, Path: plan.location}, registrations); reason != "" {
-			next := connectChooseLocation(request)
-			if request.Manifest != "" {
-				next = connectChooseManifest()
-			}
-			return connectPlan{}, envelope.New(envelope.InvalidArgument, connectFailed()).WithReason(reason).WithNext(next)
-		}
 		if reason := checkExistingStorage(plan.engine, plan.location); reason != "" {
 			r.logf("connecting database %s failed: %s", plan.id, reason)
 			next := connectChooseLocation(request)
@@ -329,6 +325,25 @@ func (r *Registry) planConnect(request ConnectRequest) (connectPlan, error) {
 		plan.gitIdentityMissing = GitIdentityMissing(plan.location)
 	}
 	return plan, nil
+}
+
+// checkAvailable refuses plan when its id or its storage is already
+// registered.
+func (r *Registry) checkAvailable(request ConnectRequest, plan connectPlan, registrations []Registration) error {
+	if existing := registeredAs(registrations, plan.id); existing != "" {
+		return alreadyConnected(request, existing)
+	}
+	if plan.location == "" {
+		return nil
+	}
+	if reason := r.locationOverlaps(CreateRequest{ID: plan.id, Path: plan.location}, registrations); reason != "" {
+		next := connectChooseLocation(request)
+		if request.Manifest != "" {
+			next = connectChooseManifest()
+		}
+		return envelope.New(envelope.InvalidArgument, connectFailed()).WithReason(reason).WithNext(next)
+	}
+	return nil
 }
 
 // planManifest reads, parses and copies a manifest file with its relative

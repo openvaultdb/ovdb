@@ -53,6 +53,9 @@ type Registry struct {
 
 	// getenv reads the server's environment (connection variables).
 	getenv func(string) string
+	// beforeCommit, when set, runs after a connect mounted its storage and
+	// before it takes the lock to register it (tests).
+	beforeCommit func()
 
 	mu     sync.Mutex
 	mounts []MountRecord  // sorted by id
@@ -599,8 +602,13 @@ func resolved(path string) string {
 	}
 }
 
-// within reports whether path is dir or inside it.
+// within reports whether path is dir or inside it, ignoring case where the
+// usual file systems do (Windows and macOS), so two spellings of one place
+// overlap.
 func within(path, dir string) bool {
+	if goruntime.GOOS == "windows" || goruntime.GOOS == "darwin" {
+		path, dir = strings.ToLower(path), strings.ToLower(dir)
+	}
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
