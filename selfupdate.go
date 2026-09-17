@@ -4,41 +4,30 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/strongo/selfupdate"
-	"github.com/strongo/selfupdate/cobracmd"
+	"github.com/strongo/cli-helpers/cliinstall"
+	"github.com/strongo/cli-helpers/selfupdate"
+	"github.com/strongo/cli-helpers/selfupdate/cobracmd"
 )
 
-const selfUpdateHomebrewUpgradeCommand = "brew upgrade --cask ovdb"
+// ovdbCatalogID is ovdb's own id in the cliinstall catalog
+// (cli-install#req:host-identity-from-catalog).
+const ovdbCatalogID = "ovdb"
 
-func selfUpdateChecksumsName(_, _ string) string {
-	return "checksums.txt"
-}
-
-// newSelfUpdateConfig supplies only ovdb's release-specific identity to the
-// fleet-wide selfupdate implementation. Detection, release resolution,
-// checksum verification, prompting, and atomic replacement remain owned by
-// github.com/strongo/selfupdate.
+// newSelfUpdateConfig builds ovdb's release identity from its own
+// cliinstall catalog entry rather than restating it, so ovdb's self-update
+// and every other fleet CLI's `install ovdb` resolve releases identically
+// (cli-install#req:catalog-identity-single-source). The catalog entry
+// carries the same repository, executable `brew upgrade --cask ovdb`
+// manager, supported platforms, version-probe args and flat checksums.txt
+// naming this file used to declare directly. A missing catalog entry is a
+// programming error caught by TestNewSelfUpdateConfigIdentity, never a
+// runtime state a user can hit (cli-install#req:host-identity-from-catalog).
 func newSelfUpdateConfig(currentVersion string) selfupdate.Config {
-	return selfupdate.Config{
-		BinaryName:           "ovdb",
-		Repository:           "openvaultdb/ovdb",
-		CurrentVersion:       currentVersion,
-		UndeterminedVersions: []string{"dev"},
-		Managers: []selfupdate.Manager{
-			selfupdate.Homebrew(selfUpdateHomebrewUpgradeCommand).
-				WithExecutableUpgrade("brew", "upgrade", "--cask", "ovdb"),
-		},
-		SupportedPlatforms: []selfupdate.Platform{
-			{GOOS: "darwin", GOARCH: "amd64"},
-			{GOOS: "darwin", GOARCH: "arm64"},
-			{GOOS: "linux", GOARCH: "amd64"},
-			{GOOS: "linux", GOARCH: "arm64"},
-			{GOOS: "windows", GOARCH: "amd64"},
-		},
-		VersionProbeArgs: []string{"--version"},
-		// .goreleaser.yaml publishes a single flat checksums.txt asset.
-		ChecksumsName: selfUpdateChecksumsName,
+	entry, ok := cliinstall.ByID(ovdbCatalogID)
+	if !ok {
+		panic("ovdb: catalog id " + ovdbCatalogID + " is missing from cliinstall")
 	}
+	return entry.Config(currentVersion)
 }
 
 func newSelfUpdateCmd(currentVersion string) *cobra.Command {

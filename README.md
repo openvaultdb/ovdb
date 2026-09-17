@@ -49,7 +49,13 @@ ovdb --help
   checksum-verified and replaced atomically. `--yes` skips confirmation,
   `--dry-run` shows the exact action without executing it, and `--version`
   pins are supported only for manual installs because Homebrew does not
-  guarantee arbitrary historical cask releases.
+  guarantee arbitrary historical cask releases. Built on
+  `github.com/strongo/cli-helpers/selfupdate`; its release identity (GitHub
+  repository, supported platforms, flat `checksums.txt` naming, and the
+  executable `brew upgrade --cask ovdb` manager) comes from ovdb's own entry
+  in `cli-helpers`' compiled-in `cliinstall` catalog
+  (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
+  fleet CLI's own `install ovdb` also resolves releases from.
 
 ```sh
 ovdb self-update --check
