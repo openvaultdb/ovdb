@@ -1,0 +1,432 @@
+// Package tui is ovdb's terminal UI: one root Model with named screens
+// (Home, OVDB server, Settings, Result, Problem) that call
+// internal/client.Local exactly as the CLI does — client.Local is the single
+// place that decides server-vs-files and mismatch rules, and every screen
+// here goes through it rather than duplicating that logic. See
+// spec/features/first-run-onboarding (Home IA, sizes, the problem pattern)
+// and spec/features/configuration-parity (copy catalogue, capability
+// registry, REQ:increments-keep-parity).
+package tui
+
+import (
+	"context"
+	"strconv"
+	"strings"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/client"
+)
+
+// Screen ids named by the capability registry (internal/parity); dropping
+// one of these from the registered set fails that package's existence test
+// naming the row and "TUI".
+const (
+	ScreenHome     = "home"
+	ScreenServer   = "server"
+	ScreenSettings = "settings"
+	ScreenResult   = "result"
+	ScreenProblem  = "problem"
+)
+
+// ScreenIDs lists every screen id the TUI registers.
+func ScreenIDs() []string {
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem}
+}
+
+// minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
+// floor: below them the TUI shows "Make the window a little bigger" instead
+// of a screen that would have to truncate or overflow to fit.
+const (
+	minWidth  = 60
+	minHeight = 20
+)
+
+// Model is the root bubbletea model. It owns the current screen and the one
+// *client.Local every screen calls.
+type Model struct {
+	ctx     context.Context
+	local   *client.Local
+	notices *noticeBuffer
+
+	width, height int
+	screen        string
+	showHelp      bool
+	noticeLines   []string
+
+	home     homeScreen
+	server   serverScreen
+	settings settingsScreen
+	result   resultScreen
+	problem  problemScreen
+
+	busy *busyState
+}
+
+// busyState renders while an operation that takes time (start, stop,
+// restart, open in browser, save) is in flight — REQ:tui-keyboard-and-size's
+// neighbour requirement that such operations show progress.
+type busyState struct {
+	label string
+	frame int
+}
+
+var spinnerFrames = []string{"|", "/", "-", "\\"}
+
+func (b busyState) render() string {
+	return itemStyle.Render(spinnerFrames[b.frame%len(spinnerFrames)] + " " + b.label)
+}
+
+type tickMsg struct{}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
+// New creates the root model on Home. local's Notices field is redirected
+// from cmd.ErrOrStderr() (internal/cli's default) to a buffer this model
+// drains, because writing straight to stderr would corrupt bubbletea's
+// alt-screen.
+func New(ctx context.Context, local *client.Local, width, height int) Model {
+	notices := &noticeBuffer{}
+	local.Notices = notices
+	return Model{
+		ctx: ctx, local: local, notices: notices,
+		width: width, height: height,
+		screen: ScreenHome,
+	}
+}
+
+func (m Model) Init() tea.Cmd {
+	return m.loadStatusCmd()
+}
+
+// pullNotices replaces noticeLines with whatever internal/client logged for
+// the action that just finished — including clearing it to nothing — so a
+// warning from a previous, unrelated action never lingers on screen.
+func (m *Model) pullNotices() {
+	m.noticeLines = m.notices.take()
+}
+
+func (m Model) tooSmall() bool {
+	return (m.width > 0 && m.width < minWidth) || (m.height > 0 && m.height < minHeight)
+}
+
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
+	case tickMsg:
+		if m.busy != nil {
+			m.busy.frame++
+			return m, tickCmd()
+		}
+		return m, nil
+
+	case tea.KeyPressMsg:
+		return m.handleKey(msg.String())
+
+	case statusLoadedMsg:
+		m.home.loaded = true
+		m.home.status = msg.status
+		m.home.err = msg.err
+		return m, nil
+
+	case serverLoadedMsg:
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.server.loaded = true
+		m.server.server = msg.server
+		m.server.cursor = 0
+		return m, nil
+
+	case serverActionMsg:
+		m.busy = nil
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.server.loaded = true
+		m.server.server = msg.server
+		m.server.cursor = 0
+		m.server.linkShown = false
+		m.screen = ScreenServer
+		return m, nil
+
+	case stopResultMsg:
+		m.busy = nil
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.result = newStopResult(msg.wasRunning)
+		m.screen = ScreenResult
+		return m, nil
+
+	case loginLinkMsg:
+		m.busy = nil
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.server.linkShown = true
+		m.server.link = msg.link
+		m.server.browserFailed = msg.openErr != nil
+		return m, nil
+
+	case configLoadedMsg:
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.settings.loaded = true
+		m.settings.document = msg.document
+		return m, nil
+
+	case configSavedMsg:
+		m.busy = nil
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.settings.loaded = true
+		m.settings.document = msg.document
+		m.settings.editing = false
+		m.settings.input = ""
+		m.settings.invalid = false
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if m.tooSmall() {
+		return m, nil
+	}
+	if m.busy != nil {
+		return m, nil
+	}
+	if key == "?" {
+		m.showHelp = !m.showHelp
+		return m, nil
+	}
+	switch m.screen {
+	case ScreenHome:
+		return m.updateHome(key)
+	case ScreenServer:
+		return m.updateServer(key)
+	case ScreenSettings:
+		return m.updateSettings(key)
+	case ScreenResult:
+		return m.updateResult(key)
+	case ScreenProblem:
+		return m.updateProblem(key)
+	}
+	return m, nil
+}
+
+func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
+	items := m.home.menu()
+	switch key {
+	case "up", "k":
+		if m.home.cursor > 0 {
+			m.home.cursor--
+		}
+	case "down", "j":
+		if m.home.cursor < len(items)-1 {
+			m.home.cursor++
+		}
+	case "q":
+		return m, tea.Quit
+	case "enter":
+		target := items[m.home.cursor].target
+		m.screen = target
+		switch target {
+		case ScreenServer:
+			m.server.loaded = false
+			m.server.linkShown = false
+			return m, m.loadServerCmd()
+		case ScreenSettings:
+			m.settings.loaded = false
+			m.settings.editing = false
+			return m, m.loadConfigCmd()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateServer(key string) (tea.Model, tea.Cmd) {
+	items := m.server.menu()
+	switch key {
+	case "up", "k":
+		if m.server.cursor > 0 {
+			m.server.cursor--
+		}
+	case "down", "j":
+		if m.server.cursor < len(items)-1 {
+			m.server.cursor++
+		}
+	case "enter":
+		if m.server.cursor >= len(items) {
+			return m, nil
+		}
+		switch items[m.server.cursor].action {
+		case actionStart:
+			m.busy = &busyState{label: uicopy.T("server.starting", nil)}
+			return m, tea.Batch(m.startCmd(), tickCmd())
+		case actionRestart:
+			m.busy = &busyState{label: uicopy.T("server.restarting", nil)}
+			return m, tea.Batch(m.restartCmd(), tickCmd())
+		case actionStop:
+			m.busy = &busyState{label: uicopy.T("server.stopping", nil)}
+			return m, tea.Batch(m.stopCmd(), tickCmd())
+		case actionOpenBrowser:
+			m.busy = &busyState{label: uicopy.T("open.opening", nil)}
+			return m, tea.Batch(m.openBrowserCmd(), tickCmd())
+		}
+	case "esc", "backspace":
+		m.screen = ScreenHome
+		m.home.loaded = false
+		return m, m.loadStatusCmd()
+	}
+	return m, nil
+}
+
+func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
+	if m.settings.editing {
+		switch key {
+		case "enter":
+			port, err := strconv.Atoi(m.settings.input)
+			if err != nil || port < 1 || port > 65535 {
+				m.settings.invalid = true
+				return m, nil
+			}
+			m.settings.invalid = false
+			m.busy = &busyState{label: uicopy.T("settings.saving", nil)}
+			return m, tea.Batch(m.saveConfigCmd(port), tickCmd())
+		case "esc":
+			m.settings.editing = false
+			m.settings.input = ""
+			m.settings.invalid = false
+			return m, nil
+		case "backspace":
+			if len(m.settings.input) > 0 {
+				m.settings.input = m.settings.input[:len(m.settings.input)-1]
+			}
+			return m, nil
+		default:
+			if len(key) == 1 && key[0] >= '0' && key[0] <= '9' && len(m.settings.input) < 5 {
+				m.settings.input += key
+			}
+			return m, nil
+		}
+	}
+	switch key {
+	case "enter":
+		m.settings.editing = true
+		m.settings.input = ""
+		m.settings.invalid = false
+	case "esc", "backspace":
+		m.screen = ScreenHome
+		m.home.loaded = false
+		return m, m.loadStatusCmd()
+	}
+	return m, nil
+}
+
+func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "enter", "esc", "backspace":
+		m.screen = ScreenHome
+		m.home.loaded = false
+		return m, m.loadStatusCmd()
+	}
+	return m, nil
+}
+
+func (m Model) updateProblem(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "up", "k":
+		m.problem.moveCursor(-1)
+	case "down", "j":
+		m.problem.moveCursor(1)
+	case "enter":
+		if n := m.problem.selected(); n != nil && n.Action == "use_port" {
+			if port, ok := parsePort(n.Command); ok {
+				m.busy = &busyState{label: uicopy.T("server.starting", nil)}
+				return m, tea.Batch(m.portRemedyCmd(port), tickCmd())
+			}
+		}
+	case "esc", "backspace":
+		m.screen = ScreenHome
+		m.home.loaded = false
+		return m, m.loadStatusCmd()
+	}
+	return m, nil
+}
+
+func (m Model) View() tea.View {
+	if m.tooSmall() {
+		v := tea.NewView(mutedStyle.Render(uicopy.T("tui.too_small", nil)))
+		v.AltScreen = true
+		return v
+	}
+	header := headerStyle.Width(max(m.width, 1)).Render(uicopy.T("home.title", nil))
+	var body string
+	switch {
+	case m.busy != nil:
+		body = m.busy.render()
+	case m.screen == ScreenHome:
+		body = m.viewHome()
+	case m.screen == ScreenServer:
+		body = m.viewServer()
+	case m.screen == ScreenSettings:
+		body = m.viewSettings()
+	case m.screen == ScreenResult:
+		body = m.viewResult()
+	case m.screen == ScreenProblem:
+		body = m.viewProblem()
+	}
+	sections := []string{header, body}
+	if len(m.noticeLines) > 0 {
+		sections = append(sections, mutedStyle.Render(strings.Join(m.noticeLines, "\n")))
+	}
+	sections = append(sections, m.footer())
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
+
+func (m Model) footer() string {
+	if m.showHelp {
+		return helpStyle.Render(uicopy.T("tui.help.body", nil))
+	}
+	if m.screen == ScreenHome {
+		return helpStyle.Render(uicopy.T("tui.footer.home", nil))
+	}
+	return helpStyle.Render(uicopy.T("tui.footer.back", nil))
+}

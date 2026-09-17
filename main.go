@@ -15,6 +15,7 @@ import (
 	"github.com/strongo/buildinfo/fangcmd"
 
 	"github.com/openvaultdb/ovdb/internal/cli"
+	"github.com/openvaultdb/ovdb/internal/preview"
 )
 
 // appVersion is this build's bare semver, resolved once in main() from
@@ -90,4 +91,10 @@ func addRootCommands(root *cobra.Command, currentVersion string) {
 		newSelfUpdateCmd(currentVersion),
 	)
 	app.AddCommands(root)
+	// Registered only behind the gate, so bare `ovdb` keeps printing today's
+	// help without it (first-run-onboarding#REQ:preview-gate,
+	// AC:tty-launches-tui's second half; testdata/help.golden is unchanged).
+	if preview.On() {
+		root.RunE = app.RootRunE
+	}
 }
