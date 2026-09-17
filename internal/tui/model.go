@@ -23,6 +23,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // Screen ids named by the capability registry (internal/parity); dropping
@@ -81,6 +82,7 @@ type Model struct {
 	connect   connectScreen
 	skills    skillsScreen
 	explore   exploreScreen
+	usage     usageState
 	// problemFrom is the screen whose request raised the current Problem,
 	// when its remedies return there.
 	problemFrom string
@@ -128,6 +130,7 @@ func New(ctx context.Context, local *client.Local, openBrowser func(string) erro
 }
 
 func (m Model) Init() tea.Cmd {
+	m.local.Telemetry.Record(telemetry.NewOnboardingStarted())
 	return m.loadHomeCmd()
 }
 
@@ -142,7 +145,7 @@ func (m Model) tooSmall() bool {
 	return (m.width > 0 && m.width < minWidth) || (m.height > 0 && m.height < minHeight)
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -219,6 +222,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.server.browserFailed = msg.openErr != nil
 		return m, nil
 
+	case usageSetMsg:
+		return m.updateUsage(msg)
+
 	case configLoadedMsg:
 		m.pullNotices()
 		if msg.err != nil {
@@ -229,6 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settings.loaded = true
 		m.settings.document = msg.document
 		m.settings.serverPort = msg.serverPort
+		m.usage.status = m.local.TelemetryStatus().Telemetry
 		return m, nil
 
 	case enginesLoadedMsg:
@@ -356,6 +363,11 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.showHelp = !m.showHelp
 		return m, nil
 	}
+	handled, next, cmd := m.usageKey(key)
+	if handled {
+		return next, cmd
+	}
+	m = next
 	switch m.screen {
 	case ScreenHome:
 		return m.updateHome(key)
@@ -443,6 +455,7 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 			m.settings.loaded = false
 			m.settings.editing = false
 			m.settings.savedMessage = ""
+			m.usage.details, m.usage.message = false, ""
 			return m, m.loadConfigCmd()
 		}
 	}
@@ -625,7 +638,7 @@ func (m Model) View() tea.View {
 	case m.screen == ScreenSettings:
 		body = m.viewSettings()
 	case m.screen == ScreenResult:
-		body = m.viewResult()
+		body = m.viewResult() + m.viewUsagePrompt()
 	case m.screen == ScreenProblem:
 		body = m.viewProblem()
 	case m.screen == ScreenCreate:
@@ -663,7 +676,7 @@ func (m Model) footer() string {
 	case m.screen == ScreenSettings && m.settings.editing:
 		return helpStyle.Render(uicopy.T("settings.hint.edit", nil))
 	case m.screen == ScreenSettings:
-		return helpStyle.Render(uicopy.T("settings.hint.view", nil))
+		return helpStyle.Render(wordWrap(uicopy.T("settings.hint.view_usage", nil), m.width))
 	case m.screen == ScreenCreate && m.create.step == createChoose:
 		return helpStyle.Render(wordWrap(uicopy.T("create.hint.choose", nil), m.width))
 	case m.screen == ScreenCreate && m.create.step == createForm:
