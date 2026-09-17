@@ -126,6 +126,7 @@ func TestBufferFlushedAfterTurnOn(t *testing.T) {
 		t.Fatalf("before consent: %d batches, %d pending", rec.count(), r.Pending())
 	}
 	decide(t, dirs, telemetry.StateEnabled)
+	r.Consented() // this session's Turn on
 	r.Record(telemetry.NewConsentEnabled())
 	r.Flush(context.Background())
 	want := []string{"onboarding_started", "onboarding_option_selected", "demo_installed", "telemetry_consent_changed"}
@@ -143,9 +144,10 @@ func TestBufferDroppedAfterNoThanks(t *testing.T) {
 	if r.Pending() != telemetry.MaxBuffered {
 		t.Fatalf("buffered %d, cap %d", r.Pending(), telemetry.MaxBuffered)
 	}
-	decide(t, dirs, telemetry.StateDisabled)
+	decide(t, dirs, telemetry.StateDisabled) // No thanks
 	r.Record(telemetry.NewDemoInstalled(true, false))
 	r.Flush(context.Background())
+	r.Discard()
 	if rec.count() != 0 || r.Pending() != 0 {
 		t.Fatalf("after No thanks: %d batches, %d pending", rec.count(), r.Pending())
 	}
@@ -273,3 +275,20 @@ func TestApplyTelemetryChange(t *testing.T) {
 }
 
 func containsID(s, id string) bool { return id != "" && strings.Contains(s, id) }
+
+// Review F1: events buffered while not_asked are never sent because another
+// process (an agent relaying consent) turned telemetry on; only this
+// session's own Turn on sends them.
+func TestBufferNotSentWhenAnotherProcessEnables(t *testing.T) {
+	rec, endpoint := newRecorder(t)
+	r, dirs := newTestRecorder(t, endpoint, true, nil)
+	r.Channel = telemetry.ChannelTUI
+	r.Record(telemetry.NewOnboardingStarted(), telemetry.NewDemoInstalled(true, false))
+	decide(t, dirs, telemetry.StateEnabled) // out of band
+	r.Flush(context.Background())
+	r.Record(telemetry.NewDatabaseCreated("sqlite", true, time.Millisecond))
+	r.Exit(context.Background())
+	if got := rec.events(); len(got) != 1 || got[0] != "database_created" {
+		t.Fatalf("events = %v, want only the post-consent database_created", got)
+	}
+}

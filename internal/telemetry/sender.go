@@ -49,7 +49,15 @@ type Recorder struct {
 	Client        *http.Client
 
 	mu      sync.Mutex
-	pending []Event
+	pending []pending
+}
+
+// pending is one recorded event. buffered marks an event recorded while
+// not_asked: it is sent only after this session's own Turn on (Consented),
+// never because consent appeared on disk from another process.
+type pending struct {
+	event    Event
+	buffered bool
 }
 
 func (r *Recorder) key() string {
@@ -84,10 +92,33 @@ func (r *Recorder) Record(events ...Event) {
 	for _, e := range events {
 		switch {
 		case d.Sending:
-			r.pending = append(r.pending, e)
-		case r.Buffer && d.State == StateNotAsked && len(r.pending) < MaxBuffered:
-			r.pending = append(r.pending, e)
+			r.pending = append(r.pending, pending{event: e})
+		case r.Buffer && d.State == StateNotAsked && r.buffered() < MaxBuffered:
+			r.pending = append(r.pending, pending{event: e, buffered: true})
 		}
+	}
+}
+
+func (r *Recorder) buffered() int {
+	n := 0
+	for _, p := range r.pending {
+		if p.buffered {
+			n++
+		}
+	}
+	return n
+}
+
+// Consented is this session's own Turn on: the events it buffered while
+// not_asked may now be sent, by the next Flush.
+func (r *Recorder) Consented() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.pending {
+		r.pending[i].buffered = false
 	}
 }
 
@@ -99,6 +130,15 @@ func (r *Recorder) Pending() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.pending)
+}
+
+// Exit ends a buffering process's session (No thanks, dismissal and exit
+// all end the same way): events buffered without this session's Turn on are
+// dropped, even when another process enabled telemetry meanwhile; the rest
+// is sent when this process may send.
+func (r *Recorder) Exit(ctx context.Context) {
+	r.Flush(ctx)
+	r.Discard()
 }
 
 // Discard drops every pending event (No thanks, dismissal, exit).
@@ -121,12 +161,18 @@ func (r *Recorder) Flush(ctx context.Context) {
 	}
 	d := r.Decide()
 	r.mu.Lock()
-	events := r.pending
-	if !d.Sending && r.Buffer && d.State == StateNotAsked {
-		r.mu.Unlock()
-		return
+	var events []Event
+	var kept []pending
+	for _, p := range r.pending {
+		switch {
+		case p.buffered:
+			// Only Consented releases these; Discard drops them.
+			kept = append(kept, p)
+		case d.Sending:
+			events = append(events, p.event)
+		}
 	}
-	r.pending = nil
+	r.pending = kept
 	r.mu.Unlock()
 	if !d.Sending || len(events) == 0 {
 		return

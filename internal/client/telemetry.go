@@ -128,8 +128,13 @@ func (l *Local) SetTelemetry(ctx context.Context, change telemetry.Change) (tele
 		}
 		break
 	}
-	if changed && change.State == telemetry.StateEnabled {
-		l.Telemetry.Record(telemetry.NewConsentEnabled())
+	if change.State == telemetry.StateEnabled {
+		// This session's Turn on releases what it buffered
+		// (REQ:pre-consent-buffer).
+		l.Telemetry.Consented()
+		if changed {
+			l.Telemetry.Record(telemetry.NewConsentEnabled())
+		}
 	}
 	document := l.TelemetryStatus()
 	document.Changed = &changed

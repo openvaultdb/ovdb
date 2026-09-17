@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
@@ -197,4 +199,31 @@ func TestTelemetryUnresponsiveEndpointIsBounded(t *testing.T) {
 		t.Fatalf("flush took %s", elapsed)
 	}
 	_ = decodeError(t, r, envelope.ServerNotRunning)
+}
+
+// Review F1, the reviewer's repro across processes: a TUI buffers
+// demo_installed while not_asked, an agent in another process enables
+// telemetry with --confirmed-by-user, and the TUI exits without its own Turn
+// on: nothing the TUI buffered is sent.
+func TestTUIBufferDroppedWhenAnotherProcessEnables(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	tui := e.app.TUIRecorder(e.dirs.Home)
+	tui.Record(telemetry.NewOnboardingStarted(), telemetry.NewOptionSelected("demo"), telemetry.NewDemoInstalled(true, false))
+
+	agent := exec.Command(os.Args[0], "telemetry", "enable", "--confirmed-by-user")
+	agent.Env = append(os.Environ(), childEnv+"=1", "CLAUDECODE=1", preview.EnvVar+"=1")
+	for key, value := range e.vars {
+		agent.Env = append(agent.Env, key+"="+value)
+	}
+	if out, err := agent.CombinedOutput(); err != nil {
+		t.Fatalf("agent enable: %v\n%s", err, out)
+	}
+	if state := e.telemetryStatus().Telemetry; state.State != telemetry.StateEnabled || state.Channel != "agent" {
+		t.Fatalf("after agent enable: %+v", state)
+	}
+	tui.Exit(context.Background())
+	if got := recorder.received(); len(got) != 0 {
+		t.Fatalf("TUI buffer sent after another process enabled: %v", got)
+	}
 }
