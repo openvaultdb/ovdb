@@ -61,6 +61,25 @@ ovdb self-update --dry-run
 ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
 ```
 
+### Owner token and access policies
+
+For a manifest with no declared access policies (every manifest `ovdb`
+supports today), the owner token behaves exactly as before: full,
+unrestricted access to everything.
+
+`openvaultdb-go` also supports databases that declare access policies (a
+layered ACL, not yet exposed by any `ovdb` manifest or flag). On those
+databases the owner token still satisfies every admin/capability check —
+`ovdb token create|list|revoke`, runtime `databases create`, and the
+`--auth` capability gate all keep working for the owner exactly as before —
+but the database's own declared access policies are still evaluated against
+every request, including the owner's. In other words, the owner token stops
+meaning "bypass all data rules" and starts meaning "administrative
+authority, plus whatever the declared policies allow"; a policy an owner
+declares on a database's data can restrict what even that owner's requests
+may read or write. Legacy manifests, which never declare policies, are
+unaffected either way.
+
 ### Cloud database catalogue
 
 `ovdb cloud databases list` (or `ls`) lists registrations in every accessible
