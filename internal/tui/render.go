@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
+	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
@@ -113,6 +115,10 @@ func indentWrap(prefix, text string, width int) string {
 // currently selected.
 func nextLines(width int, next []envelope.Next, actionable []int, cursorAt int) []string {
 	var lines []string
+	next = slices.Clone(next)
+	for i := range next {
+		next[i].Label = uicopy.ForPeople(next[i].Label)
+	}
 	// Commands line up when their labels fit beside them.
 	labelWidth := 0
 	for _, n := range next {

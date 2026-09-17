@@ -38,6 +38,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -57,6 +58,9 @@ type Options struct {
 	// Console serves the web console and apps to signed-in browsers;
 	// web.Handler() when nil.
 	Console http.Handler
+	// Telemetry sends web console events from this process; a web-channel
+	// recorder over Dirs.Home and this process's environment when nil.
+	Telemetry *telemetry.Recorder
 	// Databases are mounted next to the registry's (tests).
 	Databases map[string]*core.Database
 	// MountTimeout bounds each registered database's mount;
@@ -93,7 +97,13 @@ func (h *Handler) Flush() error { return h.server.sessions.flush() }
 
 // Close unmounts every registered database, releasing engine resources, and
 // removes mounts.json. Call it after the HTTP server has shut down.
-func (h *Handler) Close() { h.server.registry.Close() }
+func (h *Handler) Close() {
+	// Queued usage statistics get their 2 s bound, not more.
+	ctx, cancel := context.WithTimeout(context.Background(), telemetry.Timeout)
+	defer cancel()
+	h.server.opts.Telemetry.Drain(ctx)
+	h.server.registry.Close()
+}
 
 // MountDatabases mounts the registered databases, each within its deadline,
 // returning when all are settled or ctx ends. Run calls it in the background
@@ -145,6 +155,9 @@ func New(opts Options) (*Handler, error) {
 		registry: registry,
 	}
 	s.protectAuthStore()
+	if opts.Telemetry == nil {
+		s.opts.Telemetry = &telemetry.Recorder{Channel: telemetry.ChannelWeb, Home: opts.Dirs.Home, Version: opts.Record.Version}
+	}
 	s.demo = &demo.Service{Dirs: opts.Dirs, Registry: registry, Seed: s.seedData, Now: opts.Now, Logf: logf(opts.ErrorLog, opts.Now)}
 
 	var h http.Handler = http.HandlerFunc(s.route)
@@ -176,6 +189,9 @@ var endpoints = []endpoint{
 	{http.MethodPost, "/api/local/v1/login-links", accessInstanceSecret, (*localServer).loginLink},
 	{http.MethodGet, "/api/local/v1/config", accessOwner, (*localServer).getConfig},
 	{http.MethodPut, "/api/local/v1/config", accessOwner, (*localServer).putConfig},
+	{http.MethodGet, "/api/local/v1/telemetry", accessOwner, (*localServer).getTelemetry},
+	{http.MethodPut, "/api/local/v1/telemetry", accessOwner, (*localServer).putTelemetry},
+	{http.MethodPost, "/api/local/v1/telemetry/events", accessOwner, (*localServer).postTelemetryEvents},
 	{http.MethodGet, "/api/local/v1/engines", accessOwner, (*localServer).engines},
 	{http.MethodGet, "/api/local/v1/databases", accessOwner, (*localServer).databases},
 	{http.MethodPost, "/api/local/v1/databases", accessOwner, (*localServer).createDatabase},
@@ -376,7 +392,7 @@ func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {
 		for name, value := range values {
 			r.SetPathValue(name, value)
 		}
-		e.handle(s, w, r)
+		s.observe(e, w, r)
 		return
 	}
 	// Unauthenticated callers learn nothing about which paths exist.
@@ -426,7 +442,9 @@ func (s *localServer) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	context := s.resolveContext(r, databases).Context
-	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context, s.installedSkills()))
+	status := setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context, s.installedSkills())
+	status.SetTelemetry(s.opts.Telemetry.Decide(), s.opts.Telemetry.Available())
+	envelope.WriteJSON(w, http.StatusOK, status)
 }
 
 func (s *localServer) home(w http.ResponseWriter, r *http.Request) {

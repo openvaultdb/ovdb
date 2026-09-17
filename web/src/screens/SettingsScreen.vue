@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// Settings (capability 7): the port the OVDB server uses the next time it
-// starts. The value goes to the server as typed; the server validates it and
+// Settings (capabilities 7, 23 and 24): the port the OVDB server uses the
+// next time it starts, and Usage statistics with the same state, reason,
+// provider and lists as `ovdb telemetry status` and the TUI. The value goes to the server as typed; the server validates it and
 // says what happened, and this page renders that
 // (configuration-parity#REQ:error-envelope).
 import { nextTick, onMounted, ref, watch } from 'vue'
@@ -13,6 +14,7 @@ import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
+import { turnOffUsage, turnOnUsage, loadUsage, usage } from '../usage'
 import { useServer } from '../useServer'
 
 const { server } = useServer()
@@ -25,7 +27,23 @@ const problem = ref<ApiError | null>(null)
 const result = ref<{ port: number; changed: boolean; moves: boolean; next: Next[] } | null>(null)
 const outcome = ref<HTMLElement>()
 
+const usageBusy = ref(false)
+const usageProblem = ref<ApiError | null>(null)
+
+async function setUsage(on: boolean) {
+  usageBusy.value = true
+  usageProblem.value = on ? await turnOnUsage() : await turnOffUsage()
+  usageBusy.value = false
+}
+
+const usageStates = {
+  not_asked: () => t('telemetry.state.not_asked'),
+  enabled: () => t('telemetry.state.enabled'),
+  disabled: () => t('telemetry.state.disabled'),
+}
+
 onMounted(async () => {
+  void loadUsage()
   const response = await api<ConfigDocument>('GET', '/api/local/v1/config')
   if (response.ok) configured.value = response.data.config.server.port
   loaded.value = true
@@ -84,6 +102,32 @@ async function save() {
           <OvButton type="submit" :busy="saving">{{ t('settings.port.save') }}</OvButton>
         </div>
       </form>
+    </OvCard>
+
+    <OvCard :title="t('telemetry.title')">
+      <div v-if="usage" data-testid="usage-settings" class="flex flex-col gap-4">
+        <p class="font-medium" data-testid="usage-state">{{ t('telemetry.status_line', { state: usageStates[usage.state]() }) }}</p>
+        <p v-if="usage.reason_text" class="text-muted" data-testid="usage-reason">{{ usage.reason_text }}</p>
+        <p>{{ t('telemetry.intro') }}</p>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <h3 class="font-semibold">{{ t('telemetry.collected.title') }}</h3>
+            <ul class="list-disc pl-5 text-muted"><li v-for="line in usage.collected" :key="line">{{ line }}</li></ul>
+          </div>
+          <div>
+            <h3 class="font-semibold">{{ t('telemetry.never.title') }}</h3>
+            <ul class="list-disc pl-5 text-muted"><li v-for="line in usage.never_collected" :key="line">{{ line }}</li></ul>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <OvButton v-if="usage.state !== 'enabled'" variant="secondary" data-testid="usage-settings-on" :busy="usageBusy" @click="setUsage(true)">{{ t('telemetry.button.turn_on') }}</OvButton>
+          <OvButton v-if="usage.state === 'not_asked'" variant="secondary" data-testid="usage-settings-off" :busy="usageBusy" @click="setUsage(false)">{{ t('telemetry.button.keep_off') }}</OvButton>
+          <OvButton v-if="usage.state === 'enabled'" variant="secondary" data-testid="usage-settings-off" :busy="usageBusy" @click="setUsage(false)">{{ t('telemetry.button.turn_off') }}</OvButton>
+        </div>
+        <p class="text-muted"><OvText :text="t('telemetry.change_any_time')" /></p>
+        <OvNotice v-if="usageProblem" live tone="problem" :title="usageProblem.message" :reason="usageProblem.reason" :next="usageProblem.next" />
+      </div>
+      <p v-else class="text-muted">{{ t('console.loading') }}</p>
     </OvCard>
 
     <div ref="outcome" tabindex="-1">

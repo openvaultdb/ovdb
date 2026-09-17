@@ -54,3 +54,12 @@ func T(key string, params map[string]string) string {
 	}
 	return template
 }
+
+// ForPeople is a next-step label as a person reads it: the agent-directed
+// "(ask the person first)" note is dropped where only a person chooses, the
+// TUI (review L8). CLI text output keeps it: agents without a skill read
+// bare `ovdb` and `ovdb status` as text.
+func ForPeople(label string) string {
+	label = strings.ReplaceAll(label, " (ask the person first)", "")
+	return strings.ReplaceAll(label, " (ask the person first: ", " (")
+}

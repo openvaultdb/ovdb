@@ -86,7 +86,8 @@ func (l *Local) PlanSkill(request skills.InstallRequest) (SkillPlan, error) {
 
 // InstallSkill installs the planned skill through the server, starting it
 // unless noStart. Only call it after the person chose to install.
-func (l *Local) InstallSkill(ctx context.Context, plan SkillPlan, noStart bool) ([]byte, error) {
+func (l *Local) InstallSkill(ctx context.Context, plan SkillPlan, noStart bool) (body []byte, err error) {
+	defer func() { l.Telemetry.Record(skills.TelemetryEvents(plan.Request, body, err)...) }()
 	c, err := l.Connect(ctx, noStart)
 	if err != nil {
 		return nil, err

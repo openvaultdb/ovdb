@@ -12,6 +12,7 @@ import (
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 	"github.com/openvaultdb/ovdb/internal/tui"
 )
 
@@ -96,12 +97,24 @@ func (a *App) termSize() (width, height int) {
 	return w, h
 }
 
+// TUIRecorder is the TUI process's recorder: channel tui, buffering while
+// not_asked.
+func (a *App) TUIRecorder(home string) *telemetry.Recorder {
+	return &telemetry.Recorder{Channel: telemetry.ChannelTUI, Home: home, Version: a.Version, Getenv: a.getenv,
+		Buffer: true, Key: a.TelemetryKey, Endpoint: a.TelemetryEndpoint}
+}
+
 func (a *App) runTUI(cmd *cobra.Command) error {
 	t, err := a.resolve(0)
 	if err != nil {
 		return err
 	}
 	local := a.local(cmd, t)
+	// The TUI keeps pre-consent events in memory only; they are sent after
+	// Turn on and dropped otherwise, at the latest when the TUI exits
+	// (telemetry-consent#REQ:pre-consent-buffer).
+	local.Telemetry = a.TUIRecorder(t.dirs.Home)
+	defer local.Telemetry.Exit(cmd.Context())
 	width, height := a.termSize()
 	model := tui.New(cmd.Context(), local, a.openBrowser, width, height)
 	program := tea.NewProgram(model, tea.WithContext(cmd.Context()))

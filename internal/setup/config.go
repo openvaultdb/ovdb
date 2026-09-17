@@ -16,6 +16,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // ConfigFile is the configuration file in OVDB home.
@@ -39,6 +40,10 @@ var Keys = []string{KeyServerPort, KeyServerCORS}
 // Config is config.yaml. Unset values are omitted and mean "default".
 type Config struct {
 	Server ServerConfig `yaml:"server,omitempty" json:"server"`
+	// Telemetry is the consent state, read and changed only through
+	// `ovdb telemetry` and /api/local/v1/telemetry (telemetry-consent
+	// #REQ:opt-in-state), so it is not part of the config document.
+	Telemetry telemetry.Consent `yaml:"telemetry,omitempty" json:"-"`
 }
 
 // ServerConfig is the server section of config.yaml.

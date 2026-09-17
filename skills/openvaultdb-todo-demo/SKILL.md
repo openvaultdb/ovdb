@@ -1,6 +1,6 @@
 ---
 name: openvaultdb-todo-demo
-description: Use when the person asks about their To buy (shopping) list or To watch list from the OpenVaultDB TODO demo, for example "add bananas and coffee to my shopping list", "what's on my watch list?", "I bought the milk" or "remove Interstellar".
+description: Use when the person asks about their To buy (shopping) list or To watch list from the OpenVaultDB TODO demo, for example "add tea to my shopping list and Arrival to my watch list", "what's on my watch list?", "I bought the milk" or "remove Interstellar".
 ---
 
 # OpenVaultDB TODO demo lists
@@ -30,8 +30,7 @@ The examples use `--db todo`; use the database `ovdb demo status --json` reporte
 
 | The person says | Run |
 |---|---|
-| "add bananas and coffee to my shopping list" | one `add` per item: `ovdb add /lists/to-buy/items '{"title":"Bananas","done":false}' --db todo --json` and `ovdb add /lists/to-buy/items '{"title":"Coffee","done":false}' --db todo --json` |
-| "add Arrival to my watch list" | `ovdb add /lists/to-watch/items '{"title":"Arrival","done":false}' --db todo --json` |
+| "add tea to my shopping list and Arrival to my watch list" | one `add` per item, each to its list: `ovdb add /lists/to-buy/items '{"title":"Tea","done":false}' --db todo --json` and `ovdb add /lists/to-watch/items '{"title":"Arrival","done":false}' --db todo --json` |
 | "what's on my shopping list?" | `ovdb list /lists/to-buy/items --db todo --json` |
 | "what's on my watch list?" | `ovdb list /lists/to-watch/items --db todo --json` |
 | "I bought the milk" / "mark Milk as done" | list the items, find the one whose `title` is Milk, then `ovdb set <path> --field done=true --db todo --json` |
@@ -40,7 +39,9 @@ The examples use `--db todo`; use the database `ovdb demo status --json` reporte
 
 - "Shopping list", "to buy" and "groceries" mean `/lists/to-buy`; "watch list", "movies" and
   "to watch" mean `/lists/to-watch`.
-- Write titles the way a person would read them ("Bananas", not "bananas").
+- Write titles the way a person would read them ("Tea", not "tea").
+- Before adding, list the items: if one with the same title is already there and not done,
+  tell the person instead of adding a duplicate.
 - `list --json` prints `{"records":[{"path":…,"data":{"title":…,"done":…}}]}`. Use each
   record's `path` for `set` and `delete`. `add --json` prints `{"key":"/lists/…/items/<id>"}`,
   the new item's path.

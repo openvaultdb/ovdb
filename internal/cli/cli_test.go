@@ -23,6 +23,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // childEnv makes the test binary act as `ovdb` for the detached server.
@@ -110,7 +111,7 @@ func newEnv(t *testing.T) *env {
 	}
 	e.app = &cli.App{
 		Version: testVersion, Getenv: func(key string) string { return e.vars[key] },
-		Executable: os.Args[0], ChildEnv: []string{childEnv + "=1"},
+		Executable: os.Args[0], ChildEnv: neutralTelemetryEnv(childEnv + "=1"),
 		OpenBrowser: func(url string) error {
 			e.opened = append(e.opened, url)
 			return e.browserErr
@@ -482,4 +483,15 @@ func TestConfigSetWithOpenRuntimeDir(t *testing.T) {
 		!strings.Contains(r.stderr, paths.PrivacyFix(e.dirs.Runtime)) {
 		t.Errorf("config set = %+v", r)
 	}
+}
+
+// neutralTelemetryEnv clears the telemetry opt-out variables (CI=true on
+// GitHub Actions) for the test server, whose environment then agrees with
+// the CLI's e.vars, so their telemetry documents are equal.
+func neutralTelemetryEnv(extra ...string) []string {
+	env := append([]string{}, extra...)
+	for _, name := range telemetry.OptOutVariables() {
+		env = append(env, name+"=")
+	}
+	return env
 }

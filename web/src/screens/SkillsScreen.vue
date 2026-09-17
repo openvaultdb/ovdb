@@ -17,8 +17,10 @@ import OvCard from '../components/OvCard.vue'
 import OvCommand from '../components/OvCommand.vue'
 import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
+import OvUsagePrompt from '../components/OvUsagePrompt.vue'
 import { t } from '../copy'
 import { navigate } from '../router'
+import { offerUsagePrompt, recordUsage } from '../usage'
 
 const document_ = ref<SkillsDocument | null>(null)
 const loadProblem = ref<ApiError | null>(null)
@@ -84,8 +86,12 @@ async function install() {
   })
   installing.value = false
   if (response.ok) {
+    for (const target of response.data.targets) {
+      recordUsage({ event: 'skill_installed', skill: response.data.skill, harness: target.harness, success: target.result !== 'conflict' }, true)
+    }
     result.value = response.data
     offered.value = null
+    offerUsagePrompt()
     await load()
   } else {
     problem.value = response.error
@@ -186,13 +192,20 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
             </li>
           </ul>
         </OvNotice>
+        <OvUsagePrompt />
         <section class="flex flex-col gap-3" aria-labelledby="skill-next">
           <h2 id="skill-next" class="text-lg font-semibold tracking-tight">{{ t('home.what_next') }}</h2>
           <p v-for="item in hints" :key="item.label"><OvText :text="item.label" /></p>
           <div class="flex flex-wrap gap-3">
             <template v-for="item in result.next" :key="item.label">
               <a v-if="item.action === 'open_app'" href="/apps/todo/" :class="link">{{ item.label }}</a>
-              <a v-else-if="item.action === 'done'" href="/" :class="link" @click="go($event, '/')">{{ item.label }}</a>
+              <a
+                v-else-if="item.action === 'done'"
+                href="/"
+                :class="link"
+                @click="recordUsage({ event: 'onboarding_completed', step: 'skills' }); go($event, '/')"
+                >{{ item.label }}</a
+              >
             </template>
           </div>
           <div v-if="commands.length" class="flex flex-col gap-2">

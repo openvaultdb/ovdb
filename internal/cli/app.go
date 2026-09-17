@@ -22,6 +22,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // EnvStartFault is a hidden test-only variable: a server started with it set
@@ -32,6 +33,12 @@ const EnvStartFault = "OVDB_TEST_START_FAULT"
 type App struct {
 	Version string
 	Getenv  paths.Getenv // os.Getenv when nil
+	// Environ lists the environment for agent detection; os.Environ when nil.
+	Environ func() []string
+	// TelemetryKey and TelemetryEndpoint replace the build's PostHog key and
+	// endpoint (tests).
+	TelemetryKey, TelemetryEndpoint string
+	telemetry                       *telemetry.Recorder
 	// Executable runs the detached server; os.Executable() when empty.
 	Executable string
 	// ChildEnv is appended to the detached server's environment (tests).
@@ -64,7 +71,7 @@ func (a *App) getenv(key string) string {
 func (a *App) AddCommands(root *cobra.Command) {
 	hidden := !preview.On()
 	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd(), a.enginesCmd(),
-		a.useCmd(), a.cdCmd(), a.pwdCmd(), a.listCmd(), a.getCmd(), a.setCmd(), a.addCmd(), a.deleteCmd(), a.demoCmd(), a.exploreCmd(), a.skillsCmd()} {
+		a.useCmd(), a.cdCmd(), a.pwdCmd(), a.listCmd(), a.getCmd(), a.setCmd(), a.addCmd(), a.deleteCmd(), a.demoCmd(), a.exploreCmd(), a.skillsCmd(), a.telemetryCmd()} {
 		command.Hidden = hidden
 		command.SetFlagErrorFunc(flagError)
 		root.AddCommand(command)
@@ -121,6 +128,7 @@ func (a *App) local(cmd *cobra.Command, t target) *client.Local {
 			command.Env = append(os.Environ(), a.ChildEnv...)
 			return command
 		},
+		Telemetry: a.recorder(t.dirs.Home),
 	}
 }
 

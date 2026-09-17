@@ -16,12 +16,22 @@ var rules = []struct {
 	pattern     *regexp.Regexp
 	replacement string
 }{
-	// scheme://user:password@host → scheme://[redacted]@host. The user-info
-	// runs to the last "@" of the token, so a password containing "@" or "/"
-	// is removed whole.
-	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)[^\s"'<>]*@`), "${1}" + Mask + "@"},
+	// scheme://user:password@host/db → scheme://[redacted]: with user-info
+	// present, the whole URL is a connection string, so its user, host and
+	// database name go too (review L7). The user-info runs to the last "@"
+	// of the token, so a password containing "@" or "/" is removed whole; a
+	// trailing ":" before a space stays.
+	{regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)[^\s"'<>]*@[^\s"'<>]*?(:?(?:\s|$|["'<>]))`), "${1}" + Mask + "${2}"},
 	// go-sql-driver/mysql DSNs: user:password@tcp(host)/db, @unix(/sock).
-	{regexp.MustCompile(`[^\s"'<>()]*@((?:tcp|tcp4|tcp6|udp|unix|memory)\()`), Mask + "@${1}"},
+	{regexp.MustCompile(`[^\s"'<>()]*@(?:tcp|tcp4|tcp6|udp|unix|memory)\([^)]*\)[^\s"'<>]*`), Mask},
+	// libpq and pgx connection parameters that identify the server or the
+	// account: host, user and database names.
+	{regexp.MustCompile("(?i)\\b((?:host|hostaddr|user|username|database|dbname)=)(\"[^\"]*\"|'[^']*'|[^\\s;&,'\"}`]+)"), "${1}" + Mask},
+	// pgx: failed to connect to `…`: host:port (hostname): …
+	{regexp.MustCompile("(failed to connect to `[^`]*`:\\s*)[^\\s:]+:\\d+(?:\\s*\\([^)]*\\))?"), "${1}" + Mask},
+	// Network errors naming the remote end: dial tcp host:port:, lookup host.
+	{regexp.MustCompile(`(dial (?:tcp|tcp4|tcp6|udp|unix) )[^\s]+?(:\s)`), "${1}" + Mask + "${2}"},
+	{regexp.MustCompile(`(lookup )[^\s:]+`), "${1}" + Mask},
 	// key=value, key: value and "key": "value" pairs whose key mentions a
 	// secret. The value ends at whitespace, a separator or a closing quote.
 	{regexp.MustCompile(`(?i)([A-Za-z0-9_.\-]*(?:password|passwd|pwd|secret|token|key)[A-Za-z0-9_.\-]*"?\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s;&,'"}]+)`), "${1}" + Mask},

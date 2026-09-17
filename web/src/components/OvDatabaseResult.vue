@@ -12,12 +12,16 @@ import OvButton from './OvButton.vue'
 import OvCommand from './OvCommand.vue'
 import OvNotice from './OvNotice.vue'
 import OvText from './OvText.vue'
+import OvUsagePrompt from './OvUsagePrompt.vue'
+import { recordUsage } from '../usage'
 
 const props = defineProps<{
   result: DatabaseResult
   title: string
   stored: string
   another: string
+  // The onboarding step this Result completes: create or connect.
+  step?: string
 }>()
 defineEmits<{ another: [] }>()
 
@@ -39,6 +43,11 @@ async function useAsDefault(id: string) {
   else problem.value = response.error
 }
 
+function done(event: MouseEvent) {
+  recordUsage({ event: 'onboarding_completed', step: props.step ?? 'create' })
+  go(event, '/')
+}
+
 function go(event: MouseEvent, path: string) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
@@ -53,6 +62,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
     <OvNotice live tone="success" :title="title">
       <p class="break-words"><OvText :text="stored" /></p>
     </OvNotice>
+    <OvUsagePrompt />
     <section class="flex flex-col gap-4" aria-labelledby="what-next">
       <h2 id="what-next" class="text-lg font-semibold tracking-tight">{{ t('home.what_next') }}</h2>
       <ul v-if="commands.length" class="flex flex-col gap-4">
@@ -83,7 +93,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
             v-else-if="item.action === 'done'"
             href="/"
             class="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-hover"
-            @click="go($event, '/')"
+            @click="done($event)"
             >{{ item.label }}</a
           >
         </template>

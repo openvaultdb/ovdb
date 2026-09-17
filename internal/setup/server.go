@@ -17,6 +17,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // Server states.
@@ -256,7 +257,26 @@ type Status struct {
 	// Skills lists each OVDB skill and the AI agents it is installed for,
 	// as whoever built the document resolves their directories.
 	Skills []skills.Installed `json:"skills"`
-	Next   []envelope.Next    `json:"next"`
+	// Telemetry is the usage statistics state, and why nothing is sent, as
+	// the process that built the document evaluates it
+	// (first-run-onboarding#REQ:status-command, telemetry-consent
+	// #REQ:sender-process-decides).
+	Telemetry StatusTelemetry `json:"telemetry"`
+	Next      []envelope.Next `json:"next"`
+}
+
+// StatusTelemetry is the status document's telemetry group.
+type StatusTelemetry struct {
+	State      string `json:"state"`
+	Sending    bool   `json:"sending"`
+	Reason     string `json:"reason,omitempty"`
+	ReasonText string `json:"reason_text,omitempty"`
+}
+
+// SetTelemetry sets the telemetry group from a decision.
+func (s *Status) SetTelemetry(d telemetry.Decision, available bool) {
+	document := telemetry.NewDocument(d, available)
+	s.Telemetry = StatusTelemetry{State: d.State, Sending: d.Sending, Reason: d.Reason, ReasonText: document.Telemetry.ReasonText}
 }
 
 // NewStatus builds the status for this ovdb version, locations, server,

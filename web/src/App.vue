@@ -2,7 +2,7 @@
 // The console shell: brand header, the current screen, and the two states
 // that replace any screen — a session that ended (any 401) and a server that
 // stopped (local-server-and-web-console#REQ:session-ended-copy).
-import { nextTick, watch, watchEffect } from 'vue'
+import { nextTick, onMounted, watch, watchEffect } from 'vue'
 
 import { connection } from './api'
 import OvText from './components/OvText.vue'
@@ -18,10 +18,15 @@ import BrowseScreen from './screens/BrowseScreen.vue'
 import DemoScreen from './screens/DemoScreen.vue'
 import SkillsScreen from './screens/SkillsScreen.vue'
 import ExploreScreen from './screens/ExploreScreen.vue'
+import { loadUsage } from './usage'
 import { useServer } from './useServer'
 
 // The shell keeps the server poll running on every screen.
 useServer()
+
+// Usage statistics state, once per page: until it is known, page events are
+// only kept in memory.
+onMounted(() => void loadUsage())
 
 const titles = {
   home: () => t('app.name'),

@@ -56,6 +56,10 @@ builds:
       - -X github.com/strongo/buildinfo.version={{.Version}}
       - -X github.com/strongo/buildinfo.commit={{.FullCommit}}
       - -X github.com/strongo/buildinfo.date={{.Date}}
+      # Usage statistics (telemetry-consent, decision 0009): the PostHog EU
+      # project key from the POSTHOG_KEY secret. Without it the build
+      # reports "unavailable in this build" and sends nothing.
+      - '{{ if isEnvSet "POSTHOG_KEY" }}-X github.com/openvaultdb/ovdb/internal/telemetry.posthogKey={{ .Env.POSTHOG_KEY }}{{ end }}'
 
 archives:
   - id: archive

@@ -9,8 +9,8 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
-// settingsScreen is capability row 7 (change server port); telemetry joins
-// it in a later increment.
+// settingsScreen is capability rows 7 (change server port) and 23/24 (usage
+// statistics, telemetry.go).
 type settingsScreen struct {
 	loaded   bool
 	document setup.ConfigDocument
@@ -62,5 +62,6 @@ func (m Model) viewSettings() string {
 		b.WriteString("\n\n")
 		b.WriteString(wordWrap(m.settings.savedMessage, width))
 	}
+	b.WriteString(m.viewUsageSettings())
 	return b.String()
 }

@@ -115,4 +115,13 @@ var Rows = []Row{
 	// static and needs no endpoint.
 	{ID: "22", Capability: "Explore data (DataTug guidance)", CLI: []string{"ovdb explore"}, TUI: "explore", Web: "/explore",
 		API: []string{"POST /api/local/v1/explore/datatug"}, Implemented: true},
+	// Usage statistics (telemetry-consent): each process reads consent and
+	// evaluates forced-off conditions itself; changes go through the server
+	// when it runs. The TUI and web console show Settings → Usage statistics
+	// and one prompt after the first success. Enabling from the CLI needs a
+	// terminal or --confirmed-by-user relaying the person's yes (E6).
+	{ID: "23", Capability: "Telemetry status", CLI: []string{"ovdb telemetry status"}, TUI: "settings", Web: "/settings",
+		API: []string{"GET /api/local/v1/telemetry"}, Implemented: true},
+	{ID: "24", Capability: "Turn telemetry on or off", CLI: []string{"ovdb telemetry enable", "ovdb telemetry disable"}, TUI: "settings", Web: "/settings",
+		API: []string{"PUT /api/local/v1/telemetry", "POST /api/local/v1/telemetry/events"}, Exceptions: []string{"E6"}, Implemented: true},
 }

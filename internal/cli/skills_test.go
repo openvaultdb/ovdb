@@ -224,3 +224,14 @@ func TestStatusSkillsFromClientEnvironment(t *testing.T) {
 		t.Errorf("status in the server's home = %s", out.String())
 	}
 }
+
+// Review L10: installing for an agent that isn't found says so, instead of
+// implying it is there.
+func TestSkillInstallNamesAgentsNotFound(t *testing.T) {
+	e := previewEnv(t)
+	e.vars[cli.EnvNonInteractive] = "1"
+	problem := decodeError(t, e.run("skills", "install", "todo-demo", "--json"), envelope.ConfirmationRequired)
+	if !strings.Contains(problem.Reason, "Claude Code wasn't found on this computer") {
+		t.Errorf("reason = %q", problem.Reason)
+	}
+}

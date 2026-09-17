@@ -1,9 +1,8 @@
 package cli_test
 
 // The journey regression gate (configuration-parity#REQ:journey-a-terminal,
-// REQ:journey-c-agent, REQ:journey-d-todo-demo), as far as increment 8
-// reaches: Journey A and C without telemetry (increment 9), and Journey D
-// whole. Journey D's browser half — the skill
+// REQ:journey-c-agent, REQ:journey-d-todo-demo): Journeys A, C and D whole,
+// telemetry included. Journey D's browser half — the skill
 // consent step in the web console and the agent's change appearing in the
 // open app — is web/e2e/todo.spec.ts.
 
@@ -61,9 +60,10 @@ func screenText(m tea.Model) string {
 	return strings.Join(strings.Fields(regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]").ReplaceAllString(m.View().Content, "")), " ")
 }
 
-// Journey A (partial): `ovdb` → Create a database → inGitDB, suggested
-// location, name notes → Use in this project → quit; then `ovdb add` and
-// `ovdb list` work in that project without --db (AC:journey-a-passes).
+// Journey A: `ovdb` → Create a database → inGitDB, suggested location, name
+// notes → Use in this project → answer the telemetry prompt → quit; then
+// `ovdb add` and `ovdb list` work in that project without --db
+// (AC:journey-a-passes).
 func TestJourneyATerminal(t *testing.T) {
 	e := previewEnv(t)
 	project := e.in(filepath.Join(t.TempDir(), "shop"))
@@ -74,8 +74,9 @@ func TestJourneyATerminal(t *testing.T) {
 	lookup := dbcontext.Find(src)
 	local := &client.Local{
 		Dirs: e.dirs, Version: testVersion, Port: e.port(),
-		Getenv: func(key string) string { return e.vars[key] },
-		Where:  dbcontext.Request{Dirs: lookup.Dirs, Root: lookup.Root},
+		Getenv:    func(key string) string { return e.vars[key] },
+		Where:     dbcontext.Request{Dirs: lookup.Dirs, Root: lookup.Root},
+		Telemetry: e.app.TUIRecorder(e.dirs.Home),
 		Command: func(port int) *exec.Cmd {
 			command := exec.Command(os.Args[0], "server", "run", "--port", strconv.Itoa(port))
 			command.Env = append(append(os.Environ(), childEnv+"=1"), e.dirs.Env()...)
@@ -99,12 +100,18 @@ func TestJourneyATerminal(t *testing.T) {
 		t.Fatalf("suggested location missing:\n%s", view)
 	}
 	press("enter", "enter")
-	if view := screenText(m); !strings.Contains(view, "Created database notes") || !strings.Contains(view, "u use in project") {
+	if view := screenText(m); !strings.Contains(view, "Created database notes") || !strings.Contains(view, "u use in project") ||
+		!strings.Contains(view, "Help improve OpenVaultDB?") || !strings.Contains(view, "t turn on · n no thanks · w what's collected?") {
 		t.Fatalf("Result:\n%s", view)
 	}
 	press("u")
-	if view := screenText(m); !strings.Contains(view, "Now using notes for this project ("+project+")") {
+	// The title wraps a long project path (review L8): compare without spaces.
+	if view := screenText(m); !strings.Contains(strings.ReplaceAll(view, " ", ""), strings.ReplaceAll("Now using notes for this project ("+project+")", " ", "")) || !strings.Contains(view, "Help improve OpenVaultDB?") {
 		t.Fatalf("Use in this project:\n%s", view)
+	}
+	press("n") // the telemetry prompt: No thanks
+	if view := screenText(m); strings.Contains(view, "Help improve OpenVaultDB?") || !strings.Contains(view, "usage statistics stay off") {
+		t.Fatalf("after No thanks:\n%s", view)
 	}
 	press("enter")
 	if view := screenText(m); !strings.Contains(view, "1 database · using notes (this project) · OVDB server running at") {
@@ -112,6 +119,10 @@ func TestJourneyATerminal(t *testing.T) {
 	}
 	press("q")
 
+	// The server was running; the TUI declares its channel (review M1).
+	if status := e.telemetryStatus().Telemetry; status.State != "disabled" || status.Channel != "tui" || status.HasInstallID {
+		t.Errorf("telemetry after the prompt = %+v", status)
+	}
 	if r := e.ok("add", "/items", `{"title":"Hello"}`); !strings.HasPrefix(r.stdout, "notes: added /items/") {
 		t.Errorf("add = %q", r.stdout)
 	}
@@ -120,11 +131,10 @@ func TestJourneyATerminal(t *testing.T) {
 	}
 }
 
-// Journey C (partial): an agent without a skill, stdin closed and no
-// terminal, reads the status and its five options, creates a database,
-// selects it for the project and round-trips a record with absolute paths;
-// no command waits for input (AC:journey-c-passes). Telemetry joins in
-// increment 9.
+// Journey C: an agent without a skill, stdin closed and no terminal, reads
+// the status and its five options, creates a database, selects it for the
+// project and round-trips a record with absolute paths; no command waits for
+// input and telemetry stays not_asked (AC:journey-c-passes).
 func TestJourneyCAgent(t *testing.T) {
 	e := previewEnv(t)
 	e.vars["CLAUDECODE"] = "1"
@@ -172,6 +182,12 @@ func TestJourneyCAgent(t *testing.T) {
 	}
 	if r := e.ok("get", key.Key, "--db", "notes", "--json"); !strings.Contains(r.stdout, `"data":{"title":"Hello"}`) {
 		t.Errorf("get --json = %s", r.stdout)
+	}
+	// Enabling without the person's relayed yes is refused, and nothing
+	// changed the state.
+	_ = decodeError(t, e.run("telemetry", "enable", "--json"), envelope.ConfirmationRequired)
+	if state := e.telemetryStatus().Telemetry.State; state != "not_asked" {
+		t.Errorf("telemetry = %s, want not_asked", state)
 	}
 }
 

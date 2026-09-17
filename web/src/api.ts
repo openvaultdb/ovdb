@@ -69,6 +69,7 @@ export interface StatusDocument {
   locations: { home: string; runtime: string; data: string }
   server: Server
   databases: Database[]
+  telemetry?: { state: 'not_asked' | 'enabled' | 'disabled'; sending: boolean; reason?: string; reason_text?: string }
   next: Next[]
 }
 
