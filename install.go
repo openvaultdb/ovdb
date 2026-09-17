@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/strongo/cli-helpers/cliinstall/cobracmd"
+	"github.com/strongo/cli-helpers/selfupdate"
 )
 
 // newInstallCmd returns the "install" command, built from
@@ -42,16 +43,28 @@ type installErrors struct{}
 // before ever calling opts.Errors.Failure (see that package's doc comment
 // on mapFailure and its TestMapFailure_NeverCallsMapperWithNil), so the
 // v0.19.0-era nil-guard this method used to carry is gone.
+//
+// The three cli-install-only kinds are named in their own explicit case,
+// literally satisfying cli-install#req:host-owned-exit-codes ("MUST map the
+// three new kinds explicitly... MUST NOT let them fall into a self-update
+// default branch"), even though ovdb's own exit code for every kind — new
+// or self-update-shared — is the same "install:"-prefixed exit 1.
 func (installErrors) Failure(err error) error {
 	var usage *cobracmd.UsageError
 	if errors.As(err, &usage) {
 		return errors.New("install: " + err.Error())
 	}
-	// selfupdate.KindUnknownTarget's underlying error already names the
-	// unknown target and lists valid catalog ids
-	// (cli-install#req:unknown-target-refused), and
-	// KindNoInstallDir/KindDestinationExists carry their own remedy text,
-	// so no extra wrapping beyond the shared "install:" prefix is needed
-	// for any kind, new or self-update-shared.
-	return errors.New("install: " + err.Error())
+	switch selfupdate.KindOf(err) {
+	case selfupdate.KindUnknownTarget:
+		// The underlying error already lists valid ids
+		// (cli-install#req:unknown-target-refused), so no extra usage text
+		// is added here.
+		return errors.New("install: " + err.Error())
+	case selfupdate.KindNoInstallDir, selfupdate.KindDestinationExists:
+		// Both carry their own remedy text already.
+		return errors.New("install: " + err.Error())
+	default:
+		// Every kind shared with self-update: same "install:" prefix.
+		return errors.New("install: " + err.Error())
+	}
 }

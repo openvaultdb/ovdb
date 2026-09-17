@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/strongo/cli-helpers/cliinstall/cobracmd"
+	"github.com/strongo/cli-helpers/selfupdate"
 )
 
 func TestNewInstallCmdRegistration(t *testing.T) {
@@ -56,17 +57,19 @@ func TestInstallErrorsFailure_UsageError(t *testing.T) {
 }
 
 // TestInstallErrorsFailure_MapsEveryKindToOne proves every failure — usage,
-// an unknown target, the two new cli-install-only kinds, and a self-update-
-// shared kind — maps onto ovdb's single general-failure exit code, 1
-// (cli-install#req:host-owned-exit-codes).
+// each of the three new cli-install-only kinds by its actual typed Kind
+// (exercising failureExitCode's own named switch cases, not just its
+// default branch), and a self-update-shared kind — maps onto ovdb's single
+// general-failure exit code, 1 (cli-install#req:host-owned-exit-codes).
 func TestInstallErrorsFailure_MapsEveryKindToOne(t *testing.T) {
 	cases := []struct {
 		name string
 		err  error
 	}{
-		{"unknown target", errors.New("nosuchcli: not a known install target; valid ids: datatug, ingitdb, ovdb")},
-		{"no install dir", errors.New("no per-user bin directory on PATH")},
-		{"destination exists", errors.New("destination already exists")},
+		{"unknown target (typed)", &selfupdate.Failure{Kind: selfupdate.KindUnknownTarget, Err: errors.New("nosuchcli: not a known install target; valid ids: datatug, ingitdb, ovdb")}},
+		{"no install dir (typed)", &selfupdate.Failure{Kind: selfupdate.KindNoInstallDir, Err: errors.New("no per-user bin directory on PATH")}},
+		{"destination exists (typed)", &selfupdate.Failure{Kind: selfupdate.KindDestinationExists, Err: errors.New("destination already exists")}},
+		{"self-update-shared kind (typed)", &selfupdate.Failure{Kind: selfupdate.KindChecksum, Err: errors.New("checksum mismatch")}},
 		{"plain error", errors.New("network unavailable")},
 	}
 	for _, c := range cases {
@@ -74,6 +77,9 @@ func TestInstallErrorsFailure_MapsEveryKindToOne(t *testing.T) {
 			got := (installErrors{}).Failure(c.err)
 			if got == nil {
 				t.Fatal("Failure(...) = nil, want a non-nil error")
+			}
+			if !strings.HasPrefix(got.Error(), "install: ") {
+				t.Errorf("Failure(%v) = %q, want an \"install: \" prefix", c.err, got.Error())
 			}
 			if code := commandExitCode(got); code != 1 {
 				t.Errorf("commandExitCode(Failure(%v)) = %d, want 1", c.err, code)

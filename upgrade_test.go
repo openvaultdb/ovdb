@@ -104,11 +104,16 @@ func TestUpgradeErrorsFailure_NewKindsMapExplicitly(t *testing.T) {
 	}
 }
 
-// TestUpgradeErrorsFailure_SharedKindsMatchSelfUpdate proves every kind
-// self-update already handles reuses selfUpdateErrors.Failure UNCHANGED:
-// same message, same exit code
-// (cli-install#req:self-update-equals-upgrade-self).
-func TestUpgradeErrorsFailure_SharedKindsMatchSelfUpdate(t *testing.T) {
+// TestUpgradeErrorsFailure_SharedKindsUseUpgradePrefix proves every kind
+// self-update also handles gets the SAME "upgrade:" prefix as the three
+// cli-install-only kinds — never self-update's own "self-update:" prefix,
+// which Failure cannot safely borrow because *selfupdate.Failure/
+// *cliinstall.BatchFailure carry no target identity, so it can never tell
+// "this failure was ovdb's own" from "this failure was some other
+// upgraded target's" (task-22 review M2/M6 fleet ruling: the prefix names
+// the command the user ran). Exit code stays 1 either way, matching
+// selfUpdateErrors' own exit code for the same kind.
+func TestUpgradeErrorsFailure_SharedKindsUseUpgradePrefix(t *testing.T) {
 	cases := []error{
 		&selfupdate.Failure{Kind: selfupdate.KindAmbiguous, Err: errors.New("ambiguous")},
 		&selfupdate.Failure{Kind: selfupdate.KindReleaseLookup, Err: errors.New("lookup failed")},
@@ -119,12 +124,12 @@ func TestUpgradeErrorsFailure_SharedKindsMatchSelfUpdate(t *testing.T) {
 	}
 	for _, err := range cases {
 		got := (upgradeErrors{}).Failure(err)
-		want := (selfUpdateErrors{}).Failure(err)
-		if got.Error() != want.Error() {
-			t.Errorf("Failure(%v) = %q, want %q (identical to selfUpdateErrors)", err, got.Error(), want.Error())
+		if !strings.HasPrefix(got.Error(), "upgrade: ") {
+			t.Errorf("Failure(%v) = %q, want an \"upgrade: \" prefix, not self-update's own", err, got.Error())
 		}
+		want := (selfUpdateErrors{}).Failure(err)
 		if commandExitCode(got) != commandExitCode(want) {
-			t.Errorf("Failure(%v) exit code = %d, want %d", err, commandExitCode(got), commandExitCode(want))
+			t.Errorf("Failure(%v) exit code = %d, want %d (same as selfUpdateErrors)", err, commandExitCode(got), commandExitCode(want))
 		}
 	}
 }
@@ -162,6 +167,27 @@ func TestUpgradeErrorsUpgradesAvailable_SingleTargetMatchesSelfUpdate(t *testing
 				t.Errorf("exit code mismatch: %d != %d", commandExitCode(got), commandExitCode(want))
 			}
 		})
+	}
+}
+
+// TestUpgradeErrorsUpgradesAvailable_SingleOtherTargetUsesUpgradePrefix
+// proves the bug this fixed is gone: a single OTHER target (not ovdb) with
+// an available upgrade must NOT borrow self-update's own "self-update:"
+// message — only `upgrade ovdb --check`'s own single-target-is-self case
+// does that (task-22 review M2: "a checksum failure on `ovdb upgrade
+// datatug` prints 'self-update: ...'" — the analogous bug for
+// UpgradesAvailable was "self-update: upgrades available for datatug").
+func TestUpgradeErrorsUpgradesAvailable_SingleOtherTargetUsesUpgradePrefix(t *testing.T) {
+	result := cliinstall.UpgradeResult{Target: "datatug", Current: "1.0.0", Latest: "1.1.0", Verdict: selfupdate.UpdateAvailable}
+	got := (upgradeErrors{}).UpgradesAvailable([]cliinstall.UpgradeResult{result})
+	if !strings.HasPrefix(got.Error(), "upgrade: ") {
+		t.Errorf("UpgradesAvailable(...) = %q, want an \"upgrade: \" prefix for a non-ovdb target", got.Error())
+	}
+	if !strings.Contains(got.Error(), "datatug") {
+		t.Errorf("UpgradesAvailable(...) = %q, want it to name datatug", got.Error())
+	}
+	if commandExitCode(got) != 1 {
+		t.Errorf("commandExitCode(...) = %d, want 1", commandExitCode(got))
 	}
 }
 
