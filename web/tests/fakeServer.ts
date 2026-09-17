@@ -40,9 +40,13 @@ export const serverNext = [
 
 export const home = {
   schema: 1,
-  status_line: [{ key: 'home.status.server_running', params: { address: server.address } }],
+  status_line: [
+    { key: 'home.status.server_running', params: { address: server.address } },
+    { key: 'home.status.databases_none' },
+  ],
   question_key: 'home.question',
   options: [
+    { id: 'create', group: 'primary', label_key: 'home.menu.create_database', description_key: 'home.menu.create_database_help' },
     {
       id: 'server',
       group: 'primary',
@@ -61,4 +65,46 @@ export const defaultRoutes: Record<string, Handler> = {
   'GET /api/local/v1/status': () =>
     json(200, { schema: 1, version: '1.2.3', server, next: [{ label: 'Open web setup', command: 'ovdb open' }] }),
   'GET /api/local/v1/config': () => json(200, { schema: 1, config: { server: {} }, next: [] }),
+}
+
+// GET /api/local/v1/engines as the Go catalogue builds it.
+export const engines = {
+  schema: 1,
+  engines: [
+    { id: 'ingitdb', name: 'inGitDB', description: 'Readable files in a folder, with Git history. Recommended to start.', schema_modes: ['strict', 'partial', 'schemaless'], pinned: true, setup: 'guided', note: 'Advanced: inGitDB stored directly in a GitHub repository is set up with a manifest file.' },
+    { id: 'sqlite', name: 'SQLite', description: 'One fast local file. You describe your data (a schema) before storing records.', schema_modes: ['strict'], pinned: true, setup: 'guided' },
+    ...[
+      ['firestore', 'Firestore', 'Google Cloud document database. Set up with a manifest.'],
+      ['mysql', 'MySQL', 'A MySQL server you run. Set up with a manifest.'],
+      ['postgres', 'PostgreSQL', 'A PostgreSQL server you run. Set up with a manifest.'],
+    ].map(([id, name, description]) => ({
+      id,
+      name,
+      description,
+      schema_modes: ['strict'],
+      pinned: false,
+      setup: 'manifest',
+      manifest_steps: [
+        { label: 'Write a manifest file, then edit it', command: `ovdb init --engine ${id} --id <name>` },
+        { label: 'Put the edited file in /home/a/.config/ovdb/databases, then load it', command: 'ovdb databases reload <name>' },
+        { label: 'Guided connect is coming.' },
+        { label: 'Read how manifest files work: https://github.com/openvaultdb/openvaultdb-go#manifest-examples' },
+      ],
+    })),
+  ],
+  next: [],
+}
+
+export const status = {
+  schema: 1,
+  version: '1.2.3',
+  locations: { home: '/home/a/.config/ovdb', runtime: '/home/a/.cache/ovdb/run', data: '/home/a/ovdb' },
+  server,
+  databases: [],
+  next: [],
+}
+
+export const databaseRoutes: Record<string, Handler> = {
+  'GET /api/local/v1/engines': () => json(200, engines),
+  'GET /api/local/v1/status': () => json(200, status),
 }

@@ -28,6 +28,10 @@ func screenFor(id string) string {
 		return ScreenServer
 	case "settings":
 		return ScreenSettings
+	case "create":
+		return ScreenCreate
+	case "databases":
+		return ScreenDatabases
 	default:
 		return ScreenHome
 	}

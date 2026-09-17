@@ -57,10 +57,18 @@ func (a *App) getenv(key string) string {
 // AddCommands registers the new commands on root, hidden without the gate.
 func (a *App) AddCommands(root *cobra.Command) {
 	hidden := !preview.On()
-	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd()} {
+	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd(), a.enginesCmd()} {
 		command.Hidden = hidden
 		command.SetFlagErrorFunc(flagError)
 		root.AddCommand(command)
+	}
+	// `ovdb databases remove` and `reload` join the legacy `ovdb databases`.
+	if databases, _, err := root.Find([]string{"databases"}); err == nil && databases != root {
+		for _, command := range []*cobra.Command{a.databasesRemoveCmd(), a.databasesReloadCmd()} {
+			command.Hidden = hidden
+			command.SetFlagErrorFunc(flagError)
+			databases.AddCommand(command)
+		}
 	}
 }
 

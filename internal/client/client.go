@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
@@ -40,6 +42,8 @@ const (
 	HomePath       = "/api/local/v1/home"
 	LoginLinksPath = "/api/local/v1/login-links"
 	ConfigPath     = "/api/local/v1/config"
+	EnginesPath    = "/api/local/v1/engines"
+	DatabasesPath  = "/api/local/v1/databases"
 )
 
 // Local is one presentation's view of this home's local server.
@@ -105,7 +109,7 @@ func (l *Local) Start(ctx context.Context) (StartOutcome, error) {
 	if result.AlreadyRunning && result.State.Whoami.Version != l.Version {
 		l.notice(VersionNotice(result.State.Whoami.Version, l.Version))
 	}
-	response, err := newClient(result.State).Do(ctx, http.MethodGet, ServerPath, nil)
+	response, err := l.newClient(result.State).Do(ctx, http.MethodGet, ServerPath, nil)
 	return StartOutcome{Body: response.Body, AlreadyRunning: result.AlreadyRunning}, err
 }
 
@@ -156,8 +160,9 @@ func (l *Local) Server(ctx context.Context) ([]byte, error) {
 
 // Status is the whole-setup status document (first-run-onboarding#REQ:status-command).
 func (l *Local) Status(ctx context.Context) ([]byte, error) {
-	return l.read(ctx, StatusPath, func() any {
-		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs))
+	return l.readErr(ctx, StatusPath, func() (any, error) {
+		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
+		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases), err
 	})
 }
 
@@ -165,9 +170,83 @@ func (l *Local) Status(ctx context.Context) ([]byte, error) {
 // (first-run-onboarding#REQ:home-menu-options): from the server when it
 // runs, otherwise built for a stopped server without starting one.
 func (l *Local) Home(ctx context.Context) ([]byte, error) {
-	return l.read(ctx, HomePath, func() any {
-		return setup.NewHome(setup.StoppedServer(l.Port, l.Dirs))
+	return l.readErr(ctx, HomePath, func() (any, error) {
+		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
+		return setup.NewHome(setup.StoppedServer(l.Port, l.Dirs), databases), err
 	})
+}
+
+// Engines is the storage catalogue (capability 8). It is the same data in
+// every binary, so without a server it is built here.
+func (l *Local) Engines(ctx context.Context) ([]byte, error) {
+	return l.read(ctx, EnginesPath, func() any { return setup.NewEnginesDocument(l.Dirs.Home) })
+}
+
+// Databases lists registered databases (capability 11): from the running
+// server, or from the registry with mount state "unknown" when none runs
+// (database-setup-and-providers#REQ:list-and-remove).
+func (l *Local) Databases(ctx context.Context) ([]byte, error) {
+	return l.readErr(ctx, DatabasesPath, func() (any, error) {
+		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
+		return setup.NewDatabasesDocument(databases), err
+	})
+}
+
+// CreateDatabase creates a database through the server, starting it unless
+// noStart. An empty path is the default location under this client's data
+// home, sent as an absolute path (REQ:client-values-and-mismatch).
+func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest, noStart bool) ([]byte, error) {
+	if request.Engine == "" {
+		request.Engine = setup.EngineInGitDB
+	}
+	if request.Path == "" {
+		request.Path = setup.DefaultPath(l.Dirs.Data, request.Engine, request.ID)
+	} else if abs, err := filepath.Abs(request.Path); err == nil {
+		request.Path = abs
+	}
+	// Refuse what cannot work before starting a server for it.
+	if err := setup.ValidateCreate(&request); err != nil {
+		return nil, err
+	}
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, DatabasesPath, request)
+	return response.Body, err
+}
+
+// ReloadDatabase mounts database id again from its manifest through the
+// server, starting it unless noStart.
+func (l *Local) ReloadDatabase(ctx context.Context, id string, noStart bool) ([]byte, error) {
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, DatabasesPath+"/"+url.PathEscape(id)+"/reload", struct{}{})
+	return response.Body, err
+}
+
+// ReloadAllDatabases reloads every registration and picks up manifests
+// added by hand.
+func (l *Local) ReloadAllDatabases(ctx context.Context, noStart bool) ([]byte, error) {
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, DatabasesPath+"/reload", struct{}{})
+	return response.Body, err
+}
+
+// RemoveDatabase unregisters database id through the server, starting it
+// unless noStart. The data is kept.
+func (l *Local) RemoveDatabase(ctx context.Context, id string, noStart bool) ([]byte, error) {
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodDelete, DatabasesPath+"/"+url.PathEscape(id), nil)
+	return response.Body, err
 }
 
 // Config is the configuration document.
@@ -185,15 +264,23 @@ func (l *Local) Config(ctx context.Context) ([]byte, error) {
 }
 
 func (l *Local) read(ctx context.Context, path string, fromFiles func() any) ([]byte, error) {
+	return l.readErr(ctx, path, func() (any, error) { return fromFiles(), nil })
+}
+
+func (l *Local) readErr(ctx context.Context, path string, fromFiles func() (any, error)) ([]byte, error) {
 	state, err := l.inspect(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 	if state.Running {
-		response, err := newClient(state).Do(ctx, http.MethodGet, path, nil)
+		response, err := l.newClient(state).Do(ctx, http.MethodGet, path, nil)
 		return response.Body, err
 	}
-	return envelope.Marshal(fromFiles()), nil
+	document, err := fromFiles()
+	if err != nil {
+		return nil, err
+	}
+	return envelope.Marshal(document), nil
 }
 
 // SetConfig changes a setting through the running server. With no server
@@ -207,7 +294,7 @@ func (l *Local) SetConfig(ctx context.Context, change setup.ConfigChange) ([]byt
 			return nil, err
 		}
 		if state.Running {
-			response, err := newClient(state).Do(ctx, http.MethodPut, ConfigPath, change)
+			response, err := l.newClient(state).Do(ctx, http.MethodPut, ConfigPath, change)
 			return response.Body, err
 		}
 		var document setup.ConfigDocument
@@ -248,7 +335,7 @@ func (l *Local) Connect(ctx context.Context, noStart bool) (*Client, error) {
 		return nil, err
 	}
 	if state.Running {
-		return newClient(state), nil
+		return l.newClient(state), nil
 	}
 	if noStart || l.Command == nil {
 		return nil, NotRunning()
@@ -265,7 +352,7 @@ func (l *Local) Connect(ctx context.Context, noStart bool) (*Client, error) {
 	} else if result.State.Whoami.Version != l.Version {
 		l.notice(VersionNotice(result.State.Whoami.Version, l.Version))
 	}
-	return newClient(result.State), nil
+	return l.newClient(result.State), nil
 }
 
 // NotRunning is server_not_running for --no-start.
@@ -282,12 +369,21 @@ func VersionNotice(serverVersion, clientVersion string) string {
 
 // Client talks to one running local server with its instance secret.
 type Client struct {
-	state runtime.State
-	http  *http.Client
+	state   runtime.State
+	version string // the client's version
+	http    *http.Client
 }
 
-func newClient(state runtime.State) *Client {
-	return &Client{state: state, http: runtime.NewHTTPClient(30 * time.Second)}
+func (l *Local) newClient(state runtime.State) *Client {
+	return &Client{state: state, version: l.Version, http: runtime.NewHTTPClient(30 * time.Second)}
+}
+
+// VersionMismatch is server_version_mismatch: the running server is too old
+// (or new) to serve this request (REQ:version-mismatch-notice).
+func VersionMismatch(serverVersion, clientVersion string) *envelope.Error {
+	return envelope.New(envelope.ServerVersionMismatch, uicopy.T("server.version_mismatch.message", nil)).
+		WithReason(VersionNotice(serverVersion, clientVersion)).
+		WithNext(envelope.Next{Label: uicopy.T("next.restart_server", nil), Command: "ovdb server restart"})
 }
 
 // Response is a local API response; Body is kept byte for byte so --json
@@ -327,7 +423,16 @@ func (c *Client) Do(ctx context.Context, method, path string, body any) (Respons
 	}
 	result := Response{Status: response.StatusCode, Body: data}
 	if response.StatusCode >= http.StatusMultipleChoices {
-		if e := envelope.Decode(data); e != nil {
+		e := envelope.Decode(data)
+		// A server of another version that lacks this endpoint answers 404
+		// or 405 for it; say what to do instead of "nothing here".
+		unknownEndpoint := response.StatusCode == http.StatusMethodNotAllowed ||
+			response.StatusCode == http.StatusNotFound && (e == nil || e.Message == uicopy.T("api.not_found", nil))
+		if unknownEndpoint && c.state.Whoami != nil && c.state.Whoami.Version != c.version {
+			mismatch := VersionMismatch(c.state.Whoami.Version, c.version)
+			return Response{Status: response.StatusCode, Body: envelope.MarshalError(mismatch)}, mismatch
+		}
+		if e != nil {
 			return result, e
 		}
 		return result, envelope.New(envelope.Internal, uicopy.T("api.internal", nil)).WithReason(response.Status)

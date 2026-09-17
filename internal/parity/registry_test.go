@@ -13,8 +13,9 @@ import (
 	"github.com/openvaultdb/ovdb/web"
 )
 
-// rootCommand registers the new commands next to stubs of `ovdb status` and
-// `ovdb token …`; the real ones live in package main and cannot be imported.
+// rootCommand registers the new commands next to stubs of `ovdb status`,
+// `ovdb token …` and `ovdb databases [create]`; the real ones live in
+// package main and cannot be imported.
 func rootCommand() *cobra.Command {
 	root := &cobra.Command{Use: "ovdb"}
 	root.AddCommand(&cobra.Command{Use: "status", Run: func(*cobra.Command, []string) {}})
@@ -23,6 +24,9 @@ func rootCommand() *cobra.Command {
 		token.AddCommand(&cobra.Command{Use: name, Run: func(*cobra.Command, []string) {}})
 	}
 	root.AddCommand(token)
+	databases := &cobra.Command{Use: "databases", Run: func(*cobra.Command, []string) {}}
+	databases.AddCommand(&cobra.Command{Use: "create", Run: func(*cobra.Command, []string) {}})
+	root.AddCommand(databases)
 	(&cli.App{Version: "test"}).AddCommands(root)
 	return root
 }

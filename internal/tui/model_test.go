@@ -97,7 +97,7 @@ func TestNewStartsOnHome(t *testing.T) {
 func TestInitLoadsHomeStatus(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 80, 24)
-	m = send(t, m, homeLoadedMsg{document: setup.NewHome(setup.Server{State: setup.StateNotRunning, Port: 6832})})
+	m = send(t, m, homeLoadedMsg{document: setup.NewHome(setup.Server{State: setup.StateNotRunning, Port: 6832}, nil)})
 	if !m.home.loaded {
 		t.Error("home.loaded should be true after homeLoadedMsg")
 	}
@@ -113,6 +113,7 @@ func TestInitLoadsHomeStatus(t *testing.T) {
 func TestHomeEnterOnStartServerLoadsServerScreen(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 80, 24)
+	m = send(t, m, key("down")) // Create a database comes first
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenServer {
 		t.Fatalf("screen = %q, want %q", m.screen, ScreenServer)
@@ -129,8 +130,9 @@ func TestHomeDownThenEnterOpensSettings(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 80, 24)
 	m = send(t, m, key("down"))
-	if m.home.cursor != 1 {
-		t.Fatalf("cursor = %d, want 1", m.home.cursor)
+	m = send(t, m, key("down"))
+	if m.home.cursor != 2 {
+		t.Fatalf("cursor = %d, want 2", m.home.cursor)
 	}
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenSettings {
@@ -372,7 +374,7 @@ func TestSizes(t *testing.T) {
 				t.Run(screenSizeName(screen, size.w, size.h)+"_home_"+homeServer.State, func(t *testing.T) {
 					t.Parallel()
 					m := testModel(t, size.w, size.h)
-					m = send(t, m, homeLoadedMsg{document: setup.NewHome(homeServer)})
+					m = send(t, m, homeLoadedMsg{document: setup.NewHome(homeServer, nil)})
 					m.screen = screen
 					runningServer := setup.Server{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832", Version: "9.9.9-test"}
 					m.server = serverScreen{loaded: true, server: runningServer, next: setup.NewServerDocument(runningServer).Next}

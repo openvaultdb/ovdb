@@ -84,11 +84,15 @@ func Run(ctx context.Context, opts RunOptions) error {
 	}
 	if err := instance.Publish(record); err != nil {
 		_ = server.Close()
+		handler.Close()
 		return fail(err)
 	}
 	for _, listener := range listeners {
 		logf("OVDB server %s listening on %s", opts.Version, "http://"+listener.Addr().String())
 	}
+	mountCtx, stopMounting := context.WithCancel(ctx)
+	defer stopMounting()
+	go handler.MountDatabases(mountCtx)
 
 	var result error
 	select {
@@ -99,6 +103,7 @@ func Run(ctx context.Context, opts RunOptions) error {
 	case err := <-serveErr:
 		result = fail(err)
 	}
+	stopMounting()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -107,6 +112,7 @@ func Run(ctx context.Context, opts RunOptions) error {
 	if err := handler.Flush(); err != nil {
 		logf("saving sessions: %v", err)
 	}
+	handler.Close()
 	logf("stopped")
 	return result
 }
