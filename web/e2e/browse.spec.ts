@@ -65,8 +65,9 @@ test('browse a database page by page, see a record as text, and use it as the de
   await expect(page.getByText('ovdb get /items/x --db browse1', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => (window as { pwned?: number }).pwned)).toBeUndefined()
   await expect(record.locator('script, img')).toHaveCount(0)
-  // Read-only: the only buttons are Use as default and opening a nested collection.
-  await expect(page.locator('main button')).toHaveText(['Use as default', 'Open'])
+  // Read-only: the only buttons act on the context, not the record — "Copy"
+  // copies the shown ovdb command's text.
+  await expect(page.locator('main button')).toHaveText(['Use as default', 'Copy', 'Open'])
   await page.screenshot({ path: out('browse-record-1920x1080-light'), fullPage: true })
 
   // The record the CLI wrote is there too, and a reload keeps the place.

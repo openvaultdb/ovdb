@@ -65,6 +65,12 @@ function home(event: MouseEvent) {
   event.preventDefault()
   navigate('/')
 }
+
+function explore(event: MouseEvent) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+  event.preventDefault()
+  navigate(`/explore?db=${result.value?.database}`)
+}
 </script>
 
 <template>
@@ -98,6 +104,14 @@ function home(event: MouseEvent) {
               data-testid="demo-install-skill"
               class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
               @click="go($event, skillOffer(item))"
+              >{{ item.label }}</a
+            >
+            <a
+              v-else-if="item.action === 'explore'"
+              :href="`/explore?db=${result?.database}`"
+              data-testid="demo-explore"
+              class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
+              @click="explore($event)"
               >{{ item.label }}</a
             >
             <a

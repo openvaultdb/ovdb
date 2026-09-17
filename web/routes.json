@@ -7,5 +7,6 @@
   { "path": "/databases/new", "screen": "create" },
   { "path": "/databases/connect", "screen": "connect" },
   { "path": "/browse", "screen": "browse", "prefix": true },
+  { "path": "/explore", "screen": "explore" },
   { "path": "/skills", "screen": "skills" }
 ]

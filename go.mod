@@ -20,10 +20,9 @@ require (
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.0
 	github.com/openvaultdb/openvaultdb-go v0.6.2
 	github.com/spf13/cobra v1.10.2
-	github.com/strongo/buildinfo v0.2.0
-	github.com/strongo/cli-helpers v0.13.0
+	github.com/strongo/buildinfo v0.3.0
+	github.com/strongo/cli-helpers v0.21.0
 	github.com/strongo/deviceauth v0.0.2
-	github.com/strongo/selfupdate v0.6.0
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.58.0

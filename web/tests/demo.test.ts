@@ -30,6 +30,7 @@ const installed = {
   next: [
     { label: 'Open TODO app', command: 'ovdb demo open', action: 'open_app' },
     { label: 'Install TODO AI skill (ask the person first)', command: 'ovdb skills install todo-demo', action: 'install_skill' },
+    { label: 'Explore data', command: 'ovdb explore --db todo', action: 'explore' },
     { label: 'Done', action: 'done' },
   ],
 }
@@ -56,6 +57,7 @@ describe('Try a demo', () => {
     expect(result.findAll('a').map((a) => [a.text(), a.attributes('href')])).toEqual([
       ['Open TODO app', '/apps/todo/'],
       ['Install TODO AI skill (ask the person first)', '/skills?skill=todo-demo&from=/demo'],
+      ['Explore data', '/explore?db=todo'],
       ['Done', '/'],
     ])
     expect(result.text()).toContain('ovdb demo open')

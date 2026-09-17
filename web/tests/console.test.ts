@@ -89,8 +89,9 @@ describe('OVDB server panel', () => {
     const help = wrapper.get('[data-testid="stop-help"]')
     expect(help.text()).toContain('ovdb server stop')
     expect(help.text()).toContain('ovdb server restart')
-    // Parity exception E2: no stop or restart button.
-    expect(wrapper.findAll('button')).toHaveLength(0)
+    // Parity exception E2: no button that stops or restarts the server
+    // ("Copy" on each shown command only copies its text).
+    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Copy', 'Copy'])
   })
 
   it('shows the state the server reports', async () => {

@@ -110,4 +110,9 @@ var Rows = []Row{
 		CLI:        []string{"ovdb token create", "ovdb token list", "ovdb token revoke", "ovdb config set", "ovdb config get"},
 		API:        []string{"POST /v1/tokens", "GET /v1/tokens", "DELETE /v1/tokens/{id}", "GET /api/local/v1/config", "PUT /api/local/v1/config"},
 		Exceptions: []string{"E7"}, Implemented: true},
+	// Explore data (explore-data-handoff): DataTug CLI's four-key descriptor
+	// and command are prepared on the server; DataTug.app's honesty copy is
+	// static and needs no endpoint.
+	{ID: "22", Capability: "Explore data (DataTug guidance)", CLI: []string{"ovdb explore"}, TUI: "explore", Web: "/explore",
+		API: []string{"POST /api/local/v1/explore/datatug"}, Implemented: true},
 }

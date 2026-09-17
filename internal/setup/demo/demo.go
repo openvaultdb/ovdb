@@ -107,10 +107,12 @@ func Inspect(dirs paths.Dirs, databases []setup.Database) Document {
 	return doc
 }
 
-// next is what to do with the demo: install it, or open its app and install
-// the TODO AI skill, which goes through the skill consent step
-// (REQ:demo-next-actions). Explore data joins as increment 7 lands; only
-// implemented actions are offered.
+// ActionExplore opens Explore data for the demo database (increment 7).
+const ActionExplore = "explore"
+
+// next is what to do with the demo: install it, or open its app, install
+// the TODO AI skill (through the skill consent step) and explore it with
+// DataTug (REQ:demo-next-actions).
 func next(doc Document) []envelope.Next {
 	if !doc.Installed {
 		return []envelope.Next{{Label: uicopy.T("demo.next.install", nil), Command: "ovdb demo install --yes", Action: ActionInstall}}
@@ -118,6 +120,7 @@ func next(doc Document) []envelope.Next {
 	return []envelope.Next{
 		{Label: uicopy.T("demo.next.open_app", nil), Command: "ovdb demo open", Action: ActionOpenApp},
 		skills.InstallNext(skills.Todo),
+		{Label: uicopy.T("demo.next.explore", nil), Command: "ovdb explore --db " + doc.Database, Action: ActionExplore},
 		{Label: uicopy.T("next.done", nil), Action: setup.ActionDone},
 	}
 }

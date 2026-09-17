@@ -2,8 +2,7 @@
 // real ovdb binary whose home has Claude Code and no Codex
 // (spec/features/ai-agent-skills AC:ui-shows-targets-before-install,
 // AC:web-cannot-target-arbitrary-dir; todo-demo AC:next-actions-after-install;
-// configuration-parity AC:journey-d-passes, with Explore data joining in
-// increment 7).
+// configuration-parity AC:journey-d-passes).
 import { existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -47,7 +46,7 @@ test('Journey D: Try a demo, open the app, install the TODO skill after the cons
   await page.goto(primary() + '/demo')
   await page.getByTestId('install-demo').click()
   const result = page.getByTestId('demo-result')
-  await expect(result.getByRole('link')).toHaveText(['Open TODO app', 'Install TODO AI skill (ask the person first)', 'Done'])
+  await expect(result.getByRole('link')).toHaveText(['Open TODO app', 'Install TODO AI skill (ask the person first)', 'Explore data', 'Done'])
 
   const app = await context.newPage()
   await app.goto(primary() + '/apps/todo/')
@@ -86,6 +85,11 @@ test('Journey D: Try a demo, open the app, install the TODO skill after the cons
   await expect(app.locator('[data-list="to-buy"]').getByText('Tea', { exact: true })).toBeVisible({ timeout: 3000 })
   await expect(app.locator('[data-list="to-watch"]').getByText('Arrival', { exact: true })).toBeVisible({ timeout: 3000 })
   expect(titles('/lists/to-buy/items')).toContain('Tea')
+
+  // Explore data says DataTug shows the lists, not their items yet.
+  await page.goto(primary() + '/demo')
+  await page.getByTestId('demo-explore').click()
+  await expect(page.getByText('DataTug shows your two lists, not their items yet.', { exact: false })).toBeVisible()
   await context.close()
 })
 

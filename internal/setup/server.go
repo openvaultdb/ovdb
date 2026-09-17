@@ -164,6 +164,11 @@ func NewHome(server Server, databases []Database, context *dbcontext.Context) Ho
 		browse.Disabled, browse.DescriptionKey = true, "home.menu.needs_database"
 	}
 	options = append(options, browse)
+	explore := HomeOption{ID: "explore", Group: "secondary", LabelKey: "home.menu.explore"}
+	if len(databases) == 0 {
+		explore.Disabled, explore.DescriptionKey = true, "home.menu.needs_database"
+	}
+	options = append(options, explore)
 	if len(databases) > 0 {
 		options = append(options, HomeOption{ID: "databases", Group: "secondary", LabelKey: "home.menu.databases"})
 	}

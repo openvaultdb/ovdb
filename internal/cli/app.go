@@ -64,7 +64,7 @@ func (a *App) getenv(key string) string {
 func (a *App) AddCommands(root *cobra.Command) {
 	hidden := !preview.On()
 	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd(), a.enginesCmd(),
-		a.useCmd(), a.cdCmd(), a.pwdCmd(), a.listCmd(), a.getCmd(), a.setCmd(), a.addCmd(), a.deleteCmd(), a.demoCmd(), a.skillsCmd()} {
+		a.useCmd(), a.cdCmd(), a.pwdCmd(), a.listCmd(), a.getCmd(), a.setCmd(), a.addCmd(), a.deleteCmd(), a.demoCmd(), a.exploreCmd(), a.skillsCmd()} {
 		command.Hidden = hidden
 		command.SetFlagErrorFunc(flagError)
 		root.AddCommand(command)

@@ -17,6 +17,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
@@ -257,6 +258,13 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 		body = `{"id":"credentials-demo"}`
 	case e.path == "/api/local/v1/skills/install":
 		body = `{"skill":"openvaultdb","harnesses":["claude"],"dry_run":true}`
+	case e.path == "/api/local/v1/explore/datatug":
+		// "credentials" itself is removed by the DELETE endpoint's own
+		// subtest earlier in the table; "credentials-connect" is not.
+		// &collection= names one explicitly: "credentials-connect" is an
+		// empty inGitDB folder with no root collections to default from
+		// (F5).
+		path += "?db=credentials-connect&collection=items"
 	}
 	return path, body
 }
@@ -416,6 +424,190 @@ func TestWellKnownNamesConnectEndpoints(t *testing.T) {
 	rec := f.do(t, request{path: "/.well-known/openvaultdb"})
 	if want := `{"authEnabled":true,"authorizeEndpoint":"/authorize","name":"OpenVaultDB","protocol":"openvaultdb/0.1","tokenEndpoint":"/token","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// TestExploreDataTug is explore-data-handoff#AC:descriptor-and-command and
+// AC:datatug-missing (capability row 22): the descriptor has exactly four
+// keys and no token, the printed command always carries --no-policies
+// (spike S4), and datatug missing shows install commands instead.
+func TestExploreDataTug(t *testing.T) {
+	t.Parallel()
+	onPath := true
+	f := newFixture(t, func(o *Options) {
+		o.DataTugLookPath = func(string) (string, error) {
+			if onPath {
+				return "/usr/bin/datatug", nil
+			}
+			return "", os.ErrNotExist
+		}
+	})
+	data, err := json.Marshal(setup.CreateRequest{ID: "notes", Path: filepath.Join(f.dirs.Data, "notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
+	}
+
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	var document struct {
+		OnPath         bool              `json:"on_path"`
+		Collection     string            `json:"collection"`
+		DescriptorPath string            `json:"descriptor_path"`
+		Descriptor     map[string]string `json:"descriptor"`
+		EnvLines       []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"env_lines"`
+		TokenCommand    string   `json:"token_command"`
+		QueryCommand    string   `json:"query_command"`
+		InstallCommands []string `json:"install_commands"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("explore datatug = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	if !document.OnPath || len(document.InstallCommands) != 0 {
+		t.Errorf("on path result = %+v", document)
+	}
+	if document.Collection != "items" {
+		t.Errorf("collection = %q", document.Collection)
+	}
+	if len(document.Descriptor) != 4 {
+		t.Fatalf("descriptor has %d keys, want 4: %v", len(document.Descriptor), document.Descriptor)
+	}
+	if document.Descriptor["baseUrl"] != "http://127.0.0.1:6832" || document.Descriptor["databaseId"] != "notes" ||
+		document.Descriptor["tokenEnv"] != "OVDB_DATATUG_TOKEN" || document.Descriptor["principalId"] != "local-owner" {
+		t.Errorf("descriptor = %v", document.Descriptor)
+	}
+	if _, hasToken := document.Descriptor["token"]; hasToken {
+		t.Error("descriptor carries a token key")
+	}
+	if !strings.Contains(document.QueryCommand, "--no-policies") {
+		t.Errorf("query command lacks --no-policies: %q", document.QueryCommand)
+	}
+	if document.TokenCommand != "ovdb token create --db notes --scope read-only" {
+		t.Errorf("token command = %q", document.TokenCommand)
+	}
+	written, err := os.ReadFile(document.DescriptorPath)
+	if err != nil {
+		t.Fatalf("descriptor not written: %v", err)
+	}
+	if strings.Contains(string(written), "token") == false || strings.Contains(string(written), "ovdb_") {
+		t.Errorf("written descriptor = %s", written)
+	}
+
+	// datatug missing (AC:datatug-missing): install commands shown, and the
+	// prepared command still printed for afterwards.
+	onPath = false
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	document.InstallCommands = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("explore datatug missing = %d %s", rec.Code, rec.Body)
+	}
+	if document.OnPath || len(document.InstallCommands) != 2 || document.QueryCommand == "" {
+		t.Errorf("datatug missing result = %+v", document)
+	}
+
+	// An unregistered database is a clean not_found, naming ovdb databases.
+	assertEnvelope(t, f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
+}
+
+// TestExploreDataTugCollectionResolution is review-inc-7.md F5: the demo
+// always defaults to "lists"; any other database with exactly one root
+// collection defaults to it; with several, --collection is required and the
+// choices are named; a value naming a path, not a root collection, is
+// refused (datatug-cli reads root collections only — datatug-cli#256).
+func TestExploreDataTugCollectionResolution(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	create := func(id string) {
+		data, err := json.Marshal(setup.CreateRequest{ID: id, Path: filepath.Join(f.dirs.Data, id)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d %s", id, rec.Code, rec.Body)
+		}
+	}
+	insert := func(db, key string) {
+		body := `{"message":"seed","ops":[{"op":"insert","key":"` + key + `","data":{}}]}`
+		if rec := f.do(t, request{method: http.MethodPost, path: "/v1/databases/" + db + "/batch", body: body, bearer: testSecret}); rec.Code >= 300 {
+			t.Fatalf("insert %s/%s = %d %s", db, key, rec.Code, rec.Body)
+		}
+	}
+
+	// Exactly one root collection: it is the default.
+	create("sole")
+	insert("sole", "customers/a")
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=sole", bearer: testSecret})
+	var document explore.DataTugCLI
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("sole collection = %d %s", rec.Code, rec.Body)
+	}
+	if document.Collection != "customers" {
+		t.Errorf("sole collection default = %q, want customers", document.Collection)
+	}
+
+	// Several root collections: --collection is required, naming both.
+	create("several")
+	insert("several", "customers/a")
+	insert("several", "orders/a")
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several", bearer: testSecret})
+	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
+	body := rec.Body.String()
+	for _, name := range []string{"customers", "orders"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("ambiguous-collection body lacks %q: %s", name, body)
+		}
+	}
+	// An explicit, valid choice among several works.
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several&collection=orders", bearer: testSecret})
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil || document.Collection != "orders" {
+		t.Errorf("explicit choice = %d %s", rec.Code, rec.Body)
+	}
+
+	// A path, not a root collection name, is refused — not silently sent
+	// through to come back empty (spike S4; datatug-cli#256).
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several&collection=customers/a", bearer: testSecret})
+	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
+	if body := rec.Body.String(); !strings.Contains(body, "root collections only") {
+		t.Errorf("nested-collection body = %s, want it to say root collections only", body)
+	}
+}
+
+// TestExploreDataTugIsAPostNotAGet is review-inc-7.md F9: a cross-site
+// top-level GET navigation (safe under http.CrossOriginProtection, sent
+// with the session cookie by any link) must not be able to write the
+// descriptor; only an explicit POST, the action of actually choosing
+// DataTug CLI, may.
+func TestExploreDataTugIsAPostNotAGet(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	data, err := json.Marshal(setup.CreateRequest{ID: "notes", Path: filepath.Join(f.dirs.Data, "notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
+	}
+
+	// A GET no longer prepares (or even reaches) the endpoint.
+	get := f.do(t, request{method: http.MethodGet, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	if get.Code == http.StatusOK {
+		t.Errorf("GET explore/datatug = %d, want it refused", get.Code)
+	}
+	if _, err := os.Stat(filepath.Join(f.dirs.Home, "explore", "datatug", "notes.json")); !os.IsNotExist(err) {
+		t.Errorf("a GET wrote the descriptor: %v", err)
+	}
+
+	// The POST — choosing DataTug CLI — does prepare it.
+	post := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	if post.Code != http.StatusOK {
+		t.Fatalf("POST explore/datatug = %d %s", post.Code, post.Body)
+	}
+	if _, err := os.Stat(filepath.Join(f.dirs.Home, "explore", "datatug", "notes.json")); err != nil {
+		t.Errorf("POST did not write the descriptor: %v", err)
 	}
 }
 

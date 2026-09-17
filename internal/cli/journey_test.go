@@ -3,7 +3,7 @@ package cli_test
 // The journey regression gate (configuration-parity#REQ:journey-a-terminal,
 // REQ:journey-c-agent, REQ:journey-d-todo-demo), as far as increment 8
 // reaches: Journey A and C without telemetry (increment 9), and Journey D
-// without Explore data (increment 7). Journey D's browser half — the skill
+// whole. Journey D's browser half — the skill
 // consent step in the web console and the agent's change appearing in the
 // open app — is web/e2e/todo.spec.ts.
 
@@ -179,7 +179,7 @@ func TestJourneyCAgent(t *testing.T) {
 // the browser in to /apps/todo/ → Install TODO AI skill after the consent
 // step; an agent (no terminal) then changes the same lists with the
 // commands the skill maps the request to, and reads them back
-// (AC:journey-d-passes). Explore data joins with increment 7.
+// and opens Explore data (AC:journey-d-passes).
 func TestJourneyDTodoDemo(t *testing.T) {
 	e := previewEnv(t)
 	e.in(t.TempDir())
@@ -231,7 +231,16 @@ func TestJourneyDTodoDemo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
-	press("enter", "q")
+	// Explore data from the demo Result: DataTug shows the lists, not the
+	// items yet.
+	press("enter", "enter")
+	if view := screenText(m); !strings.Contains(view, "Explore data ovdb explore --db todo") {
+		t.Fatalf("installed demo Result:\n%s", view)
+	}
+	press("e")
+	if view := screenText(m); !strings.Contains(view, "DataTug shows your two lists, not their items yet.") {
+		t.Errorf("Explore data:\n%s", view)
+	}
 
 	e.vars[cli.EnvNonInteractive] = "1"
 	e.ok("add", "/lists/to-buy/items", `{"title":"Tea","done":false}`, "--db", "todo")

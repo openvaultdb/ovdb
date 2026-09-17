@@ -180,7 +180,7 @@ func TestHomeDocument(t *testing.T) {
 				keys = append(keys, option.Badge.LabelKey)
 			}
 		}
-		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "connect/primary", "server/primary", "browse/secondary", "skills/secondary", "settings/secondary"}) {
+		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "connect/primary", "server/primary", "browse/secondary", "explore/secondary", "skills/secondary", "settings/secondary"}) {
 			t.Errorf("options = %v", ids)
 		}
 		for _, key := range keys {
@@ -209,6 +209,9 @@ func TestHomeDocument(t *testing.T) {
 	if browse := running.Options[4]; !browse.Disabled || browse.DescriptionKey != "home.menu.needs_database" {
 		t.Errorf("browse without databases = %+v", browse)
 	}
+	if explore := running.Options[5]; !explore.Disabled || explore.DescriptionKey != "home.menu.needs_database" {
+		t.Errorf("explore without databases = %+v", explore)
+	}
 	// A returning user: databases · current database · server, with Browse
 	// data enabled (first-run-onboarding#REQ:returning-user-home).
 	context := &dbcontext.Context{Database: "notes", Path: "/", Scope: dbcontext.ScopeProject, Dir: "/p/a"}
@@ -220,7 +223,7 @@ func TestHomeDocument(t *testing.T) {
 	if got := strings.Join(summary, " · "); got != "2 databases · using notes (this project) · OVDB server running at http://ovdb.localhost:7000" {
 		t.Errorf("returning-user summary = %q", got)
 	}
-	if ids := []string{withDatabases.Options[4].ID, withDatabases.Options[5].ID}; ids[0] != "browse" || ids[1] != "databases" || withDatabases.Options[4].Disabled {
+	if ids := []string{withDatabases.Options[4].ID, withDatabases.Options[5].ID, withDatabases.Options[6].ID}; ids[0] != "browse" || ids[1] != "explore" || ids[2] != "databases" || withDatabases.Options[4].Disabled || withDatabases.Options[5].Disabled {
 		t.Errorf("home with databases = %v", withDatabases.Options)
 	}
 	if option := running.Options[3]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
