@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -150,9 +151,7 @@ func (r *Registry) Connect(request ConnectRequest) (DatabaseResult, error) {
 	if err := ValidateConnect(&request); err != nil {
 		return DatabaseResult{}, err
 	}
-	r.mu.Lock()
 	plan, err := r.planConnect(request)
-	r.mu.Unlock()
 	if err != nil {
 		return DatabaseResult{}, err
 	}
@@ -278,24 +277,42 @@ func alreadyConnected(request ConnectRequest, existing string) *envelope.Error {
 	return e.WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
 }
 
-// planConnect reads and checks what request names; the caller holds r.mu.
+// planConnect reads and checks what request names. Reading the person's
+// manifest and probing their storage (stat, SQLite tables, git) run without
+// the registry lock and within the mount deadline, so a hung drive or git
+// never blocks other registry operations; only the registry itself is read
+// under the lock.
 func (r *Registry) planConnect(request ConnectRequest) (connectPlan, error) {
-	registrations, err := ReadRegistry(r.dirs.Home)
-	if err != nil {
-		return connectPlan{}, err
-	}
 	var plan connectPlan
-	if request.Manifest != "" {
-		plan, err = planManifest(request)
-	} else {
-		plan = connectPlan{id: request.ID, engine: request.Engine, location: request.Path}
-	}
+	err := r.withDeadline(request, func(context.Context) error {
+		var err error
+		if request.Manifest != "" {
+			plan, err = planManifest(request)
+		} else {
+			plan = connectPlan{id: request.ID, engine: request.Engine, location: request.Path}
+		}
+		return err
+	})
 	if err != nil {
 		return connectPlan{}, err
 	}
-	if err := r.checkAvailable(request, plan, registrations); err != nil {
+
+	r.mu.Lock()
+	registrations, err := ReadRegistry(r.dirs.Home)
+	if err == nil {
+		err = r.checkAvailable(request, plan, registrations)
+	}
+	r.mu.Unlock()
+	if err != nil {
 		return connectPlan{}, err
 	}
+
+	err = r.withDeadline(request, func(ctx context.Context) error { return r.probe(ctx, request, &plan) })
+	return plan, err
+}
+
+// probe checks the storage plan names and describes it.
+func (r *Registry) probe(ctx context.Context, request ConnectRequest, plan *connectPlan) error {
 	if plan.location != "" {
 		if reason := checkExistingStorage(plan.engine, plan.location); reason != "" {
 			r.logf("connecting database %s failed: %s", plan.id, reason)
@@ -303,28 +320,56 @@ func (r *Registry) planConnect(request ConnectRequest) (connectPlan, error) {
 			if request.Manifest != "" {
 				next = connectChooseManifest()
 			}
-			return connectPlan{}, envelope.New(envelope.StorageUnavailable, connectFailed()).WithReason(reason).WithNext(next)
+			return envelope.New(envelope.StorageUnavailable, connectFailed()).WithReason(reason).WithNext(next)
 		}
 		if plan.engine == EngineInGitDB && !isInGitDBFolder(plan.location) {
-			return connectPlan{}, notInGitDB(request, plan)
+			return notInGitDB(request, *plan)
 		}
 	}
 	if request.Manifest == "" {
 		if err := plan.describe(request, r.logf); err != nil {
-			return connectPlan{}, err
+			return err
 		}
 	}
 	if name := missingEnvironment(plan.parsed, r.getenv); name != "" {
 		// The variable's name only: its value is a secret.
-		return connectPlan{}, envelope.New(envelope.StorageUnavailable, connectFailed()).
+		return envelope.New(envelope.StorageUnavailable, connectFailed()).
 			WithReason(uicopy.T("database.connect.env_missing", map[string]string{"name": name})).
 			WithNext(envelope.Next{Label: uicopy.T("next.set_env_restart", map[string]string{"name": name}), Command: "ovdb server restart"},
 				connectChooseManifest())
 	}
 	if plan.engine == EngineInGitDB && plan.location != "" {
-		plan.gitIdentityMissing = GitIdentityMissing(plan.location)
+		plan.gitIdentityMissing = GitIdentityMissing(ctx, plan.location)
 	}
-	return plan, nil
+	return ctx.Err()
+}
+
+// withDeadline runs step within the mount deadline. A step that overruns
+// is left to finish on its own (its context is cancelled) and the connect
+// fails as storage that did not answer in time.
+func (r *Registry) withDeadline(request ConnectRequest, step func(ctx context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), r.mountTimeout)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- step(ctx) }()
+	select {
+	case err := <-done:
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		if err == nil {
+			return nil
+		}
+	case <-ctx.Done():
+	}
+	seconds := max(int(r.mountTimeout.Seconds()), 1)
+	next := connectChooseLocation(request)
+	if request.Manifest != "" {
+		next = connectChooseManifest()
+	}
+	return envelope.New(envelope.StorageUnavailable, connectFailed()).
+		WithReason(uicopy.T("database.reason.timeout", map[string]string{"seconds": strconv.Itoa(seconds)})).
+		WithNext(next)
 }
 
 // checkAvailable refuses plan when its id or its storage is already
@@ -719,13 +764,13 @@ func missingEnvironment(m *manifest.Manifest, getenv func(string) string) string
 // commit would fail because Git has no name or email for this user, so
 // inGitDB writes there would fail. OVDB never sets one in a person's
 // folder; it says how to set their own.
-func GitIdentityMissing(dir string) bool {
-	if exec.Command("git", "-C", dir, "rev-parse", "--is-inside-work-tree").Run() != nil {
-		return false // not a Git working tree, or no git: inGitDB does not commit
+func GitIdentityMissing(ctx context.Context, dir string) bool {
+	if exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--is-inside-work-tree").Run() != nil {
+		return false // not a Git working tree, no git, or out of time: nothing to say
 	}
 	for _, ident := range []string{"GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"} {
-		if exec.Command("git", "-C", dir, "var", ident).Run() != nil {
-			return true
+		if exec.CommandContext(ctx, "git", "-C", dir, "var", ident).Run() != nil {
+			return ctx.Err() == nil
 		}
 	}
 	return false

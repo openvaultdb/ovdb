@@ -469,7 +469,7 @@ func TestConnectWithoutGitIdentitySaysHowToSetIt(t *testing.T) {
 	if exec.Command("git", "-C", repo, "var", "GIT_AUTHOR_IDENT").Run() == nil {
 		t.Skip("git works out an identity on this machine without configuration")
 	}
-	if !GitIdentityMissing(repo) {
+	if !GitIdentityMissing(context.Background(), repo) {
 		t.Fatal("GitIdentityMissing = false")
 	}
 	f := newRegistry(t)
@@ -730,4 +730,58 @@ func TestConnectBusySQLiteFileSaysSo(t *testing.T) {
 		t.Errorf("the driver's error is not logged: %s", f.logText())
 	}
 	_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
+}
+
+// F8: probing storage that hangs (here a git that never answers) is bounded
+// by the mount deadline and never holds the registry lock, so lists answer
+// meanwhile.
+func TestConnectProbesAreBoundedAndUnlocked(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("uses a shell script as git")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f := &registryFixture{dirs: testDirs(t), opts: RegistryOptions{MountTimeout: 500 * time.Millisecond}}
+	for _, dir := range []string{f.dirs.Home, f.dirs.Runtime} {
+		if err := paths.EnsurePrivateDir(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.open(t)
+	folder := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(folder, InGitDBDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	started := time.Now()
+	go func() {
+		_, err := f.registry.Connect(ConnectRequest{ID: "slow", Engine: EngineInGitDB, Path: folder})
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	listed := make(chan struct{})
+	go func() {
+		_, _ = f.registry.List()
+		_ = f.registry.Mounts()
+		close(listed)
+	}()
+	select {
+	case <-listed:
+	case <-time.After(300 * time.Millisecond):
+		t.Error("the registry is locked while connect probes storage")
+	}
+	select {
+	case err := <-done:
+		if e := envelope.As(err); e == nil || e.Code != envelope.StorageUnavailable {
+			t.Errorf("hanging probe = %v", err)
+		}
+		if elapsed := time.Since(started); elapsed > 5*time.Second {
+			t.Errorf("connect took %s", elapsed)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("connect did not time out")
+	}
 }

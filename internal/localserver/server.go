@@ -296,7 +296,9 @@ func (s *localServer) serveWrite(w http.ResponseWriter, r *http.Request, id stri
 	recorder := httptest.NewRecorder()
 	s.data.ServeHTTP(recorder, r)
 	if recorder.Code == http.StatusInternalServerError {
-		if dir, ok := s.registry.GitStorage(id); ok && setup.GitIdentityMissing(dir) {
+		ctx, cancel := context.WithTimeout(r.Context(), setup.DefaultMountTimeout)
+		defer cancel()
+		if dir, ok := s.registry.GitStorage(id); ok && setup.GitIdentityMissing(ctx, dir) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write(envelope.Marshal(v1Error{Error: v1ErrorDetail{
