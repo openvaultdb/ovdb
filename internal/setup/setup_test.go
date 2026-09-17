@@ -107,14 +107,27 @@ func TestStatusNextListsImplementedOptionsInOrder(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
 	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs), nil, nil)
-	if len(stopped.Next) != 3 || stopped.Next[0].Command != "ovdb server start" || stopped.Next[1].Command != "ovdb open" ||
-		stopped.Next[2].Command != "ovdb databases create <name>" {
+	if len(stopped.Next) != 4 || stopped.Next[0].Command != "ovdb server start" || stopped.Next[1].Command != "ovdb open" ||
+		stopped.Next[2].Command != "ovdb databases create <name>" || stopped.Next[3].Command != "ovdb demo install --yes" {
 		t.Errorf("stopped next = %+v", stopped.Next)
 	}
 	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
 	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs), nil, nil)
-	if len(running.Next) != 2 || running.Next[0].Command != "ovdb open" {
+	if len(running.Next) != 3 || running.Next[0].Command != "ovdb open" || running.Demo.Installed ||
+		running.Demo.Location != filepath.Join(dirs.Data, "demos", "todo") {
 		t.Errorf("running next = %+v", running.Next)
+	}
+	// With the demo installed, trying it is no longer suggested.
+	demoDB := Database{ID: "todo", Engine: EngineInGitDB, Location: filepath.Join(dirs.Data, "demos", "todo")}
+	if unrecorded := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil); unrecorded.Demo.Installed {
+		t.Errorf("a database in demos/todo that install did not record = %+v", unrecorded.Demo)
+	}
+	if err := RecordDemo(dirs.Home, DemoRecord{App: "todo", Database: "todo", Location: demoDB.Location}); err != nil {
+		t.Fatal(err)
+	}
+	if installed := NewStatus("1.0.0", dirs, RunningServer(record, dirs), []Database{demoDB}, nil); !installed.Demo.Installed ||
+		installed.Demo.Database != "todo" || len(installed.Next) != 2 {
+		t.Errorf("status with the demo = %+v", installed)
 	}
 	want := `{"schema":1,"server":{"state":"not_running","address":"http://ovdb.localhost:6832","fallback_address":"http://127.0.0.1:6832","port":6832,"log":"` +
 		filepath.ToSlash(runtime.LogPath(dirs.Runtime)) + `"},"next":[{"label":"Start the OVDB server","command":"ovdb server start"}]}` + "\n"
@@ -150,7 +163,7 @@ func TestHomeDocument(t *testing.T) {
 				keys = append(keys, option.Badge.LabelKey)
 			}
 		}
-		if !slices.Equal(ids, []string{"create/primary", "server/primary", "browse/secondary", "settings/secondary"}) {
+		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "server/primary", "browse/secondary", "settings/secondary"}) {
 			t.Errorf("options = %v", ids)
 		}
 		for _, key := range keys {
@@ -167,16 +180,16 @@ func TestHomeDocument(t *testing.T) {
 	if line := running.StatusLine[0]; line.Key != "home.status.server_running" || line.Params["address"] != "http://ovdb.localhost:7000" {
 		t.Errorf("running status line = %+v", line)
 	}
-	if badge := running.Options[1].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
+	if badge := running.Options[2].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
 		t.Errorf("running badge = %+v", badge)
 	}
-	if badge := stopped.Options[1].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
+	if badge := stopped.Options[2].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
 		t.Errorf("stopped home = %+v", stopped)
 	}
-	if running.Options[1].DescriptionKey != "home.menu.server_help" || stopped.Options[1].DescriptionKey != "home.menu.server_help_stopped" {
-		t.Errorf("server help: running %q, stopped %q", running.Options[1].DescriptionKey, stopped.Options[1].DescriptionKey)
+	if running.Options[2].DescriptionKey != "home.menu.server_help" || stopped.Options[2].DescriptionKey != "home.menu.server_help_stopped" {
+		t.Errorf("server help: running %q, stopped %q", running.Options[2].DescriptionKey, stopped.Options[2].DescriptionKey)
 	}
-	if browse := running.Options[2]; !browse.Disabled || browse.DescriptionKey != "home.menu.needs_database" {
+	if browse := running.Options[3]; !browse.Disabled || browse.DescriptionKey != "home.menu.needs_database" {
 		t.Errorf("browse without databases = %+v", browse)
 	}
 	// A returning user: databases · current database · server, with Browse
@@ -190,10 +203,10 @@ func TestHomeDocument(t *testing.T) {
 	if got := strings.Join(summary, " · "); got != "2 databases · using notes (this project) · OVDB server running at http://ovdb.localhost:7000" {
 		t.Errorf("returning-user summary = %q", got)
 	}
-	if ids := []string{withDatabases.Options[2].ID, withDatabases.Options[3].ID}; ids[0] != "browse" || ids[1] != "databases" || withDatabases.Options[2].Disabled {
+	if ids := []string{withDatabases.Options[3].ID, withDatabases.Options[4].ID}; ids[0] != "browse" || ids[1] != "databases" || withDatabases.Options[3].Disabled {
 		t.Errorf("home with databases = %v", withDatabases.Options)
 	}
-	if option := running.Options[1]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
+	if option := running.Options[2]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
 		t.Errorf("server option = %+v", option)
 	}
 }

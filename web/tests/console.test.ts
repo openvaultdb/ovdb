@@ -30,7 +30,8 @@ describe('Home', () => {
     expect(wrapper.get('[data-testid="status-line"]').text()).toBe('OVDB server running at http://ovdb.localhost:6832 · Databases: none')
     expect(wrapper.get('h1').text()).toBe('What would you like to do?')
     const options = wrapper.findAll('[data-option]').map((option) => option.attributes('data-option'))
-    expect(options).toEqual(['create', 'server', 'settings'])
+    expect(options).toEqual(['demo', 'create', 'server', 'settings'])
+    expect(wrapper.get('[data-option="demo"]').attributes('href')).toBe('/demo')
     expect(wrapper.get('[data-option="create"]').attributes('href')).toBe('/databases/new')
     const serverOption = wrapper.get('[data-option="server"]')
     expect(serverOption.text()).toContain('OVDB server')
@@ -47,7 +48,7 @@ describe('Home', () => {
         json(200, {
           ...home,
           status_line: [{ key: 'home.status.server_not_running' }],
-          options: [{ ...home.options[1], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
+          options: [{ ...home.options[2], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
         }),
     })
     const wrapper = mount(HomeScreen)
@@ -62,14 +63,14 @@ describe('Home', () => {
     const wrapper = mount(HomeScreen, { attachTo: document.body })
     await flushPromises()
     const link = wrapper.get('[data-option="server"]')
-    const create = wrapper.get('[data-option="create"]')
+    const first = wrapper.get('[data-option="demo"]')
     await link.trigger('click', { button: 0 })
     expect(currentPath.value).toBe('/server')
     expect(window.location.pathname).toBe('/server')
 
     ;(link.element as HTMLElement).focus()
     await link.trigger('keydown', { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(create.element) // the last primary option wraps to the first
+    expect(document.activeElement).toBe(first.element) // the last primary option wraps to the first
     wrapper.unmount()
   })
 })

@@ -33,6 +33,7 @@ export function installFetch(routes: Record<string, Handler>) {
     const handler = routes[`${method} ${path}`]
     const answer = handler ? handler(init) : json(404, { schema: 1, error: { code: 'not_found', message: 'nothing', next: [] } })
     if (answer === 'network-error') throw new TypeError('Failed to fetch')
+    if (answer.status === 204) return new Response(null, { status: 204 })
     return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'Content-Type': 'application/json' } })
   })
   vi.stubGlobal('fetch', fetch)
@@ -52,6 +53,7 @@ export const home = {
   ],
   question_key: 'home.question',
   options: [
+    { id: 'demo', group: 'primary', label_key: 'home.menu.try_demo', description_key: 'home.menu.try_demo_help' },
     { id: 'create', group: 'primary', label_key: 'home.menu.create_database', description_key: 'home.menu.create_database_help' },
     {
       id: 'server',

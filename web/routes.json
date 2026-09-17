@@ -1,5 +1,6 @@
 [
   { "path": "/", "screen": "home" },
+  { "path": "/demo", "screen": "demo" },
   { "path": "/server", "screen": "server" },
   { "path": "/settings", "screen": "settings" },
   { "path": "/databases", "screen": "databases" },

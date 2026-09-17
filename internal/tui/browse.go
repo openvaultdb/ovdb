@@ -149,7 +149,7 @@ func (m Model) loadBrowseCmd(db string, path datapath.Path, page int) tea.Cmd {
 			}
 			msg.more = len(records) > browsePage
 			for _, record := range records[:min(len(records), browsePage)] {
-				msg.items = append(msg.items, browseItem{path: path.Child(client.KeyID(record.Key)), detail: oneLineJSON(record.Data)})
+				msg.items = append(msg.items, browseItem{path: client.RecordPath(path, record.Key), detail: oneLineJSON(record.Data)})
 			}
 		default:
 			op.Verb = "get"

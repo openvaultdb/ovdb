@@ -228,6 +228,8 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 	case e.method == http.MethodPost && e.path == "/api/local/v1/databases":
 		data, _ := json.Marshal(setup.CreateRequest{ID: "credentials", Path: filepath.Join(f.dirs.Data, "credentials")})
 		body = string(data)
+	case e.path == "/api/local/v1/demo/install":
+		body = `{"id":"credentials-demo"}`
 	}
 	return path, body
 }
@@ -291,6 +293,14 @@ func TestLandingPage(t *testing.T) {
 	}
 	if strings.Contains(body, "instance-1") || strings.Contains(body, f.dirs.Home) {
 		t.Error("landing exposes server data")
+	}
+	if strings.Contains(body, "ovdb demo open") {
+		t.Error("console landing names the TODO app")
+	}
+	// The TODO app's landing page leads back to the lists first (review F7).
+	app := f.do(t, request{path: "/apps/todo/", host: "ovdb.localhost:6832"}).Body.String()
+	if i, j := strings.Index(app, "ovdb demo open"), strings.Index(app, "ovdb open"); i < 0 || j < i || !strings.Contains(app, "To open your TODO lists again, run:") {
+		t.Errorf("TODO app landing:\n%s", app)
 	}
 	if rec := f.do(t, request{method: http.MethodPost, path: "/"}); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST / = %d", rec.Code)
@@ -394,5 +404,21 @@ func TestWellKnownOmitsConnectEndpoints(t *testing.T) {
 	rec := f.do(t, request{path: "/.well-known/openvaultdb"})
 	if want := `{"authEnabled":true,"name":"OpenVaultDB","protocol":"openvaultdb/0.1","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDatabaseOf(t *testing.T) {
+	t.Parallel()
+	for path, want := range map[string]string{
+		"/v1/databases/todo":                      "todo",
+		"/v1/databases/todo/records/lists/to-buy": "todo",
+		"/v1/databases/my%20db/query":             "my db",
+		"/v1/databases/":                          "",
+		"/v1/databases":                           "",
+		"/v1/status":                              "",
+	} {
+		if got, ok := databaseOf(path); got != want || ok != (want != "") {
+			t.Errorf("databaseOf(%q) = %q, %v", path, got, ok)
+		}
 	}
 }

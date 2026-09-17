@@ -17,7 +17,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/dal-go/record v0.1.3
-	github.com/openvaultdb/openvaultdb-go v0.6.0
+	github.com/openvaultdb/openvaultdb-go v0.6.2
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
 	github.com/strongo/cli-helpers v0.13.0
@@ -69,7 +69,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.20 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/ingitdb/dalgo2ingitdb v0.5.0 // indirect
+	github.com/ingitdb/dalgo2ingitdb v0.6.1 // indirect
 	github.com/ingitdb/dalgo2ingitdb4github v0.2.3 // indirect
 	github.com/ingitdb/ingitdb-go/ingitdb v0.6.0 // indirect
 	github.com/ingr-io/ingr-go v0.0.2 // indirect

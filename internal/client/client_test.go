@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/datapath"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
@@ -113,5 +114,38 @@ func TestUnknownEndpointOnOtherVersionIsVersionMismatch(t *testing.T) {
 				t.Errorf("mismatch = %+v body %s", e, response.Body)
 			}
 		}
+	}
+}
+
+// A record's path prefers the server's full nested key (openvaultdb-go
+// v0.6.2+) and still composes it from an older server's short key.
+func TestRecordPath(t *testing.T) {
+	t.Parallel()
+	items, _ := datapath.Parse("/lists/to-buy/items")
+	for key, want := range map[string]string{
+		"lists/to-buy/items/milk":  "/lists/to-buy/items/milk",
+		"items/milk":               "/lists/to-buy/items/milk",
+		"lists/to-buy/items/a%2Fb": "/lists/to-buy/items/a%2Fb",
+		"items/a%2Fb":              "/lists/to-buy/items/a%2Fb",
+	} {
+		if got := RecordPath(items, key).String(); got != want {
+			t.Errorf("RecordPath(%q) = %q, want %q", key, got, want)
+		}
+	}
+	root, _ := datapath.Parse("/notes")
+	if got := RecordPath(root, "notes/x").String(); got != "/notes/x" {
+		t.Errorf("root collection = %q", got)
+	}
+}
+
+// The v0.6.2 invalid_key /v1 code is invalid_argument with what to do.
+func TestMapV1InvalidKey(t *testing.T) {
+	t.Parallel()
+	path, _ := datapath.Parse("/lists/to-buy/items/x")
+	e := MapV1(http.StatusBadRequest, []byte(`{"error":{"code":"invalid_key","message":"invalid key segment \"..\""}}`),
+		DataOp{Verb: "get", Database: "todo", Path: path, Suffix: " --db todo"}).Envelope
+	if e.Code != envelope.InvalidArgument || !strings.Contains(e.Reason, "invalid key segment") || len(e.Next) != 2 ||
+		e.Next[1].Command != "ovdb list /lists/to-buy/items --db todo" {
+		t.Errorf("invalid_key = %+v", e)
 	}
 }

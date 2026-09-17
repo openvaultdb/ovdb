@@ -21,6 +21,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/browser"
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/demo"
 )
 
 // Screen ids named by the capability registry (internal/parity); dropping
@@ -35,11 +36,12 @@ const (
 	ScreenCreate    = "create"
 	ScreenDatabases = "databases"
 	ScreenBrowse    = "browse"
+	ScreenDemo      = "demo"
 )
 
 // ScreenIDs lists every screen id the TUI registers.
 func ScreenIDs() []string {
-	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse}
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo}
 }
 
 // minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
@@ -71,6 +73,7 @@ type Model struct {
 	create    createScreen
 	databases databasesScreen
 	browse    browseScreen
+	demo      demoScreen
 
 	busy *busyState
 }
@@ -259,6 +262,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case browseLoadedMsg:
 		return m.updateBrowseLoaded(msg)
 
+	case demoLoadedMsg, demoInstalledMsg, demoOpenedMsg:
+		return m.updateDemoMsg(msg)
+
 	case contextSetMsg:
 		m.busy = nil
 		m.pullNotices()
@@ -348,6 +354,8 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.updateDatabases(key)
 	case ScreenBrowse:
 		return m.updateBrowse(key)
+	case ScreenDemo:
+		return m.updateDemo(key)
 	}
 	return m, nil
 }
@@ -387,6 +395,8 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 		target := screenFor(options[m.home.cursor].ID)
 		m.screen = target
 		switch target {
+		case ScreenDemo:
+			return m.enterDemo()
 		case ScreenCreate:
 			return m.enterCreate()
 		case ScreenDatabases:
@@ -489,6 +499,13 @@ func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
 
 func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 	switch key {
+	case "o":
+		for _, n := range m.result.next {
+			if n.Action == demo.ActionOpenApp {
+				m.busy = &busyState{label: uicopy.T("demo.opening", nil)}
+				return m, tea.Batch(m.openDemoCmd(), tickCmd())
+			}
+		}
 	case "d", "u":
 		// "See your databases" and "Use it in this project", when the result
 		// offers them.
@@ -561,6 +578,8 @@ func (m Model) View() tea.View {
 		body = m.viewDatabases()
 	case m.screen == ScreenBrowse:
 		body = m.viewBrowse()
+	case m.screen == ScreenDemo:
+		body = m.viewDemo()
 	}
 	sections := []string{header, body}
 	if len(m.noticeLines) > 0 {
@@ -589,7 +608,14 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(uicopy.T("create.hint.form", nil), m.width))
 	case m.screen == ScreenBrowse:
 		return helpStyle.Render(wordWrap(m.browseFooter(), m.width))
+	case m.screen == ScreenDemo:
+		return helpStyle.Render(wordWrap(uicopy.T("demo.hint.install", nil), m.width))
 	case m.screen == ScreenResult && len(m.result.next) > 0:
+		for _, n := range m.result.next {
+			if n.Action == demo.ActionOpenApp {
+				return helpStyle.Render(wordWrap(uicopy.T("result.hint.demo", nil), m.width))
+			}
+		}
 		for _, n := range m.result.next {
 			if n.Action == setup.ActionUse {
 				return helpStyle.Render(wordWrap(uicopy.T("result.hint.created", nil), m.width))

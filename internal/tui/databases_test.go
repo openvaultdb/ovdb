@@ -34,9 +34,12 @@ func visibleIDs(m Model) []string {
 	return ids
 }
 
-// openCreate goes from Home to Create a database, the first option.
+// openCreate goes from Home to Create a database, after Try a demo.
 func openCreate(t *testing.T, m Model) Model {
 	t.Helper()
+	for m.home.document.Options[m.home.cursor].ID != "create" {
+		m = send(t, m, key("down"))
+	}
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenCreate || !m.create.loaded {
 		t.Fatalf("screen = %q loaded %v, want create", m.screen, m.create.loaded)

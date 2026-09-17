@@ -24,6 +24,8 @@ type homeScreen struct {
 // screenFor maps a Home option id to the TUI screen it opens.
 func screenFor(id string) string {
 	switch id {
+	case "demo":
+		return ScreenDemo
 	case "server":
 		return ScreenServer
 	case "settings":

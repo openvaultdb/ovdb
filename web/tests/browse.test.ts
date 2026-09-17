@@ -6,7 +6,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { resetConnection } from '../src/api'
-import { browseRoute, display, escapeId, parseBrowseRoute, quoteArg, recordURL, unescapeSegment } from '../src/datapath'
+import { browseRoute, display, escapeId, parseBrowseRoute, quoteArg, recordSegments, recordURL, unescapeSegment } from '../src/datapath'
 import { currentPath } from '../src/router'
 import BrowseScreen from '../src/screens/BrowseScreen.vue'
 import { defaultRoutes, installFetch, json, type Handler } from './fakeServer'
@@ -107,6 +107,15 @@ describe('paths', () => {
     expect(unescapeSegment('a%2Fb%2Etxt')).toBe('a/b.txt')
     expect(unescapeSegment('a..b')).toBe('a..b')
     expect(parseBrowseRoute('/browse/notes/items/%252E%252E%252F%252E%252E')).toEqual({ db: 'notes', segments: null })
+  })
+
+  it('prefers the server full nested key and composes an older short one', () => {
+    const items = ['lists', 'to-buy', 'items']
+    expect(recordSegments(items, 'lists/to-buy/items/milk')).toEqual(['lists', 'to-buy', 'items', 'milk'])
+    expect(recordSegments(items, 'items/milk')).toEqual(['lists', 'to-buy', 'items', 'milk'])
+    expect(recordSegments(items, 'lists/to-buy/items/a%2Fb')).toEqual(['lists', 'to-buy', 'items', 'a/b'])
+    expect(recordSegments(items, 'items/a%2Fb')).toEqual(['lists', 'to-buy', 'items', 'a/b'])
+    expect(recordSegments(['notes'], 'notes/x')).toEqual(['notes', 'x'])
   })
 
   it('quotes shown commands for the shell (review F7)', () => {
