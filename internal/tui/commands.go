@@ -182,7 +182,10 @@ func (m Model) openBrowserCmd() tea.Cmd {
 
 type configLoadedMsg struct {
 	document setup.ConfigDocument
-	err      error
+	// serverPort is the port the server uses now: the running server's, or
+	// the one this client resolved (--port, OVDB_PORT, config, default).
+	serverPort int
+	err        error
 }
 
 func (m Model) loadConfigCmd() tea.Cmd {
@@ -193,7 +196,13 @@ func (m Model) loadConfigCmd() tea.Cmd {
 			return configLoadedMsg{err: err}
 		}
 		document, decErr := decodeConfig(body)
-		return configLoadedMsg{document: document, err: decErr}
+		port := local.Port
+		if serverBody, err := local.Server(ctx); err == nil {
+			if server, err := decodeServer(serverBody); err == nil && server.Server.Port != 0 {
+				port = server.Server.Port
+			}
+		}
+		return configLoadedMsg{document: document, serverPort: port, err: decErr}
 	}
 }
 

@@ -226,6 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.settings.loaded = true
 		m.settings.document = msg.document
+		m.settings.serverPort = msg.serverPort
 		return m, nil
 
 	case enginesLoadedMsg:
