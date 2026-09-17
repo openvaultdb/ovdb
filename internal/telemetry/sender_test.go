@@ -292,3 +292,55 @@ func TestBufferNotSentWhenAnotherProcessEnables(t *testing.T) {
 		t.Fatalf("events = %v, want only the post-consent database_created", got)
 	}
 }
+
+// Review F2: the request identifies nothing about the machine beyond what
+// HTTP needs, and every event asks PostHog to record a placeholder instead
+// of the connection's IP address.
+func TestRequestCarriesNoIdentifyingHeaders(t *testing.T) {
+	var headers http.Header
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		headers = r.Header.Clone()
+		body, _ = io.ReadAll(r.Body)
+	}))
+	t.Cleanup(server.Close)
+	r, dirs := newTestRecorder(t, server.URL, false, nil)
+	decide(t, dirs, telemetry.StateEnabled)
+	r.Record(telemetry.NewOnboardingStarted())
+	r.Flush(context.Background())
+	allowed := map[string]bool{"Content-Type": true, "Content-Length": true, "User-Agent": true, "Accept-Encoding": true}
+	for name := range headers {
+		if !allowed[name] {
+			t.Errorf("header %s: %v", name, headers[name])
+		}
+	}
+	host, _ := os.Hostname()
+	if ua := headers.Get("User-Agent"); ua != telemetry.UserAgent || (host != "" && strings.Contains(ua, host)) {
+		t.Errorf("User-Agent = %q", ua)
+	}
+	var batch struct {
+		Batch []struct {
+			Properties map[string]any `json:"properties"`
+		} `json:"batch"`
+	}
+	if err := json.Unmarshal(body, &batch); err != nil || len(batch.Batch) != 1 || batch.Batch[0].Properties["$ip"] != telemetry.IPPlaceholder {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+// Review F2: the copy says what reaches PostHog, not "anonymous".
+func TestCopyStatesTheNetworkAddress(t *testing.T) {
+	all := strings.Join(append(telemetry.Collected(), telemetry.NeverCollected()...), "\n")
+	if !strings.Contains(all, "IP address") {
+		t.Errorf("collected lists do not mention the IP address:\n%s", all)
+	}
+	for _, line := range telemetry.NeverCollected() {
+		if strings.Contains(line, "addresses") && !strings.Contains(line, "database") {
+			t.Errorf("never-collected line claims addresses in general: %q", line)
+		}
+	}
+	document := telemetry.NewDocument(telemetry.Decision{State: telemetry.StateNotAsked}, true)
+	if data, _ := json.Marshal(document); strings.Contains(strings.ToLower(string(data)), "anonymous") {
+		t.Errorf("document says anonymous: %s", data)
+	}
+}

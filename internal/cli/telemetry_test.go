@@ -92,7 +92,7 @@ func TestTelemetryNothingSentByDefault(t *testing.T) {
 		t.Fatalf("sent before consent: %v", got)
 	}
 	status := e.telemetryStatus().Telemetry
-	if status.State != telemetry.StateNotAsked || status.HasInstallID || status.Sending || len(status.Collected) != 3 {
+	if status.State != telemetry.StateNotAsked || status.HasInstallID || status.Sending || len(status.Collected) != 4 {
 		t.Fatalf("status = %+v", status)
 	}
 }

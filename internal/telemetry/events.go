@@ -230,6 +230,13 @@ func FromWire(w Wire) (Event, bool) {
 	return Event{}, false
 }
 
+// IPPlaceholder is sent as $ip on every event: PostHog records a property
+// $ip in place of the connection's address (posthog.com tutorials,
+// web-redact-properties "Hiding customer IP address"). The address still
+// reaches PostHog's servers; the project's "Discard client IP data" setting
+// keeps it out of stored events (a release precondition).
+const IPPlaceholder = "0.0.0.0"
+
 // Meta is what every event carries besides its own properties.
 type Meta struct {
 	Channel   Channel
@@ -266,6 +273,7 @@ func (e Event) Properties(meta Meta) map[string]any {
 		"os":                      goruntime.GOOS,
 		"arch":                    goruntime.GOARCH,
 		"$geoip_disable":          true,
+		"$ip":                     IPPlaceholder,
 		"$process_person_profile": false,
 	}
 	if ValidInstallID(meta.InstallID) {

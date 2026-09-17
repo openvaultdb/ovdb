@@ -47,7 +47,8 @@ type Change struct {
 
 // Collected is what is collected, as every interface lists it.
 func Collected() []string {
-	return []string{uicopy.T("telemetry.collected.steps", nil), uicopy.T("telemetry.collected.storage", nil), uicopy.T("telemetry.collected.version", nil)}
+	return []string{uicopy.T("telemetry.collected.steps", nil), uicopy.T("telemetry.collected.storage", nil), uicopy.T("telemetry.collected.version", nil),
+		uicopy.T("telemetry.collected.network", nil)}
 }
 
 // NeverCollected is what is never collected.

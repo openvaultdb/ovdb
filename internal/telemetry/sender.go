@@ -23,6 +23,10 @@ func Key() string { return posthogKey }
 // Available reports whether this build can send at all.
 func Available() bool { return posthogKey != "" }
 
+// UserAgent is the only client header ovdb sets: no version, OS user or
+// host name.
+const UserAgent = "ovdb"
+
 // Timeout bounds one batch send, connection included
 // (REQ:bounded-synchronous-sender).
 const Timeout = 2 * time.Second
@@ -212,6 +216,7 @@ func (r *Recorder) send(ctx context.Context, events []Event, meta Meta) {
 		return
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", UserAgent)
 	client := r.Client
 	if client == nil {
 		client = &http.Client{Timeout: Timeout}

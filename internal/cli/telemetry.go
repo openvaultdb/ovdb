@@ -41,7 +41,7 @@ func (a *App) FlushTelemetry(ctx context.Context) {
 func (a *App) telemetryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "telemetry",
-		Short: "Show or change anonymous usage statistics (off unless you turn them on)",
+		Short: "Show or change usage statistics (off unless you turn them on)",
 		Args:  noArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -124,7 +124,7 @@ func (a *App) telemetryEnableCmd() *cobra.Command {
 	var confirmed, jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "enable",
-		Short: "Turn on anonymous usage statistics (asks first)",
+		Short: "Turn on usage statistics (asks first)",
 		Args:  noArgs,
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			t, err := a.resolve(0)

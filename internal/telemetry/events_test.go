@@ -27,7 +27,7 @@ var hostile = []string{
 	"DEMO ",
 }
 
-var commonKeys = []string{"channel", "ovdb_version", "os", "arch", "install_id", "distinct_id", "$geoip_disable", "$process_person_profile"}
+var commonKeys = []string{"$ip", "channel", "ovdb_version", "os", "arch", "install_id", "distinct_id", "$geoip_disable", "$process_person_profile"}
 
 var eventKeys = map[telemetry.Name][]string{
 	telemetry.OnboardingStarted:         {},
@@ -170,6 +170,10 @@ func checkValue(t *testing.T, name telemetry.Name, key string, value any) {
 	case "duration_ms":
 		if n, ok := value.(float64); !ok || n < 0 || n != float64(int64(n)) {
 			t.Errorf("%s.%s = %v, want a non-negative integer", name, key, value)
+		}
+	case "$ip":
+		if value != telemetry.IPPlaceholder {
+			t.Errorf("%s.$ip = %v, want the placeholder", name, value)
 		}
 	case "ovdb_version":
 		if s, _ := value.(string); !versionValue.MatchString(s) {
