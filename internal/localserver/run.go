@@ -104,6 +104,9 @@ func Run(ctx context.Context, opts RunOptions) error {
 	if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logf("shutdown: %v", err)
 	}
+	if err := handler.Flush(); err != nil {
+		logf("saving sessions: %v", err)
+	}
 	logf("stopped")
 	return result
 }

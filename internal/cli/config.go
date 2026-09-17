@@ -3,7 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"io"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -35,10 +37,10 @@ func (a *App) configGetCmd() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "get <key>",
-		Short: "Show a setting (server.port)",
+		Short: "Show a setting (server.port, server.cors)",
 		Args:  exactArgs(1),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
-			if args[0] != setup.KeyServerPort {
+			if !slices.Contains(setup.Keys, args[0]) {
 				return setup.UnknownConfigKey(args[0])
 			}
 			t, err := a.resolve(0)
@@ -54,9 +56,9 @@ func (a *App) configGetCmd() *cobra.Command {
 				return err
 			}
 			printer{cmd: cmd, json: jsonOut}.document(body, func(w io.Writer) {
-				params := map[string]string{"key": setup.KeyServerPort, "value": strconv.Itoa(document.Config.Server.Port)}
-				if document.Config.Server.Port == 0 {
-					params["value"] = strconv.Itoa(runtime.DefaultPort)
+				value, isDefault := configValue(document.Config, args[0])
+				params := map[string]string{"key": args[0], "value": value}
+				if isDefault {
 					say(w, uicopy.T("config.value_default", params))
 					return
 				}
@@ -69,11 +71,25 @@ func (a *App) configGetCmd() *cobra.Command {
 	return cmd
 }
 
+// configValue renders one key's value, and whether it is the default.
+func configValue(config setup.Config, key string) (value string, isDefault bool) {
+	if key == setup.KeyServerCORS {
+		if len(config.Server.CORS) == 0 {
+			return uicopy.T("config.cors_none", nil), true
+		}
+		return strings.Join(config.Server.CORS, ","), false
+	}
+	if config.Server.Port == 0 {
+		return strconv.Itoa(runtime.DefaultPort), true
+	}
+	return strconv.Itoa(config.Server.Port), false
+}
+
 func (a *App) configSetCmd() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Change a setting (server.port)",
+		Short: "Change a setting (server.port, server.cors)",
 		Args:  exactArgs(2),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			t, err := a.resolve(0)
@@ -90,7 +106,8 @@ func (a *App) configSetCmd() *cobra.Command {
 				return err
 			}
 			printer{cmd: cmd, json: jsonOut}.document(body, func(w io.Writer) {
-				say(w, uicopy.T("config.saved", map[string]string{"key": change.Key, "value": strconv.Itoa(document.Config.Server.Port)}))
+				value, _ := configValue(document.Config, change.Key)
+				say(w, uicopy.T("config.saved", map[string]string{"key": change.Key, "value": value}))
 				writeNext(w, document.Next)
 			})
 			return nil

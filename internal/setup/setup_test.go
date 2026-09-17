@@ -3,6 +3,7 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -76,8 +77,20 @@ func TestConfigRoundTrip(t *testing.T) {
 	if config, _ := LoadConfig(dirs.Home); config.Server.Port != 7001 {
 		t.Errorf("reloaded port = %d", config.Server.Port)
 	}
-	if _, err := ApplyConfigChange(dirs, ConfigChange{Key: "server.cors", Value: "x"}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
+	if _, err := ApplyConfigChange(dirs, ConfigChange{Key: "server.bogus", Value: "x"}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
 		t.Errorf("unknown key: %v", err)
+	}
+	document, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerCORS, Value: " http://localhost:5173, HTTPS://App.Example "}, true)
+	if err != nil || !slices.Equal(document.Config.Server.CORS, []string{"http://localhost:5173", "https://app.example"}) || document.Config.Server.Port != 7001 {
+		t.Fatalf("server.cors = %+v, %v", document.Config, err)
+	}
+	for _, bad := range []string{"localhost:5173", "ftp://x.example", "http://x.example/path", "http://u:p@x.example", "http://x.example?q", "*"} {
+		if _, err := ApplyConfigChange(dirs, ConfigChange{Key: KeyServerCORS, Value: bad}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
+			t.Errorf("server.cors %q accepted: %v", bad, err)
+		}
+	}
+	if document, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerCORS, Value: ""}, true); err != nil || document.Config.Server.CORS != nil {
+		t.Errorf("clearing server.cors = %+v, %v", document.Config, err)
 	}
 	if err := os.WriteFile(filepath.Join(dirs.Home, ConfigFile), []byte("server: [\n"), 0o600); err != nil {
 		t.Fatal(err)

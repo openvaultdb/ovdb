@@ -4,8 +4,8 @@
 // exists only in local mode; legacy `ovdb serve` never uses it
 // (REQ:local-mode-only-for-new-surfaces).
 //
-// Increment 1a serves an empty database map; the registry, console, login
-// and sessions arrive in later increments and slot into the same chain.
+// The registry arrives in a later increment; until then the data API serves
+// an empty database map.
 package localserver
 
 import (
@@ -26,6 +26,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/web"
 )
 
 // AuthStoreFile holds scoped tokens, hashed, in OVDB home.
@@ -41,33 +42,66 @@ type Options struct {
 	Now             func() time.Time // time.Now when nil
 	// ErrorLog receives recovered panics; they are redacted before writing.
 	ErrorLog io.Writer
+	// Console serves the web console and apps to signed-in browsers;
+	// web.Handler() when nil.
+	Console http.Handler
+	// Databases is the data API's database map; empty when nil. Tests use it
+	// until the registry increment mounts databases/.
+	Databases map[string]*core.Database
 }
 
 type localServer struct {
-	opts   Options
-	data   http.Handler
-	logins *loginLinks
+	opts     Options
+	data     http.Handler
+	console  http.Handler
+	logins   *loginLinks
+	sessions *sessions
 }
 
-// New builds the local-mode handler with its full middleware chain.
-func New(opts Options) (http.Handler, error) {
+// Handler is the local-mode handler with its full middleware chain.
+type Handler struct {
+	http.Handler
+	server *localServer
+}
+
+// Flush writes pending session renewals; call it when the server stops.
+func (h *Handler) Flush() error { return h.server.sessions.flush() }
+
+// New builds the local-mode handler. It reads server.cors from config.yaml
+// once: like the port, a change applies at the next start.
+func New(opts Options) (*Handler, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
+	}
+	if opts.Console == nil {
+		opts.Console = web.Handler()
+	}
+	if opts.Databases == nil {
+		opts.Databases = map[string]*core.Database{}
 	}
 	store, err := auth.OpenStore(filepath.Join(opts.Dirs.Home, AuthStoreFile))
 	if err != nil {
 		return nil, err
 	}
-	data := server.New(opts.Record.Version, map[string]*core.Database{},
+	config, err := setup.LoadConfig(opts.Dirs.Home)
+	if err != nil {
+		return nil, err
+	}
+	data := server.New(opts.Record.Version, opts.Databases,
 		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store})).Handler()
-	s := &localServer{opts: opts, data: data, logins: newLoginLinks(opts.Now)}
+	s := &localServer{
+		opts: opts, data: data, console: opts.Console,
+		logins: newLoginLinks(opts.Now), sessions: newSessions(opts.Dirs.Runtime, opts.Now),
+	}
 
 	var h http.Handler = http.HandlerFunc(s.route)
-	h = authenticate(opts.Secret, store)(h)
+	h = cors(config.Server.CORS)(h)
+	h = crossOrigin(h)
+	h = s.authenticate(store)(h)
 	h = hostAllowlist(opts.Record.Port)(h)
 	h = recoverPanics(opts.ErrorLog)(h)
 	h = securityHeaders(h)
-	return h, nil
+	return &Handler{Handler: h, server: s}, nil
 }
 
 // LocalAPIPrefix is the versioned local API root.
@@ -107,7 +141,17 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 	case path == "/.well-known/openvaultdb" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		s.wellKnown(w)
 	case path == "/v1" || strings.HasPrefix(path, "/v1/"):
+		if credentialOf(r) == credentialSession {
+			// The console acts as the owner: openvaultdb-go sees exactly
+			// what the CLI's instance secret would send.
+			r = r.Clone(r.Context())
+			r.Header.Set("Authorization", "Bearer "+s.opts.Secret)
+		}
 		s.data.ServeHTTP(w, r)
+	case path == loginPath:
+		s.login(w, r)
+	case path == pageCSSPath || path == submitJSPath:
+		pageAsset(w, r)
 	case path == "/authorize" || path == "/token":
 		// The connect flow needs a console session to approve anything;
 		// until increment 6 adds that check it is not offered at all.
@@ -117,6 +161,8 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(envelope.Marshal(v1Error{Error: v1ErrorDetail{
 			Code: "not_supported", Message: uicopy.T("api.connect_not_supported", nil),
 		}}))
+	case credentialOf(r) == credentialSession:
+		s.console.ServeHTTP(w, r)
 	default:
 		s.landing(w, r)
 	}

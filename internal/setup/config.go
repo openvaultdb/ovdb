@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,9 +24,17 @@ const ConfigFile = "config.yaml"
 // EnvPort overrides the configured port for one shell.
 const EnvPort = "OVDB_PORT"
 
-// KeyServerPort is the only configuration key increment 1a implements;
-// server.cors, telemetry and the global context follow in later increments.
-const KeyServerPort = "server.port"
+// Configuration keys. Telemetry and the global context follow in later
+// increments.
+const (
+	KeyServerPort = "server.port"
+	// KeyServerCORS lists the browser app origins allowed to call /v1/… and
+	// /token with bearer tokens (capability 25, CLI only: exception E7).
+	KeyServerCORS = "server.cors"
+)
+
+// Keys lists the supported keys, for usage errors.
+var Keys = []string{KeyServerPort, KeyServerCORS}
 
 // Config is config.yaml. Unset values are omitted and mean "default".
 type Config struct {
@@ -34,7 +43,8 @@ type Config struct {
 
 // ServerConfig is the server section of config.yaml.
 type ServerConfig struct {
-	Port int `yaml:"port,omitempty" json:"port,omitempty"`
+	Port int      `yaml:"port,omitempty" json:"port,omitempty"`
+	CORS []string `yaml:"cors,omitempty" json:"cors,omitempty"`
 }
 
 // ConfigDocument is the body of GET/PUT /api/local/v1/config and the --json
@@ -93,6 +103,12 @@ func ApplyConfigChange(dirs paths.Dirs, change ConfigChange, serverRunning bool)
 			return ConfigDocument{}, portErr
 		}
 		config.Server.Port = port
+	case KeyServerCORS:
+		origins, corsErr := ParseOrigins(change.Value)
+		if corsErr != nil {
+			return ConfigDocument{}, corsErr
+		}
+		config.Server.CORS = origins
 	default:
 		return ConfigDocument{}, UnknownConfigKey(change.Key)
 	}
@@ -109,8 +125,30 @@ func ApplyConfigChange(dirs paths.Dirs, change ConfigChange, serverRunning bool)
 // UnknownConfigKey is invalid_argument naming the supported keys.
 func UnknownConfigKey(key string) *envelope.Error {
 	return envelope.New(envelope.InvalidArgument, uicopy.T("config.failed", nil)).
-		WithReason(uicopy.T("config.unknown_key", map[string]string{"key": key, "keys": KeyServerPort})).
+		WithReason(uicopy.T("config.unknown_key", map[string]string{"key": key, "keys": strings.Join(Keys, ", ")})).
 		WithNext(envelope.Next{Label: uicopy.T("next.config_get", nil), Command: "ovdb config get " + KeyServerPort})
+}
+
+// ParseOrigins parses a comma-separated list of browser origins
+// (scheme://host[:port], http or https, nothing after the host). An empty
+// value clears the list.
+func ParseOrigins(value string) ([]string, *envelope.Error) {
+	var origins []string
+	for _, part := range strings.Split(value, ",") {
+		origin := strings.TrimSpace(part)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+			parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || strings.HasSuffix(origin, "?") {
+			return nil, envelope.New(envelope.InvalidArgument, uicopy.T("config.failed", nil)).
+				WithReason(uicopy.T("config.cors_invalid", map[string]string{"value": origin})).
+				WithNext(envelope.Next{Label: uicopy.T("next.config_get", nil), Command: "ovdb config get " + KeyServerCORS})
+		}
+		origins = append(origins, strings.ToLower(parsed.Scheme+"://"+parsed.Host))
+	}
+	return origins, nil
 }
 
 // ParsePort validates a port number given through source (a flag, variable

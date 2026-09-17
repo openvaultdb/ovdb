@@ -1,0 +1,67 @@
+/* Styles for the pages the Go server renders without the console bundle:
+   the landing page and the sign-in hand-off. The tokens mirror
+   web/src/style.css so both look like one product. Served as a file because
+   the Content-Security-Policy (default-src 'self') refuses inline styles. */
+:root {
+  color-scheme: light dark;
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --ink: #1d2327;
+  --muted: #56616b;
+  --line: #e3e0d8;
+  --accent: #1f5f8b;
+  --code-bg: #efece5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121416;
+    --surface: #1b1e21;
+    --ink: #e8eaec;
+    --muted: #a3acb5;
+    --line: #2d3237;
+    --accent: #7fb8e6;
+    --code-bg: #24282c;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.page { max-width: 36rem; margin: 0 auto; padding: 3.5rem 1rem 3rem; }
+.brand { margin: 0 0 2.5rem; font-weight: 650; letter-spacing: -0.01em; font-size: 1rem; }
+.brand span { color: var(--muted); font-weight: 400; }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.75rem 1.5rem;
+}
+h1 { margin: 0 0 0.75rem; font-size: 1.6rem; line-height: 1.25; letter-spacing: -0.015em; font-weight: 650; }
+p { margin: 0 0 1rem; }
+p:last-child { margin-bottom: 0; }
+.muted { color: var(--muted); }
+pre {
+  margin: 0 0 1.25rem;
+  padding: 0.8rem 1rem;
+  background: var(--code-bg);
+  border-radius: 10px;
+  overflow-x: auto;
+  font: 0.95rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.hint { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.95rem; }
+button {
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  padding: 0.65rem 1.25rem;
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) { button { color: #0d1b26; } }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }

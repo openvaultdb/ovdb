@@ -6,8 +6,8 @@
 //
 // A row stays Implemented=false — and its surface stays behind the preview
 // gate — until every non-exception cell exists (REQ:increments-keep-parity).
-// Increment 1a fills the CLI and API cells of rows 2–7; 1b and 1c add the
-// web routes and TUI screens.
+// Increment 1a filled the CLI and API cells of rows 2–7 and 1b the web
+// routes (web/routes.json); 1c adds the TUI screens.
 package parity
 
 // Row is one capability.
@@ -25,16 +25,16 @@ type Row struct {
 
 // Rows is the registry, in matrix order.
 var Rows = []Row{
-	{ID: "2", Capability: "Whole-setup status", CLI: []string{"ovdb status"},
+	{ID: "2", Capability: "Whole-setup status", CLI: []string{"ovdb status"}, Web: "/",
 		API: []string{"GET /api/local/v1/status"}},
 	{ID: "3", Capability: "Start server", CLI: []string{"ovdb server start"},
 		Exceptions: []string{"E1"}},
-	{ID: "4", Capability: "Server status", CLI: []string{"ovdb server status"},
+	{ID: "4", Capability: "Server status", CLI: []string{"ovdb server status"}, Web: "/server",
 		API: []string{"GET /api/local/v1/server"}},
 	{ID: "5", Capability: "Stop or restart server", CLI: []string{"ovdb server stop", "ovdb server restart"},
 		API: []string{"POST /api/local/v1/server/shutdown"}, Exceptions: []string{"E2"}},
 	{ID: "6", Capability: "Open web console (login link)", CLI: []string{"ovdb open"},
 		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}},
-	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"},
+	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"}, Web: "/settings",
 		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}},
 }

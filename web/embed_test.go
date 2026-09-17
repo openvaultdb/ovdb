@@ -71,10 +71,37 @@ func TestHandlerServesHashedAssetsWithTheirContentType(t *testing.T) {
 	}
 }
 
-func TestHandlerReportsAnUnknownPathAsNotFound(t *testing.T) {
-	response := get(t, handlerFor(builtTree(), true), "/nothing/here.html")
-	if response.StatusCode != http.StatusNotFound {
-		t.Fatalf("status = %s", response.Status)
+func TestHandlerReportsAnUnknownFileAsNotFound(t *testing.T) {
+	for _, target := range []string{"/nothing/here.html", "/assets/missing.js"} {
+		if response := get(t, handlerFor(builtTree(), true), target); response.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: status = %s", target, response.Status)
+		}
+	}
+}
+
+// AC:routes: client-side routes fall back to their app's index.html, and
+// hashed assets are cacheable while pages are revalidated.
+func TestHandlerFallsBackToTheAppForClientRoutes(t *testing.T) {
+	handler := handlerFor(builtTree(), true)
+	for target, want := range map[string]string{
+		"/settings":            `data-app="console"`,
+		"/server":              `data-app="console"`,
+		"/apps/todo/lists/abc": `data-app="todo"`,
+	} {
+		if body := bodyOf(t, handler, target); !strings.Contains(body, want) {
+			t.Errorf("%s = %q, want %s", target, body, want)
+		}
+	}
+	if got := get(t, handler, "/assets/console-abc.js").Header.Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Errorf("asset Cache-Control = %q", got)
+	}
+	if got := get(t, handler, "/settings").Header.Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("page Cache-Control = %q", got)
+	}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/settings", nil))
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /settings = %d", recorder.Code)
 	}
 }
 

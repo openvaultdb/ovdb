@@ -33,8 +33,8 @@ type LoginLinkRequest struct {
 }
 
 // loginLinks keeps single-use codes in memory, hashed, so a code is never
-// logged or persisted. Increment 1b's POST /login consumes them
-// (and only the POST: REQ:login-exchange-on-post).
+// logged or persisted. POST /login consumes them (and only the POST:
+// REQ:login-exchange-on-post).
 type loginLinks struct {
 	now   func() time.Time
 	mu    sync.Mutex
@@ -62,6 +62,20 @@ func (l *loginLinks) create() (code string, expiresAt time.Time, err error) {
 	}
 	l.codes[hashCode(code)] = expiresAt
 	return code, expiresAt, nil
+}
+
+// consume spends code: true once for a live code, false for an unknown,
+// expired or already used one. A code works on every allowed host.
+func (l *loginLinks) consume(code string) bool {
+	if code == "" {
+		return false
+	}
+	hash := hashCode(code)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	expiry, ok := l.codes[hash]
+	delete(l.codes, hash)
+	return ok && l.now().Before(expiry)
 }
 
 func hashCode(code string) string {

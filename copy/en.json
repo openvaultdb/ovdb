@@ -79,5 +79,16 @@
   "problem.why": "Why: {reason}",
   "problem.what_you_can_do": "What you can do:",
   "usage.failed": "Couldn't run {command}",
-  "server.record_unreadable": "Ignoring server.json because it can't be read ({error}). The next `ovdb server start` replaces it."
+  "server.record_unreadable": "Ignoring server.json because it can't be read ({error}). The next `ovdb server start` replaces it.",
+  "config.cors_invalid": "\"{value}\" isn't a browser app origin. Use the form http://localhost:5173, separated by commas.",
+  "config.cors_none": "none",
+  "app.name": "OpenVaultDB",
+  "api.cross_origin": "This request came from another website, so OVDB refused it.",
+  "api.session_not_allowed": "The web console can't do this. Run the ovdb command in a terminal instead.",
+  "login.title": "Signing you in to OVDB…",
+  "login.body": "Your browser didn't continue on its own.",
+  "login.continue": "Continue",
+  "console.session_ended": "Your session ended — use `ovdb open` or ask your AI assistant for a new link",
+  "open.opened": "Opened the OVDB console in your browser.",
+  "open.if_not_opened": "If it didn't open, use this sign-in link (single use, valid for 10 minutes):"
 }

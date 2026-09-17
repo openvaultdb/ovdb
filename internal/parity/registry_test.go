@@ -9,6 +9,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/localserver"
+	"github.com/openvaultdb/ovdb/web"
 )
 
 // rootCommand registers the new commands next to a stub `ovdb status`; the
@@ -35,6 +36,9 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 			if err != nil || len(rest) != 0 || found.CommandPath() != path {
 				t.Errorf("capability %s (%s): CLI command %q does not exist", row.ID, row.Capability, path)
 			}
+		}
+		if row.Web != "" && !slices.ContainsFunc(web.Routes(), func(r web.Route) bool { return r.Path == row.Web }) {
+			t.Errorf("capability %s (%s): web route %q is not in web/routes.json", row.ID, row.Capability, row.Web)
 		}
 		for _, endpoint := range row.API {
 			if !slices.Contains(endpoints, endpoint) {
