@@ -75,7 +75,7 @@ func TestJourneyATerminal(t *testing.T) {
 	local := &client.Local{
 		Dirs: e.dirs, Version: testVersion, Port: e.port(),
 		Getenv: func(key string) string { return e.vars[key] },
-		Where: dbcontext.Request{Dirs: lookup.Dirs, Root: lookup.Root},
+		Where:  dbcontext.Request{Dirs: lookup.Dirs, Root: lookup.Root},
 		Command: func(port int) *exec.Cmd {
 			command := exec.Command(os.Args[0], "server", "run", "--port", strconv.Itoa(port))
 			command.Env = append(append(os.Environ(), childEnv+"=1"), e.dirs.Env()...)
