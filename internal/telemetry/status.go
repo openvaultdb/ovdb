@@ -40,9 +40,10 @@ type Change struct {
 	// ConfirmedByUser must be true to enable: the person said yes
 	// (REQ:enable-requires-a-person).
 	ConfirmedByUser bool `json:"confirmed_by_user,omitempty"`
-	// Channel is the deciding interface; the server uses web for console
-	// sessions whatever is sent.
-	Channel string `json:"channel,omitempty"`
+	// Channel is the deciding interface when this process writes
+	// config.yaml itself (no server running). It is never sent: the server
+	// derives it from the credential.
+	Channel string `json:"-"`
 }
 
 // Collected is what is collected, as every interface lists it.

@@ -22,9 +22,10 @@ func (s *localServer) getTelemetry(w http.ResponseWriter, _ *http.Request) {
 }
 
 // putTelemetry is capability 24. A console session may turn telemetry on:
-// the person clicked Turn on (AC:enable-then-disable), so the deciding
-// channel is web whatever the body says. The CLI and TUI send their own
-// channel with the instance secret; enabling always needs
+// the person clicked Turn on (AC:enable-then-disable). The deciding channel
+// comes from the credential alone (review F4): web for a session, cli for
+// the instance secret, whose holder (CLI, TUI or an agent that can read the
+// runtime secret) the server cannot tell apart. Enabling always needs
 // confirmed_by_user (REQ:enable-requires-a-person).
 func (s *localServer) putTelemetry(w http.ResponseWriter, r *http.Request) {
 	var change telemetry.Change
@@ -32,7 +33,7 @@ func (s *localServer) putTelemetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := credentialOf(r) == credentialSession
-	channel := telemetry.ParseChannel(change.Channel)
+	channel := telemetry.ChannelCLI
 	if session {
 		channel = telemetry.ChannelWeb
 	}

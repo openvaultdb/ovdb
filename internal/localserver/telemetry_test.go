@@ -131,11 +131,18 @@ func TestConsoleTelemetryConsentAndEvents(t *testing.T) {
 		t.Fatalf("event properties = %v", got[4:])
 	}
 
-	// Turning it off from the CLI removes the install id; the CLI's own
-	// channel is recorded.
-	off := telemetryDocument(t, f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"disabled","channel":"tui"}`, bearer: testSecret}))
-	if off.Telemetry.State != telemetry.StateDisabled || off.Telemetry.HasInstallID || off.Telemetry.Channel != "tui" {
-		t.Fatalf("turn off = %+v", off)
+	// Turning it off with the instance secret removes the install id. The
+	// deciding channel is derived from the credential, never taken from the
+	// body (review F4): instance-secret callers are recorded as cli.
+	for _, claimed := range []string{`"tui"`, `"web"`, `"agent"`} {
+		off := telemetryDocument(t, f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"disabled","channel":` + claimed + `}`, bearer: testSecret}))
+		if off.Telemetry.State != telemetry.StateDisabled || off.Telemetry.HasInstallID || off.Telemetry.Channel != "cli" {
+			t.Fatalf("turn off claiming %s = %+v", claimed, off)
+		}
+		_ = f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"enabled","confirmed_by_user":true,"channel":` + claimed + `}`, bearer: testSecret})
+		if consent, _ := telemetry.LoadConsent(f.dirs.Home); consent.Channel != "cli" {
+			t.Fatalf("enable claiming %s recorded %+v", claimed, consent)
+		}
 	}
 }
 
