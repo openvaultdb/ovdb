@@ -33,6 +33,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/redact"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 )
 
 // Local API paths.
@@ -44,6 +45,7 @@ const (
 	ConfigPath     = "/api/local/v1/config"
 	EnginesPath    = "/api/local/v1/engines"
 	DatabasesPath  = "/api/local/v1/databases"
+	ContextPath    = "/api/local/v1/context"
 )
 
 // Local is one presentation's view of this home's local server.
@@ -57,6 +59,10 @@ type Local struct {
 	// Notices receives one-line notices: auto-start, version mismatch,
 	// directory warnings, unreadable runtime files. Never stdout with --json.
 	Notices io.Writer
+	// Where is where this client runs, for resolving its database context:
+	// the walk-up directories and any --db or OVDB_DATABASE. The web console
+	// has no such thing; CLI and TUI send it with every context read.
+	Where dbcontext.Request
 }
 
 func (l *Local) notice(line string) {
@@ -160,9 +166,10 @@ func (l *Local) Server(ctx context.Context) ([]byte, error) {
 
 // Status is the whole-setup status document (first-run-onboarding#REQ:status-command).
 func (l *Local) Status(ctx context.Context) ([]byte, error) {
-	return l.readErr(ctx, StatusPath, func() (any, error) {
+	return l.readErr(ctx, l.withWhere(StatusPath), func() (any, error) {
 		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
-		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases), err
+		context := dbcontext.Resolve(l.Dirs.Home, setup.DatabaseIDs(databases), l.Where).Context
+		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases, context), err
 	})
 }
 
@@ -170,10 +177,39 @@ func (l *Local) Status(ctx context.Context) ([]byte, error) {
 // (first-run-onboarding#REQ:home-menu-options): from the server when it
 // runs, otherwise built for a stopped server without starting one.
 func (l *Local) Home(ctx context.Context) ([]byte, error) {
-	return l.readErr(ctx, HomePath, func() (any, error) {
+	return l.readErr(ctx, l.withWhere(HomePath), func() (any, error) {
 		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
-		return setup.NewHome(setup.StoppedServer(l.Port, l.Dirs), databases), err
+		context := dbcontext.Resolve(l.Dirs.Home, setup.DatabaseIDs(databases), l.Where).Context
+		return setup.NewHome(setup.StoppedServer(l.Port, l.Dirs), databases, context), err
 	})
+}
+
+func (l *Local) withWhere(path string) string {
+	if query := l.Where.Query().Encode(); query != "" {
+		return path + "?" + query
+	}
+	return path
+}
+
+// Context is the context document for where this client runs (capability
+// 14): from the server when it runs, otherwise from the files, starting
+// nothing.
+func (l *Local) Context(ctx context.Context) ([]byte, error) {
+	return l.readErr(ctx, l.withWhere(ContextPath), func() (any, error) {
+		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
+		return dbcontext.Resolve(l.Dirs.Home, setup.DatabaseIDs(databases), l.Where), err
+	})
+}
+
+// SetContext stores or clears a project context or the global default
+// through the server, starting it unless noStart (capability 13).
+func (l *Local) SetContext(ctx context.Context, change dbcontext.Change, noStart bool) ([]byte, error) {
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPut, ContextPath, change)
+	return response.Body, err
 }
 
 // Engines is the storage catalogue (capability 8). It is the same data in

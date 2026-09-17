@@ -74,7 +74,13 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 		}
 		// A row is implemented only when every interface has it, or an
 		// exception (a permanent gap) covers it.
-		missing := row.TUI == "" || (row.Web == "" && len(row.Exceptions) == 0)
+		// E4 (no cd) and E5 (no record editing) leave both the TUI and the
+		// web console out on purpose.
+		noUI := slices.Contains(row.Exceptions, "E4") || slices.Contains(row.Exceptions, "E5")
+		missing := (row.TUI == "" && !noUI) || (row.Web == "" && len(row.Exceptions) == 0)
+		if noUI && (row.TUI != "" || row.Web != "") {
+			t.Errorf("capability %s (%s) has no TUI or web cell by exception but names one", row.ID, row.Capability)
+		}
 		if row.Implemented && missing {
 			t.Errorf("capability %s (%s) is marked implemented with a missing cell and no exception", row.ID, row.Capability)
 		}

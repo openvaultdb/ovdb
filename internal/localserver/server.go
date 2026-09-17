@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
@@ -29,6 +30,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/redact"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -62,6 +64,8 @@ type localServer struct {
 	logins   *loginLinks
 	sessions *sessions
 	registry *setup.Registry
+	// contextMu serialises context writes.
+	contextMu sync.Mutex
 }
 
 // Handler is the local-mode handler with its full middleware chain.
@@ -161,6 +165,8 @@ var endpoints = []endpoint{
 	{http.MethodPost, "/api/local/v1/databases/{id}/reload", accessOwner, (*localServer).reloadDatabase},
 	{http.MethodPost, "/api/local/v1/databases/reload", accessOwner, (*localServer).reloadAll},
 	{http.MethodDelete, "/api/local/v1/databases/{id}", accessOwner, (*localServer).removeDatabase},
+	{http.MethodGet, "/api/local/v1/context", accessOwner, (*localServer).getContext},
+	{http.MethodPut, "/api/local/v1/context", accessOwner, (*localServer).putContext},
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -312,22 +318,68 @@ func (s *localServer) server() setup.Server {
 	return setup.RunningServer(&s.opts.Record, s.opts.Dirs)
 }
 
-func (s *localServer) status(w http.ResponseWriter, _ *http.Request) {
+func (s *localServer) status(w http.ResponseWriter, r *http.Request) {
 	databases, err := s.registry.List()
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases))
+	context := s.resolveContext(r, databases).Context
+	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context))
 }
 
-func (s *localServer) home(w http.ResponseWriter, _ *http.Request) {
+func (s *localServer) home(w http.ResponseWriter, r *http.Request) {
 	databases, err := s.registry.List()
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	envelope.WriteJSON(w, http.StatusOK, setup.NewHome(s.server(), databases))
+	envelope.WriteJSON(w, http.StatusOK, setup.NewHome(s.server(), databases, s.resolveContext(r, databases).Context))
+}
+
+// resolveContext applies the context ladder for the directories the client
+// sent (its project, walked up); the browser sends none, so it sees the
+// global default or the only database.
+func (s *localServer) resolveContext(r *http.Request, databases []setup.Database) dbcontext.Document {
+	return dbcontext.Resolve(s.opts.Dirs.Home, setup.DatabaseIDs(databases), dbcontext.RequestFrom(r.URL.Query()))
+}
+
+func (s *localServer) getContext(w http.ResponseWriter, r *http.Request) {
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, s.resolveContext(r, databases))
+}
+
+// putContext stores or clears a project context or the global default
+// (capability 13). Only a terminal client knows its working directory, so a
+// console session may change only the global default (parity E3,
+// database-context-navigation#REQ:select-database-in-tui-and-web).
+func (s *localServer) putContext(w http.ResponseWriter, r *http.Request) {
+	var change dbcontext.Change
+	if !decodeBody(w, r, &change) {
+		return
+	}
+	if change.Scope != dbcontext.ScopeGlobal && credentialOf(r) != credentialInstanceSecret {
+		envelope.Write(w, envelope.New(envelope.Forbidden, uicopy.T("api.session_project_context", nil)).
+			WithNext(envelope.Next{Label: uicopy.T("next.use_in_project", nil), Command: "ovdb use <database>"}))
+		return
+	}
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	s.contextMu.Lock()
+	defer s.contextMu.Unlock()
+	document, err := dbcontext.Apply(s.opts.Dirs.Home, setup.DatabaseIDs(databases), change)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, document)
 }
 
 func (s *localServer) engines(w http.ResponseWriter, _ *http.Request) {

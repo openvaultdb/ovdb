@@ -18,7 +18,9 @@ const (
 
 // Actions on a database's details view, in order.
 const (
-	detailReload = iota
+	detailBrowse = iota
+	detailUse
+	detailReload
 	detailRemove
 	detailBack
 )
@@ -65,7 +67,7 @@ func (m Model) updateDatabases(key string) (tea.Model, tea.Cmd) {
 	case databasesDetails:
 		switch key {
 		case "up", "k":
-			if m.databases.action > detailReload {
+			if m.databases.action > detailBrowse {
 				m.databases.action--
 			}
 		case "down", "j":
@@ -76,6 +78,14 @@ func (m Model) updateDatabases(key string) (tea.Model, tea.Cmd) {
 			m.databases.view = databasesList
 		case "enter":
 			switch m.databases.action {
+			case detailBrowse:
+				if db, ok := m.selectedDatabase(); ok {
+					return m.browseDatabase(db.ID)
+				}
+			case detailUse:
+				if db, ok := m.selectedDatabase(); ok {
+					return m.useInProject(db.ID)
+				}
 			case detailReload:
 				return m.reloadSelected()
 			case detailRemove:
@@ -104,7 +114,7 @@ func (m Model) updateDatabases(key string) (tea.Model, tea.Cmd) {
 			return m.enterCreate()
 		}
 		m.databases.view = databasesDetails
-		m.databases.action = detailReload
+		m.databases.action = detailBrowse
 	case "esc", "backspace":
 		return m.backHome()
 	}
@@ -276,6 +286,8 @@ func (m Model) viewDatabaseDetails(db setup.Database) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
+	b.WriteString(choice(m.databases.action == detailBrowse, uicopy.T("home.menu.browse", nil)))
+	b.WriteString(choice(m.databases.action == detailUse, uicopy.T("next.use_in_project", nil)))
 	b.WriteString(choice(m.databases.action == detailReload, uicopy.T("next.reload_database", nil)))
 	b.WriteString(choice(m.databases.action == detailRemove, uicopy.T("database.remove.button", nil)))
 	b.WriteString(choice(m.databases.action == detailBack, uicopy.T("databases.back", nil)))

@@ -15,6 +15,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 )
 
 // Server states.
@@ -120,6 +121,8 @@ type HomeOption struct {
 	WebLabelKey    string `json:"web_label_key,omitempty"`
 	DescriptionKey string `json:"description_key,omitempty"`
 	Badge          *Badge `json:"badge,omitempty"`
+	// Disabled options are shown with DescriptionKey saying why.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // HomeDocument is the body of GET /api/local/v1/home: the status line and
@@ -133,14 +136,15 @@ type HomeDocument struct {
 	Options     []HomeOption `json:"options"`
 }
 
-// NewHome builds Home for server and the registered databases. Options
-// appear here only once they are implemented; later increments insert theirs
-// in the founder's order.
-func NewHome(server Server, databases []Database) HomeDocument {
-	line := CopyRef{Key: "home.status.server_not_running"}
-	if server.State == StateRunning {
-		line = CopyRef{Key: "home.status.server_running", Params: map[string]string{"address": server.Address}}
-	}
+// NewHome builds Home for server, the registered databases and the context
+// that applies to the caller (nil when none does). Options appear here only
+// once they are implemented; later increments insert theirs in the founder's
+// order.
+//
+// A returning user (at least one database) sees one summary line above the
+// same question and menu: `2 databases · using todo (this project) · OVDB
+// server running at …` (first-run-onboarding#REQ:returning-user-home).
+func NewHome(server Server, databases []Database, context *dbcontext.Context) HomeDocument {
 	badge := StateBadge(server.State)
 	// What the server option is for depends on whether it runs.
 	serverHelp := "home.menu.server_help_stopped"
@@ -152,13 +156,51 @@ func NewHome(server Server, databases []Database) HomeDocument {
 		{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
 			DescriptionKey: serverHelp, Badge: &badge},
 	}
+	browse := HomeOption{ID: "browse", Group: "secondary", LabelKey: "home.menu.browse"}
+	if len(databases) == 0 {
+		browse.Disabled, browse.DescriptionKey = true, "home.menu.needs_database"
+	}
+	options = append(options, browse)
 	if len(databases) > 0 {
 		options = append(options, HomeOption{ID: "databases", Group: "secondary", LabelKey: "home.menu.databases"})
 	}
 	options = append(options, HomeOption{ID: "settings", Group: "secondary", LabelKey: "home.menu.settings"})
 	return HomeDocument{
-		Schema: envelope.Schema, StatusLine: []CopyRef{line, DatabasesStatus(databases)}, QuestionKey: "home.question",
+		Schema: envelope.Schema, StatusLine: StatusLine(server, databases, context), QuestionKey: "home.question",
 		Options: options,
+	}
+}
+
+// StatusLine is Home's status line and `ovdb status`'s summary: server and
+// databases for a first run; databases, current database and server once
+// there is a database.
+func StatusLine(server Server, databases []Database, context *dbcontext.Context) []CopyRef {
+	line := CopyRef{Key: "home.status.server_not_running"}
+	if server.State == StateRunning {
+		line = CopyRef{Key: "home.status.server_running", Params: map[string]string{"address": server.Address}}
+	}
+	if len(databases) == 0 {
+		return []CopyRef{line, DatabasesStatus(databases)}
+	}
+	return []CopyRef{DatabasesStatus(databases), ContextStatus(context), line}
+}
+
+// ContextStatus is the status line part naming the current database and its
+// scope (first-run-onboarding#REQ:home-status-line).
+func ContextStatus(context *dbcontext.Context) CopyRef {
+	if context == nil {
+		return CopyRef{Key: "home.status.using_none"}
+	}
+	params := map[string]string{"database": context.Database, "dir": context.Dir}
+	switch context.Scope {
+	case dbcontext.ScopeProject:
+		return CopyRef{Key: "home.status.using_project", Params: params}
+	case dbcontext.ScopeGlobal:
+		return CopyRef{Key: "home.status.using_global", Params: params}
+	case dbcontext.ScopeFlag, dbcontext.ScopeEnvironment:
+		return CopyRef{Key: "home.status.using_environment", Params: params}
+	default:
+		return CopyRef{Key: "home.status.using_only", Params: params}
 	}
 }
 
@@ -192,18 +234,21 @@ func DatabasesStatus(databases []Database) CopyRef {
 // (first-run-onboarding#REQ:status-command). Later increments add databases,
 // context, demo, skills and telemetry as they are implemented.
 type Status struct {
-	Schema    int             `json:"schema"`
-	Version   string          `json:"version"`
-	Locations paths.Dirs      `json:"locations"`
-	Server    Server          `json:"server"`
-	Databases []Database      `json:"databases"`
-	Next      []envelope.Next `json:"next"`
+	Schema    int        `json:"schema"`
+	Version   string     `json:"version"`
+	Locations paths.Dirs `json:"locations"`
+	Server    Server     `json:"server"`
+	Databases []Database `json:"databases"`
+	// Context is the database and path that apply where the client runs
+	// (capability 14); null when none does.
+	Context *dbcontext.Context `json:"context"`
+	Next    []envelope.Next    `json:"next"`
 }
 
 // NewStatus builds the status for this ovdb version, locations, server and
 // registered databases. next lists only implemented options, in the
 // founder's order.
-func NewStatus(version string, dirs paths.Dirs, server Server, databases []Database) Status {
+func NewStatus(version string, dirs paths.Dirs, server Server, databases []Database, context *dbcontext.Context) Status {
 	if databases == nil {
 		databases = []Database{}
 	}
@@ -214,5 +259,5 @@ func NewStatus(version string, dirs paths.Dirs, server Server, databases []Datab
 	next = append(next,
 		envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
 		envelope.Next{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"})
-	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Next: next}
+	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Next: next}
 }

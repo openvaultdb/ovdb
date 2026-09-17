@@ -5,7 +5,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 )
 
 type enginesLoadedMsg struct {
@@ -95,4 +98,32 @@ func (m Model) loadDatabasesCmd() tea.Cmd {
 		err = json.Unmarshal(body, &document)
 		return databasesLoadedMsg{document: document, err: err}
 	}
+}
+
+type contextSetMsg struct {
+	document dbcontext.Document
+	next     []envelope.Next
+	err      error
+}
+
+// useInProject makes id the database for the project the TUI was started
+// in (capability 13, REQ:select-database-in-tui-and-web): the Git working
+// tree, or the starting directory outside Git.
+func (m Model) useInProject(id string) (Model, tea.Cmd) {
+	local, ctx := m.local, m.ctx
+	m.busy = &busyState{label: uicopy.T("context.saving", nil)}
+	return m, tea.Batch(func() tea.Msg {
+		change := dbcontext.Change{Scope: dbcontext.ScopeProject, Dir: local.Where.Root, Database: id, Path: "/"}
+		body, err := local.SetContext(ctx, change, false)
+		if err != nil {
+			return contextSetMsg{err: err}
+		}
+		var document dbcontext.Document
+		err = json.Unmarshal(body, &document)
+		next := []envelope.Next{
+			{Label: uicopy.T("home.menu.browse", nil), Command: "ovdb list /"},
+			{Label: uicopy.T("next.done", nil), Action: setup.ActionDone},
+		}
+		return contextSetMsg{document: document, next: next, err: err}
+	}, tickCmd())
 }

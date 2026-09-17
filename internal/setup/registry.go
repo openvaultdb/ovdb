@@ -244,3 +244,12 @@ func NewDatabasesDocument(databases []Database) DatabasesDocument {
 	}
 	return DatabasesDocument{Schema: envelope.Schema, Databases: databases, Next: next}
 }
+
+// DatabaseIDs are the ids of databases, in order.
+func DatabaseIDs(databases []Database) []string {
+	ids := make([]string, 0, len(databases))
+	for _, db := range databases {
+		ids = append(ids, db.ID)
+	}
+	return ids
+}

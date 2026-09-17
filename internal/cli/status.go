@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -29,6 +30,16 @@ func (a *App) Status(cmd *cobra.Command, jsonOut bool) error {
 		printer{cmd: cmd, json: jsonOut}.document(body, func(w io.Writer) {
 			say(w, uicopy.T("status.title", map[string]string{"version": status.Version}))
 			say(w, "")
+			if len(status.Databases) > 0 {
+				// The returning-user summary Home shows too
+				// (first-run-onboarding#REQ:returning-user-home).
+				parts := []string{}
+				for _, ref := range setup.StatusLine(status.Server, status.Databases, status.Context) {
+					parts = append(parts, uicopy.T(ref.Key, ref.Params))
+				}
+				say(w, strings.Join(parts, " · "))
+				say(w, "")
+			}
 			writeServer(w, status.Server)
 			say(w, "")
 			say(w, uicopy.T("status.home", map[string]string{"dir": status.Locations.Home}))

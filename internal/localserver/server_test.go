@@ -223,6 +223,8 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 	switch {
 	case e.path == "/api/local/v1/config":
 		body = `{"key":"server.port","value":"7000"}`
+	case e.method == http.MethodPut && e.path == "/api/local/v1/context":
+		body = `{"scope":"global","clear":true}`
 	case e.method == http.MethodPost && e.path == "/api/local/v1/databases":
 		data, _ := json.Marshal(setup.CreateRequest{ID: "credentials", Path: filepath.Join(f.dirs.Data, "credentials")})
 		body = string(data)
@@ -313,7 +315,7 @@ func TestLocalAPIDocuments(t *testing.T) {
 	if got, want := owner(request{path: "/api/local/v1/server"}).Body.String(), string(envelope.Marshal(setup.NewServerDocument(server))); got != want {
 		t.Errorf("server = %s, want %s", got, want)
 	}
-	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(setup.NewStatus("1.2.3", f.dirs, server, nil))); got != want {
+	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(setup.NewStatus("1.2.3", f.dirs, server, nil, nil))); got != want {
 		t.Errorf("status = %s, want %s", got, want)
 	}
 
