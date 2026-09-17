@@ -15,7 +15,7 @@ import { quoteArg } from '../../src/datapath'
 import TodoList from './TodoList.vue'
 import { pollInterval, useTodo } from './todo'
 
-const { demo, lists, loaded, loadProblem, saveProblem, refresh, add, toggle, remove } = useTodo()
+const { demo, lists, loaded, removed, loadProblem, saveProblem, refresh, add, toggle, remove } = useTodo()
 
 watchEffect(() => {
   document.title = t('todo.page_title')
@@ -58,15 +58,17 @@ const tryCommand = computed(() => `ovdb list ${quoteArg(firstList.value + '/item
       <div v-if="connection === 'session-ended'" data-testid="session-ended" class="flex flex-col gap-4" role="status">
         <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t('console.session_ended.title') }}</h1>
         <p class="text-lg"><OvText :text="t('console.session_ended.next')" /></p>
+        <p class="text-lg"><OvText :text="t('todo.come_back')" /></p>
       </div>
       <div v-else-if="connection === 'unreachable'" data-testid="server-stopped" class="flex flex-col gap-4" role="alert">
         <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t('server.not_running.message') }}</h1>
         <p class="text-lg"><OvText :text="t('server.stopped_copy')" /></p>
+        <p class="text-lg"><OvText :text="t('todo.come_back')" /></p>
       </div>
 
-      <template v-else-if="demo && !demo.installed">
-        <div data-testid="not-installed" class="flex flex-col gap-4">
-          <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t('todo.not_installed.title') }}</h1>
+      <template v-else-if="demo && (!demo.installed || removed)">
+        <div data-testid="not-installed" class="flex flex-col gap-4" :role="removed ? 'alert' : undefined">
+          <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ removed ? t('todo.removed.title') : t('todo.not_installed.title') }}</h1>
           <p class="text-lg">{{ t('todo.not_installed.body') }}</p>
           <OvCommand command="ovdb demo install --yes" />
           <p><a href="/demo" class="font-medium text-accent hover:underline">{{ t('demo.title') }}</a></p>

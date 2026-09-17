@@ -73,28 +73,50 @@ export function useTodo() {
     }
   }
 
+  // The demo database this page opened with. The page never switches to
+  // another one: if it goes away, the page says so (review F6).
+  const removed = ref(false)
+
+  async function demoDocument(): Promise<DemoDocument | null> {
+    const found = await api<DemoDocument>('GET', '/api/local/v1/demo')
+    if (!found.ok) {
+      if (connection.value === 'ok') loadProblem.value = found.error
+      return null
+    }
+    return found.data
+  }
+
   async function load() {
     const started = generation
-    if (!demo.value?.installed) {
-      const found = await api<DemoDocument>('GET', '/api/local/v1/demo')
-      if (!found.ok) {
-        if (connection.value === 'ok') loadProblem.value = found.error
-        return
-      }
-      demo.value = found.data
-      if (!found.data.installed) {
-        loaded.value = true
-        return
+    const opened = demo.value?.installed ? demo.value : null
+    if (!opened || removed.value) {
+      const found = await demoDocument()
+      if (!found) return
+      if (opened) {
+        if (!found.installed || found.database !== opened.database) return
+        removed.value = false
+      } else {
+        demo.value = found
+        if (!found.installed) {
+          loaded.value = true
+          return
+        }
       }
     }
     const listRecords = await api<{ records: DataRecord[] }>('POST', base() + '/query', { collection: 'lists' })
     if (!listRecords.ok) {
-      // The demo was removed meanwhile: look it up again next time.
-      if (listRecords.error.message.startsWith('database not found')) demo.value = null
+      if (listRecords.error.code === 'not_found') {
+        // Is the database gone, or only its lists?
+        const found = await demoDocument()
+        if (found && (!found.installed || found.database !== demo.value?.database)) {
+          removed.value = true
+          return
+        }
+      }
       if (connection.value === 'ok') loadProblem.value = listRecords.error
       return
     }
-    const order = demo.value.lists
+    const order = demo.value!.lists
     const found = await Promise.all(
       listRecords.data.records.map(async (record): Promise<List | ApiError> => {
         const [, id] = recordSegments(['lists'], record.key)
@@ -174,5 +196,5 @@ export function useTodo() {
     )
   }
 
-  return { demo, lists, loaded, loadProblem, saveProblem, refresh, add, toggle, remove }
+  return { demo, lists, loaded, removed, loadProblem, saveProblem, refresh, add, toggle, remove }
 }

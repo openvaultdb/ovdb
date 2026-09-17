@@ -418,5 +418,8 @@
   "todo.not_installed.title": "The TODO demo isn't installed",
   "todo.not_installed.body": "Install it in a terminal, or with Try a demo in the OVDB console, then reload this page:",
   "todo.save_failed": "Couldn't save that change",
-  "demo.next.default_location": "Install it in the default place"
+  "demo.next.default_location": "Install it in the default place",
+  "landing.todo_app": "To open your TODO lists again, run:",
+  "todo.come_back": "To come back to your lists, run `ovdb demo open`.",
+  "todo.removed.title": "The TODO demo database was removed"
 }

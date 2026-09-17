@@ -45,7 +45,9 @@ const (
 </html>
 {{end}}
 {{define "landing"}}{{template "head" .}}<h1>{{.Title}}</h1>
-<p>{{.Body}}</p>
+{{if .App}}<p>{{.App}}</p>
+<pre><code>ovdb demo open</code></pre>
+{{end}}<p>{{.Body}}</p>
 <pre><code>ovdb open</code></pre>
 <p>{{.Assistant}}</p>
 {{if .Fallback}}<p class="hint">{{.Fallback}}</p>{{end}}
@@ -65,6 +67,8 @@ var pages = template.Must(template.New("pages").Parse(pageTemplates))
 
 type pageData struct {
 	Brand, Title, Body, Assistant, Fallback, Notice string
+	// App is the way back to an app the person was using (the TODO app).
+	App string
 	Code, Next, Continue                            string
 }
 
@@ -95,6 +99,9 @@ func writeLanding(w http.ResponseWriter, r *http.Request, status int) {
 	}
 	if strings.HasPrefix(strings.ToLower(r.Host), "127.0.0.1:") {
 		page.Fallback = uicopy.T("landing.fallback_host", nil)
+	}
+	if r.URL.Path == "/apps/todo" || strings.HasPrefix(r.URL.Path, "/apps/todo/") {
+		page.App = uicopy.T("landing.todo_app", nil)
 	}
 	if r.URL.Path == signedOutPath {
 		page.Notice = uicopy.T("landing.signed_out", nil)

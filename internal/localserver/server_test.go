@@ -294,6 +294,14 @@ func TestLandingPage(t *testing.T) {
 	if strings.Contains(body, "instance-1") || strings.Contains(body, f.dirs.Home) {
 		t.Error("landing exposes server data")
 	}
+	if strings.Contains(body, "ovdb demo open") {
+		t.Error("console landing names the TODO app")
+	}
+	// The TODO app's landing page leads back to the lists first (review F7).
+	app := f.do(t, request{path: "/apps/todo/", host: "ovdb.localhost:6832"}).Body.String()
+	if i, j := strings.Index(app, "ovdb demo open"), strings.Index(app, "ovdb open"); i < 0 || j < i || !strings.Contains(app, "To open your TODO lists again, run:") {
+		t.Errorf("TODO app landing:\n%s", app)
+	}
 	if rec := f.do(t, request{method: http.MethodPost, path: "/"}); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST / = %d", rec.Code)
 	}

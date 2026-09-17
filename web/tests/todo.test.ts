@@ -210,6 +210,7 @@ describe('TODO app', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="session-ended"]').text()).toContain('Your session ended')
     expect(wrapper.get('[data-testid="session-ended"]').text()).toContain('ovdb open')
+    expect(wrapper.get('[data-testid="session-ended"]').text()).toContain('To come back to your lists, run ovdb demo open.')
     expect(wrapper.find('[data-list]').exists()).toBe(false)
 
     answer = 'down'
@@ -217,6 +218,38 @@ describe('TODO app', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="server-stopped"]').text()).toContain("The OVDB server isn't running")
     expect(wrapper.get('[data-testid="server-stopped"]').text()).toContain('Ask your AI assistant to start OVDB again, or run ovdb open.')
+    expect(wrapper.get('[data-testid="server-stopped"]').text()).toContain('ovdb demo open')
+  })
+
+  it('says the demo was removed instead of switching to another demo database (review F6)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    let current: typeof demo = demo
+    const { wrapper } = await open({
+      'GET /api/local/v1/demo': () => json(200, current),
+      'POST /v1/databases/todo/query': (init) =>
+        current === demo ? routes()['POST /v1/databases/todo/query'](init) : json(404, { error: { code: 'not_found', message: 'database not found: todo' } }),
+      'POST /v1/databases/other/query': () => json(200, { records: [{ key: 'lists/secret', data: { title: 'Someone else' } }] }),
+    })
+    expect(titles(wrapper, 'to-buy')).toEqual(['Milk', 'Bananas', 'Coffee'])
+
+    // The demo is removed and another demo database is what the server finds now.
+    current = { ...demo, database: 'other', location: '/home/a/ovdb/demos/other' }
+    for (let i = 0; i < 3; i++) {
+      vi.advanceTimersByTime(pollInterval)
+      await flushPromises()
+    }
+    const notice = wrapper.get('[data-testid="not-installed"]')
+    expect(notice.text()).toContain('The TODO demo database was removed')
+    expect(notice.text()).toContain('ovdb demo install --yes')
+    expect(wrapper.text()).not.toContain('Someone else')
+    expect(wrapper.find('[data-list]').exists()).toBe(false)
+
+    // Installed again under its own id: the lists come back.
+    current = demo
+    vi.advanceTimersByTime(pollInterval)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="not-installed"]').exists()).toBe(false)
+    expect(titles(wrapper, 'to-buy')).toEqual(['Milk', 'Bananas', 'Coffee'])
   })
 
   it('says how to install the demo when it is not installed', async () => {
