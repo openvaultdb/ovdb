@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/strongo/cli-helpers/daemonlifecycle"
 
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/envelope"
@@ -309,7 +311,10 @@ func TestHomeMismatch(t *testing.T) {
 		t.Fatalf("start: %+v", r)
 	}
 	e.vars[paths.EnvHome] = filepath.Join(t.TempDir(), "other")
-	for _, args := range [][]string{{"server", "start", "--json"}, {"open", "--json"}, {"server", "stop", "--json"}} {
+	for _, args := range [][]string{
+		{"server", "start", "--json"}, {"open", "--json"}, {"server", "stop", "--json"}, {"server", "status", "--json"},
+		{"config", "get", "server.port", "--json"}, {"config", "set", "server.port", "7001", "--json"},
+	} {
 		failure := decodeError(t, e.run(args...), envelope.ServerConfigMismatch)
 		if failure.Next[len(failure.Next)-1].Command != "ovdb server restart" {
 			t.Errorf("ovdb %v next = %+v", args, failure.Next)
@@ -333,5 +338,65 @@ func TestCommandsHiddenWithoutPreview(t *testing.T) {
 	}
 	if found, _, _ := root.Find([]string{"server", "run"}); !found.Hidden {
 		t.Error("server run is offered")
+	}
+}
+
+// Restart replaces a running server, and treats a stale record whose pid now
+// belongs to another process as "not running" (review finding 2).
+func TestRestartAndStaleRecord(t *testing.T) {
+	e := newEnv(t)
+	if r := e.run("server", "start"); r.code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	first, _ := runtime.ReadRecord(e.dirs.Runtime)
+	restarted := e.run("server", "restart", "--json")
+	second, _ := runtime.ReadRecord(e.dirs.Runtime)
+	if restarted.code != 0 || second == nil || second.InstanceID == first.InstanceID || restarted.stdout != e.api(http.MethodGet, "/api/local/v1/server") {
+		t.Fatalf("restart = %+v, record %+v", restarted, second)
+	}
+	if r := e.run("server", "stop"); r.code != 0 {
+		t.Fatalf("stop: %+v", r)
+	}
+
+	// A crash leaves server.json behind and the pid is reused by this test.
+	stale := fmt.Sprintf(`{"schema":1,"instance_id":"gone","home":%q,"pid":%d,"process_identity":"reused","port":%d,"version":"x"}`,
+		e.dirs.Home, os.Getpid(), e.port())
+	for name, content := range map[string]string{runtime.RecordFile: stale, runtime.SecretFile: "old"} {
+		if err := paths.WriteFilePrivate(filepath.Join(e.dirs.Runtime, name), []byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stopped := e.run("server", "stop")
+	if stopped.code != 0 || !strings.Contains(stopped.stdout, "The OVDB server isn't running.") {
+		t.Errorf("stop over a stale record = %+v", stopped)
+	}
+	for name, content := range map[string]string{runtime.RecordFile: stale, runtime.SecretFile: "old"} {
+		if err := paths.WriteFilePrivate(filepath.Join(e.dirs.Runtime, name), []byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r := e.run("server", "restart"); r.code != 0 || !strings.Contains(r.stdout, "OVDB server is running at") {
+		t.Errorf("restart over a stale record = %+v", r)
+	}
+}
+
+// A non-private runtime directory refuses a locked config write with the
+// config copy and still prints the directory warnings (review finding 7).
+func TestConfigSetWithOpenRuntimeDir(t *testing.T) {
+	e := newEnv(t)
+	for _, dir := range []string{e.dirs.Home, e.dirs.Runtime} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Chmod(dir, 0o755)
+	}
+	if daemonlifecycle.ValidateOwnerOnly(e.dirs.Runtime) == nil {
+		t.Skip("the runtime directory is owner-only on this runner")
+	}
+	r := e.run("config", "set", "server.port", "7001", "--json")
+	failure := decodeError(t, r, envelope.Forbidden)
+	if failure.Message != "Couldn't change the setting" || !strings.Contains(r.stderr, paths.PrivacyFix(e.dirs.Home)) ||
+		!strings.Contains(r.stderr, paths.PrivacyFix(e.dirs.Runtime)) {
+		t.Errorf("config set = %+v", r)
 	}
 }

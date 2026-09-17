@@ -39,6 +39,8 @@ type Options struct {
 	// RequestShutdown is called once the shutdown response is written.
 	RequestShutdown func()
 	Now             func() time.Time // time.Now when nil
+	// ErrorLog receives recovered panics; they are redacted before writing.
+	ErrorLog io.Writer
 }
 
 type localServer struct {
@@ -63,6 +65,7 @@ func New(opts Options) (http.Handler, error) {
 	var h http.Handler = http.HandlerFunc(s.route)
 	h = authenticate(opts.Secret, store)(h)
 	h = hostAllowlist(opts.Record.Port)(h)
+	h = recoverPanics(opts.ErrorLog)(h)
 	h = securityHeaders(h)
 	return h, nil
 }
@@ -101,7 +104,9 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasPrefix(path, LocalAPIPrefix):
 		s.localAPI(w, r)
-	case path == "/v1" || strings.HasPrefix(path, "/v1/") || path == "/.well-known/openvaultdb":
+	case path == "/.well-known/openvaultdb" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		s.wellKnown(w)
+	case path == "/v1" || strings.HasPrefix(path, "/v1/"):
 		s.data.ServeHTTP(w, r)
 	case path == "/authorize" || path == "/token":
 		// The connect flow needs a console session to approve anything;
@@ -156,6 +161,16 @@ func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {
 func isJSON(r *http.Request) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	return err == nil && mediaType == "application/json"
+}
+
+// wellKnown is openvaultdb-go's discovery document without the connect
+// endpoints, which local mode does not serve until increment 6.
+func (s *localServer) wellKnown(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(envelope.Marshal(map[string]any{
+		"name": "OpenVaultDB", "protocol": "openvaultdb/0.1", "version": s.opts.Record.Version, "authEnabled": true,
+	}))
 }
 
 func (s *localServer) whoami(w http.ResponseWriter, _ *http.Request) {

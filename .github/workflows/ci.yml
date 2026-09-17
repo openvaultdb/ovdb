@@ -109,8 +109,8 @@ jobs:
         with:
           go-version: '1.26.1'
           cache: true
-      - name: go test (runtime, paths)
-        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/...
+      - name: go test (runtime, paths, cli)
+        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/cli/...
 
   # Fail fast on go.mod/go.sum drift.
   #

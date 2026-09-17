@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -67,12 +68,16 @@ func Run(ctx context.Context, opts RunOptions) error {
 	handler, err := New(Options{
 		Dirs: opts.Dirs, Record: record, Secret: instance.Secret,
 		RequestShutdown: func() { once.Do(func() { close(shutdown) }) },
+		ErrorLog:        opts.Log,
 	})
 	if err != nil {
 		closeAll(listeners)
 		return fail(err)
 	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{
+		Handler: handler, ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog: log.New(redact.Writer{W: opts.Log}, "", log.LstdFlags|log.LUTC),
+	}
 	serveErr := make(chan error, len(listeners))
 	for _, listener := range listeners {
 		go func(listener net.Listener) { serveErr <- server.Serve(listener) }(listener)

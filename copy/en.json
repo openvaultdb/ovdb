@@ -11,7 +11,7 @@
   "todo.placeholder.body": "The TODO demo app ships in a later increment. This placeholder proves the shared copy catalogue and the /apps/todo/ route.",
   "warning.dir_not_private": "Warning: {dir} is accessible to other users. Make it private: {fix}",
   "server.start.failed": "Couldn't start the OVDB server",
-  "server.start.runtime_not_private": "The runtime directory {dir} is accessible to other users, so OVDB won't write its instance secret there.",
+  "runtime.not_private": "The runtime directory {dir} is accessible to other users, so OVDB won't write its instance secret there.",
   "server.start.not_ready": "The OVDB server didn't become ready in time.",
   "server.port.in_use": "Port {port} is already used by another program.",
   "server.port.unavailable": "Port {port} isn't available on this computer.",
@@ -78,5 +78,6 @@
   "status.data": "Data: {dir}",
   "problem.why": "Why: {reason}",
   "problem.what_you_can_do": "What you can do:",
-  "usage.failed": "Couldn't run {command}"
+  "usage.failed": "Couldn't run {command}",
+  "server.record_unreadable": "Ignoring server.json because it can't be read ({error}). The next `ovdb server start` replaces it."
 }

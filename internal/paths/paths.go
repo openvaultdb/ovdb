@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 
 	"github.com/strongo/cli-helpers/daemonlifecycle"
 )
@@ -138,12 +139,30 @@ func missingAncestors(dir string) ([]string, error) {
 	}
 }
 
-// PrivacyFix is the command that makes dir owner-only on this platform.
+// PrivacyFix is the command that makes dir owner-only, runnable as printed
+// in this platform's shell: PowerShell on Windows, a POSIX shell elsewhere.
 func PrivacyFix(dir string) string {
-	if goruntime.GOOS == "windows" {
-		return `icacls "` + dir + `" /inheritance:r /grant:r "%USERNAME%:(OI)(CI)F"`
+	return privacyFix(goruntime.GOOS, dir)
+}
+
+func privacyFix(goos, dir string) string {
+	if goos == "windows" {
+		return "icacls " + QuoteArg(goos, dir) + ` /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F"`
 	}
-	return "chmod 700 " + dir
+	return "chmod 700 " + QuoteArg(goos, dir)
+}
+
+// QuoteArg quotes s as one shell argument when it needs quoting: single
+// quotes in both PowerShell (” escapes a quote) and POSIX shells ('\”
+// does).
+func QuoteArg(goos, s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-:") == "" {
+		return s
+	}
+	if goos == "windows" {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // WriteFilePrivate atomically replaces path with data as an owner-only

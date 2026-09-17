@@ -3,7 +3,10 @@ package localserver
 import (
 	"context"
 	"crypto/subtle"
+	"fmt"
+	"io"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -11,11 +14,12 @@ import (
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/redact"
 )
 
 // The chain, outermost first, is fixed by REQ:route-layout:
 //
-//	security headers → Host allowlist → authentication →
+//	security headers → (panic recovery) → Host allowlist → authentication →
 //	cross-origin protection (cookie requests, 1b) → CORS (bearer requests, 1b) → routes
 //
 // Each step is a func(http.Handler) http.Handler, so increment 1b inserts
@@ -35,6 +39,31 @@ func securityHeaders(next http.Handler) http.Handler {
 		header.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// recoverPanics turns a handler panic into a 500 internal envelope, keeping
+// the security headers set outside it, and logs the panic redacted instead
+// of letting net/http print it raw.
+func recoverPanics(errorLog io.Writer) func(http.Handler) http.Handler {
+	if errorLog == nil {
+		errorLog = io.Discard
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				recovered := recover()
+				if recovered == nil {
+					return
+				}
+				if recovered == http.ErrAbortHandler {
+					panic(recovered) // net/http's own way to abort a response
+				}
+				_, _ = fmt.Fprintf(redact.Writer{W: errorLog}, "panic serving %s %s: %v\n%s\n", r.Method, r.URL.Path, recovered, debug.Stack())
+				envelope.Write(w, envelope.New(envelope.Internal, uicopy.T("api.internal", nil)))
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // allowedHosts are the Host values a local-mode server answers, with the

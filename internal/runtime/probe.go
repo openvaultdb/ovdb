@@ -28,7 +28,17 @@ type Whoami struct {
 // needs resolving (REQ:client-values-and-mismatch).
 func BaseURL(port int) string { return "http://127.0.0.1:" + strconv.Itoa(port) }
 
-var probeClient = &http.Client{Timeout: 2 * time.Second}
+var probeClient = NewHTTPClient(2 * time.Second)
+
+// NewHTTPClient returns a client for the local API that never follows a
+// redirect: the local API does not redirect, and following one would resend
+// the bearer secret to wherever an impostor points.
+func NewHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
 
 // Probe calls the authenticated whoami on port. Sending the secret to an
 // impostor is harmless: every start writes a new secret, and a server that
@@ -72,7 +82,7 @@ func call(ctx context.Context, method string, port int, path, secret string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode != http.StatusOK { // including any redirect
 		return nil, fmt.Errorf("%s %s on port %d: %s", method, path, port, response.Status)
 	}
 	return body, nil

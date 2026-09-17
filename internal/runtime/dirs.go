@@ -14,8 +14,11 @@ import (
 // runtime directory — where the instance secret lives — the result is also a
 // forbidden error, so no secret is ever written there.
 //
+// failure is the message of the resulting error ("Couldn't start the OVDB
+// server", "Couldn't change the setting").
+//
 // See REQ:owner-only-state.
-func PrepareDirs(dirs paths.Dirs) (warnings []string, err *envelope.Error) {
+func PrepareDirs(dirs paths.Dirs, failure string) (warnings []string, err *envelope.Error) {
 	for _, dir := range []struct {
 		path    string
 		secrets bool
@@ -28,13 +31,13 @@ func PrepareDirs(dirs paths.Dirs) (warnings []string, err *envelope.Error) {
 				"dir": dir.path, "fix": paths.PrivacyFix(dir.path),
 			}))
 			if dir.secrets && err == nil {
-				err = envelope.New(envelope.Forbidden, uicopy.T("server.start.failed", nil)).
-					WithReason(uicopy.T("server.start.runtime_not_private", map[string]string{"dir": dir.path})).
+				err = envelope.New(envelope.Forbidden, failure).
+					WithReason(uicopy.T("runtime.not_private", map[string]string{"dir": dir.path})).
 					WithNext(envelope.Next{Label: uicopy.T("next.make_dir_private", nil), Command: paths.PrivacyFix(dir.path)})
 			}
 		default:
 			if err == nil {
-				err = envelope.New(envelope.Internal, uicopy.T("server.start.failed", nil)).
+				err = envelope.New(envelope.Internal, failure).
 					WithReason(ensureErr.Error())
 			}
 		}

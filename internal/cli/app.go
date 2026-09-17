@@ -9,7 +9,6 @@
 package cli
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"strconv"
@@ -22,7 +21,6 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/preview"
-	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
@@ -85,9 +83,10 @@ func (a *App) resolve(flagPort int) (target, error) {
 	return target{dirs: dirs, port: port, explicit: explicit}, nil
 }
 
-func (a *App) startOptions(t target) runtime.StartOptions {
-	return runtime.StartOptions{
-		Dirs: t.dirs, Port: t.port, ExplicitPort: t.explicit,
+// local is the client-side service for t; commands only render its documents.
+func (a *App) local(cmd *cobra.Command, t target) *client.Local {
+	return &client.Local{
+		Dirs: t.dirs, Version: a.Version, Port: t.port, ExplicitPort: t.explicit, Notices: cmd.ErrOrStderr(),
 		Command: func(port int) *exec.Cmd {
 			executable := a.Executable
 			if executable == "" {
@@ -98,17 +97,6 @@ func (a *App) startOptions(t target) runtime.StartOptions {
 			return command
 		},
 	}
-}
-
-// connect returns a client for t, auto-starting unless noStart.
-func (a *App) connect(cmd *cobra.Command, t target, noStart bool) (*client.Client, error) {
-	return client.Connect(cmd.Context(), client.Options{
-		Dirs: t.dirs, Version: a.Version, Port: t.port, ExplicitPort: t.explicit, NoStart: noStart,
-		Start: func(ctx context.Context) (runtime.StartResult, error) {
-			return runtime.Start(ctx, a.startOptions(t))
-		},
-		Notices: cmd.ErrOrStderr(),
-	})
 }
 
 // run adapts a command body so every failure leaves as an envelope error.

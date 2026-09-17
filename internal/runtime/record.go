@@ -31,6 +31,8 @@ const (
 	SecretFile = "secret"
 	LockFile   = "home.lock"
 	LogFile    = "server.log"
+	// StartLockFile serializes starts and locked writes (see lockStart).
+	StartLockFile = "start.lock"
 )
 
 // Record is server.json: written by a server once it is listening, it tells

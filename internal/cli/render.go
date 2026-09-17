@@ -89,13 +89,6 @@ func (p printer) document(body []byte, human func(w io.Writer)) {
 	human(p.cmd.OutOrStdout())
 }
 
-// notices go to stderr, so stdout stays pure JSON (REQ:json-equals-api).
-func (p printer) notices(lines []string) {
-	for _, line := range lines {
-		_, _ = fmt.Fprintln(p.cmd.ErrOrStderr(), line)
-	}
-}
-
 // say prints one line. Callers pass uicopy.T(...) with a literal key so the
 // catalogue test sees every key.
 func say(w io.Writer, text string) {

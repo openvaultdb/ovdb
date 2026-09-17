@@ -7,6 +7,7 @@ package runtime_test
 // go-os-matrix CI job.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -181,6 +182,16 @@ func TestStartReturnsToPipedCallerThenStop(t *testing.T) {
 	if err := caller.Start(); err != nil {
 		t.Fatal(err)
 	}
+	// Readiness is server.json appearing; poll for it independently.
+	ready := make(chan time.Time, 1)
+	go func() {
+		for deadline := time.Now().Add(runtime.DefaultTimeout + 5*time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if record, _ := runtime.ReadRecord(dirs.Runtime); record != nil {
+				ready <- time.Now()
+				return
+			}
+		}
+	}()
 	output := make(chan []byte, 1)
 	go func() {
 		data, _ := io.ReadAll(stdout) // returns only at EOF on the pipe
@@ -192,7 +203,8 @@ func TestStartReturnsToPipedCallerThenStop(t *testing.T) {
 	case <-time.After(runtime.DefaultTimeout + 5*time.Second):
 		t.Fatalf("no EOF on the caller's stdout; log:\n%s", readLog(dirs))
 	}
-	eof := time.Since(began)
+	eofAt := time.Now()
+	eof := eofAt.Sub(began)
 	if err := caller.Wait(); err != nil {
 		t.Fatalf("caller: %v, output %s\nlog:\n%s", err, data, readLog(dirs))
 	}
@@ -201,11 +213,17 @@ func TestStartReturnsToPipedCallerThenStop(t *testing.T) {
 		t.Fatalf("caller output %q: %v", data, err)
 	}
 	// EOF arrived while the server still runs, so the child holds no copy
-	// of the pipe; the caller's own wait is bounded by readiness plus 2 s.
-	if limit := runtime.DefaultTimeout + 2*time.Second; eof > limit {
-		t.Errorf("EOF after %s, want under %s", eof, limit)
+	// of the pipe, and it arrived within 2 s of readiness.
+	select {
+	case readyAt := <-ready:
+		if afterReady := eofAt.Sub(readyAt); afterReady > 2*time.Second {
+			t.Errorf("EOF %s after readiness, want at most 2s", afterReady)
+		} else {
+			t.Logf("piped caller got EOF %s after launch, %s after readiness", eof, afterReady)
+		}
+	case <-time.After(time.Second):
+		t.Error("server.json never appeared")
 	}
-	t.Logf("piped caller got EOF after %s", eof)
 
 	state, err := runtime.Inspect(context.Background(), dirs.Runtime)
 	if err != nil || !state.Running || state.Whoami.Version != testVersion {
@@ -251,7 +269,7 @@ func TestStaleRecordIsReplaced(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
 	port := freePort(t)
-	if _, err := runtime.PrepareDirs(dirs); err != nil {
+	if _, err := runtime.PrepareDirs(dirs, "test"); err != nil {
 		t.Fatal(err)
 	}
 	stale := fmt.Sprintf(`{"schema":1,"instance_id":"stale","home":%q,"pid":999999,"process_identity":"x","port":%d,"version":"old"}`, dirs.Home, port)
@@ -285,7 +303,7 @@ func TestStopNeverKillsReusedPID(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sleeper.Process.Kill(); _ = sleeper.Wait() })
 
-	if _, err := runtime.PrepareDirs(dirs); err != nil {
+	if _, err := runtime.PrepareDirs(dirs, "test"); err != nil {
 		t.Fatal(err)
 	}
 	record := fmt.Sprintf(`{"schema":1,"instance_id":"gone","home":%q,"pid":%d,"process_identity":"not-this-process","port":%d,"version":"x"}`,
@@ -297,10 +315,31 @@ func TestStopNeverKillsReusedPID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := runtime.Stop(context.Background(), dirs.Runtime, time.Second)
-	e := wantCode(t, err, envelope.ServerNotRunning)
-	if !strings.Contains(e.Reason, strconv.Itoa(sleeper.Process.Pid)) {
-		t.Errorf("reason %q does not name the pid", e.Reason)
+	// While something holds the home lock the process cannot be confirmed:
+	// nothing changes and the failure offers a start.
+	_, lockErr := runtime.WithHomeLock(context.Background(), dirs, "test", func() error {
+		_, err := runtime.Stop(context.Background(), dirs.Runtime, time.Second)
+		e := wantCode(t, err, envelope.ServerNotRunning)
+		if !strings.Contains(e.Reason, strconv.Itoa(sleeper.Process.Pid)) || e.Next[0].Command != "ovdb server start" {
+			t.Errorf("unconfirmed = %+v", e)
+		}
+		if kept, _ := runtime.ReadRecord(dirs.Runtime); kept == nil {
+			t.Error("stop changed server.json although it could not confirm the process")
+		}
+		return nil
+	})
+	if lockErr != nil {
+		t.Fatal(lockErr)
+	}
+
+	// With the lock free no server can be alive: stale files are cleared and
+	// the result is "not running", without touching the process.
+	result, err := runtime.Stop(context.Background(), dirs.Runtime, time.Second)
+	if err != nil || !result.Stale || result.WasRunning {
+		t.Fatalf("Stop = %+v, %v", result, err)
+	}
+	if kept, _ := runtime.ReadRecord(dirs.Runtime); kept != nil {
+		t.Error("stale server.json kept")
 	}
 	state, err := runtime.Inspect(context.Background(), dirs.Runtime)
 	if err != nil || state.Running {
@@ -309,8 +348,95 @@ func TestStopNeverKillsReusedPID(t *testing.T) {
 	if !processAlive(sleeper.Process) {
 		t.Fatal("the unrelated process was killed")
 	}
-	if kept, _ := runtime.ReadRecord(dirs.Runtime); kept == nil {
-		t.Error("stop changed server.json although it could not confirm the process")
+}
+
+// A corrupt server.json does not block status or stop.
+func TestUnreadableRecordIsStale(t *testing.T) {
+	t.Parallel()
+	dirs := testDirs(t)
+	if _, err := runtime.PrepareDirs(dirs, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := paths.WriteFilePrivate(filepath.Join(dirs.Runtime, runtime.RecordFile), []byte("{not json")); err != nil {
+		t.Fatal(err)
+	}
+	state, err := runtime.Inspect(context.Background(), dirs.Runtime)
+	if err != nil || state.Running || state.Unreadable == nil {
+		t.Fatalf("Inspect = %+v, %v", state, err)
+	}
+	if result, err := runtime.Stop(context.Background(), dirs.Runtime, 0); err != nil || !result.Stale {
+		t.Fatalf("Stop = %+v, %v", result, err)
+	}
+	if _, err := os.Stat(filepath.Join(dirs.Runtime, runtime.RecordFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("corrupt server.json kept: %v", err)
+	}
+	start(t, dirs, freePort(t))
+}
+
+// REQ:single-server-home-lock: parallel starts for one home all end with the
+// same running server, never a failure caused by a sibling.
+func TestParallelStartsShareOneServer(t *testing.T) {
+	dirs := testDirs(t)
+	port := freePort(t)
+	stopOnCleanup(t, dirs)
+	for round := 0; round < 5; round++ {
+		type outcome struct {
+			result runtime.StartResult
+			err    error
+		}
+		outcomes := make(chan outcome, 4)
+		for i := 0; i < 4; i++ {
+			go func() {
+				result, err := runtime.Start(context.Background(), startOptions(dirs, port))
+				outcomes <- outcome{result, err}
+			}()
+		}
+		instances := map[string]bool{}
+		started := 0
+		for i := 0; i < 4; i++ {
+			o := <-outcomes
+			if o.err != nil {
+				t.Fatalf("round %d: Start = %v\nlog:\n%s", round, o.err, readLog(dirs))
+			}
+			instances[o.result.State.Record.InstanceID] = true
+			if !o.result.AlreadyRunning {
+				started++
+			}
+		}
+		if len(instances) != 1 || started != 1 {
+			t.Fatalf("round %d: %d instances, %d fresh starts; want 1 and 1", round, len(instances), started)
+		}
+		if _, err := runtime.Stop(context.Background(), dirs.Runtime, 0); err != nil {
+			t.Fatalf("round %d: Stop = %v", round, err)
+		}
+	}
+}
+
+// A start rotates a large server.log, and a start after a stop is a new instance.
+func TestLogRotatesAndRestartReplacesServer(t *testing.T) {
+	t.Parallel()
+	dirs := testDirs(t)
+	if _, err := runtime.PrepareDirs(dirs, "test"); err != nil {
+		t.Fatal(err)
+	}
+	logPath := runtime.LogPath(dirs.Runtime)
+	if err := os.WriteFile(logPath, bytes.Repeat([]byte("x"), 6<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	port := freePort(t)
+	first := start(t, dirs, port)
+	if info, err := os.Stat(logPath + ".1"); err != nil || info.Size() != 6<<20 {
+		t.Errorf("server.log.1 = %v, %v", info, err)
+	}
+	if info, _ := os.Stat(logPath); info.Size() > 1<<20 {
+		t.Errorf("server.log not rotated: %d bytes", info.Size())
+	}
+	if _, err := runtime.Stop(context.Background(), dirs.Runtime, 0); err != nil {
+		t.Fatal(err)
+	}
+	second := start(t, dirs, port)
+	if second.AlreadyRunning || second.State.Record.InstanceID == first.State.Record.InstanceID {
+		t.Errorf("restart = %+v", second)
 	}
 }
 
@@ -415,29 +541,35 @@ func TestChildExitBeforeReadinessIsStartFailed(t *testing.T) {
 	}
 }
 
-// AC:existing-dirs-not-chmodded.
+// AC:existing-dirs-not-chmodded. On Windows an existing directory with the
+// inherited ACL (user, SYSTEM, Administrators) is the equivalent of 0755.
 func TestExistingOpenDirsAreReportedNotChanged(t *testing.T) {
 	t.Parallel()
-	if goruntime.GOOS == "windows" {
-		t.Skip("POSIX modes")
-	}
 	dirs := testDirs(t)
 	for _, dir := range []string{dirs.Home, dirs.Runtime} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(dir, 0o755); err != nil {
-			t.Fatal(err)
+		if goruntime.GOOS != "windows" {
+			if err := os.Chmod(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if daemonlifecycle.ValidateOwnerOnly(dir) == nil {
+			t.Skipf("%s is already owner-only on this runner; nothing to test", dir)
 		}
 	}
 	result, err := runtime.Start(context.Background(), startOptions(dirs, freePort(t)))
 	_ = wantCode(t, err, envelope.Forbidden)
 	warnings := strings.Join(result.Warnings, "\n")
 	for _, dir := range []string{dirs.Home, dirs.Runtime} {
-		if !strings.Contains(warnings, "chmod 700 "+dir) {
+		if !strings.Contains(warnings, paths.PrivacyFix(dir)) {
 			t.Errorf("warnings %q lack the fix for %s", warnings, dir)
 		}
-		if info, _ := os.Stat(dir); info.Mode().Perm() != 0o755 {
+		if daemonlifecycle.ValidateOwnerOnly(dir) == nil {
+			t.Errorf("%s was made private; existing directories must not change", dir)
+		}
+		if info, _ := os.Stat(dir); goruntime.GOOS != "windows" && info.Mode().Perm() != 0o755 {
 			t.Errorf("%s mode changed to %o", dir, info.Mode().Perm())
 		}
 	}

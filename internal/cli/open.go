@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"io"
-	"net/http"
 
 	"github.com/spf13/cobra"
 
@@ -25,19 +24,15 @@ func (a *App) openCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := a.connect(cmd, t, noStart)
-			if err != nil {
-				return err
-			}
-			response, err := c.Do(cmd.Context(), http.MethodPost, loginLinksPath, localserver.LoginLinkRequest{})
+			body, err := a.local(cmd, t).LoginLink(cmd.Context(), noStart)
 			if err != nil {
 				return err
 			}
 			var link localserver.LoginLink
-			if err := json.Unmarshal(response.Body, &link); err != nil {
+			if err := json.Unmarshal(body, &link); err != nil {
 				return err
 			}
-			printer{cmd: cmd, json: jsonOut}.document(response.Body, func(w io.Writer) {
+			printer{cmd: cmd, json: jsonOut}.document(body, func(w io.Writer) {
 				say(w, uicopy.T("open.intro", nil))
 				say(w, "  "+link.URL)
 				say(w, uicopy.T("open.fallback", nil))

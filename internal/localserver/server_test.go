@@ -325,3 +325,27 @@ func TestLoginLinks(t *testing.T) {
 			http.StatusBadRequest, envelope.InvalidArgument)
 	}
 }
+
+func TestPanicIsRecoveredRedacted(t *testing.T) {
+	t.Parallel()
+	var logged strings.Builder
+	h := securityHeaders(recoverPanics(&logged)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("mount failed: postgres://u:s3cret@db/x")
+	})))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/databases", nil))
+	assertEnvelope(t, rec, http.StatusInternalServerError, envelope.Internal)
+	assertSecurityHeaders(t, rec)
+	if strings.Contains(rec.Body.String(), "s3cret") || strings.Contains(logged.String(), "s3cret") || !strings.Contains(logged.String(), "panic serving GET /v1/databases") {
+		t.Errorf("body %s, log %s", rec.Body, logged.String())
+	}
+}
+
+func TestWellKnownOmitsConnectEndpoints(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	rec := f.do(t, request{path: "/.well-known/openvaultdb"})
+	if want := `{"authEnabled":true,"name":"OpenVaultDB","protocol":"openvaultdb/0.1","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
+		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
+	}
+}

@@ -118,8 +118,23 @@ func TestEnsurePrivateDirLeavesExistingDirAlone(t *testing.T) {
 	if info.Mode().Perm() != 0o755 {
 		t.Errorf("mode changed to %o", info.Mode().Perm())
 	}
-	if fix := PrivacyFix(dir); fix != "chmod 700 "+dir {
+	if fix := PrivacyFix(dir); fix != "chmod 700 "+QuoteArg("linux", dir) {
 		t.Errorf("PrivacyFix = %q", fix)
+	}
+}
+
+// next commands are runnable as printed (configuration-parity#REQ:error-envelope).
+func TestPrivacyFixQuoting(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ goos, dir, want string }{
+		{"linux", "/home/u/.config/ovdb", "chmod 700 /home/u/.config/ovdb"},
+		{"darwin", "/Users/u/Library/Application Support/ovdb", "chmod 700 '/Users/u/Library/Application Support/ovdb'"},
+		{"linux", "/tmp/it's", `chmod 700 '/tmp/it'\''s'`},
+		{"windows", `C:\Users\u\AppData\Local\ovdb\run`, `icacls 'C:\Users\u\AppData\Local\ovdb\run' /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F"`},
+	} {
+		if got := privacyFix(tc.goos, tc.dir); got != tc.want {
+			t.Errorf("privacyFix(%s, %q) = %q, want %q", tc.goos, tc.dir, got, tc.want)
+		}
 	}
 }
 
