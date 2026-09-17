@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
@@ -23,20 +24,30 @@ func (s *localServer) getTelemetry(w http.ResponseWriter, _ *http.Request) {
 }
 
 // putTelemetry is capability 24. A console session may turn telemetry on:
-// the person clicked Turn on (AC:enable-then-disable). The deciding channel
-// comes from the credential alone (review F4): web for a session, cli for
-// the instance secret, whose holder (CLI, TUI or an agent that can read the
-// runtime secret) the server cannot tell apart. Enabling always needs
-// confirmed_by_user (REQ:enable-requires-a-person).
+// the person clicked Turn on (AC:enable-then-disable). A session's deciding
+// channel is always web, whatever the body says. Instance-secret callers
+// are the owner's local processes (CLI, TUI, an agent harness running the
+// CLI), which declare cli, tui or agent; anything else is refused (review
+// M1). Enabling always needs confirmed_by_user
+// (REQ:enable-requires-a-person).
 func (s *localServer) putTelemetry(w http.ResponseWriter, r *http.Request) {
 	var change telemetry.Change
 	if !decodeBody(w, r, &change) {
 		return
 	}
 	session := credentialOf(r) == credentialSession
-	channel := telemetry.ChannelCLI
-	if session {
-		channel = telemetry.ChannelWeb
+	channel := telemetry.ChannelWeb
+	if !session {
+		switch declared := telemetry.Channel(change.Channel); declared {
+		case "":
+			channel = telemetry.ChannelCLI
+		case telemetry.ChannelCLI, telemetry.ChannelTUI, telemetry.ChannelAgent:
+			channel = declared
+		default:
+			envelope.Write(w, envelope.New(envelope.InvalidArgument, uicopy.T("telemetry.failed", nil)).
+				WithReason(uicopy.T("telemetry.invalid_channel", map[string]string{"channel": change.Channel})))
+			return
+		}
 	}
 	outcome, err := setup.ChangeTelemetry(s.opts.Dirs, change, channel, s.opts.Now())
 	if err != nil {

@@ -118,9 +118,8 @@ func TestJourneyATerminal(t *testing.T) {
 	}
 	press("q")
 
-	// The server was running, so the deciding channel is the instance
-	// secret's, cli (review F4), not what the TUI would claim.
-	if status := e.telemetryStatus().Telemetry; status.State != "disabled" || status.Channel != "cli" || status.HasInstallID {
+	// The server was running; the TUI declares its channel (review M1).
+	if status := e.telemetryStatus().Telemetry; status.State != "disabled" || status.Channel != "tui" || status.HasInstallID {
 		t.Errorf("telemetry after the prompt = %+v", status)
 	}
 	if r := e.ok("add", "/items", `{"title":"Hello"}`); !strings.HasPrefix(r.stdout, "notes: added /items/") {

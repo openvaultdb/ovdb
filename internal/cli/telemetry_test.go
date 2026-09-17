@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
@@ -319,5 +320,30 @@ func TestTelemetrySkillInstalled(t *testing.T) {
 	}
 	if skill == nil || skill["skill"] != "todo-demo" || skill["harness"] != "claude" || skill["success"] != true {
 		t.Fatalf("skill_installed = %v (all %v)", skill, recorder.received())
+	}
+}
+
+// Review M1: with the server running, the stored deciding channel is the
+// deciding process's: agent under an agent harness, tui from the TUI.
+func TestTelemetryDecisionChannelWithServerRunning(t *testing.T) {
+	e := telemetryEnv(t, "http://127.0.0.1:9")
+	if r := e.run("server", "start"); r.code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	e.vars["CLAUDECODE"] = "1"
+	if r := e.run("telemetry", "enable", "--confirmed-by-user"); r.code != 0 {
+		t.Fatalf("agent enable: %+v", r)
+	}
+	if status := e.telemetryStatus().Telemetry; status.State != telemetry.StateEnabled || status.Channel != "agent" {
+		t.Fatalf("agent decision = %+v", status)
+	}
+	delete(e.vars, "CLAUDECODE")
+	tui := &client.Local{Dirs: e.dirs, Version: testVersion, Port: e.port(), Getenv: func(key string) string { return e.vars[key] },
+		Telemetry: e.app.TUIRecorder(e.dirs.Home)}
+	if _, err := tui.SetTelemetry(context.Background(), telemetry.Change{State: telemetry.StateDisabled}); err != nil {
+		t.Fatal(err)
+	}
+	if status := e.telemetryStatus().Telemetry; status.State != telemetry.StateDisabled || status.Channel != "tui" {
+		t.Fatalf("tui decision = %+v", status)
 	}
 }

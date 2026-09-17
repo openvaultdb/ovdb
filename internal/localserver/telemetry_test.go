@@ -131,18 +131,26 @@ func TestConsoleTelemetryConsentAndEvents(t *testing.T) {
 		t.Fatalf("event properties = %v", got[4:])
 	}
 
-	// Turning it off with the instance secret removes the install id. The
-	// deciding channel is derived from the credential, never taken from the
-	// body (review F4): instance-secret callers are recorded as cli.
-	for _, claimed := range []string{`"tui"`, `"web"`, `"agent"`} {
-		off := telemetryDocument(t, f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"disabled","channel":` + claimed + `}`, bearer: testSecret}))
-		if off.Telemetry.State != telemetry.StateDisabled || off.Telemetry.HasInstallID || off.Telemetry.Channel != "cli" {
-			t.Fatalf("turn off claiming %s = %+v", claimed, off)
+	// The owner's local processes declare their channel with the instance
+	// secret (review M1): cli, tui or agent is stored; web or anything else
+	// is refused, and a session's body channel is ignored.
+	for _, declared := range []string{"tui", "agent", "cli"} {
+		off := telemetryDocument(t, f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"disabled","channel":"` + declared + `"}`, bearer: testSecret}))
+		if off.Telemetry.State != telemetry.StateDisabled || off.Telemetry.HasInstallID || off.Telemetry.Channel != declared {
+			t.Fatalf("turn off declaring %s = %+v", declared, off)
 		}
-		_ = f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"enabled","confirmed_by_user":true,"channel":` + claimed + `}`, bearer: testSecret})
-		if consent, _ := telemetry.LoadConsent(f.dirs.Home); consent.Channel != "cli" {
-			t.Fatalf("enable claiming %s recorded %+v", claimed, consent)
+		_ = f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"enabled","confirmed_by_user":true,"channel":"` + declared + `"}`, bearer: testSecret})
+		if consent, _ := telemetry.LoadConsent(f.dirs.Home); consent.Channel != declared || consent.State != telemetry.StateEnabled {
+			t.Fatalf("enable declaring %s recorded %+v", declared, consent)
 		}
+	}
+	for _, bad := range []string{"web", "robot"} {
+		assertEnvelope(t, f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"disabled","channel":"` + bad + `"}`, bearer: testSecret}),
+			http.StatusBadRequest, envelope.InvalidArgument)
+	}
+	web := telemetryDocument(t, f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"disabled","channel":"agent"}`, cookie: session, header: same}))
+	if web.Telemetry.Channel != "web" {
+		t.Fatalf("session declaring agent = %+v", web.Telemetry)
 	}
 }
 
