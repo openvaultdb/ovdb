@@ -31,7 +31,8 @@ func (l *Local) Demo(ctx context.Context) ([]byte, error) {
 // InstallDemo installs the TODO demo through the server, starting it unless
 // noStart. The location is resolved under this client's data home
 // (REQ:client-values-and-mismatch).
-func (l *Local) InstallDemo(ctx context.Context, request demo.InstallRequest, noStart bool) ([]byte, error) {
+func (l *Local) InstallDemo(ctx context.Context, request demo.InstallRequest, noStart bool) (body []byte, err error) {
+	defer l.trackDemoInstall(&body, &err)
 	if request.Path == "" {
 		id := request.ID
 		if id == "" {
@@ -61,7 +62,8 @@ func (l *Local) consoleBuilt() bool {
 // (local-server-and-web-console#REQ:embedded-assets). Whether the demo is
 // installed is read first, from the running server or the registry, so a
 // demo that isn't there never starts a server.
-func (l *Local) DemoLink(ctx context.Context, noStart bool) ([]byte, error) {
+func (l *Local) DemoLink(ctx context.Context, noStart bool) (link []byte, err error) {
+	defer l.trackDemoOpen(&err)
 	failed := uicopy.T("demo.open.failed", nil)
 	if !l.consoleBuilt() {
 		return nil, envelope.New(envelope.Unsupported, failed).

@@ -36,6 +36,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // Local API paths.
@@ -62,6 +63,9 @@ type Local struct {
 	// Notices receives one-line notices: auto-start, version mismatch,
 	// directory warnings, unreadable runtime files. Never stdout with --json.
 	Notices io.Writer
+	// Telemetry records this process's capability events (CLI or TUI);
+	// nil records nothing (telemetry-consent#REQ:sender-process-decides).
+	Telemetry *telemetry.Recorder
 	// Where is where this client runs, for resolving its database context:
 	// the walk-up directories and any --db or OVDB_DATABASE. The web console
 	// has no such thing; CLI and TUI send it with every context read.
@@ -115,7 +119,8 @@ type StartOutcome struct {
 }
 
 // Start starts the server, or reports the one already running.
-func (l *Local) Start(ctx context.Context) (StartOutcome, error) {
+func (l *Local) Start(ctx context.Context) (outcome StartOutcome, err error) {
+	defer l.trackStart(time.Now(), &err)
 	result, err := runtime.Start(ctx, l.startOptions())
 	for _, warning := range result.Warnings {
 		l.notice(warning)
@@ -242,7 +247,8 @@ func (l *Local) Databases(ctx context.Context) ([]byte, error) {
 // CreateDatabase creates a database through the server, starting it unless
 // noStart. An empty path is the default location under this client's data
 // home, sent as an absolute path (REQ:client-values-and-mismatch).
-func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest, noStart bool) ([]byte, error) {
+func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest, noStart bool) (body []byte, err error) {
+	defer l.trackCreate(time.Now(), &request, &err)
 	if request.Engine == "" {
 		request.Engine = setup.EngineInGitDB
 	}
@@ -270,7 +276,8 @@ func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest,
 // through the server, starting it unless noStart. Relative paths are made
 // absolute against this client's working directory before they are sent
 // (REQ:client-values-and-mismatch).
-func (l *Local) ConnectDatabase(ctx context.Context, request setup.ConnectRequest, noStart bool) ([]byte, error) {
+func (l *Local) ConnectDatabase(ctx context.Context, request setup.ConnectRequest, noStart bool) (body []byte, err error) {
+	defer l.trackConnect(time.Now(), &request, &body, &err)
 	home, _ := os.UserHomeDir()
 	for _, path := range []*string{&request.Path, &request.Manifest} {
 		if *path != "" && home != "" {

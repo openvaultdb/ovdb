@@ -38,6 +38,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -57,6 +58,9 @@ type Options struct {
 	// Console serves the web console and apps to signed-in browsers;
 	// web.Handler() when nil.
 	Console http.Handler
+	// Telemetry sends web console events from this process; a web-channel
+	// recorder over Dirs.Home and this process's environment when nil.
+	Telemetry *telemetry.Recorder
 	// Databases are mounted next to the registry's (tests).
 	Databases map[string]*core.Database
 	// MountTimeout bounds each registered database's mount;
@@ -142,6 +146,9 @@ func New(opts Options) (*Handler, error) {
 		registry: registry,
 	}
 	s.protectAuthStore()
+	if opts.Telemetry == nil {
+		s.opts.Telemetry = &telemetry.Recorder{Channel: telemetry.ChannelWeb, Home: opts.Dirs.Home, Version: opts.Record.Version}
+	}
 	s.demo = &demo.Service{Dirs: opts.Dirs, Registry: registry, Seed: s.seedData, Now: opts.Now, Logf: logf(opts.ErrorLog, opts.Now)}
 
 	var h http.Handler = http.HandlerFunc(s.route)
@@ -173,6 +180,9 @@ var endpoints = []endpoint{
 	{http.MethodPost, "/api/local/v1/login-links", accessInstanceSecret, (*localServer).loginLink},
 	{http.MethodGet, "/api/local/v1/config", accessOwner, (*localServer).getConfig},
 	{http.MethodPut, "/api/local/v1/config", accessOwner, (*localServer).putConfig},
+	{http.MethodGet, "/api/local/v1/telemetry", accessOwner, (*localServer).getTelemetry},
+	{http.MethodPut, "/api/local/v1/telemetry", accessOwner, (*localServer).putTelemetry},
+	{http.MethodPost, "/api/local/v1/telemetry/events", accessOwner, (*localServer).postTelemetryEvents},
 	{http.MethodGet, "/api/local/v1/engines", accessOwner, (*localServer).engines},
 	{http.MethodGet, "/api/local/v1/databases", accessOwner, (*localServer).databases},
 	{http.MethodPost, "/api/local/v1/databases", accessOwner, (*localServer).createDatabase},
@@ -371,7 +381,7 @@ func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {
 		for name, value := range values {
 			r.SetPathValue(name, value)
 		}
-		e.handle(s, w, r)
+		s.observe(e, w, r)
 		return
 	}
 	// Unauthenticated callers learn nothing about which paths exist.

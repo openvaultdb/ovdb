@@ -10,6 +10,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
 // ExploreDataTugPath prepares a DataTug CLI connection (capability row 22,
@@ -38,6 +39,7 @@ func (l *Local) ExploreMenu(_ context.Context, db string) ([]byte, error) {
 // pure local document, never a network call — DataTug.app's limitation is
 // fixed copy, not server state.
 func (l *Local) ExploreDataTugApp(db string) []byte {
+	l.Telemetry.Record(telemetry.NewExploreDataSelected("datatug_web", false))
 	return envelope.Marshal(explore.NewDataTugApp(db))
 }
 
@@ -56,7 +58,8 @@ func (l *Local) ExploreDataTugApp(db string) []byte {
 // PATH they can actually fix. l.DataTugLookPath stands in for exec.LookPath
 // in tests; the web console has no client process, so it keeps the
 // server's own check (worded accordingly in its copy).
-func (l *Local) PrepareDataTugCLI(ctx context.Context, db, collection string, noStart bool) ([]byte, error) {
+func (l *Local) PrepareDataTugCLI(ctx context.Context, db, collection string, noStart bool) (body []byte, err error) {
+	defer l.trackDataTugCLI(&body, &err)
 	c, err := l.Connect(ctx, noStart)
 	if err != nil {
 		return nil, err

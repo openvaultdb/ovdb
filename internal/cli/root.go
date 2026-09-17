@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/openvaultdb/ovdb/internal/telemetry"
 	"github.com/openvaultdb/ovdb/internal/tui"
 )
 
@@ -66,6 +67,13 @@ func (a *App) runTUI(cmd *cobra.Command) error {
 		return err
 	}
 	local := a.local(cmd, t)
+	// The TUI keeps pre-consent events in memory only; they are sent after
+	// Turn on and dropped otherwise, at the latest when the TUI exits
+	// (telemetry-consent#REQ:pre-consent-buffer).
+	local.Telemetry = &telemetry.Recorder{Channel: telemetry.ChannelTUI, Home: t.dirs.Home, Version: a.Version, Getenv: a.getenv,
+		Buffer: true, Key: a.TelemetryKey, Endpoint: a.TelemetryEndpoint}
+	defer local.Telemetry.Discard()
+	defer local.Telemetry.Flush(cmd.Context())
 	width, height := a.termSize()
 	model := tui.New(cmd.Context(), local, a.openBrowser, width, height)
 	program := tea.NewProgram(model, tea.WithContext(cmd.Context()))

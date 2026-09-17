@@ -49,7 +49,7 @@ func main() {
 	// set the process exit code.
 	fangOpts := fangcmd.Wire(root, info)
 
-	addRootCommands(root, info.Version)
+	app := addRootCommands(root, info.Version)
 
 	// New (preview) commands fail with the shared error envelope, printed by
 	// cli.Render; every other error keeps fang's output.
@@ -59,7 +59,11 @@ func main() {
 		}
 	}))
 
-	if err := fang.Execute(context.Background(), root, fangOpts...); err != nil {
+	err := fang.Execute(context.Background(), root, fangOpts...)
+	// After the command's output, whatever its outcome: at most 2 s, silent
+	// (telemetry-consent#REQ:bounded-synchronous-sender).
+	app.FlushTelemetry(context.Background())
+	if err != nil {
 		os.Exit(commandExitCode(err))
 	}
 }
@@ -79,7 +83,7 @@ func commandExitCode(err error) int {
 	return 1
 }
 
-func addRootCommands(root *cobra.Command, currentVersion string) {
+func addRootCommands(root *cobra.Command, currentVersion string) *cli.App {
 	app := &cli.App{Version: currentVersion}
 	root.AddCommand(
 		newCloudCmd(),
@@ -99,4 +103,5 @@ func addRootCommands(root *cobra.Command, currentVersion string) {
 	if preview.On() {
 		root.RunE = app.RootRunE
 	}
+	return app
 }

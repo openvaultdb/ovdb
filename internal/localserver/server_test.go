@@ -224,6 +224,10 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 	switch {
 	case e.path == "/api/local/v1/config":
 		body = `{"key":"server.port","value":"7000"}`
+	case e.path == "/api/local/v1/telemetry":
+		body = `{"state":"disabled"}`
+	case e.path == "/api/local/v1/telemetry/events":
+		body = `{"events":[{"event":"onboarding_started"}]}`
 	case e.method == http.MethodPut && e.path == "/api/local/v1/context":
 		body = `{"scope":"global","clear":true}`
 	case e.method == http.MethodPost && e.path == "/api/local/v1/databases":
