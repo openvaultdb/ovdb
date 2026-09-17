@@ -587,9 +587,7 @@ func (s *localServer) exploreDataTug(w http.ResponseWriter, r *http.Request) {
 	}
 	db := r.URL.Query().Get("db")
 	if !slices.Contains(setup.DatabaseIDs(databases), db) {
-		writeError(w, envelope.New(envelope.NotFound, uicopy.T("explore.failed", nil)).
-			WithReason(uicopy.T("database.remove.not_found", map[string]string{"name": db})).
-			WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: setup.ActionDatabases}))
+		writeError(w, explore.DatabaseNotFound(db))
 		return
 	}
 	collections, err := s.rootCollections(r.Context(), db)

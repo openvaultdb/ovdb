@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
 )
 
@@ -42,6 +43,24 @@ func TestExploreMenuNamesCurrentDatabase(t *testing.T) {
 	}
 	if !strings.Contains(human.stdout, "Read-only DTQL queries on root collections") {
 		t.Errorf("human output lacks the real DataTug CLI description:\n%s", human.stdout)
+	}
+}
+
+// F8 (review-inc-7.md): an unregistered database is a clean not_found in
+// --json too, exit 1 — not a menu for a database that does not exist
+// (`ovdb explore --db nope --json` used to exit 0 with a full menu).
+func TestExploreMenuUnknownDatabaseIsNotFound(t *testing.T) {
+	e, _, _ := dataEnv(t)
+	failure := decodeError(t, e.fails("explore", "--db", "nope", "--json"), envelope.NotFound)
+	if !strings.Contains(failure.Reason, "nope") {
+		t.Errorf("reason = %q, want it to name nope", failure.Reason)
+	}
+	if len(failure.Next) == 0 || failure.Next[0].Command != "ovdb databases" {
+		t.Errorf("next = %+v, want ovdb databases", failure.Next)
+	}
+	human := e.fails("explore", "--db", "nope")
+	if !strings.Contains(human.stderr, "nope") {
+		t.Errorf("human stderr = %q, want it to name nope", human.stderr)
 	}
 }
 

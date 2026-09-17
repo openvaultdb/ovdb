@@ -346,6 +346,16 @@ func NewMenu(db string, isDemo bool) Menu {
 	}
 }
 
+// DatabaseNotFound is the shared not_found envelope for an unregistered
+// database, so every caller (the server's own endpoint, the client's pure
+// read) reports it the same way (review-inc-7.md F8: an unregistered
+// database used to be a silent success in --json).
+func DatabaseNotFound(db string) *envelope.Error {
+	return envelope.New(envelope.NotFound, uicopy.T("explore.failed", nil)).
+		WithReason(uicopy.T("database.remove.not_found", map[string]string{"name": db})).
+		WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: setup.ActionDatabases})
+}
+
 // IsDemo reports whether db is the registered TODO demo among databases.
 func IsDemo(home, db string, databases []setup.Database) bool {
 	found, ok := setup.FindDemo(home, databases)

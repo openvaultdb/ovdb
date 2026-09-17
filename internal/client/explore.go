@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
@@ -23,6 +24,11 @@ func (l *Local) ExploreMenu(_ context.Context, db string) ([]byte, error) {
 	databases, err := setup.ListDatabases(l.Dirs.Home, nil)
 	if err != nil {
 		return nil, err
+	}
+	if !slices.Contains(setup.DatabaseIDs(databases), db) {
+		// A clean not_found, in --json too, exit 1 — never a menu for a
+		// database that does not exist (review-inc-7.md F8).
+		return nil, explore.DatabaseNotFound(db)
 	}
 	menu := explore.NewMenu(db, explore.IsDemo(l.Dirs.Home, db, databases))
 	return envelope.Marshal(menu), nil
