@@ -3,9 +3,9 @@
 // that each screen rendered.
 import { join } from 'node:path'
 
-import { test } from '@playwright/test'
+import { test } from './fixtures'
 
-import { primary, signedInContext } from './ovdb'
+import { endAllSessions, ovdb, port, primary, signedInContext } from './ovdb'
 
 const sizes = [
   { width: 1280, height: 800 },
@@ -33,16 +33,23 @@ for (const size of sizes) {
         await page.screenshot({ path: out(`${screen.name}-${suffix}`), fullPage: true })
       }
 
-      // Settings after saving (the same port, so nothing really changes).
+      // Settings after saving a new port, then after an invalid one.
       await page.goto(primary() + '/settings')
+      await page.getByLabel('Port').fill(String(port() + 1))
       await page.getByRole('button', { name: 'Save port' }).click()
       await page.getByRole('status').waitFor()
       await page.screenshot({ path: out(`settings-saved-${suffix}`), fullPage: true })
+      ovdb('config', 'set', 'server.port', String(port()))
+      await page.goto(primary() + '/settings')
+      await page.getByLabel('Port').fill('70000')
+      await page.getByRole('button', { name: 'Save port' }).click()
+      await page.getByRole('alert').waitFor()
+      await page.screenshot({ path: out(`settings-invalid-${suffix}`), fullPage: true })
 
       // The session ends while the page is open.
       await page.goto(primary() + '/server')
       await page.getByText('Log file').waitFor()
-      await context.clearCookies()
+      endAllSessions()
       await page.evaluate(() => window.dispatchEvent(new Event('focus')))
       await page.getByTestId('session-ended').waitFor()
       await page.screenshot({ path: out(`session-ended-${suffix}`), fullPage: true })
@@ -64,6 +71,9 @@ for (const size of sizes) {
       await landing.goto(primary() + '/')
       await landing.getByText('Open the console from OVDB').first().waitFor()
       await landing.screenshot({ path: out(`landing-${suffix}`), fullPage: true })
+      await landing.goto(primary() + '/signed-out')
+      await landing.getByText('You signed out').waitFor()
+      await landing.screenshot({ path: out(`signed-out-${suffix}`), fullPage: true })
       await anonymous.close()
     })
   }

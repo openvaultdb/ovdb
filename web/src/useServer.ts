@@ -3,9 +3,10 @@
 // stopped-server copy when the server goes away while the page is open.
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
-import { api, type Server, type ServerDocument } from './api'
+import { api, type Next, type Server, type ServerDocument } from './api'
 
 const server = ref<Server | null>(null)
+const next = ref<Next[]>([])
 const loading = ref(true)
 let subscribers = 0
 let timer: ReturnType<typeof setInterval> | undefined
@@ -14,7 +15,10 @@ export const pollInterval = 10_000
 
 export async function refreshServer() {
   const result = await api<ServerDocument>('GET', '/api/local/v1/server')
-  if (result.ok) server.value = result.data.server
+  if (result.ok) {
+    server.value = result.data.server
+    next.value = result.data.next ?? []
+  }
   loading.value = false
 }
 
@@ -36,5 +40,5 @@ export function useServer() {
       window.removeEventListener('focus', onFocus)
     }
   })
-  return { server, loading }
+  return { server, next, loading }
 }

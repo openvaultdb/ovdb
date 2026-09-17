@@ -33,8 +33,31 @@ export function installFetch(routes: Record<string, Handler>) {
   return calls
 }
 
+export const serverNext = [
+  { label: 'Stop the OVDB server', command: 'ovdb server stop' },
+  { label: 'Restart the OVDB server', command: 'ovdb server restart' },
+]
+
+export const home = {
+  schema: 1,
+  status_line: [{ key: 'home.status.server_running', params: { address: server.address } }],
+  question_key: 'home.question',
+  options: [
+    {
+      id: 'server',
+      group: 'primary',
+      label_key: 'home.menu.start_server',
+      web_label_key: 'home.menu.server',
+      description_key: 'home.menu.server_help',
+      badge: { tone: 'ok', label_key: 'server.badge.running' },
+    },
+    { id: 'settings', group: 'secondary', label_key: 'home.menu.settings' },
+  ],
+}
+
 export const defaultRoutes: Record<string, Handler> = {
-  'GET /api/local/v1/server': () => json(200, { schema: 1, server }),
+  'GET /api/local/v1/server': () => json(200, { schema: 1, server, next: serverNext }),
+  'GET /api/local/v1/home': () => json(200, home),
   'GET /api/local/v1/status': () =>
     json(200, { schema: 1, version: '1.2.3', server, next: [{ label: 'Open web setup', command: 'ovdb open' }] }),
   'GET /api/local/v1/config': () => json(200, { schema: 1, config: { server: {} }, next: [] }),

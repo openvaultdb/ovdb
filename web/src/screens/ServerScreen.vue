@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The OVDB server panel (capability 4): state, address with its fallback,
 // version, start time and log. Stopping and restarting stay in the
-// terminal (configuration-parity exception E2), so the panel says how.
+// terminal (configuration-parity exception E2); the commands come from the
+// server document's next.
 import { computed } from 'vue'
 
 import OvBackLink from '../components/OvBackLink.vue'
@@ -11,17 +12,24 @@ import OvStatusBadge from '../components/OvStatusBadge.vue'
 import { t } from '../copy'
 import { useServer } from '../useServer'
 
-const { server } = useServer()
+const { server, next } = useServer()
+
+const badge = computed(() => {
+  switch (server.value?.state) {
+    case 'running':
+      return { tone: 'ok' as const, label: t('server.badge.running') }
+    case 'stopping':
+      return { tone: 'warn' as const, label: t('server.badge.stopping') }
+    default:
+      return { tone: 'neutral' as const, label: t('server.badge.not_running') }
+  }
+})
 
 const started = computed(() => {
   const at = server.value?.started_at
   return at ? new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''
 })
 
-const stopNext = [
-  { label: t('next.stop_server'), command: 'ovdb server stop' },
-  { label: t('next.restart_server'), command: 'ovdb server restart' },
-]
 </script>
 
 <template>
@@ -29,7 +37,7 @@ const stopNext = [
     <OvBackLink />
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t('server.title') }}</h1>
-      <OvStatusBadge v-if="server" tone="ok" :label="t('server.badge.running')" />
+      <OvStatusBadge v-if="server" :tone="badge.tone" :label="badge.label" />
     </div>
 
     <OvCard v-if="server">
@@ -57,7 +65,7 @@ const stopNext = [
     </OvCard>
     <p v-else class="text-muted">{{ t('console.loading') }}</p>
 
-    <OvNotice data-testid="stop-help" :title="t('server.stop.title')" :next="stopNext">
+    <OvNotice v-if="next.length" data-testid="stop-help" :title="t('server.stop.title')" :next="next">
       <p>{{ t('server.stop.body') }}</p>
     </OvNotice>
   </div>

@@ -1,5 +1,7 @@
 // Helpers that drive the ovdb binary started by global-setup.ts.
 import { execFileSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import type { Browser, BrowserContext } from '@playwright/test'
 
@@ -34,4 +36,16 @@ export async function signedInContext(
   await page.getByRole('heading', { name: 'What would you like to do?' }).waitFor()
   await page.close()
   return context
+}
+
+/** Calls the running server with the instance secret, as the CLI does. */
+export async function asOwner(path: string): Promise<unknown> {
+  const secret = readFileSync(join(process.env.OVDB_RUNTIME_DIR!, 'secret'), 'utf8').trim()
+  const response = await fetch(fallback() + path, { headers: { Authorization: `Bearer ${secret}` } })
+  return response.json()
+}
+
+/** Removes every console session from sessions.json, as a person could by hand. */
+export function endAllSessions() {
+  writeFileSync(join(process.env.OVDB_RUNTIME_DIR!, 'sessions.json'), '{"schema":1,"sessions":[]}\n', { mode: 0o600 })
 }

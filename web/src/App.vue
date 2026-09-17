@@ -5,7 +5,6 @@
 import { nextTick, watch, watchEffect } from 'vue'
 
 import { connection } from './api'
-import OvNotice from './components/OvNotice.vue'
 import OvText from './components/OvText.vue'
 import { t } from './copy'
 import { navigate, screen } from './router'
@@ -30,7 +29,7 @@ watchEffect(() => {
 
 // Move focus to the new screen's heading so keyboard and screen reader
 // users land at the top of what changed.
-watch(screen, async () => {
+watch([screen, connection], async () => {
   await nextTick()
   document.querySelector<HTMLElement>('main h1')?.focus()
 })
@@ -45,21 +44,28 @@ function home(event: MouseEvent) {
 <template>
   <div class="min-h-screen">
     <header class="border-b border-line">
-      <div class="mx-auto flex max-w-3xl items-center px-4 py-3.5 sm:px-6">
-        <a href="/" class="text-lg font-bold tracking-tight text-ink" @click="home">{{ t('app.name') }}</a>
+      <div class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+        <a href="/" class="text-lg leading-7 font-bold tracking-tight text-ink" @click="home">{{ t('app.name') }}</a>
+        <form v-if="connection === 'ok'" method="post" action="/logout">
+          <button type="submit" class="rounded-md px-2 leading-7 font-medium text-accent hover:underline">
+            {{ t('console.sign_out') }}
+          </button>
+        </form>
       </div>
     </header>
 
     <main class="mx-auto max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
-      <div v-if="connection === 'session-ended'" data-testid="session-ended" class="flex flex-col gap-4">
-        <h1 tabindex="-1" class="sr-only">{{ t('app.name') }}</h1>
-        <OvNotice live :title="t('console.session_ended')" />
+      <div v-if="connection === 'session-ended'" data-testid="session-ended" class="flex flex-col gap-4" role="status">
+        <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {{ t('console.session_ended.title') }}
+        </h1>
+        <p class="text-lg"><OvText :text="t('console.session_ended.next')" /></p>
       </div>
-      <div v-else-if="connection === 'unreachable'" data-testid="server-stopped" class="flex flex-col gap-4">
-        <h1 tabindex="-1" class="sr-only">{{ t('app.name') }}</h1>
-        <OvNotice live tone="problem" :title="t('server.not_running.message')">
-          <p><OvText :text="t('server.stopped_copy')" /></p>
-        </OvNotice>
+      <div v-else-if="connection === 'unreachable'" data-testid="server-stopped" class="flex flex-col gap-4" role="alert">
+        <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {{ t('server.not_running.message') }}
+        </h1>
+        <p class="text-lg"><OvText :text="t('server.stopped_copy')" /></p>
       </div>
       <HomeScreen v-else-if="screen === 'home'" />
       <ServerScreen v-else-if="screen === 'server'" />

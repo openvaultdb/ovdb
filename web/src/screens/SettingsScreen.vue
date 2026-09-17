@@ -1,13 +1,16 @@
 <script setup lang="ts">
 // Settings (capability 7): the port the OVDB server uses the next time it
-// starts. The server validates and saves it; the page shows what it says.
-import { onMounted, ref, watch } from 'vue'
+// starts. The value goes to the server as typed; the server validates it and
+// says what happened, and this page renders that
+// (configuration-parity#REQ:error-envelope).
+import { nextTick, onMounted, ref, watch } from 'vue'
 
-import { api, type ApiError, type ConfigDocument, type Next } from '../api'
+import { api, expectServerMove, type ApiError, type ConfigDocument, type Next } from '../api'
 import OvBackLink from '../components/OvBackLink.vue'
 import OvButton from '../components/OvButton.vue'
 import OvCard from '../components/OvCard.vue'
 import OvNotice from '../components/OvNotice.vue'
+import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
 import { useServer } from '../useServer'
@@ -18,13 +21,13 @@ const port = ref('')
 const configured = ref<number | undefined>()
 const loaded = ref(false)
 const saving = ref(false)
-const fieldError = ref('')
 const problem = ref<ApiError | null>(null)
-const saved = ref<{ port: number; next: Next[] } | null>(null)
+const result = ref<{ port: number; changed: boolean; moves: boolean; next: Next[] } | null>(null)
+const outcome = ref<HTMLElement>()
 
 onMounted(async () => {
-  const result = await api<ConfigDocument>('GET', '/api/local/v1/config')
-  if (result.ok) configured.value = result.data.config.server.port
+  const response = await api<ConfigDocument>('GET', '/api/local/v1/config')
+  if (response.ok) configured.value = response.data.config.server.port
   loaded.value = true
 })
 
@@ -44,25 +47,22 @@ const unwatch = watch(
 )
 
 async function save() {
-  fieldError.value = ''
   problem.value = null
-  saved.value = null
-  const value = port.value.trim()
-  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) {
-    fieldError.value = t('settings.port.invalid')
-    return
-  }
+  result.value = null
   saving.value = true
-  const result = await api<ConfigDocument>('PUT', '/api/local/v1/config', { key: 'server.port', value })
+  const response = await api<ConfigDocument>('PUT', '/api/local/v1/config', { key: 'server.port', value: port.value })
   saving.value = false
-  if (result.ok) {
-    saved.value = { port: result.data.config.server.port ?? Number(value), next: result.data.next }
-    port.value = String(saved.value.port)
-  } else if (result.error.code === 'invalid_argument') {
-    fieldError.value = result.error.reason ?? result.error.message
+  if (response.ok) {
+    const saved = response.data.config.server.port ?? server.value?.port ?? 0
+    const moves = response.data.changed !== false && saved !== server.value?.port
+    if (moves) expectServerMove()
+    result.value = { port: saved, changed: response.data.changed !== false, moves, next: response.data.next }
+    port.value = String(saved)
   } else {
-    problem.value = result.error
+    problem.value = response.error
   }
+  await nextTick()
+  outcome.value?.focus()
 }
 </script>
 
@@ -77,7 +77,7 @@ async function save() {
           v-model="port"
           :label="t('settings.port.label')"
           :help="server ? t('settings.port.help', { port: String(server.port) }) : undefined"
-          :error="fieldError"
+          :error="problem?.code === 'invalid_argument' ? (problem.reason ?? problem.message) : undefined"
           inputmode="numeric"
         />
         <div>
@@ -86,20 +86,27 @@ async function save() {
       </form>
     </OvCard>
 
-    <OvNotice
-      v-if="saved"
-      live
-      tone="success"
-      :title="t('settings.port.saved', { port: String(saved.port) })"
-      :next="saved.next"
-    />
-    <OvNotice
-      v-if="problem"
-      live
-      tone="problem"
-      :title="problem.message"
-      :reason="problem.reason"
-      :next="problem.next"
-    />
+    <div ref="outcome" tabindex="-1">
+      <template v-if="result">
+        <OvNotice v-if="!result.changed" live :title="t('settings.port.unchanged', { port: String(result.port) })" />
+        <OvNotice
+          v-else
+          live
+          tone="success"
+          :title="t('settings.port.saved', { port: String(result.port) })"
+          :next="result.next"
+        >
+          <p v-if="result.moves"><OvText :text="t('settings.port.after_restart')" /></p>
+        </OvNotice>
+      </template>
+      <OvNotice
+        v-if="problem"
+        live
+        tone="problem"
+        :title="problem.message"
+        :reason="problem.code === 'invalid_argument' ? undefined : problem.reason"
+        :next="problem.next"
+      />
+    </div>
   </div>
 </template>

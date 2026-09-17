@@ -1,18 +1,18 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { connection } from '../src/api'
+import { resetConnection } from '../src/api'
 import App from '../src/App.vue'
 import { currentPath } from '../src/router'
 import HomeScreen from '../src/screens/HomeScreen.vue'
 import ServerScreen from '../src/screens/ServerScreen.vue'
 import SettingsScreen from '../src/screens/SettingsScreen.vue'
-import { defaultRoutes, installFetch, json, server } from './fakeServer'
+import { defaultRoutes, home, installFetch, json, server } from './fakeServer'
 
 enableAutoUnmount(afterEach)
 
 beforeEach(() => {
-  connection.value = 'ok'
+  resetConnection()
   window.history.replaceState({}, '', '/')
   currentPath.value = '/'
 })
@@ -22,7 +22,7 @@ afterEach(() => {
 })
 
 describe('Home', () => {
-  it('shows the status line, the question and only the implemented options in order', async () => {
+  it('renders the status line, the question and the options the server sends, in its order', async () => {
     installFetch(defaultRoutes)
     const wrapper = mount(HomeScreen)
     await flushPromises()
@@ -35,8 +35,25 @@ describe('Home', () => {
     expect(serverOption.text()).toContain('OVDB server')
     expect(serverOption.text()).toContain('Running')
     expect(serverOption.attributes('href')).toBe('/server')
-    // Parity exception E1: the web console never offers to start the server.
+    // Parity exception E1: the web wording replaces "Start the OVDB server".
     expect(wrapper.text()).not.toContain('Start the OVDB server')
+  })
+
+  it('shows the badge and status line for the state the server reports', async () => {
+    installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/home': () =>
+        json(200, {
+          ...home,
+          status_line: [{ key: 'home.status.server_not_running' }],
+          options: [{ ...home.options[0], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
+        }),
+    })
+    const wrapper = mount(HomeScreen)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="status-line"]').text()).toBe('OVDB server not running')
+    expect(wrapper.get('[data-option="server"]').text()).toContain('Not running')
+    expect(wrapper.findAll('[data-option]')).toHaveLength(1)
   })
 
   it('navigates without reloading and moves between options with the arrow keys', async () => {
@@ -56,7 +73,7 @@ describe('Home', () => {
 })
 
 describe('OVDB server panel', () => {
-  it('shows state, both addresses, version, start and log, and how to stop it from a terminal', async () => {
+  it('shows state, both addresses, version, start and log, and the server’s stop and restart commands', async () => {
     installFetch(defaultRoutes)
     const wrapper = mount(ServerScreen)
     await flushPromises()
@@ -70,6 +87,17 @@ describe('OVDB server panel', () => {
     // Parity exception E2: no stop or restart button.
     expect(wrapper.findAll('button')).toHaveLength(0)
   })
+
+  it('shows the state the server reports', async () => {
+    installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/server': () => json(200, { schema: 1, server: { ...server, state: 'stopping' }, next: [] }),
+    })
+    const wrapper = mount(ServerScreen)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Stopping')
+    expect(wrapper.find('[data-testid="stop-help"]').exists()).toBe(false)
+  })
 })
 
 describe('Settings', () => {
@@ -80,6 +108,7 @@ describe('Settings', () => {
         json(200, {
           schema: 1,
           config: { server: { port: 7000 } },
+          changed: true,
           next: [{ label: 'Restart the OVDB server to use it', command: 'ovdb server restart' }],
         }),
     })
@@ -98,34 +127,47 @@ describe('Settings', () => {
     const notice = wrapper.get('[role="status"]')
     expect(notice.text()).toContain('Saved. The OVDB server will use port 7000 the next time it starts.')
     expect(notice.text()).toContain('ovdb server restart')
+    expect(notice.text()).toContain('After the restart this page stops working.')
   })
 
-  it('rejects a port that is not a number from 1 to 65535 before calling the server', async () => {
-    const calls = installFetch(defaultRoutes)
-    const wrapper = mount(SettingsScreen)
-    await flushPromises()
-    for (const bad of ['0', '65536', 'abc', '']) {
-      await wrapper.get('input').setValue(bad)
-      await wrapper.get('form').trigger('submit')
-      await flushPromises()
-      expect(wrapper.text()).toContain('Enter a port number from 1 to 65535.')
-      expect(wrapper.get('input').attributes('aria-invalid')).toBe('true')
-    }
-    expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0)
-  })
-
-  it('shows the server’s reason when it refuses the value', async () => {
+  it('says "No change" without a restart when the port is already set', async () => {
     installFetch({
       ...defaultRoutes,
-      'PUT /api/local/v1/config': () =>
-        json(400, { schema: 1, error: { code: 'invalid_argument', message: "Couldn't use that port", reason: 'Port 80 is reserved.', next: [] } }),
+      'PUT /api/local/v1/config': () => json(200, { schema: 1, config: { server: { port: 6832 } }, changed: false, next: [] }),
     })
     const wrapper = mount(SettingsScreen)
     await flushPromises()
-    await wrapper.get('input').setValue('80')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('Port 80 is reserved.')
+    const notice = wrapper.get('[role="status"]')
+    expect(notice.text()).toBe('No change. The OVDB server is already set to use port 6832.')
+    expect(wrapper.text()).not.toContain('restart')
+  })
+
+  it('sends the value as typed and renders the server’s message, reason and next', async () => {
+    const calls = installFetch({
+      ...defaultRoutes,
+      'PUT /api/local/v1/config': () =>
+        json(400, {
+          schema: 1,
+          error: {
+            code: 'invalid_argument',
+            message: "Couldn't use that port",
+            reason: 'server.port must be a port number from 1 to 65535, not "abc".',
+            next: [{ label: 'Show the current setting', command: 'ovdb config get server.port' }],
+          },
+        }),
+    })
+    const wrapper = mount(SettingsScreen)
+    await flushPromises()
+    await wrapper.get('input').setValue('abc')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(calls.at(-1)?.body).toEqual({ key: 'server.port', value: 'abc' })
+    expect(wrapper.get('input').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.text()).toContain('server.port must be a port number from 1 to 65535, not "abc".')
+    expect(wrapper.get('[role="alert"]').text()).toContain("Couldn't use that port")
+    expect(wrapper.get('[role="alert"]').text()).toContain('ovdb config get server.port')
   })
 })
 
@@ -148,10 +190,11 @@ describe('console shell', () => {
     })
     const wrapper = mount(App)
     await flushPromises()
-    expect(wrapper.get('[data-testid="session-ended"] [role="status"]').text()).toBe(
-      'Your session ended — use ovdb open or ask your AI assistant for a new link',
-    )
-    expect(wrapper.get('[data-testid="session-ended"] code').text()).toBe('ovdb open')
+    const ended = wrapper.get('[data-testid="session-ended"]')
+    expect(ended.get('h1').text()).toBe('Your session ended')
+    expect(ended.text()).toContain('Use ovdb open or ask your AI assistant for a new link.')
+    expect(ended.get('code').text()).toBe('ovdb open')
+    expect(wrapper.find('form[action="/logout"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -160,9 +203,39 @@ describe('console shell', () => {
     const wrapper = mount(App)
     await flushPromises()
     const stopped = wrapper.get('[data-testid="server-stopped"]').text()
-    expect(stopped).toContain("The OVDB server isn't running")
+    expect(wrapper.get('[data-testid="server-stopped"] h1').text()).toBe("The OVDB server isn't running")
     expect(stopped).toContain('Ask your AI assistant to start OVDB again, or run ovdb open.')
     wrapper.unmount()
+  })
+
+  it('asks for a new link, not "stopped", when the server moved to a saved port', async () => {
+    let up = true
+    const calls = installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/server': () => (up ? json(200, { schema: 1, server, next: [] }) : 'network-error'),
+      'PUT /api/local/v1/config': () => json(200, { schema: 1, config: { server: { port: 7000 } }, changed: true, next: [] }),
+    })
+    window.history.replaceState({}, '', '/settings')
+    currentPath.value = '/settings'
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.get('input').setValue('7000')
+    await wrapper.get('main form').trigger('submit')
+    await flushPromises()
+    expect(calls.some((call) => call.method === 'PUT')).toBe(true)
+    up = false
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="session-ended"] h1').text()).toBe('Your session ended')
+  })
+
+  it('offers Sign out as a same-origin form POST', async () => {
+    installFetch(defaultRoutes)
+    const wrapper = mount(App)
+    await flushPromises()
+    const form = wrapper.get('form[action="/logout"]')
+    expect(form.attributes('method')).toBe('post')
+    expect(form.get('button').text()).toBe('Sign out')
   })
 
   it('shows a not-found screen for unknown paths', async () => {

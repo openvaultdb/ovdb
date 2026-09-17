@@ -33,6 +33,33 @@ export interface Server {
 export interface ServerDocument {
   schema: number
   server: Server
+  next: Next[]
+}
+
+export interface CopyRef {
+  key: string
+  params?: Record<string, string>
+}
+
+export interface Badge {
+  tone: 'ok' | 'warn' | 'neutral'
+  label_key: string
+}
+
+export interface HomeOption {
+  id: string
+  group: 'primary' | 'secondary'
+  label_key: string
+  web_label_key?: string
+  description_key?: string
+  badge?: Badge
+}
+
+export interface HomeDocument {
+  schema: number
+  status_line: CopyRef[]
+  question_key: string
+  options: HomeOption[]
 }
 
 export interface StatusDocument {
@@ -45,6 +72,7 @@ export interface StatusDocument {
 export interface ConfigDocument {
   schema: number
   config: { server: { port?: number } }
+  changed?: boolean
   next: Next[]
 }
 
@@ -57,6 +85,23 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: ApiError }
  */
 export const connection = ref<'ok' | 'session-ended' | 'unreachable'>('ok')
 
+let serverMoving = false
+
+/**
+ * Settings calls this after saving a new port: once the server restarts on
+ * it, this origin stops answering and the cookie no longer applies, so the
+ * page should ask for a new link rather than say the server stopped.
+ */
+export function expectServerMove() {
+  serverMoving = true
+}
+
+/** Back to a fresh page's state (tests). */
+export function resetConnection() {
+  connection.value = 'ok'
+  serverMoving = false
+}
+
 export async function api<T>(method: 'GET' | 'PUT', path: string, body?: unknown): Promise<Result<T>> {
   let response: Response
   try {
@@ -67,12 +112,12 @@ export async function api<T>(method: 'GET' | 'PUT', path: string, body?: unknown
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
-    connection.value = 'unreachable'
+    connection.value = serverMoving ? 'session-ended' : 'unreachable'
     return { ok: false, error: { code: 'server_not_running', message: t('server.not_running.message'), next: [] } }
   }
   if (response.status === 401) {
     connection.value = 'session-ended'
-  } else if (connection.value === 'unreachable') {
+  } else if (connection.value === 'unreachable' || (serverMoving && connection.value === 'session-ended')) {
     connection.value = 'ok'
   }
   let document: unknown
