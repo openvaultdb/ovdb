@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 )
@@ -107,27 +108,46 @@ func TestPreviewOffersNewCommandsAndUsesEnvelope(t *testing.T) {
 // TestBareOVDBNonInteractivePrintsStatus is
 // first-run-onboarding#AC:tty-launches-tui (its non-terminal half) and
 // REQ:bare-ovdb-non-interactive: exec.Command's stdout is always a pipe, so
-// bare `ovdb` under the gate never waits for input here — it prints the
-// same status `ovdb status` does and exits 0. See internal/tui's manual
+// bare `ovdb` under the gate never waits for input here — it prints a
+// compact status and the five bootstrap next entries and exits 0. See internal/tui's manual
 // tmux check for the terminal half, which a non-interactive test process
 // cannot exercise.
 func TestBareOVDBNonInteractivePrintsStatus(t *testing.T) {
-	stdout, stderr, code := runOVDB(t, []string{"OVDB_PREVIEW=1"})
-	if code != 0 {
-		t.Fatalf("bare ovdb (non-interactive): exit %d stderr %q", code, stderr)
+	// first-run-onboarding#REQ:bare-ovdb-non-interactive and
+	// AC:agent-gets-next-not-prompt: a compact status and exactly the five
+	// next entries, exit 0 within a second, never waiting for input.
+	want := []string{
+		"Set up in the terminal", "ovdb",
+		"Open web setup", "ovdb open",
+		"Set up with commands", "ovdb databases create <name>",
+		"Try the demo", "ovdb demo install --yes",
+		"Install the OpenVaultDB skill for your AI assistant (ask the person first)", "ovdb skills install openvaultdb --yes",
 	}
-	if !strings.HasPrefix(stdout, "OpenVaultDB ") || !strings.Contains(stdout, "OVDB server: not running") {
-		t.Errorf("bare ovdb (non-interactive) stdout = %q", stdout)
-	}
-
-	// OVDB_NON_INTERACTIVE forces the same path explicitly (each call gets
-	// its own temp OVDB_HOME, so only the shape — not the exact bytes — is
-	// comparable between the two runs).
-	stdout2, stderr2, code2 := runOVDB(t, []string{"OVDB_PREVIEW=1", "OVDB_NON_INTERACTIVE=1"})
-	if code2 != 0 {
-		t.Fatalf("OVDB_NON_INTERACTIVE=1: exit %d stderr %q", code2, stderr2)
-	}
-	if !strings.HasPrefix(stdout2, "OpenVaultDB ") || !strings.Contains(stdout2, "OVDB server: not running") {
-		t.Errorf("OVDB_NON_INTERACTIVE=1 stdout = %q", stdout2)
+	for _, env := range [][]string{{"OVDB_PREVIEW=1"}, {"OVDB_PREVIEW=1", "OVDB_NON_INTERACTIVE=1"}} {
+		started := time.Now()
+		stdout, stderr, code := runOVDB(t, env)
+		if elapsed := time.Since(started); elapsed > time.Second {
+			t.Errorf("%v: took %s", env, elapsed)
+		}
+		if code != 0 {
+			t.Fatalf("%v: exit %d stderr %q", env, code, stderr)
+		}
+		lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+		var entries []string
+		for _, line := range lines {
+			if entry, ok := strings.CutPrefix(line, "  • "); ok {
+				label, command, _ := strings.Cut(entry, "   ")
+				entries = append(entries, strings.TrimSpace(label), strings.TrimSpace(command))
+			} else if command, ok := strings.CutPrefix(line, "      "); ok && len(entries) > 0 && entries[len(entries)-1] == "" {
+				// A long label puts its command on the next line.
+				entries[len(entries)-1] = strings.TrimSpace(command)
+			}
+		}
+		if strings.Join(entries, "|") != strings.Join(want, "|") {
+			t.Errorf("%v: next entries = %q\nstdout:\n%s", env, entries, stdout)
+		}
+		if !strings.HasPrefix(stdout, "OpenVaultDB ") || !strings.Contains(stdout, "OVDB server not running · Databases: none") || strings.Contains(stdout, "OVDB home:") {
+			t.Errorf("%v: not a compact status:\n%s", env, stdout)
+		}
 	}
 }

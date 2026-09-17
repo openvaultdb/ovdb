@@ -273,6 +273,20 @@ func NewStatus(version string, dirs paths.Dirs, server Server, databases []Datab
 	return status
 }
 
+// BootstrapNext is what non-interactive bare `ovdb` offers, always all five
+// (first-run-onboarding#REQ:bare-ovdb-non-interactive): set up in the
+// terminal, in the browser or with commands, try the demo, or install the
+// storage skill after asking the person.
+func BootstrapNext() []envelope.Next {
+	return []envelope.Next{
+		{Label: uicopy.T("next.setup_terminal", nil), Command: "ovdb"},
+		{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
+		{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"},
+		{Label: uicopy.T("next.try_demo", nil), Command: "ovdb demo install --yes"},
+		{Label: uicopy.T("skills.next.install_storage", nil), Command: "ovdb skills install " + skills.Storage + " --yes"},
+	}
+}
+
 // SetSkills replaces the skills field group and the next entries that
 // depend on it. A client calls it with the skills it resolved itself, so
 // `ovdb status` agrees with `ovdb skills list` whichever shell started the
