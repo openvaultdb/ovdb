@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -60,6 +62,9 @@ type Options struct {
 	// MountTimeout bounds each registered database's mount;
 	// setup.DefaultMountTimeout when zero.
 	MountTimeout time.Duration
+	// DataTugLookPath resolves whether datatug is on PATH for Explore data
+	// (capability row 22); exec.LookPath when nil (tests).
+	DataTugLookPath explore.LookPath
 }
 
 type localServer struct {
@@ -179,6 +184,7 @@ var endpoints = []endpoint{
 	{http.MethodPut, "/api/local/v1/context", accessOwner, (*localServer).putContext},
 	{http.MethodGet, "/api/local/v1/demo", accessOwner, (*localServer).getDemo},
 	{http.MethodPost, "/api/local/v1/demo/install", accessOwner, (*localServer).installDemo},
+	{http.MethodGet, "/api/local/v1/explore/datatug", accessOwner, (*localServer).exploreDataTug},
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -566,6 +572,32 @@ func (s *localServer) installDemo(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	envelope.WriteJSON(w, status, document)
+}
+
+// exploreDataTug chooses DataTug CLI (capability row 22,
+// explore-data-handoff#REQ:prepare-datatug-cli-connection): it checks
+// datatug on PATH, and writes db's four-key descriptor with no token, so it
+// is called only when the person actually chooses DataTug CLI, never while
+// the Explore data menu itself is open.
+func (s *localServer) exploreDataTug(w http.ResponseWriter, r *http.Request) {
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	db := r.URL.Query().Get("db")
+	if !slices.Contains(setup.DatabaseIDs(databases), db) {
+		writeError(w, envelope.New(envelope.NotFound, uicopy.T("explore.failed", nil)).
+			WithReason(uicopy.T("database.remove.not_found", map[string]string{"name": db})).
+			WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: setup.ActionDatabases}))
+		return
+	}
+	result, err := explore.Prepare(s.opts.DataTugLookPath, s.opts.Dirs.Home, setup.FallbackAddress(s.opts.Record.Port), db, r.URL.Query().Get("collection"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, result)
 }
 
 // seedData writes the demo's records in one batch through the data API, as

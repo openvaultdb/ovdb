@@ -134,9 +134,9 @@ func TestHomeDownThenEnterOpensSettings(t *testing.T) {
 	m = send(t, m, key("down"))
 	m = send(t, m, key("down"))
 	m = send(t, m, key("down"))
-	m = send(t, m, key("down")) // Browse data is disabled without databases
-	if m.home.cursor != 5 {
-		t.Fatalf("cursor = %d, want 5", m.home.cursor)
+	m = send(t, m, key("down")) // Browse data and Explore data are disabled without databases
+	if m.home.cursor != 6 {
+		t.Fatalf("cursor = %d, want 6", m.home.cursor)
 	}
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenSettings {

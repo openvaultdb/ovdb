@@ -235,6 +235,10 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 		body = string(data)
 	case e.path == "/api/local/v1/demo/install":
 		body = `{"id":"credentials-demo"}`
+	case e.path == "/api/local/v1/explore/datatug":
+		// "credentials" itself is removed by the DELETE endpoint's own
+		// subtest earlier in the table; "credentials-connect" is not.
+		path += "?db=credentials-connect"
 	}
 	return path, body
 }
@@ -395,6 +399,92 @@ func TestWellKnownNamesConnectEndpoints(t *testing.T) {
 	if want := `{"authEnabled":true,"authorizeEndpoint":"/authorize","name":"OpenVaultDB","protocol":"openvaultdb/0.1","tokenEndpoint":"/token","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
 	}
+}
+
+// TestExploreDataTug is explore-data-handoff#AC:descriptor-and-command and
+// AC:datatug-missing (capability row 22): the descriptor has exactly four
+// keys and no token, the printed command always carries --no-policies
+// (spike S4), and datatug missing shows install commands instead.
+func TestExploreDataTug(t *testing.T) {
+	t.Parallel()
+	onPath := true
+	f := newFixture(t, func(o *Options) {
+		o.DataTugLookPath = func(string) (string, error) {
+			if onPath {
+				return "/usr/bin/datatug", nil
+			}
+			return "", os.ErrNotExist
+		}
+	})
+	data, err := json.Marshal(setup.CreateRequest{ID: "notes", Path: filepath.Join(f.dirs.Data, "notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
+	}
+
+	rec := f.do(t, request{path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	var document struct {
+		OnPath         bool              `json:"on_path"`
+		Collection     string            `json:"collection"`
+		DescriptorPath string            `json:"descriptor_path"`
+		Descriptor     map[string]string `json:"descriptor"`
+		EnvLines       []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"env_lines"`
+		TokenCommand    string   `json:"token_command"`
+		QueryCommand    string   `json:"query_command"`
+		InstallCommands []string `json:"install_commands"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("explore datatug = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	if !document.OnPath || len(document.InstallCommands) != 0 {
+		t.Errorf("on path result = %+v", document)
+	}
+	if document.Collection != "items" {
+		t.Errorf("collection = %q", document.Collection)
+	}
+	if len(document.Descriptor) != 4 {
+		t.Fatalf("descriptor has %d keys, want 4: %v", len(document.Descriptor), document.Descriptor)
+	}
+	if document.Descriptor["baseUrl"] != "http://127.0.0.1:6832" || document.Descriptor["databaseId"] != "notes" ||
+		document.Descriptor["tokenEnv"] != "OVDB_DATATUG_TOKEN" || document.Descriptor["principalId"] != "local-owner" {
+		t.Errorf("descriptor = %v", document.Descriptor)
+	}
+	if _, hasToken := document.Descriptor["token"]; hasToken {
+		t.Error("descriptor carries a token key")
+	}
+	if !strings.Contains(document.QueryCommand, "--no-policies") {
+		t.Errorf("query command lacks --no-policies: %q", document.QueryCommand)
+	}
+	if document.TokenCommand != "ovdb token create --db notes --scope read-only" {
+		t.Errorf("token command = %q", document.TokenCommand)
+	}
+	written, err := os.ReadFile(document.DescriptorPath)
+	if err != nil {
+		t.Fatalf("descriptor not written: %v", err)
+	}
+	if strings.Contains(string(written), "token") == false || strings.Contains(string(written), "ovdb_") {
+		t.Errorf("written descriptor = %s", written)
+	}
+
+	// datatug missing (AC:datatug-missing): install commands shown, and the
+	// prepared command still printed for afterwards.
+	onPath = false
+	rec = f.do(t, request{path: "/api/local/v1/explore/datatug?db=notes", bearer: testSecret})
+	document.InstallCommands = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("explore datatug missing = %d %s", rec.Code, rec.Body)
+	}
+	if document.OnPath || len(document.InstallCommands) != 2 || document.QueryCommand == "" {
+		t.Errorf("datatug missing result = %+v", document)
+	}
+
+	// An unregistered database is a clean not_found, naming ovdb databases.
+	assertEnvelope(t, f.do(t, request{path: "/api/local/v1/explore/datatug?db=nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
 }
 
 func TestDatabaseOf(t *testing.T) {
