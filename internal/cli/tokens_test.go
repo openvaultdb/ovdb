@@ -133,6 +133,17 @@ func TestTokensThroughLocalServer(t *testing.T) {
 	_ = decodeError(t, e.run("token", "list", "--no-start", "--json"), envelope.ServerNotRunning)
 }
 
+// Preview help describes the local server, not a running remote one.
+func TestTokenHelpInLocalMode(t *testing.T) {
+	e := previewEnv(t)
+	for _, name := range []string{"create", "list", "revoke"} {
+		help := strings.Join(strings.Fields(e.ok("token", name, "--help").stdout), " ")
+		if !strings.Contains(help, "local OVDB server") || strings.Contains(help, "on the running server") {
+			t.Errorf("token %s --help:\n%s", name, help)
+		}
+	}
+}
+
 // --addr and --owner-token keep today's remote-server path.
 func TestLegacyTokenPaths(t *testing.T) {
 	for _, args := range [][]string{

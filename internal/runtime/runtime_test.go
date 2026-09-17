@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -601,12 +602,20 @@ func TestIPv6UnavailableContinuesOnIPv4(t *testing.T) {
 	// can be taken in between by another process or parallel test (seen
 	// flaking on PR #12 CI, and still possible with retries). What is under
 	// test is the IPv6 fallback, not the port number.
-	listeners, err := runtime.Listen(freePort(t), func(network, _ string) (net.Listener, error) {
+	const port = 6832
+	var asked []string
+	listeners, err := runtime.Listen(port, func(network, address string) (net.Listener, error) {
+		asked = append(asked, network+" "+address)
 		if network == "tcp6" {
 			return nil, &net.OpError{Op: "listen", Net: network, Err: os.NewSyscallError("bind", ipv6UnavailableErrno)}
 		}
 		return net.Listen(network, "127.0.0.1:0")
 	})
+	// Listen asks for both loopback addresses on the port, each in its own
+	// address family.
+	if want := []string{"tcp4 127.0.0.1:6832", "tcp6 [::1]:6832"}; !slices.Equal(asked, want) {
+		t.Errorf("binds asked = %v, want %v", asked, want)
+	}
 	if err != nil {
 		t.Fatalf("Listen = %v", err)
 	}

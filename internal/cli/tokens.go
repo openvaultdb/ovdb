@@ -79,7 +79,23 @@ func previewToken(command *cobra.Command, noStart *bool, local func(cmd *cobra.C
 	}
 }
 
+// tokenHelpRemote ends every token subcommand's preview help.
+const tokenHelpRemote = `
+
+With --addr or --owner-token (or $OVDB_OWNER_TOKEN with --addr) it talks to a
+remote OpenVaultDB server instead.`
+
 func (a *App) tokenCreatePreview(command *cobra.Command) {
+	command.Long = `Create a scoped access token in <OVDB home>/auth.json through the local OVDB
+server, which is started when needed.
+
+The token secret is printed ONCE and never stored: save it immediately.
+
+--scope read-only  → records:read, collections:read, schema:read
+--scope read-write → read-only set + records:write, records:delete  (default)
+--scope create-db  → databases:create only (server-level; --db not allowed)
+--capability       → append extra raw capability strings (validated by the server)
+--expires          → Go duration string e.g. 720h (default: never expires)` + tokenHelpRemote
 	var noStart bool
 	previewToken(command, &noStart, func(cmd *cobra.Command, _ []string) error {
 		flags := cmd.Flags()
@@ -129,6 +145,8 @@ func (a *App) tokenCreatePreview(command *cobra.Command) {
 }
 
 func (a *App) tokenListPreview(command *cobra.Command) {
+	command.Long = `List the access tokens in <OVDB home>/auth.json through the local OVDB server,
+without their secrets.` + tokenHelpRemote
 	var noStart bool
 	previewToken(command, &noStart, func(cmd *cobra.Command, _ []string) error {
 		jsonOut, _ := cmd.Flags().GetBool("json")
@@ -168,6 +186,8 @@ func (a *App) tokenListPreview(command *cobra.Command) {
 }
 
 func (a *App) tokenRevokePreview(command *cobra.Command) {
+	command.Long = `Revoke an access token in <OVDB home>/auth.json through the local OVDB server.
+Apps using it lose access at once.` + tokenHelpRemote
 	var noStart, jsonOut bool
 	jsonFlag(command, &jsonOut)
 	previewToken(command, &noStart, func(cmd *cobra.Command, args []string) error {

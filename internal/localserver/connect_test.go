@@ -342,3 +342,26 @@ func TestCapabilityLabels(t *testing.T) {
 		t.Errorf("collection label = %q", got)
 	}
 }
+
+// /token answers an origin missing from server.cors, or a request without
+// one, with no CORS headers, and always varies on Origin.
+func TestTokenCORSOnlyForListedOrigins(t *testing.T) {
+	t.Parallel()
+	f := connectFixture(t)
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {"nope"}, "client_id": {"todo-app"}}.Encode()
+	for name, header := range map[string]map[string]string{
+		"other origin": {"Origin": "https://evil.example"},
+		"null origin":  {"Origin": "null"},
+		"no origin":    nil,
+		"preflight":    {"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
+	} {
+		method := http.MethodPost
+		if header["Access-Control-Request-Method"] != "" {
+			method = http.MethodOptions
+		}
+		rec := f.do(t, request{method: method, path: "/token", body: form, contentType: "application/x-www-form-urlencoded", header: header})
+		if rec.Header().Get("Access-Control-Allow-Origin") != "" || rec.Header().Get("Vary") != "Origin" {
+			t.Errorf("%s: %d %v", name, rec.Code, rec.Header())
+		}
+	}
+}
