@@ -98,6 +98,12 @@ func (a *App) tokenCreatePreview(command *cobra.Command) {
 		if request.DatabaseID == "" && !setup.HasCreateDBCapability(request.Capabilities) {
 			return usageError(cmd, uicopy.T("token.db_required", nil))
 		}
+		if request.DatabaseID != "" && setup.HasCreateDBCapability(request.Capabilities) {
+			// It could never create anything: refuse instead of minting it.
+			failure := usageError(cmd, uicopy.T("token.create_db_without_db", nil))
+			failure.Next = append([]envelope.Next{{Label: uicopy.T("next.token_create_db", nil), Command: "ovdb token create --scope create-db"}}, failure.Next...)
+			return failure
+		}
 		t, err := a.resolve(0)
 		if err != nil {
 			return err

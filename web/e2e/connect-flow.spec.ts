@@ -96,6 +96,7 @@ test('a signed-in person approves, and the app exchanges the code and reads with
   await page.locator('#connect').click()
 
   await expect(page.getByRole('heading', { name: `Allow e2e-app to use ${database}?` })).toBeVisible()
+  await expect(page.getByText('Read records', { exact: true })).toBeVisible()
   await expect(page.getByText('records:read', { exact: true })).toBeVisible()
   await expect(page.getByText(app.origin + '/callback', { exact: true })).toBeVisible()
   await page.screenshot({ path: out('connect-consent') })

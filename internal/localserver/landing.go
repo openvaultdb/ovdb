@@ -65,7 +65,8 @@ const (
 <p>{{.Body}}</p>
 {{with .Connect}}<dl class="grant">
 <dt>{{.DatabaseLabel}}</dt><dd><code>{{.Database}}</code></dd>
-<dt>{{.AccessLabel}}</dt><dd>{{range .Capabilities}}<code>{{.}}</code> {{end}}</dd>
+<dt>{{.AccessLabel}}</dt><dd><ul class="capabilities">{{range .Capabilities}}<li><span>{{.Label}}</span> <code>{{.Name}}</code></li>
+{{end}}</ul></dd>
 <dt>{{.RedirectLabel}}</dt><dd><code>{{.Redirect}}</code></dd>
 </dl>
 <form method="post" action="` + authorizePath + `" class="actions">

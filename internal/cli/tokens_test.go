@@ -120,6 +120,13 @@ func TestTokensThroughLocalServer(t *testing.T) {
 		t.Errorf("unknown revoke = %q", r.stderr)
 	}
 	_ = decodeError(t, e.run("token", "create", "--json"), envelope.InvalidArgument)
+	// A database-scoped token cannot create databases: refused, not minted dead.
+	for _, args := range [][]string{{"--scope", "create-db"}, {"--capability", "databases:create"}} {
+		failure := decodeError(t, e.run(append([]string{"token", "create", "--db", "todo", "--json"}, args...)...), envelope.InvalidArgument)
+		if len(failure.Next) == 0 || !strings.Contains(failure.Next[0].Command, "ovdb token create --scope create-db") {
+			t.Errorf("create-db with --db %v: next = %+v", args, failure.Next)
+		}
+	}
 	_ = decodeError(t, e.run("token", "create", "--db", "todo", "--scope", "admin", "--json"), envelope.InvalidArgument)
 	_ = decodeError(t, e.run("token", "list", "extra", "--json"), envelope.InvalidArgument)
 	e.ok("server", "stop")

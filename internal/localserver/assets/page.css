@@ -69,3 +69,6 @@ button:hover { background: var(--ov-accent-hover); }
 button.secondary { color: var(--ov-ink); background: var(--ov-surface-2); border: 1px solid var(--ov-line); }
 button.secondary:hover { background: var(--ov-code); }
 a.button { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1.25rem; border-radius: 0.5rem; font-weight: 600; color: var(--ov-on-accent); background: var(--ov-accent); text-decoration: none; }
+.capabilities { margin: 0; padding: 0; list-style: none; }
+.capabilities li { margin: 0.25rem 0; }
+.capabilities code { margin-left: 0.25rem; font-size: 0.85rem; color: var(--ov-muted); }

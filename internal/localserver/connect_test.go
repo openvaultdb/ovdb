@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
 	"github.com/strongo/cli-helpers/daemonlifecycle"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
@@ -99,7 +100,7 @@ func TestConnectFlowNeedsSession(t *testing.T) {
 	session := f.signIn(t, primaryHost)
 	consent := f.do(t, request{path: authorizeURL, host: primaryHost, cookie: session})
 	assertSecurityHeaders(t, consent)
-	for _, want := range []string{"Allow todo-app to use todo?", "<code>records:read</code>", "<code>collections:read</code>",
+	for _, want := range []string{"Allow todo-app to use todo?", "Read records", "<code>records:read</code>", "See the database’s collections", "<code>collections:read</code>",
 		"<code>" + testApp + "/callback</code>", `action="/authorize"`, `name="state" value="xyz"`, `value="approve"`, `value="deny"`} {
 		if consent.Code != http.StatusOK || !strings.Contains(consent.Body.String(), want) {
 			t.Errorf("consent page lacks %q: %d %s", want, consent.Code, consent.Body)
@@ -184,6 +185,7 @@ func TestInvalidConnectRequests(t *testing.T) {
 		"fragment":            func(v url.Values) { v.Set("redirect_uri", "https://evil.example/cb#frag") },
 		"empty fragment":      func(v url.Values) { v.Set("redirect_uri", "https://evil.example/cb#") },
 		"unknown capability":  func(v url.Values) { v.Set("capabilities", "records:everything") },
+		"server capability":   func(v url.Values) { v.Set("capabilities", "records:read,databases:create") },
 	} {
 		query := connectQuery()
 		change(query)
@@ -322,5 +324,21 @@ func TestConnectRedirectsAllowed(t *testing.T) {
 		if rec := f.do(t, request{path: "/authorize?" + query.Encode(), cookie: session}); rec.Code != http.StatusOK {
 			t.Errorf("%s = %d %s", redirect, rec.Code, rec.Body)
 		}
+	}
+}
+
+// Every capability a database-scoped grant can use has a plain-language
+// label; databases:create is refused instead.
+func TestCapabilityLabels(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{auth.CapRecordsRead, auth.CapRecordsWrite, auth.CapRecordsDelete, auth.CapCollectionsRead,
+		auth.CapSchemaRead, auth.CapPoliciesDiscover, auth.CapPoliciesList, auth.CapPoliciesRead, auth.CapPoliciesAdmin,
+		auth.CapAccessExplain, auth.CapAccessSimulate, auth.CapAccessDiagnostics, auth.CapAccessInspectProtected} {
+		if label := capabilityLabel(auth.Capability{Action: action}); label == "" || label == action {
+			t.Errorf("%s has no label", action)
+		}
+	}
+	if got := capabilityLabel(auth.Capability{Action: auth.CapRecordsRead, Collection: "lists"}); got != "Read records in lists" {
+		t.Errorf("collection label = %q", got)
 	}
 }

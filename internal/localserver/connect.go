@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
 	"github.com/strongo/cli-helpers/daemonlifecycle"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
@@ -41,7 +42,7 @@ var connectFields = []string{"client_id", "redirect_uri", "db", "capabilities", 
 // connectView is what the consent and return pages show.
 type connectView struct {
 	App, Database, Redirect                                string
-	Capabilities                                           []string
+	Capabilities                                           []capabilityView
 	Fields                                                 []connectField // the form's hidden inputs
 	DatabaseLabel, AccessLabel, RedirectLabel, Allow, Deny string
 	// Location is where the return page sends the browser.
@@ -49,6 +50,43 @@ type connectView struct {
 }
 
 type connectField struct{ Name, Value string }
+
+// capabilityView is one requested capability: what it lets the app do, and
+// its wire name.
+type capabilityView struct{ Label, Name string }
+
+// capabilityLabels are the copy keys that say what each capability lets an
+// app do on the granted database. databases:create is server-level and is
+// refused in a connect request, so it has none.
+var capabilityLabels = map[string]string{
+	auth.CapRecordsRead:            "capability.records_read",
+	auth.CapRecordsWrite:           "capability.records_write",
+	auth.CapRecordsDelete:          "capability.records_delete",
+	auth.CapCollectionsRead:        "capability.collections_read",
+	auth.CapSchemaRead:             "capability.schema_read",
+	auth.CapPoliciesDiscover:       "capability.policies_discover",
+	auth.CapPoliciesList:           "capability.policies_list",
+	auth.CapPoliciesRead:           "capability.policies_read",
+	auth.CapPoliciesAdmin:          "capability.policies_admin",
+	auth.CapAccessExplain:          "capability.access_explain",
+	auth.CapAccessSimulate:         "capability.access_simulate",
+	auth.CapAccessDiagnostics:      "capability.access_diagnostics",
+	auth.CapAccessInspectProtected: "capability.access_inspect_protected",
+}
+
+// capabilityLabel says what c lets the app do, or c's wire name when there
+// is no label.
+func capabilityLabel(c auth.Capability) string {
+	key, ok := capabilityLabels[c.Action]
+	if !ok {
+		return c.String()
+	}
+	label := uicopy.T(key, nil)
+	if c.Collection != "" {
+		label = uicopy.T("capability.in_collection", map[string]string{"capability": label, "collection": c.Collection})
+	}
+	return label
+}
 
 // authorize serves the consent page to a console session and records its
 // decision. Anyone else — no credential, a bearer token, the instance secret
@@ -101,10 +139,9 @@ func (s *localServer) consent(w http.ResponseWriter, r *http.Request, values url
 		RedirectLabel: uicopy.T("connect.returns_to", nil),
 		Allow:         uicopy.T("connect.allow", nil), Deny: uicopy.T("connect.deny", nil),
 	}
-	for _, capability := range strings.Split(values.Get("capabilities"), ",") {
-		if capability = strings.TrimSpace(capability); capability != "" {
-			view.Capabilities = append(view.Capabilities, capability)
-		}
+	capabilities, _ := auth.ParseCapabilities(values.Get("capabilities")) // valid: checked above
+	for _, capability := range capabilities {
+		view.Capabilities = append(view.Capabilities, capabilityView{Label: capabilityLabel(capability), Name: capability.String()})
 	}
 	for _, name := range connectFields {
 		if value := values.Get(name); value != "" {
@@ -149,7 +186,11 @@ func (s *localServer) checkConnect(r *http.Request, method string, values url.Va
 // connectRequest runs /authorize in openvaultdb-go with values.
 func (s *localServer) connectRequest(r *http.Request, method string, values url.Values) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
-	if message := webRedirectOnly(values); message != "" {
+	message := webRedirectOnly(values)
+	if message == "" {
+		message = databaseCapabilitiesOnly(values)
+	}
+	if message != "" {
 		recorder.Code = http.StatusBadRequest
 		_ = json.NewEncoder(recorder.Body).Encode(v1Error{Error: v1ErrorDetail{Code: "bad_request", Message: message}})
 		return recorder
@@ -189,6 +230,21 @@ func webRedirectOnly(values url.Values) string {
 	allowed := scheme == "https" || scheme == "http" && isLoopbackHost(redirect.Hostname())
 	if !allowed || redirect.User != nil || strings.Contains(raw, "#") {
 		return uicopy.T("connect.redirect_not_web", nil)
+	}
+	return ""
+}
+
+// databaseCapabilitiesOnly refuses server-level capabilities: a connect
+// grant is for one database, where databases:create would do nothing.
+func databaseCapabilitiesOnly(values url.Values) string {
+	capabilities, err := auth.ParseCapabilities(values.Get("capabilities"))
+	if err != nil {
+		return "" // openvaultdb-go says why
+	}
+	for _, capability := range capabilities {
+		if capability.Action == auth.CapDatabasesCreate {
+			return uicopy.T("connect.server_capability", map[string]string{"capability": capability.Action})
+		}
 	}
 	return ""
 }
