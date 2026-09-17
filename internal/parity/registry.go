@@ -6,8 +6,9 @@
 //
 // A row stays Implemented=false — and its surface stays behind the preview
 // gate — until every non-exception cell exists (REQ:increments-keep-parity).
-// Increment 1a filled the CLI and API cells of rows 2–7 and 1b the web
-// routes (web/routes.json); 1c adds the TUI screens. Increment 2 adds rows
+// Increment 1a filled the CLI and API cells of rows 2–7, 1b the web routes
+// (web/routes.json), and 1c (this one) adds row 1 and every TUI cell of
+// rows 1–7 — completing parity for rows 1–7. Increment 2 adds rows
 // 8, 9, 11 and 12.
 package parity
 
@@ -26,18 +27,19 @@ type Row struct {
 
 // Rows is the registry, in matrix order.
 var Rows = []Row{
-	{ID: "2", Capability: "Whole-setup status", CLI: []string{"ovdb status"}, Web: "/",
-		API: []string{"GET /api/local/v1/status", "GET /api/local/v1/home"}},
-	{ID: "3", Capability: "Start server", CLI: []string{"ovdb server start"},
-		Exceptions: []string{"E1"}},
-	{ID: "4", Capability: "Server status", CLI: []string{"ovdb server status"}, Web: "/server",
-		API: []string{"GET /api/local/v1/server"}},
-	{ID: "5", Capability: "Stop or restart server", CLI: []string{"ovdb server stop", "ovdb server restart"},
-		API: []string{"POST /api/local/v1/server/shutdown"}, Exceptions: []string{"E2"}},
-	{ID: "6", Capability: "Open web console (login link)", CLI: []string{"ovdb open"},
-		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}},
-	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"}, Web: "/settings",
-		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}},
+	{ID: "1", Capability: "Guided first run", CLI: []string{"ovdb"}, TUI: "home", Web: "/", Implemented: true},
+	{ID: "2", Capability: "Whole-setup status", CLI: []string{"ovdb status"}, TUI: "home", Web: "/",
+		API: []string{"GET /api/local/v1/status", "GET /api/local/v1/home"}, Implemented: true},
+	{ID: "3", Capability: "Start server", CLI: []string{"ovdb server start"}, TUI: "server",
+		Exceptions: []string{"E1"}, Implemented: true},
+	{ID: "4", Capability: "Server status", CLI: []string{"ovdb server status"}, TUI: "server", Web: "/server",
+		API: []string{"GET /api/local/v1/server"}, Implemented: true},
+	{ID: "5", Capability: "Stop or restart server", CLI: []string{"ovdb server stop", "ovdb server restart"}, TUI: "server",
+		API: []string{"POST /api/local/v1/server/shutdown"}, Exceptions: []string{"E2"}, Implemented: true},
+	{ID: "6", Capability: "Open web console (login link)", CLI: []string{"ovdb open"}, TUI: "server",
+		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}, Implemented: true},
+	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"}, TUI: "settings", Web: "/settings",
+		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}, Implemented: true},
 	{ID: "8", Capability: "Storage choices", CLI: []string{"ovdb engines"}, Web: "/databases/new",
 		API: []string{"GET /api/local/v1/engines"}},
 	{ID: "9", Capability: "Create database (inGitDB, SQLite)", CLI: []string{"ovdb databases create"}, Web: "/databases/new",

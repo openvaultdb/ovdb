@@ -10,17 +10,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
-
-// EnvNonInteractive set to "1" forbids every prompt
-// (first-run-onboarding#REQ:never-block-without-terminal).
-const EnvNonInteractive = "OVDB_NON_INTERACTIVE"
 
 func (a *App) enginesCmd() *cobra.Command {
 	var jsonOut bool
@@ -275,7 +270,7 @@ func (a *App) confirmRemove(cmd *cobra.Command, list func(ctx context.Context) (
 		WithReason(uicopy.T("database.remove.confirm_needed", nil)).
 		WithNext(envelope.Next{Label: uicopy.T("database.remove.confirm_flag", nil), Command: "ovdb databases remove " + id + " --yes"})
 	in, isFile := cmd.InOrStdin().(*os.File)
-	if jsonOut || a.getenv(EnvNonInteractive) == "1" || !isFile || !term.IsTerminal(int(in.Fd())) {
+	if jsonOut || a.getenv(EnvNonInteractive) == "1" || !isFile || !a.isTerminal(in.Fd()) {
 		return false, needed
 	}
 	location := id
