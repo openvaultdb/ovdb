@@ -47,15 +47,15 @@ onMounted(async () => {
   await load()
   const id = query.get('skill')
   const skill = document_.value?.skills.find((s) => s.id === id)
-  if (skill) offer(skill, false)
+  if (skill) offer(skill)
 })
 
-function offer(skill: Skill, focus = true) {
+function offer(skill: Skill) {
   offered.value = skill
   result.value = null
   problem.value = null
   chosen.value = skill.targets.filter((target) => target.detected && target.harness).map((target) => target.harness!)
-  if (focus) void nextTick(() => heading.value?.focus())
+  void nextTick(() => heading.value?.focus())
 }
 
 async function notNow() {

@@ -9,8 +9,16 @@ export const port = () => Number(process.env.OVDB_PORT)
 export const primary = () => `http://ovdb.localhost:${port()}`
 export const fallback = () => `http://127.0.0.1:${port()}`
 
+/** The environment ovdb runs with: the test's own HOME, so skills never reach the real one. */
+export function ovdbEnv(): NodeJS.ProcessEnv {
+  const home = process.env.OVDB_E2E_USER_HOME!
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home }
+  if (process.env.OVDB_E2E_GIT_CONFIG) env.GIT_CONFIG_GLOBAL = process.env.OVDB_E2E_GIT_CONFIG
+  return env
+}
+
 export function ovdb(...args: string[]): string {
-  return execFileSync(process.env.OVDB_E2E_BIN!, args, { env: process.env, encoding: 'utf8' })
+  return execFileSync(process.env.OVDB_E2E_BIN!, args, { env: ovdbEnv(), encoding: 'utf8' })
 }
 
 export interface LoginLink {
