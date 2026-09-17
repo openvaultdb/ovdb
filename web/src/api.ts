@@ -163,7 +163,7 @@ export interface SkillTarget {
   dir: string
   detected: boolean
   installed: boolean
-  state: 'not_installed' | 'installed' | 'update_available' | 'changed'
+  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb'
 }
 
 export interface Skill {

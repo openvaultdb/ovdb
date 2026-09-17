@@ -96,7 +96,7 @@ func padRight(text string, width int) string {
 }
 
 func (a *App) skillsInstallCmd() *cobra.Command {
-	var yes, dryRun, noStart, jsonOut bool
+	var yes, dryRun, noStart, jsonOut, replaceChanged bool
 	var harnesses []string
 	var dir string
 	cmd := &cobra.Command{
@@ -115,7 +115,7 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 				return err
 			}
 			local := a.local(cmd, t)
-			request := skills.InstallRequest{Skill: args[0], Harnesses: harnesses, DryRun: dryRun}
+			request := skills.InstallRequest{Skill: args[0], Harnesses: harnesses, DryRun: dryRun, ReplaceChanged: replaceChanged}
 			if dir != "" {
 				request.Targets = []skills.RequestTarget{{SkillsDir: dir}}
 			}
@@ -129,7 +129,7 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 				body, err = local.DryRunSkill(cmd.Context(), plan)
 			default:
 				if !yes {
-					confirmed, err := a.confirmSkill(cmd, plan, args[0], harnesses, dir, jsonOut)
+					confirmed, err := a.confirmSkill(cmd, &plan, args[0], harnesses, dir, jsonOut)
 					if err != nil || !confirmed {
 						return err
 					}
@@ -168,6 +168,7 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&harnesses, "harness", nil, "AI agent to install for: claude, cursor, codex, … or all (repeatable)")
 	cmd.Flags().StringVar(&dir, "dir", "", "install into this skills folder instead (must be inside your home folder)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would change without writing")
+	cmd.Flags().BoolVar(&replaceChanged, "replace-changed", false, "replace a skill you changed since OVDB installed it (your changes are lost)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "install without asking; an AI agent passes it only after the person said yes")
 	cmd.Flags().BoolVar(&noStart, "no-start", false, "fail instead of starting the OVDB server")
 	jsonFlag(cmd, &jsonOut)
@@ -177,10 +178,13 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 // confirmSkill shows the skill's purpose and exact directories and asks in a
 // terminal; anywhere else it fails with confirmation_required naming --yes,
 // having written nothing (ai-agent-skills#REQ:explicit-consent-to-install).
-func (a *App) confirmSkill(cmd *cobra.Command, plan client.SkillPlan, id string, harnesses []string, dir string, jsonOut bool) (bool, error) {
-	var dirs []string
+func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string, harnesses []string, dir string, jsonOut bool) (bool, error) {
+	var dirs, changed []string
 	for _, target := range plan.Targets {
 		dirs = append(dirs, target.Dir)
+		if target.State == skills.StateChanged {
+			changed = append(changed, target.Dir)
+		}
 	}
 	command := "ovdb skills install " + id
 	for _, harness := range harnesses {
@@ -189,8 +193,15 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan client.SkillPlan, id string,
 	if dir != "" {
 		command += " --dir " + quoteArg(dir)
 	}
+	if plan.Request.ReplaceChanged {
+		command += " --replace-changed"
+	}
+	reason := uicopy.T("skills.install.confirm_needed", map[string]string{"dirs": strings.Join(dirs, ", ")})
+	if plan.Request.ReplaceChanged && len(changed) > 0 {
+		reason += " " + uicopy.T("skills.install.replaces_changes", map[string]string{"dirs": strings.Join(changed, ", ")})
+	}
 	needed := envelope.New(envelope.ConfirmationRequired, uicopy.T("skills.install.failed", map[string]string{"name": plan.Skill.Name})).
-		WithReason(uicopy.T("skills.install.confirm_needed", map[string]string{"dirs": strings.Join(dirs, ", ")})).
+		WithReason(reason).
 		WithNext(envelope.Next{Label: uicopy.T("skills.install.confirm_flag", nil), Command: command + " --yes"})
 	in, isFile := cmd.InOrStdin().(*os.File)
 	if jsonOut || a.getenv(EnvNonInteractive) == "1" || !isFile || !a.isTerminal(in.Fd()) {
@@ -204,11 +215,17 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan client.SkillPlan, id string,
 	say(w, "")
 	say(w, uicopy.T("skills.consent.install_for", nil))
 	for _, target := range plan.Targets {
-		say(w, "  "+targetLine(target, false))
+		say(w, "  "+targetLine(target, true))
 	}
+	reader := bufio.NewReader(in)
 	_, _ = io.WriteString(w, uicopy.T("skills.install.confirm", nil))
-	answer, _ := bufio.NewReader(in).ReadString('\n')
-	if answer = strings.ToLower(strings.TrimSpace(answer)); answer == "y" || answer == "yes" {
+	if answer, _ := reader.ReadString('\n'); isYes(answer) {
+		// A copy the person changed is replaced only on a second, explicit yes.
+		if len(changed) > 0 && !plan.Request.ReplaceChanged {
+			_, _ = io.WriteString(w, uicopy.T("skills.install.confirm_replace", map[string]string{"dirs": strings.Join(changed, ", ")}))
+			answer, _ = reader.ReadString('\n')
+			plan.Request.ReplaceChanged = isYes(answer)
+		}
 		return true, nil
 	}
 	say(cmd.OutOrStdout(), uicopy.T("skills.install.cancelled", nil))
@@ -220,4 +237,9 @@ func quoteArg(arg string) string {
 		return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 	}
 	return arg
+}
+
+func isYes(answer string) bool {
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
 }

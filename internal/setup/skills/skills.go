@@ -59,6 +59,10 @@ const (
 	StateNotInstalled    = "not_installed"
 	StateInstalled       = "installed"
 	StateUpdateAvailable = "update_available"
+	// StateChanged is an OVDB-installed copy the person edited since.
+	StateChanged = "changed"
+	// StateNotOVDB is a folder of the same name OVDB didn't install.
+	StateNotOVDB = "not_ovdb"
 )
 
 // Publisher is the skillsync publisher of the CLI and of every bundle.
@@ -159,7 +163,7 @@ type Target struct {
 	Dir       string `json:"dir"`
 	Detected  bool   `json:"detected"`
 	Installed bool   `json:"installed"`
-	// State is StateNotInstalled, StateInstalled or StateUpdateAvailable.
+	// State is one of the State constants.
 	State string `json:"state"`
 }
 
@@ -207,31 +211,45 @@ func (e Env) target(h cobracmd.Harness, d Definition) Target {
 }
 
 func (t *Target) setState(state string) {
-	t.State, t.Installed = state, state != StateNotInstalled
+	t.State = state
+	t.Installed = state == StateInstalled || state == StateUpdateAvailable || state == StateChanged
 }
 
 // stateOf compares d in skillsDir with this build's copy through a skillsync
-// dry run, which reads and never writes: unchanged is installed, an update
-// is an older OVDB's copy.
+// dry run, which reads and never writes.
 func stateOf(skillsDir string, d Definition) string {
-	if !installed(skillsDir, d) {
+	if _, err := os.Lstat(filepath.Join(skillsDir, d.Dir)); err != nil {
 		return StateNotInstalled
 	}
 	cfg, err := Build{}.config(d)
 	if err != nil {
-		return StateInstalled
+		return StateNotOVDB
 	}
 	report, err := skillsync.Sync(context.Background(), cfg, skillsync.Options{Dir: skillsDir, DryRun: true})
 	if err != nil {
-		return StateInstalled
+		return StateNotOVDB
 	}
 	for _, change := range report.Changes {
-		if change.Name == d.Dir && change.Action == skillsync.Updated {
+		if change.Name != d.Dir {
+			continue
+		}
+		switch {
+		case change.Action == skillsync.Updated:
 			return StateUpdateAvailable
+		case change.Action == skillsync.Unchanged:
+			return StateInstalled
+		case change.Action == skillsync.Conflict && change.Reason == modifiedTarget:
+			return StateChanged
+		case change.Action == skillsync.Added:
+			return StateNotInstalled
 		}
 	}
-	return StateInstalled
+	return StateNotOVDB
 }
+
+// modifiedTarget is skillsync's conflict reason for an owned skill whose
+// files changed since it installed them.
+const modifiedTarget = "modified target"
 
 // installed reports whether d is installed in skillsDir: skillsync records
 // the skill's plugin and the skill's folder is there.
@@ -306,6 +324,8 @@ type Installed struct {
 	// UpdateAvailableFor lists the harnesses whose copy an older ovdb
 	// installed; `ovdb skills install <id>` updates it.
 	UpdateAvailableFor []string `json:"update_available_for"`
+	// ChangedFor lists the harnesses whose copy the person edited.
+	ChangedFor []string `json:"changed_for"`
 }
 
 // Status lists every skill and where it is installed, reading only
@@ -313,11 +333,14 @@ type Installed struct {
 func Status(e Env) []Installed {
 	out := []Installed{}
 	for _, d := range Definitions {
-		entry := Installed{ID: d.ID, InstalledFor: []string{}, UpdateAvailableFor: []string{}}
+		entry := Installed{ID: d.ID, InstalledFor: []string{}, UpdateAvailableFor: []string{}, ChangedFor: []string{}}
 		for _, h := range cobracmd.DefaultHarnesses {
 			switch stateOf(h.SkillsDir(e.Home, e.Getenv), d) {
 			case StateUpdateAvailable:
 				entry.UpdateAvailableFor = append(entry.UpdateAvailableFor, h.ID)
+				entry.InstalledFor = append(entry.InstalledFor, h.ID)
+			case StateChanged:
+				entry.ChangedFor = append(entry.ChangedFor, h.ID)
 				entry.InstalledFor = append(entry.InstalledFor, h.ID)
 			case StateInstalled:
 				entry.InstalledFor = append(entry.InstalledFor, h.ID)
@@ -344,6 +367,9 @@ type InstallRequest struct {
 	Harnesses []string        `json:"harnesses,omitempty"`
 	Targets   []RequestTarget `json:"targets,omitempty"`
 	DryRun    bool            `json:"dry_run,omitempty"`
+	// ReplaceChanged replaces a copy the person edited since OVDB installed
+	// it; only after they agreed to lose those edits.
+	ReplaceChanged bool `json:"replace_changed,omitempty"`
 }
 
 // Outcome is what installing did in one target.
@@ -569,19 +595,29 @@ func (b Build) config(d Definition) (skillsync.Config, error) {
 // target and only d's bundle (capability 21). Targets must already be checked.
 // Every target is attempted; a failure in any makes the whole install fail,
 // naming each outcome.
-func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun bool) (InstallDocument, error) {
+func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged bool) (InstallDocument, error) {
 	doc := InstallDocument{Schema: envelope.Schema, Skill: d.ID, Dir: d.Dir, Name: uicopy.T(d.nameKey, nil), DryRun: dryRun, AlreadyUpToDate: true}
 	cfg, err := b.config(d)
 	if err != nil {
 		return doc, envelope.New(envelope.Internal, installFailed(d)).WithReason(redact.String(err.Error()))
 	}
 	var failures []string
+	conflictsOnly, changed := true, false
 	for _, t := range targets {
 		outcome := Outcome{Target: e.describeRequest(d, t)}
+		if replaceChanged && !dryRun && outcome.State == StateChanged {
+			// Owned by this skill's plugin and edited since: the person agreed
+			// to replace it, so it goes and a fresh copy is installed.
+			if err := os.RemoveAll(outcome.Dir); err != nil {
+				return doc, envelope.New(envelope.StorageUnavailable, installFailed(d)).
+					WithReason(uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": redact.String(err.Error())}))
+			}
+		}
 		report, err := skillsync.Sync(ctx, cfg, skillsync.Options{Dir: t.SkillsDir, DryRun: dryRun})
 		switch {
 		case err != nil:
 			outcome.Result, outcome.Reason = string(skillsync.Conflict), redact.String(err.Error())
+			conflictsOnly = false
 			failures = append(failures, uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": outcome.Reason}))
 		default:
 			outcome.Result = string(skillsync.Unchanged)
@@ -590,7 +626,11 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 					outcome.Result, outcome.Reason = string(change.Action), change.Reason
 				}
 			}
-			if outcome.Result == string(skillsync.Conflict) {
+			switch {
+			case outcome.Result == string(skillsync.Conflict) && outcome.Reason == modifiedTarget:
+				changed = true
+				failures = append(failures, uicopy.T("skills.install.target_changed", map[string]string{"path": outcome.Dir}))
+			case outcome.Result == string(skillsync.Conflict):
 				failures = append(failures, uicopy.T("skills.install.target_conflict", map[string]string{"path": outcome.Dir}))
 			}
 		}
@@ -603,9 +643,16 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 		doc.Outcomes = append(doc.Outcomes, outcome)
 	}
 	if len(failures) > 0 {
-		return doc, envelope.New(envelope.StorageUnavailable, installFailed(d)).
-			WithReason(strings.Join(failures, " ")).
-			WithNext(envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
+		code := envelope.StorageUnavailable
+		if conflictsOnly {
+			code = envelope.AlreadyExists
+		}
+		var next []envelope.Next
+		if changed {
+			next = append(next, envelope.Next{Label: uicopy.T("skills.next.replace_changed", nil), Command: "ovdb skills install " + d.ID + " --replace-changed"})
+		}
+		next = append(next, envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
+		return doc, envelope.New(code, installFailed(d)).WithReason(strings.Join(failures, " ")).WithNext(next...)
 	}
 	doc.Next = installedNext(d)
 	return doc, nil

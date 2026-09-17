@@ -140,3 +140,34 @@ func TestSkillInstallThroughServer(t *testing.T) {
 		t.Errorf("list = %s", human.stdout)
 	}
 }
+
+// Review F7 through the CLI: an edited skill is listed as changed since
+// install, installing over it fails with already_exists, and
+// --replace-changed replaces it only with the person's yes.
+func TestSkillChangedSinceInstall(t *testing.T) {
+	e := previewEnv(t)
+	e.vars[cli.EnvNonInteractive] = "1"
+	e.ok("skills", "install", "todo-demo", "--harness", "claude", "--yes")
+	edited := filepath.Join(e.userHome(), ".claude", "skills", "openvaultdb-todo-demo", "SKILL.md")
+	if err := os.WriteFile(edited, []byte("my notes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if list := e.ok("skills", "list"); !strings.Contains(list.stdout, "changed since install") {
+		t.Errorf("list = %s", list.stdout)
+	}
+	problem := decodeError(t, e.run("skills", "install", "todo-demo", "--harness", "claude", "--yes", "--json"), envelope.AlreadyExists)
+	if problem.Next[0].Command != "ovdb skills install todo-demo --replace-changed" {
+		t.Errorf("next = %+v", problem.Next)
+	}
+	consent := decodeError(t, e.run("skills", "install", "todo-demo", "--harness", "claude", "--replace-changed", "--json"), envelope.ConfirmationRequired)
+	if !strings.Contains(consent.Reason, "replaces the changes") && strings.Contains(consent.Next[0].Command, "--replace-changed --yes") {
+		t.Errorf("consent = %+v", consent)
+	}
+	if data, _ := os.ReadFile(edited); string(data) != "my notes" {
+		t.Fatal("overwritten without consent")
+	}
+	e.ok("skills", "install", "todo-demo", "--harness", "claude", "--replace-changed", "--yes")
+	if data, _ := os.ReadFile(edited); string(data) == "my notes" {
+		t.Error("not replaced")
+	}
+}

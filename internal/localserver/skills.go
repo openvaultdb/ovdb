@@ -84,9 +84,11 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 			Skill     string   `json:"skill"`
 			Harnesses []string `json:"harnesses"`
 			DryRun    bool     `json:"dry_run"`
+			// The consent step's "replace my changes" choice.
+			ReplaceChanged bool `json:"replace_changed"`
 		}
 		err = decoder.Decode(&sessionRequest)
-		request = skills.InstallRequest{Skill: sessionRequest.Skill, Harnesses: sessionRequest.Harnesses, DryRun: sessionRequest.DryRun}
+		request = skills.InstallRequest{Skill: sessionRequest.Skill, Harnesses: sessionRequest.Harnesses, DryRun: sessionRequest.DryRun, ReplaceChanged: sessionRequest.ReplaceChanged}
 	} else {
 		err = decoder.Decode(&request)
 	}
@@ -122,7 +124,7 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	document, err := skills.Build{Version: s.opts.Record.Version}.Install(r.Context(), env, d, targets, request.DryRun)
+	document, err := skills.Build{Version: s.opts.Record.Version}.Install(r.Context(), env, d, targets, request.DryRun, request.ReplaceChanged)
 	if err != nil {
 		writeError(w, err)
 		return

@@ -99,7 +99,7 @@ func (l *Local) DryRunSkill(ctx context.Context, plan SkillPlan) ([]byte, error)
 		return nil, err
 	}
 	d, _ := skills.Find(plan.Skill.ID)
-	document, err := skills.Build{Version: l.Version}.Install(ctx, env, d, plan.Request.Targets, true)
+	document, err := skills.Build{Version: l.Version}.Install(ctx, env, d, plan.Request.Targets, true, false)
 	if err != nil {
 		return nil, err
 	}

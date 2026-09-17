@@ -111,7 +111,7 @@ describe('AI agent skills', () => {
     await consent.get('[data-testid="install-skill"]').trigger('click')
     await flushPromises()
     expect(calls.filter((c) => c.method === 'POST')).toEqual([
-      { method: 'POST', path: '/api/local/v1/skills/install', body: { skill: 'todo-demo', harnesses: ['claude'] } },
+      { method: 'POST', path: '/api/local/v1/skills/install', body: { skill: 'todo-demo', harnesses: ['claude'], replace_changed: false } },
     ])
     const result = wrapper.get('[data-testid="skill-result"]')
     expect(result.text()).toContain('Installed the TODO AI skill')
@@ -151,6 +151,31 @@ describe('AI agent skills', () => {
     await wrapper.get('[data-testid="not-now"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="skill-consent"]').exists()).toBe(false)
+  })
+
+  it('offers a changed copy unticked, and replaces it only when ticked (review F7)', async () => {
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const changed = document()
+    changed.skills[1].targets[0] = { ...changed.skills[1].targets[0], installed: true, state: 'changed' }
+    changed.skills[1].targets[1] = { ...changed.skills[1].targets[1], detected: true, state: 'not_ovdb' }
+    const calls = installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/skills': () => json(200, changed),
+      'POST /api/local/v1/skills/install': () => json(200, installedDocument),
+    })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    const claude = wrapper.get('[data-harness="claude"]')
+    expect((claude.get('input').element as HTMLInputElement).checked).toBe(false)
+    expect(claude.text()).toContain('changed since install — installing replaces your changes')
+    expect(wrapper.get('[data-harness="codex"]').text()).toBe('Codex — another skill with this name')
+    await wrapper.get('[data-testid="install-skill"]').trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+    await claude.get('input').setValue(true)
+    await wrapper.get('[data-testid="install-skill"]').trigger('click')
+    await flushPromises()
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: true })
   })
 
   it('shows a refusal with what to do', async () => {

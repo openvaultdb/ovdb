@@ -10,7 +10,7 @@
 // Not now returns to `from`.
 import { computed, nextTick, onMounted, ref } from 'vue'
 
-import { api, type ApiError, type Skill, type SkillInstallDocument, type SkillsDocument } from '../api'
+import { api, type ApiError, type Skill, type SkillInstallDocument, type SkillTarget, type SkillsDocument } from '../api'
 import OvBackLink from '../components/OvBackLink.vue'
 import OvButton from '../components/OvButton.vue'
 import OvCard from '../components/OvCard.vue'
@@ -50,11 +50,16 @@ onMounted(async () => {
   if (skill) offer(skill)
 })
 
+function selectable(target: SkillTarget): boolean {
+  return target.detected && !!target.harness && target.state !== 'not_ovdb'
+}
+
 function offer(skill: Skill) {
   offered.value = skill
   result.value = null
   problem.value = null
-  chosen.value = skill.targets.filter((target) => target.detected && target.harness).map((target) => target.harness!)
+  // A copy the person changed since install is replaced only when they tick it.
+  chosen.value = skill.targets.filter((target) => selectable(target) && target.state !== 'changed').map((target) => target.harness!)
   void nextTick(() => heading.value?.focus())
 }
 
@@ -75,6 +80,7 @@ async function install() {
   const response = await api<SkillInstallDocument>('POST', '/api/local/v1/skills/install', {
     skill: offered.value.id,
     harnesses: chosen.value,
+    replace_changed: offered.value.targets.some((target) => target.state === 'changed' && chosen.value.includes(target.harness!)),
   })
   installing.value = false
   if (response.ok) {
@@ -128,7 +134,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
           <fieldset class="flex flex-col gap-3">
             <legend class="mb-2 font-semibold">{{ t('skills.consent.install_for') }}</legend>
             <template v-for="target in offered.targets" :key="target.harness ?? target.dir">
-              <label v-if="target.detected" class="flex cursor-pointer items-start gap-3" :data-harness="target.harness">
+              <label v-if="selectable(target)" class="flex cursor-pointer items-start gap-3" :data-harness="target.harness">
                 <input
                   v-model="chosen"
                   type="checkbox"
@@ -138,11 +144,13 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
                 <span class="flex min-w-0 flex-col">
                   <span class="font-medium">{{ target.name }}</span>
                   <code class="font-mono text-sm [overflow-wrap:anywhere] text-muted">{{ target.dir }}</code>
+                  <span v-if="target.state === 'changed'" class="text-sm text-muted">{{ t('skills.consent.changed') }}</span>
+                  <span v-else-if="target.state === 'update_available'" class="text-sm text-muted">{{ t('skills.consent.update_available') }}</span>
                 </span>
               </label>
               <p v-else class="flex items-start gap-3 text-muted" :data-harness="target.harness">
                 <span aria-hidden="true" class="mt-1 size-5 shrink-0"></span>
-                <span>{{ target.name }} — {{ t('skills.state.not_found') }}</span>
+                <span>{{ target.name }} — {{ target.state === 'not_ovdb' ? t('skills.state.not_ovdb') : t('skills.state.not_found') }}</span>
               </p>
             </template>
           </fieldset>

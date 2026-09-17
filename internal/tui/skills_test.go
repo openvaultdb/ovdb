@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 func userHomeOf(m Model) string { return m.local.Getenv("HOME") }
@@ -125,5 +127,54 @@ func TestSkillsScreenFromHome(t *testing.T) {
 		if lines := strings.Count(small.View().Content, "\n") + 1; lines > size[1] {
 			t.Errorf("%v: %d lines:\n%s", size, lines, stripANSI(small.View().Content))
 		}
+	}
+}
+
+// Review F7 in the TUI: a skill the person changed since install is offered
+// unticked, says installing replaces the changes, and is replaced only when
+// ticked; someone else's folder of that name can't be chosen.
+func TestConsentForChangedSkill(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 80, 24)
+	home := userHomeOf(m)
+	claude := filepath.Join(home, ".claude", "skills", "openvaultdb-todo-demo")
+	codex := filepath.Join(home, ".codex", "skills", "openvaultdb-todo-demo")
+	for _, dir := range []string{claude, codex} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("mine"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An OVDB install of the Claude copy, then edited.
+	env, _ := skills.EnvFrom(m.local.Getenv)
+	d, _ := skills.Find(skills.Todo)
+	if err := os.RemoveAll(claude); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (skills.Build{}).Install(t.Context(), env, d, []skills.RequestTarget{{Harness: "claude", SkillsDir: filepath.Dir(claude)}}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claude, "SKILL.md"), []byte("edited"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(skills.Todo))
+	view := flat(m.View().Content)
+	for _, want := range []string{"> [ ] Claude Code", "changed since install — installing replaces your changes", "Codex — another skill with this name"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("consent lacks %q:\n%s", want, view)
+		}
+	}
+	if items := m.skills.consentItems(); len(items) != 3 {
+		t.Errorf("items = %v", items)
+	}
+	if harnesses, replace := m.skills.chosen(); len(harnesses) != 0 || replace {
+		t.Errorf("chosen by default = %v %v", harnesses, replace)
+	}
+	m = send(t, m, key("space"))
+	if harnesses, replace := m.skills.chosen(); len(harnesses) != 1 || !replace {
+		t.Errorf("chosen = %v %v", harnesses, replace)
 	}
 }

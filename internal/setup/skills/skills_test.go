@@ -105,7 +105,7 @@ func mustInstall(t *testing.T, e Env, request InstallRequest) InstallDocument {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := Build{Version: "1.2.3"}.Install(context.Background(), e, d, targets, request.DryRun)
+	doc, err := Build{Version: "1.2.3"}.Install(context.Background(), e, d, targets, request.DryRun, request.ReplaceChanged)
 	if err != nil {
 		t.Fatalf("install %s: %v", request.Skill, err)
 	}
@@ -198,7 +198,7 @@ func TestDryRunAndConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
-	_, err := Build{}.Install(context.Background(), e, d, targets, false)
+	_, err := Build{}.Install(context.Background(), e, d, targets, false, false)
 	if problem := envelope.As(err); problem == nil || !strings.Contains(problem.Reason, "wasn't installed by OVDB") {
 		t.Fatalf("conflict = %v", err)
 	}
@@ -344,5 +344,57 @@ func TestUpdateAvailable(t *testing.T) {
 	}
 	if state := Inspect(e).Skills[1].Targets[0].State; state != StateInstalled {
 		t.Errorf("after the update: %s", state)
+	}
+}
+
+// Review F7: an OVDB-installed skill the person edited is "changed since
+// install"; installing refuses with already_exists naming that, and replaces
+// it only when asked to (ReplaceChanged). Someone else's folder is never
+// replaced.
+func TestChangedSinceInstall(t *testing.T) {
+	e := testEnv(t)
+	mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	edited := filepath.Join(e.Home, ".claude", "skills", "openvaultdb-todo-demo", "SKILL.md")
+	if err := os.WriteFile(edited, []byte("my own notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if target := Inspect(e).Skills[1].Targets[0]; target.State != StateChanged || !target.Installed {
+		t.Errorf("state = %+v", target)
+	}
+	d, targets, _ := e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	_, err := Build{}.Install(context.Background(), e, d, targets, false, false)
+	problem := envelope.As(err)
+	if problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "changed since OVDB installed it") ||
+		len(problem.Next) == 0 || !strings.Contains(problem.Next[0].Command, "--replace-changed") {
+		t.Fatalf("install over an edit = %+v", problem)
+	}
+	if data, _ := os.ReadFile(edited); string(data) != "my own notes" {
+		t.Error("the edit was overwritten without being asked")
+	}
+	doc, err := Build{}.Install(context.Background(), e, d, targets, false, true)
+	if err != nil || doc.Outcomes[0].State != StateInstalled {
+		t.Fatalf("replace = %+v %v", doc, err)
+	}
+	if data, _ := os.ReadFile(edited); string(data) != skillText(t, "openvaultdb-todo-demo") {
+		t.Error("not replaced")
+	}
+
+	foreign := filepath.Join(e.Home, ".codex", "skills", "openvaultdb-todo-demo", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(foreign), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(foreign, []byte("someone else's"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, targets, _ = e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"codex"}})
+	_, err = Build{}.Install(context.Background(), e, d, targets, false, true)
+	if problem := envelope.As(err); problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "wasn't installed by OVDB") {
+		t.Fatalf("foreign = %+v", err)
+	}
+	if data, _ := os.ReadFile(foreign); string(data) != "someone else's" {
+		t.Error("someone else's folder was replaced")
+	}
+	if state := Inspect(e).Skills[1].Targets[1].State; state != StateNotOVDB {
+		t.Errorf("foreign state = %s", state)
 	}
 }

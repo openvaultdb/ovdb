@@ -72,10 +72,10 @@ func (m Model) loadSkillsCmd(offer string) tea.Cmd {
 	}
 }
 
-func (m Model) installSkillCmd(id string, harnesses []string) tea.Cmd {
+func (m Model) installSkillCmd(id string, harnesses []string, replaceChanged bool) tea.Cmd {
 	local, ctx := m.local, m.ctx
 	return func() tea.Msg {
-		plan, err := local.PlanSkill(skills.InstallRequest{Skill: id, Harnesses: harnesses})
+		plan, err := local.PlanSkill(skills.InstallRequest{Skill: id, Harnesses: harnesses, ReplaceChanged: replaceChanged})
 		if err != nil {
 			return skillInstalledMsg{err: err}
 		}
@@ -126,9 +126,16 @@ func (s *skillsScreen) openConsent(id string) {
 		skill := s.document.Skills[i]
 		s.consent, s.cursor, s.selected = &skill, 0, map[string]bool{}
 		for _, target := range skill.Targets {
-			s.selected[target.Harness] = target.Detected
+			// A copy the person changed is replaced only when they tick it.
+			s.selected[target.Harness] = selectable(target) && target.State != skills.StateChanged
 		}
 	}
+}
+
+// selectable reports whether target can be chosen: a found agent whose
+// folder of this name, if any, OVDB installed.
+func selectable(target skills.Target) bool {
+	return target.Detected && target.State != skills.StateNotOVDB
 }
 
 // consentItems are the consent step's cursor stops: each found agent, then
@@ -136,7 +143,7 @@ func (s *skillsScreen) openConsent(id string) {
 func (s skillsScreen) consentItems() []string {
 	var items []string
 	for _, target := range s.consent.Targets {
-		if target.Detected {
+		if selectable(target) {
 			items = append(items, target.Harness)
 		}
 	}
@@ -148,14 +155,16 @@ const (
 	itemNotNow  = "\x00not-now"
 )
 
-func (s skillsScreen) chosen() []string {
-	var harnesses []string
+// chosen is the ticked agents, and whether one of them replaces a copy the
+// person changed.
+func (s skillsScreen) chosen() (harnesses []string, replaceChanged bool) {
 	for _, target := range s.consent.Targets {
-		if target.Detected && s.selected[target.Harness] {
+		if selectable(target) && s.selected[target.Harness] {
 			harnesses = append(harnesses, target.Harness)
+			replaceChanged = replaceChanged || target.State == skills.StateChanged
 		}
 	}
-	return harnesses
+	return harnesses, replaceChanged
 }
 
 func (m Model) updateSkills(key string) (tea.Model, tea.Cmd) {
@@ -190,12 +199,12 @@ func (m Model) updateSkills(key string) (tea.Model, tea.Cmd) {
 			if key != "enter" {
 				return m, nil
 			}
-			harnesses := m.skills.chosen()
+			harnesses, replaceChanged := m.skills.chosen()
 			if len(harnesses) == 0 {
 				return m, nil
 			}
 			m.busy = &busyState{label: uicopy.T("skills.installing", map[string]string{"name": m.skills.consent.Name})}
-			return m, tea.Batch(m.installSkillCmd(m.skills.consent.ID, harnesses), tickCmd())
+			return m, tea.Batch(m.installSkillCmd(m.skills.consent.ID, harnesses, replaceChanged), tickCmd())
 		case itemNotNow:
 			if key != "enter" {
 				return m, nil
@@ -298,8 +307,12 @@ func (m Model) viewConsent() string {
 	b.WriteString("\n")
 	items := s.consentItems()
 	for _, target := range s.consent.Targets {
-		if !target.Detected {
-			b.WriteString(mutedStyle.Render(hangingWrap("      ", target.Name+" — "+uicopy.T("skills.state.not_found", nil), width)))
+		if !selectable(target) {
+			state := uicopy.T("skills.state.not_found", nil)
+			if target.State == skills.StateNotOVDB {
+				state = uicopy.T("skills.state.not_ovdb", nil)
+			}
+			b.WriteString(mutedStyle.Render(hangingWrap("      ", target.Name+" — "+state, width)))
 			b.WriteString("\n")
 			continue
 		}
@@ -313,6 +326,10 @@ func (m Model) viewConsent() string {
 		}
 		b.WriteString(style.Render(cursor + box + target.Name))
 		b.WriteString("\n")
+		if target.State == skills.StateChanged || target.State == skills.StateUpdateAvailable {
+			b.WriteString(mutedStyle.Render(indentWrap("      ", uicopy.T("skills.consent."+target.State, nil), width)))
+			b.WriteString("\n")
+		}
 		b.WriteString(indentWrap("      ", target.Dir, width))
 		b.WriteString("\n")
 	}
@@ -326,7 +343,7 @@ func (m Model) viewConsent() string {
 		if items[s.cursor] == item {
 			cursor, style = "> ", selectedItemStyle
 		}
-		if item == itemInstall && len(s.chosen()) == 0 {
+		if harnesses, _ := s.chosen(); item == itemInstall && len(harnesses) == 0 {
 			style = mutedStyle
 		}
 		b.WriteString(style.Render(cursor + label))
