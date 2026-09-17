@@ -1,54 +1,6 @@
 @import "tailwindcss";
 
-/*
- * OVDB console design tokens. Colours are CSS variables so the console
- * follows the OS light/dark preference (first-run-onboarding
- * #REQ:web-accessibility-basics); every text pair meets WCAG 2.1 AA.
- * internal/localserver/assets/page.css repeats the core tokens for the
- * Go-rendered landing and sign-in pages.
- */
-:root {
-  color-scheme: light dark;
-  --ov-bg: #f7f6f2;
-  --ov-surface: #ffffff;
-  --ov-surface-2: #f1efe9;
-  --ov-ink: #1d2327;
-  --ov-muted: #56616b;
-  --ov-line: #e3e0d8;
-  --ov-accent: #1f5f8b;
-  --ov-accent-hover: #174a6d;
-  --ov-on-accent: #ffffff;
-  --ov-accent-soft: #e5eef5;
-  --ov-ok: #1b6e43;
-  --ov-ok-soft: #e1f1e7;
-  --ov-warn: #7a4f00;
-  --ov-warn-soft: #faf0d9;
-  --ov-danger: #a8231b;
-  --ov-danger-soft: #fae8e6;
-  --ov-code: #efece5;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ov-bg: #121416;
-    --ov-surface: #1b1e21;
-    --ov-surface-2: #22262a;
-    --ov-ink: #e8eaec;
-    --ov-muted: #a3acb5;
-    --ov-line: #2f353a;
-    --ov-accent: #7fb8e6;
-    --ov-accent-hover: #a3cdee;
-    --ov-on-accent: #0d1b26;
-    --ov-accent-soft: #1b2b38;
-    --ov-ok: #74d19c;
-    --ov-ok-soft: #16301f;
-    --ov-warn: #f0c36b;
-    --ov-warn-soft: #33291a;
-    --ov-danger: #f2968d;
-    --ov-danger-soft: #3a1f1d;
-    --ov-code: #24292d;
-  }
-}
+@import "./tokens.css";
 
 @theme inline {
   --color-bg: var(--ov-bg);

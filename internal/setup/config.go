@@ -50,9 +50,12 @@ type ServerConfig struct {
 // ConfigDocument is the body of GET/PUT /api/local/v1/config and the --json
 // output of `ovdb config get|set`.
 type ConfigDocument struct {
-	Schema int             `json:"schema"`
-	Config Config          `json:"config"`
-	Next   []envelope.Next `json:"next"`
+	Schema int    `json:"schema"`
+	Config Config `json:"config"`
+	// Changed is set on a change's result: false when the value was
+	// already the one asked for, so nothing needs a restart.
+	Changed *bool           `json:"changed,omitempty"`
+	Next    []envelope.Next `json:"next"`
 }
 
 // ConfigChange is the body of PUT /api/local/v1/config.
@@ -96,10 +99,14 @@ func ApplyConfigChange(dirs paths.Dirs, change ConfigChange, serverRunning bool)
 	if err != nil {
 		return ConfigDocument{}, err
 	}
+	before, _ := yaml.Marshal(config)
 	switch change.Key {
 	case KeyServerPort:
 		port, portErr := ParsePort(change.Value, KeyServerPort)
 		if portErr != nil {
+			// The offered fix for a bad value is to look at the setting,
+			// not to start a server on the default port.
+			portErr.Next = []envelope.Next{{Label: uicopy.T("next.config_get", nil), Command: "ovdb config get " + KeyServerPort}}
 			return ConfigDocument{}, portErr
 		}
 		config.Server.Port = port
@@ -116,10 +123,32 @@ func ApplyConfigChange(dirs paths.Dirs, change ConfigChange, serverRunning bool)
 	if err != nil {
 		return ConfigDocument{}, err
 	}
+	changed := string(data) != string(before)
+	if !changed {
+		document := NewConfigDocument(config, false)
+		document.Changed = &changed
+		return document, nil
+	}
 	if err := paths.WriteFilePrivate(filepath.Join(dirs.Home, ConfigFile), data); err != nil {
 		return ConfigDocument{}, err
 	}
-	return NewConfigDocument(config, serverRunning), nil
+	document := NewConfigDocument(config, serverRunning)
+	document.Changed = &changed
+	return document, nil
+}
+
+// NormalizeOrigins cleans origins read from a hand-edited config.yaml the
+// way ParseOrigins cleans CLI input, dropping entries that are not origins
+// (and a trailing slash, which browsers never send).
+func NormalizeOrigins(origins []string) []string {
+	var out []string
+	for _, origin := range origins {
+		parsed, err := ParseOrigins(strings.TrimSuffix(strings.TrimSpace(origin), "/"))
+		if err == nil {
+			out = append(out, parsed...)
+		}
+	}
+	return out
 }
 
 // UnknownConfigKey is invalid_argument naming the supported keys.

@@ -1,67 +1,62 @@
-/* Styles for the pages the Go server renders without the console bundle:
-   the landing page and the sign-in hand-off. The tokens mirror
-   web/src/style.css so both look like one product. Served as a file because
-   the Content-Security-Policy (default-src 'self') refuses inline styles. */
-:root {
-  color-scheme: light dark;
-  --bg: #f7f6f2;
-  --surface: #ffffff;
-  --ink: #1d2327;
-  --muted: #56616b;
-  --line: #e3e0d8;
-  --accent: #1f5f8b;
-  --code-bg: #efece5;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121416;
-    --surface: #1b1e21;
-    --ink: #e8eaec;
-    --muted: #a3acb5;
-    --line: #2d3237;
-    --accent: #7fb8e6;
-    --code-bg: #24282c;
-  }
-}
+/* Layout for the pages the Go server renders without the console bundle:
+   the landing page and the sign-in hand-off. The colours come from
+   web/src/tokens.css, which is served ahead of this file; the header and
+   column match the console's so signing in doesn't make the page jump.
+   Served as a file because the CSP (default-src 'self') refuses inline styles. */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font: 17px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--ov-bg);
+  color: var(--ov-ink);
+  font: 1.0625rem/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
-.page { max-width: 36rem; margin: 0 auto; padding: 3.5rem 1rem 3rem; }
-.brand { margin: 0 0 2.5rem; font-weight: 650; letter-spacing: -0.01em; font-size: 1rem; }
-.brand span { color: var(--muted); font-weight: 400; }
+.bar { border-bottom: 1px solid var(--ov-line); }
+.column { max-width: 48rem; margin: 0 auto; padding-left: 1rem; padding-right: 1rem; }
+@media (min-width: 40rem) { .column { padding-left: 1.5rem; padding-right: 1.5rem; } }
+.brand { display: block; padding: 0.875rem 0; font-size: 1.125rem; line-height: 1.75rem; font-weight: 700; letter-spacing: -0.025em; }
+main.column { padding-top: 2rem; padding-bottom: 4rem; }
+@media (min-width: 40rem) { main.column { padding-top: 3rem; } }
 .card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 1.75rem 1.5rem;
+  max-width: 36rem;
+  background: var(--ov-surface);
+  border: 1px solid var(--ov-line);
+  border-radius: 1rem;
+  padding: 1.5rem;
 }
-h1 { margin: 0 0 0.75rem; font-size: 1.6rem; line-height: 1.25; letter-spacing: -0.015em; font-weight: 650; }
+.notice {
+  max-width: 36rem;
+  margin: 0 0 1.25rem;
+  padding: 0.875rem 1.25rem;
+  border-left: 4px solid var(--ov-ok);
+  border-radius: 0.75rem;
+  background: var(--ov-ok-soft);
+  font-weight: 600;
+}
+h1 { margin: 0 0 0.75rem; font-size: 1.5rem; line-height: 1.3; letter-spacing: -0.015em; font-weight: 650; }
 p { margin: 0 0 1rem; }
 p:last-child { margin-bottom: 0; }
-.muted { color: var(--muted); }
+.muted { color: var(--ov-muted); }
 pre {
   margin: 0 0 1.25rem;
-  padding: 0.8rem 1rem;
-  background: var(--code-bg);
-  border-radius: 10px;
+  padding: 0.625rem 1rem;
+  background: var(--ov-surface);
+  border: 1px solid var(--ov-line);
+  border-radius: 0.5rem;
   overflow-x: auto;
-  font: 0.95rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 0.95rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
-.hint { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.95rem; }
+.hint { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--ov-line); color: var(--ov-muted); font-size: 0.95rem; }
 button {
   font: inherit;
   font-weight: 600;
-  color: #fff;
-  background: var(--accent);
+  min-height: 2.75rem;
+  color: var(--ov-on-accent);
+  background: var(--ov-accent);
   border: 0;
-  border-radius: 10px;
-  padding: 0.65rem 1.25rem;
+  border-radius: 0.5rem;
+  padding: 0 1.25rem;
   cursor: pointer;
 }
-@media (prefers-color-scheme: dark) { button { color: #0d1b26; } }
-button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+button:hover { background: var(--ov-accent-hover); }
+:focus-visible { outline: 3px solid var(--ov-accent); outline-offset: 2px; border-radius: 6px; }

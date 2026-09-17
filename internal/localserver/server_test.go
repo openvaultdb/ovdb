@@ -136,7 +136,7 @@ func assertSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 	for header, want := range map[string]string{
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "no-referrer",
-		"Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 		"X-Frame-Options":         "DENY",
 	} {
 		if got := rec.Header().Get(header); got != want {
@@ -319,7 +319,7 @@ func TestLocalAPIDocuments(t *testing.T) {
 	assertEnvelope(t, owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"7000"}`, contentType: "text/plain"}),
 		http.StatusUnsupportedMediaType, envelope.InvalidArgument)
 	rec = owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"7000"}`})
-	if want := `{"schema":1,"config":{"server":{"port":7000}},"next":[{"label":"Restart the OVDB server to use it","command":"ovdb server restart"}]}` + "\n"; rec.Body.String() != want {
+	if want := `{"schema":1,"config":{"server":{"port":7000}},"changed":true,"next":[{"label":"Restart the OVDB server to use it","command":"ovdb server restart"}]}` + "\n"; rec.Body.String() != want {
 		t.Errorf("PUT config = %s", rec.Body)
 	}
 	if config, _ := setup.LoadConfig(f.dirs.Home); config.Server.Port != 7000 {

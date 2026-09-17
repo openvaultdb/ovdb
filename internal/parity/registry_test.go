@@ -12,11 +12,16 @@ import (
 	"github.com/openvaultdb/ovdb/web"
 )
 
-// rootCommand registers the new commands next to a stub `ovdb status`; the
-// real one lives in package main and cannot be imported.
+// rootCommand registers the new commands next to stubs of `ovdb status` and
+// `ovdb token …`; the real ones live in package main and cannot be imported.
 func rootCommand() *cobra.Command {
 	root := &cobra.Command{Use: "ovdb"}
 	root.AddCommand(&cobra.Command{Use: "status", Run: func(*cobra.Command, []string) {}})
+	token := &cobra.Command{Use: "token"}
+	for _, name := range []string{"create", "list", "revoke"} {
+		token.AddCommand(&cobra.Command{Use: name, Run: func(*cobra.Command, []string) {}})
+	}
+	root.AddCommand(token)
 	(&cli.App{Version: "test"}).AddCommands(root)
 	return root
 }
@@ -44,6 +49,9 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 			if !slices.Contains(endpoints, endpoint) {
 				t.Errorf("capability %s (%s): endpoint %q does not exist", row.ID, row.Capability, endpoint)
 			}
+		}
+		if slices.Contains(row.Exceptions, "E7") && row.Web != "" {
+			t.Errorf("capability %s (%s) is CLI only (E7) but names web route %q", row.ID, row.Capability, row.Web)
 		}
 		for _, exception := range row.Exceptions {
 			if len(exception) != 2 || exception[0] != 'E' || exception[1] < '1' || exception[1] > '7' {

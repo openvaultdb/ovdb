@@ -16,9 +16,23 @@ import (
 )
 
 // Session lifetimes (REQ:sessions).
+//
+// Browsers send a host's cookies to every port on that host (RFC 6265
+// §8.5): naming the cookie with the port avoids clashes, not disclosure. Any
+// other program listening on 127.0.0.1 or localhost receives the console
+// cookie when the browser visits it, and 127.0.0.1 and localhost are where
+// dev servers live. So only sign-ins on ovdb.localhost get the long, sliding,
+// persisted session people expect; a sign-in through a fallback host
+// (127.0.0.1, localhost, [::1]) gets a browser-session cookie and a short
+// fixed lifetime, limiting what a leaked cookie is worth. Sessions also
+// cannot manage tokens or CORS origins (see route and putConfig).
 const (
-	// SessionTTL is the sliding expiry: every use pushes it out again.
+	// SessionTTL is the sliding expiry of an ovdb.localhost session: every
+	// use pushes it out again.
 	SessionTTL = 30 * 24 * time.Hour
+	// FallbackSessionTTL is the absolute lifetime of a session created on a
+	// fallback host. It does not slide.
+	FallbackSessionTTL = 8 * time.Hour
 	// sessionWriteInterval throttles sessions.json writes for renewals to
 	// at most one a minute, so browsing does not rewrite the file per request.
 	sessionWriteInterval = time.Minute
@@ -40,6 +54,12 @@ type sessionsDocument struct {
 type sessionOnDisk struct {
 	Hash      string    `json:"hash"` // sha256 of the cookie value
 	ExpiresAt time.Time `json:"expires_at"`
+	Sliding   bool      `json:"sliding"` // renewed on use (ovdb.localhost sign-ins)
+}
+
+type session struct {
+	expiresAt time.Time
+	sliding   bool
 }
 
 // sessions is the console session store. Only hashes are kept, in memory and
@@ -53,16 +73,16 @@ type sessions struct {
 	now  func() time.Time
 
 	mu        sync.Mutex
-	byHash    map[string]time.Time // hash → expiry
-	loadedMod time.Time            // file mtime after the last load or write
-	loadedLen int64                // and its size, for coarse mtime clocks
+	byHash    map[string]session // by hash
+	loadedMod time.Time          // file mtime after the last load or write
+	loadedLen int64              // and its size, for coarse mtime clocks
 	loaded    bool
 	dirty     bool      // renewals not yet written
 	lastWrite time.Time // for the renewal throttle
 }
 
 func newSessions(runtimeDir string, now func() time.Time) *sessions {
-	return &sessions{path: filepath.Join(runtimeDir, SessionsFile), now: now, byHash: map[string]time.Time{}}
+	return &sessions{path: filepath.Join(runtimeDir, SessionsFile), now: now, byHash: map[string]session{}}
 }
 
 // reload rereads sessions.json when it changed since the last load or write.
@@ -71,7 +91,7 @@ func (s *sessions) reload() error {
 	info, err := os.Stat(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		if s.loaded && !s.loadedMod.IsZero() {
-			s.byHash = map[string]time.Time{} // removed from outside
+			s.byHash = map[string]session{} // removed from outside
 		}
 		s.loaded, s.loadedMod = true, time.Time{}
 		return nil
@@ -87,11 +107,11 @@ func (s *sessions) reload() error {
 		return err
 	}
 	var document sessionsDocument
-	byHash := map[string]time.Time{}
+	byHash := map[string]session{}
 	// An unreadable file signs everyone out rather than failing every page.
 	if json.Unmarshal(data, &document) == nil {
-		for _, session := range document.Sessions {
-			byHash[session.Hash] = session.ExpiresAt
+		for _, stored := range document.Sessions {
+			byHash[stored.Hash] = session{expiresAt: stored.ExpiresAt, sliding: stored.Sliding}
 		}
 	}
 	s.byHash, s.loaded, s.loadedMod, s.loadedLen, s.dirty = byHash, true, info.ModTime(), info.Size(), false
@@ -102,9 +122,9 @@ func (s *sessions) reload() error {
 func (s *sessions) write() error {
 	now := s.now()
 	document := sessionsDocument{Schema: 1, Sessions: []sessionOnDisk{}}
-	for hash, expiresAt := range s.byHash {
-		if now.Before(expiresAt) {
-			document.Sessions = append(document.Sessions, sessionOnDisk{Hash: hash, ExpiresAt: expiresAt.UTC()})
+	for hash, live := range s.byHash {
+		if now.Before(live.expiresAt) {
+			document.Sessions = append(document.Sessions, sessionOnDisk{Hash: hash, ExpiresAt: live.expiresAt.UTC(), Sliding: live.sliding})
 		} else {
 			delete(s.byHash, hash)
 		}
@@ -123,8 +143,9 @@ func (s *sessions) write() error {
 	return nil
 }
 
-// create starts a session and returns the cookie value.
-func (s *sessions) create() (string, error) {
+// create starts a session and returns the cookie value. sliding sessions
+// last SessionTTL from their last use; others FallbackSessionTTL from now.
+func (s *sessions) create(sliding bool) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
@@ -135,13 +156,18 @@ func (s *sessions) create() (string, error) {
 	if err := s.reload(); err != nil {
 		return "", err
 	}
-	s.byHash[hashCode(token)] = s.now().Add(SessionTTL)
+	ttl := FallbackSessionTTL
+	if sliding {
+		ttl = SessionTTL
+	}
+	s.byHash[hashCode(token)] = session{expiresAt: s.now().Add(ttl), sliding: sliding}
 	return token, s.write()
 }
 
 // touch reports whether token is a live session and slides its expiry.
 // renewed is true when this call wrote the renewal to disk, which is when
-// the cookie's own expiry is worth refreshing too.
+// the cookie's own expiry is worth refreshing too. Fallback-host sessions
+// never renew.
 func (s *sessions) touch(token string) (valid, renewed bool) {
 	if token == "" {
 		return false, false
@@ -152,17 +178,35 @@ func (s *sessions) touch(token string) (valid, renewed bool) {
 		return false, false
 	}
 	hash := hashCode(token)
-	expiresAt, ok := s.byHash[hash]
+	live, ok := s.byHash[hash]
 	now := s.now()
-	if !ok || !now.Before(expiresAt) {
+	if !ok || !now.Before(live.expiresAt) {
 		return false, false
 	}
-	s.byHash[hash] = now.Add(SessionTTL)
+	if !live.sliding {
+		return true, false
+	}
+	s.byHash[hash] = session{expiresAt: now.Add(SessionTTL), sliding: true}
 	s.dirty = true
 	if now.Sub(s.lastWrite) >= sessionWriteInterval {
 		renewed = s.write() == nil
 	}
 	return true, renewed
+}
+
+// remove ends the session for token (sign-out).
+func (s *sessions) remove(token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.reload(); err != nil {
+		return err
+	}
+	hash := hashCode(token)
+	if _, ok := s.byHash[hash]; !ok {
+		return nil
+	}
+	delete(s.byHash, hash)
+	return s.write()
 }
 
 // flush writes pending renewals; the server calls it on shutdown.

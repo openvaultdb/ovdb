@@ -26,7 +26,7 @@ type Row struct {
 // Rows is the registry, in matrix order.
 var Rows = []Row{
 	{ID: "2", Capability: "Whole-setup status", CLI: []string{"ovdb status"}, Web: "/",
-		API: []string{"GET /api/local/v1/status"}},
+		API: []string{"GET /api/local/v1/status", "GET /api/local/v1/home"}},
 	{ID: "3", Capability: "Start server", CLI: []string{"ovdb server start"},
 		Exceptions: []string{"E1"}},
 	{ID: "4", Capability: "Server status", CLI: []string{"ovdb server status"}, Web: "/server",
@@ -37,4 +37,9 @@ var Rows = []Row{
 		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}},
 	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"}, Web: "/settings",
 		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}},
+	// Tokens and CORS origins are developer settings: CLI only, and a console
+	// session gets 403 on server.cors and /v1/tokens (E7).
+	{ID: "25", Capability: "Access tokens and browser app origins",
+		CLI: []string{"ovdb token create", "ovdb token list", "ovdb token revoke", "ovdb config set", "ovdb config get"},
+		API: []string{"PUT /api/local/v1/config"}, Exceptions: []string{"E7"}},
 }

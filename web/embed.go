@@ -99,10 +99,11 @@ func handlerFor(files fs.FS, built bool) http.Handler {
 		}
 		writer.Header().Set("Content-Type", contentType(name))
 		if strings.HasPrefix(name, "assets/") {
-			// Vite names every file under assets/ by its content hash.
-			writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			// Vite names every file under assets/ by its content hash; the
+			// console is only served to signed-in browsers, so private.
+			writer.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 		} else {
-			writer.Header().Set("Cache-Control", "no-cache")
+			writer.Header().Set("Cache-Control", "no-store")
 		}
 		_, _ = writer.Write(content)
 	})
@@ -170,3 +171,10 @@ func Routes() []Route {
 	}
 	return routes
 }
+
+// TokensCSS is the design token stylesheet (colours for light and dark) the
+// console is built from. The Go-rendered landing and sign-in pages serve it
+// too, so both look like one product without a second copy of the tokens.
+//
+//go:embed src/tokens.css
+var TokensCSS []byte

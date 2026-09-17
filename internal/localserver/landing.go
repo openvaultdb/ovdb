@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/web"
 )
 
 // assets are the files the Go-rendered pages link to. The CSP
@@ -20,6 +21,8 @@ const (
 	pageCSSPath   = "/login/page.css"
 	submitJSPath  = "/login/submit.js"
 	loginPath     = "/login"
+	logoutPath    = "/logout"
+	signedOutPath = "/signed-out"
 	pageTemplates = `
 {{define "head"}}<!doctype html>
 <html lang="en">
@@ -31,8 +34,9 @@ const (
 <link rel="stylesheet" href="` + pageCSSPath + `">
 </head>
 <body>
-<main class="page">
-<p class="brand">{{.Brand}}</p>
+<header class="bar"><div class="column"><span class="brand">{{.Brand}}</span></div></header>
+<main class="column">
+{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
 <div class="card">
 {{end}}
 {{define "foot"}}</div>
@@ -60,8 +64,8 @@ const (
 var pages = template.Must(template.New("pages").Parse(pageTemplates))
 
 type pageData struct {
-	Brand, Title, Body, Assistant, Fallback string
-	Code, Next, Continue                    string
+	Brand, Title, Body, Assistant, Fallback, Notice string
+	Code, Next, Continue                            string
 }
 
 func writePage(w http.ResponseWriter, status int, name string, data pageData) {
@@ -92,16 +96,24 @@ func writeLanding(w http.ResponseWriter, r *http.Request, status int) {
 	if strings.HasPrefix(strings.ToLower(r.Host), "127.0.0.1:") {
 		page.Fallback = uicopy.T("landing.fallback_host", nil)
 	}
+	if r.URL.Path == signedOutPath {
+		page.Notice = uicopy.T("landing.signed_out", nil)
+	}
 	writePage(w, status, "landing", page)
 }
 
-// pageAsset serves the landing and login page's stylesheet and script.
+// pageAsset serves the landing and login page's stylesheet — the console's
+// design tokens followed by the page layout — and script.
 func pageAsset(w http.ResponseWriter, r *http.Request) {
-	name, contentType := "assets/page.css", "text/css; charset=utf-8"
+	contentType := "text/css; charset=utf-8"
+	var data []byte
 	if r.URL.Path == submitJSPath {
-		name, contentType = "assets/submit.js", "text/javascript; charset=utf-8"
+		contentType = "text/javascript; charset=utf-8"
+		data, _ = assets.ReadFile("assets/submit.js") // embedded at compile time
+	} else {
+		layout, _ := assets.ReadFile("assets/page.css")
+		data = append(append(append([]byte{}, web.TokensCSS...), '\n'), layout...)
 	}
-	data, _ := assets.ReadFile(name) // embedded at compile time
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(data)

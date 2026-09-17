@@ -95,7 +95,7 @@ func New(opts Options) (*Handler, error) {
 	}
 
 	var h http.Handler = http.HandlerFunc(s.route)
-	h = cors(config.Server.CORS)(h)
+	h = cors(setup.NormalizeOrigins(config.Server.CORS))(h)
 	h = crossOrigin(h)
 	h = s.authenticate(store)(h)
 	h = hostAllowlist(opts.Record.Port)(h)
@@ -117,6 +117,7 @@ type endpoint struct {
 var endpoints = []endpoint{
 	{http.MethodGet, runtime.WhoamiPath, accessOwner, (*localServer).whoami},
 	{http.MethodGet, "/api/local/v1/status", accessOwner, (*localServer).status},
+	{http.MethodGet, "/api/local/v1/home", accessOwner, (*localServer).home},
 	{http.MethodGet, "/api/local/v1/server", accessOwner, (*localServer).serverInfo},
 	{http.MethodPost, runtime.ShutdownPath, accessInstanceSecret, (*localServer).shutdown},
 	{http.MethodPost, "/api/local/v1/login-links", accessInstanceSecret, (*localServer).loginLink},
@@ -135,6 +136,10 @@ func Endpoints() []string {
 
 func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	if strings.HasPrefix(path, LocalAPIPrefix) || path == "/v1" || strings.HasPrefix(path, "/v1/") {
+		// Status documents carry home paths and ids; never keep them.
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	switch {
 	case strings.HasPrefix(path, LocalAPIPrefix):
 		s.localAPI(w, r)
@@ -142,6 +147,13 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 		s.wellKnown(w)
 	case path == "/v1" || strings.HasPrefix(path, "/v1/"):
 		if credentialOf(r) == credentialSession {
+			if path == "/v1/tokens" || strings.HasPrefix(path, "/v1/tokens/") {
+				// Parity E7: tokens come from the CLI (or, later, the
+				// connect flow's consent page), never from a console session.
+				envelope.Write(w, envelope.New(envelope.Forbidden, uicopy.T("api.session_tokens_not_allowed", nil)).
+					WithNext(envelope.Next{Label: uicopy.T("next.tokens_cli", nil), Command: "ovdb token list"}))
+				return
+			}
 			// The console acts as the owner: openvaultdb-go sees exactly
 			// what the CLI's instance secret would send.
 			r = r.Clone(r.Context())
@@ -150,6 +162,8 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 		s.data.ServeHTTP(w, r)
 	case path == loginPath:
 		s.login(w, r)
+	case path == logoutPath:
+		s.logout(w, r)
 	case path == pageCSSPath || path == submitJSPath:
 		pageAsset(w, r)
 	case path == "/authorize" || path == "/token":
@@ -161,7 +175,7 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(envelope.Marshal(v1Error{Error: v1ErrorDetail{
 			Code: "not_supported", Message: uicopy.T("api.connect_not_supported", nil),
 		}}))
-	case credentialOf(r) == credentialSession:
+	case credentialOf(r) == credentialSession && path != signedOutPath:
 		s.console.ServeHTTP(w, r)
 	default:
 		s.landing(w, r)
@@ -233,6 +247,10 @@ func (s *localServer) status(w http.ResponseWriter, _ *http.Request) {
 	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server()))
 }
 
+func (s *localServer) home(w http.ResponseWriter, _ *http.Request) {
+	envelope.WriteJSON(w, http.StatusOK, setup.NewHome(s.server()))
+}
+
 func (s *localServer) serverInfo(w http.ResponseWriter, _ *http.Request) {
 	envelope.WriteJSON(w, http.StatusOK, setup.NewServerDocument(s.server()))
 }
@@ -261,6 +279,12 @@ func (s *localServer) getConfig(w http.ResponseWriter, _ *http.Request) {
 func (s *localServer) putConfig(w http.ResponseWriter, r *http.Request) {
 	var change setup.ConfigChange
 	if !decodeBody(w, r, &change) {
+		return
+	}
+	if change.Key == setup.KeyServerCORS && credentialOf(r) != credentialInstanceSecret {
+		// Parity E7: browser app origins are a CLI-only developer setting.
+		envelope.Write(w, envelope.New(envelope.Forbidden, uicopy.T("api.session_cors_not_allowed", nil)).
+			WithNext(envelope.Next{Label: uicopy.T("next.cors_cli", nil), Command: "ovdb config get " + setup.KeyServerCORS}))
 		return
 	}
 	document, err := setup.ApplyConfigChange(s.opts.Dirs, change, true)

@@ -33,7 +33,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		header := w.Header()
 		header.Set("X-Content-Type-Options", "nosniff")
 		header.Set("Referrer-Policy", "no-referrer")
-		header.Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		header.Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		header.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
@@ -138,7 +138,7 @@ func (s *localServer) authenticate(store *auth.Store) func(http.Handler) http.Ha
 				if valid, renewed := s.sessions.touch(cookie.Value); valid {
 					kind = credentialSession
 					if renewed {
-						http.SetCookie(w, s.sessionCookie(cookie.Value))
+						http.SetCookie(w, s.sessionCookie(cookie.Value, true))
 					}
 				}
 			}
@@ -155,7 +155,7 @@ func (s *localServer) authenticate(store *auth.Store) func(http.Handler) http.Ha
 func crossOrigin(next http.Handler) http.Handler {
 	protection := http.NewCrossOriginProtection()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if credentialOf(r) == credentialSession || r.URL.Path == loginPath {
+		if credentialOf(r) == credentialSession || r.URL.Path == loginPath || r.URL.Path == logoutPath {
 			if err := protection.Check(r); err != nil {
 				envelope.Write(w, envelope.New(envelope.Forbidden, uicopy.T("api.cross_origin", nil)))
 				return
@@ -181,13 +181,15 @@ func cors(origins []string) func(http.Handler) http.Handler {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-			if !corsPath(r.URL.Path) || origin == "" {
+			if !corsPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
+			// Every response on a CORS path depends on Origin, including
+			// the ones without it, or a cache could serve one to the other.
 			w.Header().Add("Vary", "Origin")
-			if !allowed[strings.ToLower(origin)] {
+			origin := r.Header.Get("Origin")
+			if origin == "" || !allowed[strings.ToLower(origin)] {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -107,7 +107,12 @@ func (a *App) configSetCmd() *cobra.Command {
 			}
 			printer{cmd: cmd, json: jsonOut}.document(body, func(w io.Writer) {
 				value, _ := configValue(document.Config, change.Key)
-				say(w, uicopy.T("config.saved", map[string]string{"key": change.Key, "value": value}))
+				params := map[string]string{"key": change.Key, "value": value}
+				if document.Changed != nil && !*document.Changed {
+					say(w, uicopy.T("config.unchanged", params))
+					return
+				}
+				say(w, uicopy.T("config.saved", params))
 				writeNext(w, document.Next)
 			})
 			return nil

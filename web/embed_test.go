@@ -92,10 +92,10 @@ func TestHandlerFallsBackToTheAppForClientRoutes(t *testing.T) {
 			t.Errorf("%s = %q, want %s", target, body, want)
 		}
 	}
-	if got := get(t, handler, "/assets/console-abc.js").Header.Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+	if got := get(t, handler, "/assets/console-abc.js").Header.Get("Cache-Control"); got != "private, max-age=31536000, immutable" {
 		t.Errorf("asset Cache-Control = %q", got)
 	}
-	if got := get(t, handler, "/settings").Header.Get("Cache-Control"); got != "no-cache" {
+	if got := get(t, handler, "/settings").Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("page Cache-Control = %q", got)
 	}
 	recorder := httptest.NewRecorder()

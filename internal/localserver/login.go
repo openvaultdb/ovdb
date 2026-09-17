@@ -2,6 +2,7 @@ package localserver
 
 import (
 	"net/http"
+	"strings"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 )
@@ -15,7 +16,9 @@ const loginFormLimit = 16 << 10
 // previewers and chat unfurlers that fetch the link cannot spend it. POST
 // consumes the code, starts a session and redirects to next or the console.
 // POST has already passed cross-origin protection (see crossOrigin), so a
-// page on another site cannot sign the browser in to its own session.
+// page on another site cannot submit a code on the browser's behalf. (It can
+// still send the browser to GET /login?code=…, which posts same-origin; that
+// needs a code, and only the instance secret creates codes.)
 func (s *localServer) login(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -40,12 +43,13 @@ func (s *localServer) login(w http.ResponseWriter, r *http.Request) {
 			writeLanding(w, r, http.StatusOK)
 			return
 		}
-		token, err := s.sessions.create()
+		sliding := isPrimaryHost(r.Host)
+		token, err := s.sessions.create(sliding)
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		http.SetCookie(w, s.sessionCookie(token))
+		http.SetCookie(w, s.sessionCookie(token, sliding))
 		next := r.PostForm.Get("next")
 		if !isLocalPath(next) {
 			next = "/"
@@ -57,12 +61,46 @@ func (s *localServer) login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// logout ends the session and clears the cookie, then shows the signed-out
+// landing page. It is a POST behind cross-origin protection, so another site
+// cannot sign the person out.
+func (s *localServer) logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	if cookie, err := r.Cookie(SessionCookieName(s.opts.Record.Port)); err == nil {
+		if err := s.sessions.remove(cookie.Value); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: SessionCookieName(s.opts.Record.Port), Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, signedOutPath, http.StatusSeeOther)
+}
+
+// isPrimaryHost reports whether host is ovdb.localhost (with any port; the
+// Host allowlist has already checked the port).
+func isPrimaryHost(host string) bool {
+	return strings.HasPrefix(strings.ToLower(host), "ovdb.localhost:")
+}
+
 // sessionCookie is the console cookie (REQ:sessions): HttpOnly so page
 // scripts never see it, SameSite=Lax so links from chats and documents
-// arrive signed in, host-only (no Domain), and named with the port.
-func (s *localServer) sessionCookie(token string) *http.Cookie {
-	return &http.Cookie{
+// arrive signed in, host-only (no Domain), and named with the port. A
+// sliding (ovdb.localhost) session's cookie persists for SessionTTL; a
+// fallback-host session's cookie ends with the browser session.
+func (s *localServer) sessionCookie(token string, sliding bool) *http.Cookie {
+	cookie := &http.Cookie{
 		Name: SessionCookieName(s.opts.Record.Port), Value: token, Path: "/",
-		MaxAge: int(SessionTTL.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	}
+	if sliding {
+		cookie.MaxAge = int(SessionTTL.Seconds())
+	}
+	return cookie
 }

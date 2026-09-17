@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
@@ -56,10 +57,17 @@ func (f *fixture) postLogin(t *testing.T, host, code, next string, header map[st
 		contentType: "application/x-www-form-urlencoded", header: header})
 }
 
-// signIn returns a session cookie value.
-func (f *fixture) signIn(t *testing.T) string {
+const primaryHost = "ovdb.localhost:6832"
+
+// signIn returns a session cookie value for a sign-in on the fallback host
+// 127.0.0.1, or on host when given.
+func (f *fixture) signIn(t *testing.T, host ...string) string {
 	t.Helper()
-	rec := f.postLogin(t, testHost, f.newCode(t, ""), "", nil)
+	on := testHost
+	if len(host) > 0 {
+		on = host[0]
+	}
+	rec := f.postLogin(t, on, f.newCode(t, ""), "", nil)
 	cookie := sessionCookieOf(rec)
 	if rec.Code != http.StatusSeeOther || cookie == nil {
 		t.Fatalf("sign in = %d %s", rec.Code, rec.Body)
@@ -105,15 +113,16 @@ func TestLoginExchangeOnPost(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings" || cookie == nil {
 		t.Fatalf("POST /login = %d %v %s", rec.Code, rec.Header(), rec.Body)
 	}
-	// REQ:sessions: HttpOnly, SameSite=Lax, host-only, named with the port.
+	// REQ:sessions: HttpOnly, SameSite=Lax, host-only, named with the port;
+	// a fallback-host sign-in gets a browser-session cookie (no expiry).
 	raw := rec.Header().Get("Set-Cookie")
-	for _, want := range []string{"ovdb_session_6832=", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=2592000"} {
+	for _, want := range []string{"ovdb_session_6832=", "Path=/", "HttpOnly", "SameSite=Lax"} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("Set-Cookie %q lacks %q", raw, want)
 		}
 	}
-	if strings.Contains(strings.ToLower(raw), "domain=") {
-		t.Errorf("Set-Cookie %q is not host-only", raw)
+	if lower := strings.ToLower(raw); strings.Contains(lower, "domain=") || strings.Contains(lower, "max-age") || strings.Contains(lower, "expires") {
+		t.Errorf("fallback Set-Cookie %q is not a host-only browser-session cookie", raw)
 	}
 	if rec := f.do(t, request{path: "/settings", cookie: cookie.Value}); rec.Body.String() != "console:/settings" {
 		t.Errorf("signed-in /settings = %s", rec.Body)
@@ -127,7 +136,8 @@ func TestLoginExchangeOnPost(t *testing.T) {
 
 	// A fresh code works on the primary host; next outside the server is ignored.
 	primary := f.postLogin(t, "ovdb.localhost:6832", f.newCode(t, ""), "//evil.example/", nil)
-	if primary.Code != http.StatusSeeOther || primary.Header().Get("Location") != "/" || sessionCookieOf(primary) == nil {
+	if primary.Code != http.StatusSeeOther || primary.Header().Get("Location") != "/" || sessionCookieOf(primary) == nil ||
+		!strings.Contains(primary.Header().Get("Set-Cookie"), "Max-Age=2592000") {
 		t.Errorf("primary host login = %d %v", primary.Code, primary.Header())
 	}
 
@@ -231,7 +241,7 @@ func TestSessionCredentialTable(t *testing.T) {
 func TestSessionsPersistHashedAndSlide(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	session := f.signIn(t)
+	session := f.signIn(t, primaryHost)
 	file := filepath.Join(f.dirs.Runtime, SessionsFile)
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -243,7 +253,9 @@ func TestSessionsPersistHashedAndSlide(t *testing.T) {
 	if info, _ := os.Stat(file); goruntime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("sessions.json mode = %v", info.Mode().Perm())
 	}
-	signedIn := func() bool { return f.do(t, request{path: "/", cookie: session}).Body.String() == "console:/" }
+	signedIn := func() bool {
+		return f.do(t, request{path: "/", host: primaryHost, cookie: session}).Body.String() == "console:/"
+	}
 
 	f.restart(t)
 	if !signedIn() {
@@ -260,7 +272,7 @@ func TestSessionsPersistHashedAndSlide(t *testing.T) {
 	}
 	// A use after a minute writes the slid expiry and refreshes the cookie.
 	f.now = f.now.Add(sessionWriteInterval)
-	rec := f.do(t, request{path: "/", cookie: session})
+	rec := f.do(t, request{path: "/", host: primaryHost, cookie: session})
 	if again, _ := os.ReadFile(file); string(again) == string(data) || sessionCookieOf(rec) == nil {
 		t.Errorf("renewal not written (cookie %v)", sessionCookieOf(rec))
 	}
@@ -292,8 +304,8 @@ func TestSessionsPersistHashedAndSlide(t *testing.T) {
 	}
 
 	// A session removed from sessions.json ends on the next request.
-	other := f.signIn(t)
-	if f.do(t, request{path: "/", cookie: other}).Body.String() != "console:/" {
+	other := f.signIn(t, primaryHost)
+	if f.do(t, request{path: "/", host: primaryHost, cookie: other}).Body.String() != "console:/" {
 		t.Fatal("new session invalid")
 	}
 	if err := os.WriteFile(file, []byte(`{"schema":1,"sessions":[]}`+"\n"), 0o600); err != nil {
@@ -403,5 +415,118 @@ func TestCORSForBearerRequestsOnly(t *testing.T) {
 		if got := f.do(t, r).Header().Get("Access-Control-Allow-Origin"); got != "" {
 			t.Errorf("%s: Access-Control-Allow-Origin = %q", name, got)
 		}
+	}
+}
+
+// Review decision (increment 1b): cookies reach every port on a host, so a
+// fallback-host sign-in is an 8-hour, non-renewing browser-session cookie.
+func TestFallbackHostSessionsAreShortAndFixed(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	signedInAt := f.now
+	session := f.signIn(t) // on 127.0.0.1
+	use := func() *httptest.ResponseRecorder { return f.do(t, request{path: "/", cookie: session}) }
+
+	// Used every hour: never renewed, not even after a minute.
+	for hour := 1; hour <= 7; hour++ {
+		f.now = signedInAt.Add(time.Duration(hour) * time.Hour)
+		rec := use()
+		if rec.Body.String() != "console:/" || sessionCookieOf(rec) != nil {
+			t.Fatalf("hour %d: %s (cookie %v)", hour, rec.Body, sessionCookieOf(rec))
+		}
+	}
+	f.restart(t)
+	f.now = signedInAt.Add(FallbackSessionTTL - time.Minute)
+	if use().Body.String() != "console:/" {
+		t.Fatal("fallback session ended before 8 hours or was lost across a restart")
+	}
+	f.now = signedInAt.Add(FallbackSessionTTL)
+	if use().Body.String() == "console:/" {
+		t.Fatal("fallback session outlived 8 hours of use")
+	}
+}
+
+// POST /logout ends the session and clears the cookie; it is CSRF-protected.
+func TestLogout(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	session := f.signIn(t, primaryHost)
+	logout := func(header map[string]string) *httptest.ResponseRecorder {
+		return f.do(t, request{method: http.MethodPost, path: "/logout", host: primaryHost, cookie: session,
+			contentType: "application/x-www-form-urlencoded", header: header})
+	}
+	assertEnvelope(t, logout(crossSite), http.StatusForbidden, envelope.Forbidden)
+	if f.do(t, request{path: "/", host: primaryHost, cookie: session}).Body.String() != "console:/" {
+		t.Fatal("a cross-site logout ended the session")
+	}
+	rec := logout(sameOrigin(primaryHost))
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/signed-out" || !strings.Contains(rec.Header().Get("Set-Cookie"), "Max-Age=0") {
+		t.Fatalf("logout = %d %v", rec.Code, rec.Header())
+	}
+	if landing := f.do(t, request{path: "/signed-out", host: primaryHost, cookie: session}); !isLanding(landing) ||
+		!strings.Contains(landing.Body.String(), "You signed out of the OVDB console.") {
+		t.Errorf("after logout = %s", landing.Body)
+	}
+	if data, _ := os.ReadFile(filepath.Join(f.dirs.Runtime, SessionsFile)); strings.Contains(string(data), hashCode(session)) {
+		t.Error("logout left the session in sessions.json")
+	}
+	if rec := f.do(t, request{path: "/logout", host: primaryHost}); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET /logout = %d", rec.Code)
+	}
+}
+
+// Parity E7: a console session cannot change server.cors or manage tokens.
+func TestSessionCannotManageTokensOrCORS(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	session := f.signIn(t)
+	browser := func(method, path, body string) *httptest.ResponseRecorder {
+		return f.do(t, request{method: method, path: path, cookie: session, body: body, header: sameOrigin(testHost)})
+	}
+	for _, tc := range []struct{ method, path, body, command string }{
+		{http.MethodPut, "/api/local/v1/config", `{"key":"server.cors","value":"https://evil.example"}`, "ovdb config get server.cors"},
+		{http.MethodPost, "/v1/tokens", `{"capabilities":["databases:create"]}`, "ovdb token list"},
+		{http.MethodGet, "/v1/tokens", "", "ovdb token list"},
+		{http.MethodDelete, "/v1/tokens/abc", "", "ovdb token list"},
+	} {
+		rec := browser(tc.method, tc.path, tc.body)
+		assertEnvelope(t, rec, http.StatusForbidden, envelope.Forbidden)
+		if e := envelope.Decode(rec.Body.Bytes()); e == nil || len(e.Next) != 1 || e.Next[0].Command != tc.command {
+			t.Errorf("%s %s next = %s", tc.method, tc.path, rec.Body)
+		}
+	}
+	if config, _ := setup.LoadConfig(f.dirs.Home); len(config.Server.CORS) != 0 {
+		t.Errorf("a session changed server.cors to %v", config.Server.CORS)
+	}
+	// The instance secret still can, and the session keeps the port.
+	if rec := f.do(t, request{method: http.MethodPut, path: "/api/local/v1/config", bearer: testSecret, body: `{"key":"server.cors","value":"http://localhost:5173"}`}); rec.Code != http.StatusOK {
+		t.Errorf("secret server.cors = %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(t, request{method: http.MethodGet, path: "/v1/tokens", bearer: testSecret}); rec.Code != http.StatusOK {
+		t.Errorf("secret GET /v1/tokens = %d %s", rec.Code, rec.Body)
+	}
+	if rec := browser(http.MethodPut, "/api/local/v1/config", `{"key":"server.port","value":"7100"}`); rec.Code != http.StatusOK {
+		t.Errorf("session server.port = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// Review minors: API and signed-in responses are not cacheable, CORS paths
+// always vary on Origin, and Home comes from the server.
+func TestNoStoreVaryAndHome(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for _, path := range []string{"/api/local/v1/status", "/api/local/v1/home", "/v1/databases"} {
+		if got := f.do(t, request{path: path, bearer: testSecret}).Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s Cache-Control = %q", path, got)
+		}
+	}
+	if got := f.do(t, request{path: "/v1/databases", bearer: testSecret}).Header().Get("Vary"); got != "Origin" {
+		t.Errorf("/v1 without Origin: Vary = %q", got)
+	}
+	rec := f.do(t, request{path: "/api/local/v1/home", cookie: f.signIn(t)})
+	want := string(envelope.Marshal(setup.NewHome(setup.RunningServer(&runtime.Record{Port: testPort, Version: "1.2.3", PID: 42,
+		StartedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, f.dirs))))
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Errorf("home = %d %s\nwant %s", rec.Code, rec.Body, want)
 	}
 }

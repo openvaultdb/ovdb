@@ -214,20 +214,25 @@ func TestJSONEqualsAPIThroughLifecycle(t *testing.T) {
 	// fallback with --host 127.0.0.1; both links are printed either way.
 	launched := e.run("open")
 	if launched.code != 0 || len(e.opened) != 1 || !strings.HasPrefix(e.opened[0], "http://ovdb.localhost:") ||
-		!strings.Contains(launched.stdout, "Opened the OVDB console in your browser.") || !strings.Contains(launched.stdout, "http://127.0.0.1:") {
+		!strings.Contains(launched.stdout, "Opening your browser…") || !strings.Contains(launched.stdout, "http://127.0.0.1:") {
 		t.Errorf("open = %+v, opened %v", launched, e.opened)
 	}
 	if fallback := e.run("open", "--host", "127.0.0.1", "--json"); fallback.code != 0 || len(e.opened) != 2 || !strings.HasPrefix(e.opened[1], "http://127.0.0.1:") {
 		t.Errorf("open --host 127.0.0.1 = %+v, opened %v", fallback, e.opened)
 	}
 	e.browserErr = errors.New("no display")
-	if printOnly := e.run("open"); printOnly.code != 0 || strings.Contains(printOnly.stdout, "Opened") ||
+	if printOnly := e.run("open"); printOnly.code != 0 || strings.Contains(printOnly.stdout, "Opening") ||
 		!strings.Contains(printOnly.stdout, "sign-in link") || !strings.Contains(printOnly.stdout, "/login?code=") {
 		t.Errorf("open without a browser = %+v", printOnly)
 	}
 	e.browserErr = nil
 
 	set := e.run("config", "set", "server.port", "7777")
+	defer func() {
+		if same := e.run("config", "set", "server.port", "7777"); !strings.Contains(same.stdout, "server.port is already 7777. No change.") || strings.Contains(same.stdout, "restart") {
+			t.Errorf("unchanged config set = %+v", same)
+		}
+	}()
 	if set.code != 0 || !strings.Contains(set.stdout, "Saved server.port = 7777.") || !strings.Contains(set.stdout, "ovdb server restart") {
 		t.Errorf("config set = %+v", set)
 	}
