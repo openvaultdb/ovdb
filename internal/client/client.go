@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -45,6 +46,7 @@ const (
 	ConfigPath     = "/api/local/v1/config"
 	EnginesPath    = "/api/local/v1/engines"
 	DatabasesPath  = "/api/local/v1/databases"
+	ConnectPath    = "/api/local/v1/databases/connect"
 	ContextPath    = "/api/local/v1/context"
 )
 
@@ -218,7 +220,7 @@ func (l *Local) SetContext(ctx context.Context, change dbcontext.Change, noStart
 // Engines is the storage catalogue (capability 8). It is the same data in
 // every binary, so without a server it is built here.
 func (l *Local) Engines(ctx context.Context) ([]byte, error) {
-	return l.read(ctx, EnginesPath, func() any { return setup.NewEnginesDocument(l.Dirs.Home) })
+	return l.read(ctx, EnginesPath, func() any { return setup.NewEnginesDocument() })
 }
 
 // Databases lists registered databases (capability 11): from the running
@@ -238,6 +240,9 @@ func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest,
 	if request.Engine == "" {
 		request.Engine = setup.EngineInGitDB
 	}
+	if home, err := os.UserHomeDir(); err == nil && request.Path != "" {
+		request.Path = paths.ExpandHome(request.Path, home)
+	}
 	if request.Path == "" {
 		request.Path = setup.DefaultPath(l.Dirs.Data, request.Engine, request.ID)
 	} else if abs, err := filepath.Abs(request.Path); err == nil {
@@ -252,6 +257,34 @@ func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest,
 		return nil, err
 	}
 	response, err := c.Do(ctx, http.MethodPost, DatabasesPath, request)
+	return response.Body, err
+}
+
+// ConnectDatabase registers an existing folder, SQLite file or manifest file
+// through the server, starting it unless noStart. Relative paths are made
+// absolute against this client's working directory before they are sent
+// (REQ:client-values-and-mismatch).
+func (l *Local) ConnectDatabase(ctx context.Context, request setup.ConnectRequest, noStart bool) ([]byte, error) {
+	home, _ := os.UserHomeDir()
+	for _, path := range []*string{&request.Path, &request.Manifest} {
+		if *path != "" && home != "" {
+			*path = paths.ExpandHome(*path, home)
+		}
+		if *path != "" {
+			if abs, err := filepath.Abs(*path); err == nil {
+				*path = abs
+			}
+		}
+	}
+	// Refuse what cannot work before starting a server for it.
+	if err := setup.ValidateConnect(&request); err != nil {
+		return nil, err
+	}
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, ConnectPath, request)
 	return response.Body, err
 }
 

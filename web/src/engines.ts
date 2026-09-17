@@ -24,3 +24,12 @@ export function suggestedName(next: { command?: string; action?: string }): stri
   }
   return fields[3]
 }
+
+/** The database name a folder or file suggests: its name without an extension, when that is a valid name (as the TUI's nameFrom). */
+export function nameFromLocation(location: string): string {
+  const parts = location.trim().split(/[\\/]+/).filter((part) => part !== '')
+  const base = parts.at(-1) ?? ''
+  const dot = base.lastIndexOf('.')
+  const name = dot > 0 ? base.slice(0, dot) : base
+  return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name) ? name : ''
+}

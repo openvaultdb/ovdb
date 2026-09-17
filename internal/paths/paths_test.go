@@ -201,3 +201,21 @@ func TestWriteFilePrivate(t *testing.T) {
 		t.Error("write into a missing directory succeeded")
 	}
 }
+
+// A leading ~ is the home folder, as a shell expands it (review F10).
+func TestExpandHome(t *testing.T) {
+	t.Parallel()
+	home := filepath.Join(string(filepath.Separator)+"home", "someone")
+	for in, want := range map[string]string{
+		"~":                                    home,
+		"~/notes":                              filepath.Join(home, "notes"),
+		"~" + string(filepath.Separator) + "a": filepath.Join(home, "a"),
+		"~other/notes":                         "~other/notes",
+		"notes/~":                              "notes/~",
+		"":                                     "",
+	} {
+		if got := ExpandHome(in, home); got != want {
+			t.Errorf("ExpandHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

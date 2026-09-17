@@ -51,6 +51,12 @@ type Registry struct {
 	// storage never holds up the others or the server.
 	mountTimeout time.Duration
 
+	// getenv reads the server's environment (connection variables).
+	getenv func(string) string
+	// beforeCommit, when set, runs after a connect mounted its storage and
+	// before it takes the lock to register it (tests).
+	beforeCommit func()
+
 	mu     sync.Mutex
 	mounts []MountRecord  // sorted by id
 	gen    map[string]int // by manifest: bumps whenever a record is replaced
@@ -69,13 +75,18 @@ const (
 // RegistryOptions tune a registry; the zero value is the default.
 type RegistryOptions struct {
 	MountTimeout time.Duration
+	// Getenv reads the server's environment; os.Getenv when nil.
+	Getenv func(string) string
 }
 
 // OpenRegistry reads <home>/databases and records every registration as
 // mounting, without mounting anything: call MountAll once the server
 // listens. It never blocks on storage.
 func OpenRegistry(dirs paths.Dirs, srv Mounter, logf func(format string, args ...any), opts RegistryOptions) (*Registry, error) {
-	r := &Registry{dirs: dirs, server: srv, logf: logf, mountTimeout: opts.MountTimeout, gen: map[string]int{}}
+	r := &Registry{dirs: dirs, server: srv, logf: logf, mountTimeout: opts.MountTimeout, getenv: opts.Getenv, gen: map[string]int{}}
+	if r.getenv == nil {
+		r.getenv = os.Getenv
+	}
 	if r.logf == nil {
 		r.logf = func(string, ...any) {}
 	}
@@ -177,7 +188,7 @@ func (r *Registry) mountOne(ctx context.Context, registration Registration, gen 
 	select {
 	case result := <-outcome:
 		if result.err != nil {
-			record.Reason = mountReason(result.err, registration.Manifest)
+			record.Reason = mountReason(result.err, registration.Manifest, EnvironmentValues(registration.Parsed, r.getenv)...)
 			r.settle(record, gen, nil)
 			return
 		}
@@ -259,9 +270,10 @@ func (r *Registry) settle(record MountRecord, gen int, db *core.Database) {
 	}
 }
 
-// mountReason is a mount error as people read it: redacted, on one line,
-// without the manifest path the error starts with.
-func mountReason(err error, manifestPath string) string {
+// mountReason is a mount error as people read it: the values of the
+// manifest's variables (secrets) masked, redacted, on one line, without the
+// manifest path the error starts with.
+func mountReason(err error, manifestPath string, secrets ...string) string {
 	if err == nil {
 		return ""
 	}
@@ -273,7 +285,7 @@ func mountReason(err error, manifestPath string) string {
 		}
 		text = trimmed
 	}
-	return redact.String(strings.Join(strings.Fields(text), " "))
+	return redact.String(maskValues(strings.Join(strings.Fields(text), " "), secrets))
 }
 
 func (r *Registry) writeMounts() error {
@@ -455,7 +467,7 @@ func ValidateCreate(request *CreateRequest) *envelope.Error {
 	case engine.Setup == SetupManifest:
 		return envelope.New(envelope.Unsupported, createFailed()).
 			WithReason(uicopy.T("database.create.manifest_only", map[string]string{"engine": engine.Name})).
-			WithNext(ManifestSteps(engine.ID, "")...)
+			WithNext(ManifestSteps(engine.ID)...)
 	}
 	switch {
 	case request.Path == "":
@@ -520,17 +532,24 @@ func (r *Registry) Create(request CreateRequest) (DatabaseResult, error) {
 
 // CreatedNext is what to do after creating database: for SQLite, describing
 // the data comes before anything that writes
-// (database-setup-and-providers#REQ:sqlite-next-step-is-schema). Only
-// implemented commands are offered; Browse data, Explore data and AI agent
-// skills join as their increments land.
+// (database-setup-and-providers#REQ:sqlite-next-step-is-schema).
 func CreatedNext(database Database) []envelope.Next {
+	return resultNext(database, database.Engine == EngineSQLite)
+}
+
+// resultNext is the Result of creating or connecting database
+// (database-setup-and-providers#REQ:create-result-next-actions). Only
+// implemented commands are offered; Explore data and AI agent skills join
+// as their increments land.
+func resultNext(database Database, describeSchema bool) []envelope.Next {
 	var next []envelope.Next
-	if database.Engine == EngineSQLite {
+	if describeSchema {
 		next = append(next,
 			envelope.Next{Label: uicopy.T("next.describe_schema", map[string]string{"manifest": database.Manifest}), Command: "ovdb databases reload " + database.ID},
 			envelope.Next{Label: uicopy.T("next.schema_docs", map[string]string{"url": SchemaDocsURL})})
 	}
 	return append(next,
+		envelope.Next{Label: uicopy.T("home.menu.browse", nil), Command: "ovdb list / --db " + database.ID, Action: ActionBrowse},
 		envelope.Next{Label: uicopy.T("next.use_in_project", nil), Command: "ovdb use " + database.ID, Action: ActionUse},
 		envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases},
 		envelope.Next{Label: uicopy.T("next.done", nil), Action: ActionDone})
@@ -583,8 +602,13 @@ func resolved(path string) string {
 	}
 }
 
-// within reports whether path is dir or inside it.
+// within reports whether path is dir or inside it, ignoring case where the
+// usual file systems do (Windows and macOS), so two spellings of one place
+// overlap.
 func within(path, dir string) bool {
+	if goruntime.GOOS == "windows" || goruntime.GOOS == "darwin" {
+		path, dir = strings.ToLower(path), strings.ToLower(dir)
+	}
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
@@ -604,8 +628,12 @@ func (r *Registry) locationInUse(request CreateRequest, registrations []Registra
 func (r *Registry) locationOverlaps(request CreateRequest, registrations []Registration) string {
 	target := resolved(request.Path)
 	for _, own := range []string{r.dirs.Home, r.dirs.Runtime} {
-		if dir := resolved(own); within(target, dir) || within(dir, target) {
+		dir := resolved(own)
+		switch {
+		case within(target, dir):
 			return uicopy.T("database.create.location_ovdb", map[string]string{"path": request.Path})
+		case within(dir, target):
+			return uicopy.T("database.create.location_contains_ovdb", map[string]string{"path": request.Path})
 		}
 	}
 	for _, reg := range registrations {

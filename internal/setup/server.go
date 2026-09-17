@@ -154,6 +154,7 @@ func NewHome(server Server, databases []Database, context *dbcontext.Context) Ho
 	options := []HomeOption{
 		{ID: "demo", Group: "primary", LabelKey: "home.menu.try_demo", DescriptionKey: "home.menu.try_demo_help"},
 		{ID: "create", Group: "primary", LabelKey: "home.menu.create_database", DescriptionKey: "home.menu.create_database_help"},
+		{ID: "connect", Group: "primary", LabelKey: "home.menu.connect_database", DescriptionKey: "home.menu.connect_database_help"},
 		{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
 			DescriptionKey: serverHelp, Badge: &badge},
 	}

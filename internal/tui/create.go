@@ -77,8 +77,12 @@ func dropLast(s string) string {
 func (m Model) updateCreate(key string) (tea.Model, tea.Cmd) {
 	switch m.create.step {
 	case createManifest:
-		if key == "esc" || key == "backspace" {
+		switch key {
+		case "esc", "backspace":
 			m.create.step = createChoose
+		case "enter":
+			// The last step: connect the edited manifest file.
+			return m.enterConnectManifest(m.create.chosen)
 		}
 		return m, nil
 	case createForm:
@@ -242,6 +246,16 @@ func (m Model) viewCreate() string {
 		b.WriteString(mutedStyle.Render(wordWrap(uicopy.T("create.filter.none", map[string]string{"filter": m.create.filter}), width)))
 		return b.String()
 	}
+	b.WriteString(m.engineList(visible, m.create.cursor, 0))
+	return b.String()
+}
+
+// engineList renders storage choices: pinned engines, a divider, the rest,
+// with the cursor at cursor. extra is how many lines the screen shows below
+// the list.
+func (m Model) engineList(visible []setup.Engine, cursor, extra int) string {
+	width := m.width
+	var b strings.Builder
 	nameWidth := 0
 	for _, engine := range visible {
 		nameWidth = max(nameWidth, len([]rune(engine.Name)))
@@ -257,7 +271,7 @@ func (m Model) viewCreate() string {
 		lines += 1 + len(strings.Split(indentWrap("    ", engine.Description, width), "\n"))
 	}
 	// In a short window, descriptions are cut to one line each instead.
-	if !oneLine && 5+lines+1 > m.bodyHeight() {
+	if !oneLine && 5+lines+1+extra > m.bodyHeight() {
 		oneLine, truncate = true, true
 	}
 	dividerShown := false
@@ -269,19 +283,19 @@ func (m Model) viewCreate() string {
 				b.WriteString("\n")
 			}
 		}
-		cursor, style := "  ", itemStyle
-		if i == m.create.cursor {
-			cursor, style = "> ", selectedItemStyle
+		marker, style := "  ", itemStyle
+		if i == cursor {
+			marker, style = "> ", selectedItemStyle
 		}
 		padded := engine.Name + strings.Repeat(" ", nameWidth-len([]rune(engine.Name)))
 		if oneLine {
 			description := engine.Description
 			if truncate {
-				description = truncateEnd(description, width-len([]rune(cursor+padded))-3)
+				description = truncateEnd(description, width-len([]rune(marker+padded))-3)
 			}
-			b.WriteString(style.Render(cursor+padded) + mutedStyle.Render("   "+description))
+			b.WriteString(style.Render(marker+padded) + mutedStyle.Render("   "+description))
 		} else {
-			b.WriteString(style.Render(cursor + engine.Name))
+			b.WriteString(style.Render(marker + engine.Name))
 			b.WriteString("\n")
 			b.WriteString(mutedStyle.Render(indentWrap("    ", engine.Description, width)))
 		}

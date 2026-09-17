@@ -83,7 +83,7 @@ func writeEngines(w io.Writer, engines []setup.Engine) {
 	generic := slices.Clone(steps)
 	generic[0].Command = "ovdb init --engine <" + strings.Join(ids, "|") + "> --id <name>"
 	say(w, "")
-	say(w, uicopy.T("engine.manifest.title", nil)+":")
+	say(w, uicopy.T("engines.manifest_steps", nil)+":")
 	writeNext(w, generic)
 }
 

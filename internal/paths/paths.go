@@ -229,3 +229,16 @@ func WriteFilePrivate(path string, data []byte) (err error) {
 	}
 	return os.Rename(tmp.Name(), path)
 }
+
+// ExpandHome is path with a leading ~ (alone, or before a separator) replaced
+// by home, as a shell expands it: the TUI and web console have no shell to do
+// it for them. ~user forms are left as they are.
+func ExpandHome(path, home string) string {
+	switch {
+	case path == "~":
+		return home
+	case strings.HasPrefix(path, "~/"), strings.HasPrefix(path, "~"+string(filepath.Separator)):
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}

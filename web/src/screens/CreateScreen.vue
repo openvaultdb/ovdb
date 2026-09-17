@@ -10,7 +10,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   api,
   type ApiError,
-  type ContextDocument,
   type DatabaseResult,
   type Engine,
   type EnginesDocument,
@@ -21,11 +20,11 @@ import OvBackLink from '../components/OvBackLink.vue'
 import OvButton from '../components/OvButton.vue'
 import OvCard from '../components/OvCard.vue'
 import OvCommand from '../components/OvCommand.vue'
+import OvDatabaseResult from '../components/OvDatabaseResult.vue'
 import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
-import { browseRoute } from '../datapath'
 import { defaultLocation, filterEngines, suggestedName } from '../engines'
 import { navigate } from '../router'
 
@@ -145,9 +144,6 @@ function remedy(item: Next) {
 
 const problemNext = computed(() => problem.value?.next.filter((item) => item.action !== 'done') ?? [])
 
-// Result: commands to repeat in a terminal, and in-page actions as buttons.
-const resultCommands = computed(() => result.value?.next.filter((item) => !item.action) ?? [])
-
 function storedText(db: DatabaseResult['database']) {
   const separator = (db.location ?? '').includes('\\') && !(db.location ?? '').includes('/') ? '\\' : '/'
   return db.engine === 'sqlite'
@@ -155,21 +151,7 @@ function storedText(db: DatabaseResult['database']) {
     : t('database.created.stored.ingitdb', { path: (db.location ?? '') + separator })
 }
 
-const using = ref(false)
-const usedDefault = ref<string | null>(null)
-
-// The console makes a database the default for all projects; choosing one
-// for a project happens in a terminal (parity E3).
-async function useAsDefault(id: string) {
-  using.value = true
-  const response = await api<ContextDocument>('PUT', '/api/local/v1/context', { scope: 'global', database: id })
-  using.value = false
-  if (response.ok) usedDefault.value = response.data.message ?? null
-  else problem.value = response.error
-}
-
 function another() {
-  usedDefault.value = null
   result.value = null
   chosen.value = null
   name.value = ''
@@ -193,52 +175,14 @@ function go(event: MouseEvent, path: string) {
     <OvNotice v-else-if="loadProblem" live tone="problem" :title="loadProblem.message" :reason="loadProblem.reason" :next="loadProblem.next" />
 
     <!-- Result -->
-    <div v-else-if="result" ref="outcome" tabindex="-1" data-testid="create-result" class="flex flex-col gap-6">
-      <OvNotice live tone="success" :title="t('database.created.title', { name: result.database.id })">
-        <p class="break-words"><OvText :text="storedText(result.database)" /></p>
-      </OvNotice>
-      <section class="flex flex-col gap-4" aria-labelledby="what-next">
-        <h2 id="what-next" class="text-lg font-semibold tracking-tight">{{ t('home.what_next') }}</h2>
-        <ul v-if="resultCommands.length" class="flex flex-col gap-4">
-          <li v-for="item in resultCommands" :key="item.label">
-            <p class="mb-1 break-words"><OvText :text="item.label" /></p>
-            <OvCommand v-if="item.command" :command="item.command" />
-          </li>
-        </ul>
-        <div class="flex flex-wrap gap-3">
-          <template v-for="item in result.next" :key="item.label">
-            <a
-              v-if="item.action === 'databases'"
-              href="/databases"
-              class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
-              @click="go($event, '/databases')"
-              >{{ item.label }}</a
-            >
-            <template v-else-if="item.action === 'use'">
-              <a
-                :href="browseRoute(result.database.id)"
-                class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
-                @click="go($event, browseRoute(result.database.id))"
-                >{{ t('home.menu.browse') }}</a
-              >
-              <OvButton v-if="!usedDefault" variant="secondary" data-testid="use-as-default" :busy="using" @click="useAsDefault(result.database.id)">
-                {{ t('browse.use_as_default') }}
-              </OvButton>
-            </template>
-            <a
-              v-else-if="item.action === 'done'"
-              href="/"
-              class="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-hover"
-              @click="go($event, '/')"
-              >{{ item.label }}</a
-            >
-          </template>
-        </div>
-        <OvNotice v-if="usedDefault" live tone="success" :title="usedDefault" />
-        <p>
-          <button type="button" class="font-medium text-accent hover:underline" @click="another">{{ t('create.another') }}</button>
-        </p>
-      </section>
+    <div v-else-if="result" ref="outcome" tabindex="-1" data-testid="create-result">
+      <OvDatabaseResult
+        :result="result"
+        :title="t('database.created.title', { name: result.database.id })"
+        :stored="storedText(result.database)"
+        :another="t('create.another')"
+        @another="another"
+      />
     </div>
 
     <!-- Choose storage -->
@@ -287,6 +231,14 @@ function go(event: MouseEvent, path: string) {
             <OvCommand v-if="step.command" :command="step.command" />
           </li>
         </ol>
+        <p class="mt-5">
+          <a
+            :href="`/databases/connect?engine=${chosen.id}`"
+            class="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-hover"
+            @click="go($event, `/databases/connect?engine=${chosen.id}`)"
+            >{{ t('connect.manifest_option') }}</a
+          >
+        </p>
       </OvCard>
     </section>
 

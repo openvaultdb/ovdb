@@ -44,6 +44,12 @@ var Rows = []Row{
 		API: []string{"GET /api/local/v1/engines"}, Implemented: true},
 	{ID: "9", Capability: "Create database (inGitDB, SQLite)", CLI: []string{"ovdb databases create"}, TUI: "create", Web: "/databases/new",
 		API: []string{"POST /api/local/v1/databases"}, Implemented: true},
+	// Connecting never writes into the storage; a manifest file is copied into
+	// OVDB home with its storage paths made absolute.
+	{ID: "10", Capability: "Connect existing inGitDB folder or SQLite file", CLI: []string{"ovdb databases connect"}, TUI: "connect", Web: "/databases/connect",
+		API: []string{"POST /api/local/v1/databases/connect"}, Implemented: true},
+	{ID: "10a", Capability: "Connect with a manifest file (any engine)", CLI: []string{"ovdb databases connect"}, TUI: "connect", Web: "/databases/connect",
+		API: []string{"POST /api/local/v1/databases/connect"}, Implemented: true},
 	{ID: "11", Capability: "List databases", CLI: []string{"ovdb databases"}, TUI: "databases", Web: "/databases",
 		API: []string{"GET /api/local/v1/databases"}, Implemented: true},
 	// Removing a database also clears every context that named it.

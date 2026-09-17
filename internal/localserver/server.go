@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/http/httptest"
@@ -124,7 +125,8 @@ func New(opts Options) (*Handler, error) {
 		return nil, err
 	}
 	dataServer := server.New(opts.Record.Version, opts.Databases,
-		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}))
+		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}),
+		server.WithLogger(slog.New(captureErrors(slog.Default().Handler()))))
 	registry, err := setup.OpenRegistry(opts.Dirs, dataServer, logf(opts.ErrorLog, opts.Now), setup.RegistryOptions{MountTimeout: opts.MountTimeout})
 	if err != nil {
 		return nil, err
@@ -169,6 +171,7 @@ var endpoints = []endpoint{
 	{http.MethodGet, "/api/local/v1/engines", accessOwner, (*localServer).engines},
 	{http.MethodGet, "/api/local/v1/databases", accessOwner, (*localServer).databases},
 	{http.MethodPost, "/api/local/v1/databases", accessOwner, (*localServer).createDatabase},
+	{http.MethodPost, "/api/local/v1/databases/connect", accessOwner, (*localServer).connectDatabase},
 	{http.MethodPost, "/api/local/v1/databases/{id}/reload", accessOwner, (*localServer).reloadDatabase},
 	{http.MethodPost, "/api/local/v1/databases/reload", accessOwner, (*localServer).reloadAll},
 	{http.MethodDelete, "/api/local/v1/databases/{id}", accessOwner, (*localServer).removeDatabase},
@@ -242,6 +245,10 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 		if credential := credentialOf(r); credential != credentialNone && credential != credentialInvalid {
 			if id, ok := databaseOf(path); ok {
 				s.registry.AwaitMount(r.Context(), id)
+				if isWrite(r) {
+					s.serveWrite(w, r, id)
+					return
+				}
 			}
 		}
 		s.data.ServeHTTP(w, r)
@@ -271,6 +278,43 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.landing(w, r)
 	}
+}
+
+// isWrite reports whether a /v1 request changes records: queries are POSTs
+// that only read.
+func isWrite(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	return !strings.HasSuffix(r.URL.Path, "/query") && !strings.HasSuffix(r.URL.Path, "/dtql")
+}
+
+// serveWrite serves a data write. When it fails inside openvaultdb-go
+// (which answers only "internal server error") because git has no name and
+// email to commit to the database's inGitDB folder, as the error it logged
+// for this request says, the answer says so and how to fix it: OVDB never
+// sets an identity in a person's folder. Any other failure is passed on.
+func (s *localServer) serveWrite(w http.ResponseWriter, r *http.Request, id string) {
+	logged := &loggedError{}
+	r = r.WithContext(context.WithValue(r.Context(), loggedErrorKey{}, logged))
+	recorder := httptest.NewRecorder()
+	s.data.ServeHTTP(recorder, r)
+	if recorder.Code == http.StatusInternalServerError && gitIdentityFailure(logged.text()) {
+		if dir, ok := s.registry.GitStorage(id); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write(envelope.Marshal(v1Error{Error: v1ErrorDetail{
+				Code: setup.GitIdentityMissingCode, Message: uicopy.T("data.git_identity_missing", map[string]string{"path": dir}),
+			}}))
+			return
+		}
+	}
+	for key, values := range recorder.Header() {
+		w.Header()[key] = values
+	}
+	w.WriteHeader(recorder.Code)
+	_, _ = w.Write(recorder.Body.Bytes())
 }
 
 // tokensCommand is the CLI command a console session is sent to instead of a
@@ -429,7 +473,7 @@ func (s *localServer) putContext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *localServer) engines(w http.ResponseWriter, _ *http.Request) {
-	envelope.WriteJSON(w, http.StatusOK, setup.NewEnginesDocument(s.opts.Dirs.Home))
+	envelope.WriteJSON(w, http.StatusOK, setup.NewEnginesDocument())
 }
 
 func (s *localServer) databases(w http.ResponseWriter, _ *http.Request) {
@@ -447,6 +491,19 @@ func (s *localServer) createDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.registry.Create(request)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusCreated, result)
+}
+
+func (s *localServer) connectDatabase(w http.ResponseWriter, r *http.Request) {
+	var request setup.ConnectRequest
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	result, err := s.registry.Connect(request)
 	if err != nil {
 		writeError(w, err)
 		return

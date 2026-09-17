@@ -96,7 +96,7 @@ func TestCreatePostgresShowsManifestSteps(t *testing.T) {
 	}
 	view := stripANSI(m.View().Content)
 	for _, want := range []string{"Set this up with a manifest file", "ovdb init --engine postgres --id <name>",
-		"Guided connect is coming.", "ovdb databases reload <name>", setup.ManifestDocsURL} {
+		"ovdb databases connect --manifest <absolute path>", setup.ManifestDocsURL} {
 		if !strings.Contains(view, want) {
 			t.Errorf("manifest view lacks %q:\n%s", want, view)
 		}
@@ -176,9 +176,9 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	// Databases: remove after confirming; the data stays.
 	m = send(t, m, key("esc"))
 	m = send(t, m, key("esc"))
-	m = send(t, m, key("down"))
-	m = send(t, m, key("down"))
-	m = send(t, m, key("down"))
+	for m.home.document.Options[m.home.cursor].ID != "databases" && m.home.cursor < len(m.home.document.Options)-1 {
+		m = send(t, m, key("down"))
+	}
 	if option := m.home.document.Options[m.home.cursor]; option.ID != "databases" {
 		t.Fatalf("home option %d = %s", m.home.cursor, option.ID)
 	}

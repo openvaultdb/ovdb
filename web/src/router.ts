@@ -5,7 +5,7 @@ import { computed, ref } from 'vue'
 
 import routes from '../routes.json'
 
-export type Screen = 'home' | 'demo' | 'server' | 'settings' | 'databases' | 'create' | 'browse' | 'not-found'
+export type Screen = 'home' | 'demo' | 'server' | 'settings' | 'databases' | 'create' | 'connect' | 'browse' | 'not-found'
 
 export const currentPath = ref(typeof window === 'undefined' ? '/' : window.location.pathname)
 
@@ -17,10 +17,12 @@ export const screen = computed<Screen>(
     )?.screen as Screen | undefined) ?? 'not-found',
 )
 
+/** Goes to path, which may carry a query (`/databases/connect?engine=mysql`); screens match the path alone. */
 export function navigate(path: string) {
-  if (path === currentPath.value) return
+  const pathname = path.split('?')[0]
+  if (path === currentPath.value + window.location.search) return
   window.history.pushState({}, '', path)
-  currentPath.value = path
+  currentPath.value = pathname
   window.scrollTo(0, 0)
 }
 

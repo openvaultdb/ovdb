@@ -37,11 +37,12 @@ const (
 	ScreenDatabases = "databases"
 	ScreenBrowse    = "browse"
 	ScreenDemo      = "demo"
+	ScreenConnect   = "connect"
 )
 
 // ScreenIDs lists every screen id the TUI registers.
 func ScreenIDs() []string {
-	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo}
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo, ScreenConnect}
 }
 
 // minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
@@ -74,6 +75,10 @@ type Model struct {
 	databases databasesScreen
 	browse    browseScreen
 	demo      demoScreen
+	connect   connectScreen
+	// problemFrom is the screen whose request raised the current Problem,
+	// when its remedies return there.
+	problemFrom string
 
 	busy *busyState
 }
@@ -265,6 +270,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case demoLoadedMsg, demoInstalledMsg, demoOpenedMsg:
 		return m.updateDemoMsg(msg)
 
+	case connectEnginesMsg, connectResultMsg:
+		return m.updateConnectMsg(msg)
+
 	case contextSetMsg:
 		m.busy = nil
 		m.pullNotices()
@@ -332,7 +340,7 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// "?" is text while typing a filter, name or location.
-	typing := m.screen == ScreenCreate && m.create.step != createManifest || m.screen == ScreenBrowse && m.browse.typing
+	typing := m.screen == ScreenCreate && m.create.step != createManifest || m.screen == ScreenBrowse && m.browse.typing || m.screen == ScreenConnect
 	if key == "?" && !typing {
 		m.showHelp = !m.showHelp
 		return m, nil
@@ -356,6 +364,8 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.updateBrowse(key)
 	case ScreenDemo:
 		return m.updateDemo(key)
+	case ScreenConnect:
+		return m.updateConnect(key)
 	}
 	return m, nil
 }
@@ -364,6 +374,7 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 // it shows.
 func (m Model) backHome() (tea.Model, tea.Cmd) {
 	m.screen = ScreenHome
+	m.problemFrom = ""
 	m.home.loaded = false
 	return m, m.loadHomeCmd()
 }
@@ -399,6 +410,8 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 			return m.enterDemo()
 		case ScreenCreate:
 			return m.enterCreate()
+		case ScreenConnect:
+			return m.enterConnect()
 		case ScreenDatabases:
 			return m.enterDatabases()
 		case ScreenBrowse:
@@ -506,11 +519,14 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.openDemoCmd(), tickCmd())
 			}
 		}
-	case "d", "u":
-		// "See your databases" and "Use it in this project", when the result
-		// offers them.
+	case "b", "d", "u":
+		// "Browse data", "See your databases" and "Use it in this project",
+		// when the result offers them.
 		for _, n := range m.result.next {
 			switch {
+			case key == "b" && n.Action == setup.ActionBrowse:
+				fields := strings.Fields(n.Command)
+				return m.browseDatabase(fields[len(fields)-1])
 			case key == "d" && n.Action == setup.ActionDatabases:
 				return m.enterDatabases()
 			case key == "u" && n.Action == setup.ActionUse:
@@ -538,15 +554,18 @@ func (m Model) updateProblem(key string) (tea.Model, tea.Cmd) {
 				m.busy = &busyState{label: uicopy.T("server.starting", nil)}
 				return m, tea.Batch(m.portRemedyCmd(port), tickCmd())
 			}
+		case m.problemFrom == ScreenConnect && (n.Action == setup.ActionEditName || n.Action == setup.ActionEditLocation || n.Action == setup.ActionEditManifest):
+			m.problemFrom = ""
+			return m.connectRemedy(*n), nil
+		case n.Action == setup.ActionEditManifest:
+			return m.enterConnectManifest(m.create.chosen)
 		case (n.Action == setup.ActionEditName || n.Action == setup.ActionEditLocation) && m.create.chosen.ID != "":
 			return m.createRemedy(*n), nil
 		case n.Action == setup.ActionDatabases:
 			return m.enterDatabases()
 		}
 	case "esc", "backspace":
-		m.screen = ScreenHome
-		m.home.loaded = false
-		return m, m.loadHomeCmd()
+		return m.backHome()
 	}
 	return m, nil
 }
@@ -580,6 +599,8 @@ func (m Model) View() tea.View {
 		body = m.viewBrowse()
 	case m.screen == ScreenDemo:
 		body = m.viewDemo()
+	case m.screen == ScreenConnect:
+		body = m.viewConnect()
 	}
 	sections := []string{header, body}
 	if len(m.noticeLines) > 0 {
@@ -606,6 +627,14 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(uicopy.T("create.hint.choose", nil), m.width))
 	case m.screen == ScreenCreate && m.create.step == createForm:
 		return helpStyle.Render(wordWrap(uicopy.T("create.hint.form", nil), m.width))
+	case m.screen == ScreenCreate && m.create.step == createManifest:
+		return helpStyle.Render(wordWrap(uicopy.T("create.hint.manifest", nil), m.width))
+	case m.screen == ScreenConnect && m.connect.step == connectChoose:
+		return helpStyle.Render(wordWrap(uicopy.T("create.hint.choose", nil), m.width))
+	case m.screen == ScreenConnect && m.connect.step == connectForm:
+		return helpStyle.Render(wordWrap(uicopy.T("connect.hint.form", nil), m.width))
+	case m.screen == ScreenConnect:
+		return helpStyle.Render(wordWrap(uicopy.T("connect.hint.manifest", nil), m.width))
 	case m.screen == ScreenBrowse:
 		return helpStyle.Render(wordWrap(m.browseFooter(), m.width))
 	case m.screen == ScreenDemo:
