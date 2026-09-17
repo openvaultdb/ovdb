@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	embedded "github.com/openvaultdb/ovdb/skills"
@@ -300,5 +301,48 @@ func TestResolveDiscovery(t *testing.T) {
 	}
 	if _, _, err := e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"vim"}}); envelope.As(err) == nil {
 		t.Errorf("unknown harness = %v", err)
+	}
+}
+
+// withOlderSkills makes the embedded skills an older release until the test
+// ends: the TODO skill's text differs.
+func withOlderSkills(t *testing.T) {
+	t.Helper()
+	current := content
+	older := fstest.MapFS{}
+	_ = fs.WalkDir(current, ".", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			data, _ := fs.ReadFile(current, path)
+			older[path] = &fstest.MapFile{Data: data, Mode: 0o644}
+		}
+		return nil
+	})
+	older["openvaultdb-todo-demo/SKILL.md"] = &fstest.MapFile{Data: []byte("---\nname: openvaultdb-todo-demo\ndescription: older\n---\n"), Mode: 0o644}
+	content = older
+	t.Cleanup(func() { content = current })
+}
+
+// Review F2: a skill an older ovdb installed is "update available" in the
+// skills document and the status, and installing it again updates it.
+func TestUpdateAvailable(t *testing.T) {
+	e := testEnv(t)
+	func() {
+		withOlderSkills(t)
+		mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	}()
+	content = embedded.FS
+	todo := Inspect(e).Skills[1]
+	if todo.Targets[0].State != StateUpdateAvailable || !todo.Targets[0].Installed || len(todo.InstalledFor) != 1 {
+		t.Errorf("after an older install = %+v", todo.Targets[0])
+	}
+	if status := Status(e); strings.Join(status[1].UpdateAvailableFor, ",") != "claude" {
+		t.Errorf("status = %+v", status)
+	}
+	doc := mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	if doc.AlreadyUpToDate || doc.Outcomes[0].Result != "updated" {
+		t.Errorf("update = %+v", doc)
+	}
+	if state := Inspect(e).Skills[1].Targets[0].State; state != StateInstalled {
+		t.Errorf("after the update: %s", state)
 	}
 }

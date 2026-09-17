@@ -92,7 +92,9 @@ const commands = computed(() => result.value?.next.filter((item) => item.command
 const hints = computed(() => result.value?.next.filter((item) => !item.command && !item.action) ?? [])
 
 function installedFor(skill: Skill): string {
-  const names = skill.targets.filter((target) => target.installed).map((target) => target.name)
+  const names = skill.targets
+    .filter((target) => target.installed)
+    .map((target) => (target.state === 'installed' ? target.name : `${target.name} (${t(`skills.state.${target.state}`)})`))
   return names.length ? t('skills.list.installed_for', { agents: names.join(', ') }) : t('skills.list.not_installed')
 }
 

@@ -464,6 +464,7 @@
   "skills.hint.list": "↑/↓ choose · Enter see and install · Esc back",
   "skills.hint.consent": "↑/↓ choose · Space choose an agent · Enter select · Esc not now",
   "skills.list.install_button": "Install the {name}…",
+  "skills.state.update_available": "update available",
   "result.hint.open_app": "o open the TODO app · Enter done",
   "next.connect_agent": "Connect an app or AI assistant",
   "next.setup_terminal": "Set up in the terminal",

@@ -79,7 +79,7 @@ func TestSkillsEndpoints(t *testing.T) {
 		t.Errorf("second install = %d %s", again.code, again.body)
 	}
 	status := f.do(t, request{path: "/api/local/v1/status", cookie: session})
-	if !strings.Contains(status.Body.String(), `"skills":[{"id":"openvaultdb","installed_for":[]},{"id":"todo-demo","installed_for":["claude"]}]`) {
+	if !strings.Contains(status.Body.String(), `"skills":[{"id":"openvaultdb","installed_for":[],"update_available_for":[]},{"id":"todo-demo","installed_for":["claude"],"update_available_for":[]}]`) {
 		t.Errorf("status skills = %s", status.Body)
 	}
 

@@ -31,6 +31,7 @@ const target = (harness: string, name: string, dir: string, detected: boolean, i
   dir: `/home/a/.${harness}/skills/${dir}`,
   detected,
   installed,
+  state: installed ? 'installed' : 'not_installed',
 })
 
 function skill(id: string, dir: string, name: string, purpose: string, example: string, installedForClaude = false) {
@@ -71,7 +72,7 @@ const installedDocument = {
   dir: 'openvaultdb-todo-demo',
   name: 'TODO AI skill',
   already_up_to_date: false,
-  targets: [{ ...document().skills[1].targets[0], result: 'added', installed: true }],
+  targets: [{ ...document().skills[1].targets[0], result: 'added', installed: true, state: 'installed' }],
   next: [
     { label: 'Ask your AI agent: "add bananas and coffee to my shopping list"' },
     { label: 'Open TODO app', command: 'ovdb demo open', action: 'open_app' },

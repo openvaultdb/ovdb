@@ -266,12 +266,18 @@ func (m Model) viewSkills() string {
 		b.WriteString(mutedStyle.Render(indentWrap("    ", skill.Purpose, width)))
 		b.WriteString("\n")
 		installed := uicopy.T("skills.list.not_installed", nil)
-		if len(skill.InstalledFor) > 0 {
-			var names []string
-			for _, id := range skill.InstalledFor {
-				names = append(names, skills.HarnessName(id))
+		var names, updates []string
+		for _, target := range skill.Targets {
+			switch target.State {
+			case skills.StateInstalled:
+				names = append(names, target.Name)
+			case skills.StateNotInstalled:
+			default:
+				updates = append(updates, target.Name+" ("+uicopy.T("skills.state."+target.State, nil)+")")
 			}
-			installed = uicopy.T("skills.list.installed_for", map[string]string{"agents": strings.Join(names, ", ")})
+		}
+		if all := append(names, updates...); len(all) > 0 {
+			installed = uicopy.T("skills.list.installed_for", map[string]string{"agents": strings.Join(all, ", ")})
 		}
 		b.WriteString(mutedStyle.Render(indentWrap("    ", installed, width)))
 		b.WriteString("\n")

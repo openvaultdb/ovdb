@@ -51,6 +51,16 @@ const (
 	ActionSkills = "skills"
 )
 
+// content is the embedded skills; tests swap in an older release.
+var content fs.FS = embedded.FS
+
+// Target states: how an installed skill compares with this build's.
+const (
+	StateNotInstalled    = "not_installed"
+	StateInstalled       = "installed"
+	StateUpdateAvailable = "update_available"
+)
+
 // Publisher is the skillsync publisher of the CLI and of every bundle.
 const Publisher = "openvaultdb"
 
@@ -149,6 +159,8 @@ type Target struct {
 	Dir       string `json:"dir"`
 	Detected  bool   `json:"detected"`
 	Installed bool   `json:"installed"`
+	// State is StateNotInstalled, StateInstalled or StateUpdateAvailable.
+	State string `json:"state"`
 }
 
 // Skill is one skill in the skills document.
@@ -188,8 +200,37 @@ func harnessByID(id string) (cobracmd.Harness, bool) {
 
 func (e Env) target(h cobracmd.Harness, d Definition) Target {
 	dir := h.SkillsDir(e.Home, e.Getenv)
-	return Target{Harness: h.ID, Name: HarnessName(h.ID), SkillsDir: dir, Dir: filepath.Join(dir, d.Dir),
-		Detected: h.Present(e.Home, e.Getenv), Installed: installed(dir, d)}
+	t := Target{Harness: h.ID, Name: HarnessName(h.ID), SkillsDir: dir, Dir: filepath.Join(dir, d.Dir),
+		Detected: h.Present(e.Home, e.Getenv)}
+	t.setState(stateOf(dir, d))
+	return t
+}
+
+func (t *Target) setState(state string) {
+	t.State, t.Installed = state, state != StateNotInstalled
+}
+
+// stateOf compares d in skillsDir with this build's copy through a skillsync
+// dry run, which reads and never writes: unchanged is installed, an update
+// is an older OVDB's copy.
+func stateOf(skillsDir string, d Definition) string {
+	if !installed(skillsDir, d) {
+		return StateNotInstalled
+	}
+	cfg, err := Build{}.config(d)
+	if err != nil {
+		return StateInstalled
+	}
+	report, err := skillsync.Sync(context.Background(), cfg, skillsync.Options{Dir: skillsDir, DryRun: true})
+	if err != nil {
+		return StateInstalled
+	}
+	for _, change := range report.Changes {
+		if change.Name == d.Dir && change.Action == skillsync.Updated {
+			return StateUpdateAvailable
+		}
+	}
+	return StateInstalled
 }
 
 // installed reports whether d is installed in skillsDir: skillsync records
@@ -262,6 +303,9 @@ func InstallNext(id string) envelope.Next {
 type Installed struct {
 	ID           string   `json:"id"`
 	InstalledFor []string `json:"installed_for"`
+	// UpdateAvailableFor lists the harnesses whose copy an older ovdb
+	// installed; `ovdb skills install <id>` updates it.
+	UpdateAvailableFor []string `json:"update_available_for"`
 }
 
 // Status lists every skill and where it is installed, reading only
@@ -269,9 +313,13 @@ type Installed struct {
 func Status(e Env) []Installed {
 	out := []Installed{}
 	for _, d := range Definitions {
-		entry := Installed{ID: d.ID, InstalledFor: []string{}}
+		entry := Installed{ID: d.ID, InstalledFor: []string{}, UpdateAvailableFor: []string{}}
 		for _, h := range cobracmd.DefaultHarnesses {
-			if installed(h.SkillsDir(e.Home, e.Getenv), d) {
+			switch stateOf(h.SkillsDir(e.Home, e.Getenv), d) {
+			case StateUpdateAvailable:
+				entry.UpdateAvailableFor = append(entry.UpdateAvailableFor, h.ID)
+				entry.InstalledFor = append(entry.InstalledFor, h.ID)
+			case StateInstalled:
 				entry.InstalledFor = append(entry.InstalledFor, h.ID)
 			}
 		}
@@ -448,8 +496,8 @@ func CheckUnderHome(d Definition, home, dir string) error {
 
 // describeRequest is the target t in e, for plans and results.
 func (e Env) describeRequest(d Definition, t RequestTarget) Target {
-	target := Target{Harness: t.Harness, Name: HarnessName(t.Harness), SkillsDir: t.SkillsDir, Dir: filepath.Join(t.SkillsDir, d.Dir),
-		Installed: installed(t.SkillsDir, d)}
+	target := Target{Harness: t.Harness, Name: HarnessName(t.Harness), SkillsDir: t.SkillsDir, Dir: filepath.Join(t.SkillsDir, d.Dir)}
+	target.setState(stateOf(t.SkillsDir, d))
 	if t.Harness == "" {
 		target.Name = t.SkillsDir
 	}
@@ -478,11 +526,11 @@ type Build struct {
 const unknownRevision = "0000000000000000000000000000000000000000"
 
 func (b Build) config(d Definition) (skillsync.Config, error) {
-	content, err := oneSkill(embedded.FS, d.Dir)
+	bundle, err := oneSkill(content, d.Dir)
 	if err != nil {
 		return skillsync.Config{}, err
 	}
-	digest, err := skillsync.Digest(content)
+	digest, err := skillsync.Digest(bundle)
 	if err != nil {
 		return skillsync.Config{}, err
 	}
@@ -507,14 +555,14 @@ func (b Build) config(d Definition) (skillsync.Config, error) {
 	if _, err := skillsync.CompareVersions(current, current); err != nil {
 		current = "dev"
 	}
-	bundle, err := skillsync.EmbeddedBundle(skillsync.BundleDescriptor{
+	embeddedBundle, err := skillsync.EmbeddedBundle(skillsync.BundleDescriptor{
 		Plugin: d.Plugin(),
 		Source: skillsync.Source{Repository: "github.com/openvaultdb/ovdb", Path: "skills/" + d.Dir, Revision: revision, Version: version, Digest: digest},
-	}, content)
+	}, bundle)
 	if err != nil {
 		return skillsync.Config{}, err
 	}
-	return skillsync.Config{CLI: CLI, CurrentVersion: current, Bundles: []skillsync.Bundle{bundle}}, nil
+	return skillsync.Config{CLI: CLI, CurrentVersion: current, Bundles: []skillsync.Bundle{embeddedBundle}}, nil
 }
 
 // Install installs skill d into each target with one skillsync.Sync per
@@ -550,7 +598,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			doc.AlreadyUpToDate = false
 		}
 		if !dryRun {
-			outcome.Installed = installed(t.SkillsDir, d)
+			outcome.setState(stateOf(t.SkillsDir, d))
 		}
 		doc.Outcomes = append(doc.Outcomes, outcome)
 	}

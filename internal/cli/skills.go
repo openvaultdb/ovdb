@@ -79,11 +79,11 @@ func targetLine(target skills.Target, withState bool) string {
 		state := uicopy.T("skills.state.not_installed", nil)
 		switch {
 		case target.Installed:
-			state = uicopy.T("skills.state.installed", nil)
+			state = uicopy.T("skills.state."+target.State, nil)
 		case !target.Detected:
 			state = uicopy.T("skills.state.not_found", nil)
 		}
-		line += padRight(state, 15)
+		line += padRight(state, 22)
 	}
 	return line + target.Dir
 }
