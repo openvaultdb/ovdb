@@ -141,6 +141,20 @@ export interface DataRecord {
   data?: Record<string, unknown>
 }
 
+/** GET /api/local/v1/demo and POST /api/local/v1/demo/install (spec/features/todo-demo). */
+export interface DemoDocument {
+  schema: number
+  app: string
+  installed: boolean
+  already_installed?: boolean
+  database?: string
+  location: string
+  state?: Database['state']
+  app_path: string
+  lists: string[]
+  next: Next[]
+}
+
 export interface ConfigDocument {
   schema: number
   config: { server: { port?: number } }
@@ -180,7 +194,7 @@ export interface RawBody {
   contentType: string
 }
 
-export async function api<T>(method: 'GET' | 'PUT' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<Result<T>> {
+export async function api<T>(method: 'GET' | 'PUT' | 'PATCH' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<Result<T>> {
   const raw = body as RawBody | undefined
   const isRaw = raw !== undefined && typeof raw === 'object' && raw !== null && 'contentType' in raw && 'text' in raw
   let response: Response
@@ -200,6 +214,8 @@ export async function api<T>(method: 'GET' | 'PUT' | 'POST' | 'DELETE', path: st
   } else if (connection.value === 'unreachable' || (serverMoving && connection.value === 'session-ended')) {
     connection.value = 'ok'
   }
+  // Data API writes answer 204 with no body.
+  if (response.ok && response.status === 204) return { ok: true, data: undefined as T }
   let document: unknown
   try {
     document = await response.json()

@@ -276,13 +276,14 @@ func (s *Service) logf(format string, args ...any) {
 }
 
 // seed is the demo data: two lists and their items, added a second apart so
-// every client shows them in the same order.
+// every client shows them in the same order, before anything added later.
 func (s *Service) seed() []Op {
 	now := time.Now
 	if s.Now != nil {
 		now = s.Now
 	}
-	at := now().UTC().Truncate(time.Second)
+	// Five items a second apart, the last one now: none is in the future.
+	at := now().UTC().Truncate(time.Second).Add(-4 * time.Second)
 	var ops []Op
 	add := func(list, listTitle string, items ...[2]string) {
 		ops = append(ops, Op{Path: "/lists/" + list, Data: map[string]any{"title": listTitle}})

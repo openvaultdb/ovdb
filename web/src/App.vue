@@ -14,6 +14,7 @@ import SettingsScreen from './screens/SettingsScreen.vue'
 import DatabasesScreen from './screens/DatabasesScreen.vue'
 import CreateScreen from './screens/CreateScreen.vue'
 import BrowseScreen from './screens/BrowseScreen.vue'
+import DemoScreen from './screens/DemoScreen.vue'
 import { useServer } from './useServer'
 
 // The shell keeps the server poll running on every screen.
@@ -21,6 +22,7 @@ useServer()
 
 const titles = {
   home: () => t('app.name'),
+  demo: () => t('console.title', { screen: t('demo.title') }),
   server: () => t('console.title', { screen: t('server.title') }),
   settings: () => t('console.title', { screen: t('settings.title') }),
   databases: () => t('console.title', { screen: t('databases.title') }),
@@ -74,6 +76,7 @@ function home(event: MouseEvent) {
         <p class="text-lg"><OvText :text="t('server.stopped_copy')" /></p>
       </div>
       <HomeScreen v-else-if="screen === 'home'" />
+      <DemoScreen v-else-if="screen === 'demo'" />
       <ServerScreen v-else-if="screen === 'server'" />
       <SettingsScreen v-else-if="screen === 'settings'" />
       <DatabasesScreen v-else-if="screen === 'databases'" />
