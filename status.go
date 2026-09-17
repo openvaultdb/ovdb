@@ -60,6 +60,8 @@ func newStatusCmd(app *cli.App) *cobra.Command {
 		// Registered only behind the gate, so `ovdb status --help` and a
 		// stray --json behave exactly as before without it.
 		cmd.Flags().BoolVar(&jsonOut, "json", false, "print the local setup status as JSON")
+		cmd.Short = "Show the local OVDB setup: server, databases, demo, skills and usage statistics (starts nothing)"
+		cmd.Flags().Lookup("url").Usage = "query this running server's legacy /v1/status instead"
 	}
 	return cmd
 }

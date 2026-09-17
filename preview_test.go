@@ -68,6 +68,15 @@ func TestHelpUnchangedWithoutPreview(t *testing.T) {
 	}
 }
 
+// Review L9: under the gate, `ovdb status --help` describes the local
+// setup report, not a running server; without it the golden help stays.
+func TestPreviewStatusHelpDescribesTheSetup(t *testing.T) {
+	stdout, _, code := runOVDB(t, []string{"OVDB_PREVIEW=1"}, "status", "--help")
+	if code != 0 || !strings.Contains(stdout, "Show the local OVDB setup") || strings.Contains(stdout, "of a running OpenVaultDB server") {
+		t.Errorf("preview status --help:\n%s", stdout)
+	}
+}
+
 func TestPreviewOffersNewCommandsAndUsesEnvelope(t *testing.T) {
 	preview := []string{"OVDB_PREVIEW=1"}
 	help, _, _ := runOVDB(t, preview, "--help")
