@@ -151,7 +151,7 @@ function another() {
       <OvDatabaseResult
         :result="result"
         :title="t('database.connected.title', { name: result.database.id })"
-        :stored="t('database.connected.stored', { location: result.database.location ?? '' })"
+        :stored="t(result.database.engine === 'sqlite' ? 'database.connected.stored_sqlite' : 'database.connected.stored', { location: result.database.location ?? '' })"
         :another="t('connect.another')"
         @another="another"
       />

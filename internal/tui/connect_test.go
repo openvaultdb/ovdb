@@ -204,3 +204,12 @@ func TestConnectScreenSizes(t *testing.T) {
 		}
 	}
 }
+
+// F6: a connected SQLite file's Result says the whole file is readable.
+func TestConnectedSQLiteResultIsHonest(t *testing.T) {
+	t.Parallel()
+	result := newConnectedResult(setup.DatabaseResult{Database: setup.Database{ID: "shop", Engine: setup.EngineSQLite, Location: "/data/shop.sqlite"}})
+	if text := strings.Join(result.lines, " "); !strings.Contains(text, "The whole file is readable through its tables") {
+		t.Errorf("lines = %q", result.lines)
+	}
+}

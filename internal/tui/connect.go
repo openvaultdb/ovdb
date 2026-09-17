@@ -349,7 +349,7 @@ func newConnectedResult(result setup.DatabaseResult) resultScreen {
 	db := result.Database
 	return resultScreen{
 		title: uicopy.T("database.connected.title", map[string]string{"name": db.ID}),
-		lines: []string{uicopy.T("database.connected.stored", map[string]string{"location": db.Location})},
+		lines: []string{setup.ConnectedStored(db)},
 		next:  result.Next,
 	}
 }

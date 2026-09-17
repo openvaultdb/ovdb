@@ -812,3 +812,18 @@ func TestConnectLocationCopy(t *testing.T) {
 		_ = os.Remove(side)
 	}
 }
+
+// F6: SQLite column names ignore case, so an ID column is the id column.
+func TestConnectSQLiteFindsIDInAnyCase(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	path := sqliteFile(t, `CREATE TABLE upper (ID TEXT PRIMARY KEY, title TEXT)`)
+	result, err := f.registry.Connect(ConnectRequest{ID: "upper", Engine: EngineSQLite, Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestText, _ := os.ReadFile(result.Database.Manifest)
+	if !strings.Contains(string(manifestText), "upper:") || strings.Contains(string(manifestText), "ID:") {
+		t.Errorf("manifest:\n%s", manifestText)
+	}
+}

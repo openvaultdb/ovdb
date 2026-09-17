@@ -517,5 +517,6 @@
   "database.connect.path_not_plain": "its storage path doesn't resolve to one place. Write storage.path as a plain path.",
   "database.connect.sqlite_busy": "{path} is in use by another program that has it locked, so OVDB can't read its tables. Try again when that program is done.",
   "database.create.location_contains_ovdb": "{path} contains OVDB's own settings folders. Keep your data somewhere else.",
-  "database.connect.sqlite_side_file": "{path} is one of SQLite's side files; connect {database} instead."
+  "database.connect.sqlite_side_file": "{path} is one of SQLite's side files; connect {database} instead.",
+  "database.connected.stored_sqlite": "Your data stays where it is: {location}. The whole file is readable through its tables, including tables and columns the manifest doesn't describe."
 }

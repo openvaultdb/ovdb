@@ -696,7 +696,7 @@ func sqliteColumns(db *sql.DB, table string) ([]sqliteColumn, bool, error) {
 		if err := rows.Scan(&name, &declared, &notNull, &defaultValue); err != nil {
 			return nil, false, err
 		}
-		if name == "id" {
+		if strings.EqualFold(name, "id") {
 			hasID = true
 			continue
 		}
@@ -815,6 +815,18 @@ func (r *Registry) GitStorage(id string) (string, bool) {
 		return "", false
 	}
 	return localStorage(registration.Parsed, filepath.Dir(registration.Manifest))
+}
+
+// ConnectedStored is where a connected database's data stays, as every
+// interface says it. For SQLite it also says the whole file is readable: the
+// manifest describes tables, but reads reach every table and column
+// (openvaultdb-go serves the file as a whole).
+func ConnectedStored(database Database) string {
+	params := map[string]string{"location": database.Location}
+	if database.Engine == EngineSQLite {
+		return uicopy.T("database.connected.stored_sqlite", params)
+	}
+	return uicopy.T("database.connected.stored", params)
 }
 
 // ConnectedNext is what to do after connecting database: first how to let

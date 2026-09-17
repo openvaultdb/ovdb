@@ -59,7 +59,7 @@ stay in the OVDB server's environment, named by the manifest.`,
 				db := result.Database
 				say(w, uicopy.T("database.connected.title", map[string]string{"name": db.ID}))
 				say(w, "")
-				say(w, uicopy.T("database.connected.stored", map[string]string{"location": db.Location}))
+				say(w, setup.ConnectedStored(db))
 				say(w, "")
 				say(w, uicopy.T("home.what_next", nil))
 				writeNext(w, result.Next)

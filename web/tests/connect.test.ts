@@ -148,3 +148,16 @@ describe('Connect an existing database', () => {
     expect(nameFromLocation('/home/a/my notes')).toBe('')
   })
 })
+
+describe('a connected SQLite file', () => {
+  it('says the whole file is readable (review F6)', async () => {
+    const sqlite = { ...connected, database: { ...connected.database, id: 'shop', engine: 'sqlite', location: '/home/a/shop.sqlite' } }
+    const { wrapper } = await open({ 'POST /api/local/v1/databases/connect': () => json(201, sqlite) })
+    await wrapper.get('[data-engine="sqlite"]').trigger('click')
+    const [location] = wrapper.findAll('input')
+    await location.setValue('/home/a/shop.sqlite')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="connect-result"]').text()).toContain('The whole file is readable through its tables')
+  })
+})
