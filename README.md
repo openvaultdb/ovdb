@@ -56,6 +56,9 @@ ovdb --help
   in `cli-helpers`' compiled-in `cliinstall` catalog
   (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
   fleet CLI's own `install ovdb` also resolves releases from.
+- **`ovdb install`** — list, show details for, and install fleet CLIs
+  relevant to ovdb (`ingitdb`, `datatug`); see
+  [Installing related CLIs](#installing-related-clis) below.
 
 ```sh
 ovdb self-update --check
@@ -65,6 +68,28 @@ ovdb self-update --yes
 ovdb self-update --dry-run
 # Manual installs only:
 ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
+```
+
+### Installing related CLIs
+
+`ovdb install` lists the other fleet CLIs relevant to OpenVaultDB (currently
+`ingitdb`, whose inGitDB engine `ovdb` runs directly, and `datatug`, which
+queries a running `ovdb serve` database as an `openvaultdb` catalog), each
+with its live installed status. `ovdb install <name>...` shows fuller
+details and installs the named CLIs the same way `ovdb` itself was
+installed: `brew install --cask` on a Homebrew host whose target publishes a
+cask for the host OS, otherwise a checksum-verified direct release download
+placed beside a manually installed `ovdb` or in the per-user bin directory.
+Both are entirely offline and read-only until an install is actually
+confirmed. Built on `github.com/strongo/cli-helpers/cliinstall`, whose
+compiled-in catalog and host → target relevance texts are the single source
+every other fleet CLI's own `install ovdb` also resolves from.
+
+```sh
+ovdb install
+ovdb install --all --format json
+ovdb install ingitdb --dry-run
+ovdb install ingitdb datatug --yes
 ```
 
 ### Owner token and access policies

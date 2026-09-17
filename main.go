@@ -89,6 +89,7 @@ func addRootCommands(root *cobra.Command, currentVersion string) {
 		newDatabasesCmd(app),
 		newTokenCmd(app),
 		newSelfUpdateCmd(currentVersion),
+		newInstallCmd(),
 	)
 	app.AddCommands(root)
 	// Registered only behind the gate, so bare `ovdb` keeps printing today's

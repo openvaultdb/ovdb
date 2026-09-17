@@ -12,6 +12,7 @@
     databases [command] [--flags]  List databases mounted on a running OpenVaultDB server
     help [command]                 Help about any command
     init [--flags]                 Create a database manifest
+    install [name...] [--flags]    List and install fleet CLIs relevant to ovdb
     self-update [--flags]          Update the installed ovdb binary to the latest release
     serve [--flags]                Run the OpenVaultDB API server
     status [--flags]               Show status of a running OpenVaultDB server
