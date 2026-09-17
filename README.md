@@ -59,6 +59,12 @@ ovdb --help
 - **`ovdb install`** — list, show details for, and install fleet CLIs
   relevant to ovdb (`ingitdb`, `datatug`); see
   [Installing related CLIs](#installing-related-clis) below.
+- **`ovdb upgrade`** — the fleet-wide counterpart to `self-update`: report
+  or apply upgrades for every *installed* catalog CLI plus ovdb itself. No
+  `update` alias — that alias stays reserved for `self-update` alone. `ovdb
+  self-update` is exactly `ovdb upgrade ovdb`, built from the same
+  `HostConfig`, so the two never disagree; see
+  [Upgrading related CLIs](#upgrading-related-clis) below.
 
 ```sh
 ovdb self-update --check
@@ -90,6 +96,27 @@ ovdb install
 ovdb install --all --format json
 ovdb install ingitdb --dry-run
 ovdb install ingitdb datatug --yes
+```
+
+### Upgrading related CLIs
+
+`ovdb upgrade` reports current/latest/verdict for every *installed* catalog
+CLI plus ovdb itself (not merely the relevance matrix `install` lists — a
+target that is relevant but not installed has nothing to upgrade).
+`ovdb upgrade --all` and `ovdb upgrade <name>...` upgrade what the report
+showed, after one confirmation. `--check` reports without applying
+anything; `--dry-run` walks the same decision path without asking. ovdb
+itself is always upgraded last, classified and versioned from its own
+`self-update` configuration — never a `PATH` probe of its own binary — so
+`ovdb self-update` and `ovdb upgrade ovdb` reach the exact same library
+call and report the same verdict. Built on
+`github.com/strongo/cli-helpers/cliinstall`'s `upgrade` command.
+
+```sh
+ovdb upgrade
+ovdb upgrade --all --check --format json
+ovdb upgrade --all --dry-run
+ovdb upgrade ovdb --check   # identical outcome to `ovdb self-update --check`
 ```
 
 ### Owner token and access policies

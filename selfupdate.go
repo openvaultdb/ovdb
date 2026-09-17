@@ -48,8 +48,19 @@ func (selfUpdateErrors) Failure(err error) error {
 }
 
 func (selfUpdateErrors) UpdateAvailable(result selfupdate.CheckResult) error {
-	if result.Verdict == selfupdate.Undetermined {
-		return fmt.Errorf("self-update: current version is undetermined (%s); latest stable is %s", result.Current, result.Latest)
+	return updateAvailableError(result.Current, result.Latest, result.Verdict == selfupdate.Undetermined)
+}
+
+// updateAvailableError builds the "an update/upgrade exists" finding
+// message shared by selfUpdateErrors.UpdateAvailable and
+// upgradeErrors.UpgradesAvailable (upgrade.go), so `ovdb self-update
+// --check` and `ovdb upgrade ovdb --check` report the exact same finding
+// for the exact same verdict (cli-install#req:self-update-equals-upgrade-self,
+// cli-install#req:upgrade-check: "mirroring self-update's UpdateAvailable
+// mapping").
+func updateAvailableError(current, latest string, undetermined bool) error {
+	if undetermined {
+		return fmt.Errorf("self-update: current version is undetermined (%s); latest stable is %s", current, latest)
 	}
-	return fmt.Errorf("self-update: update available (%s -> %s)", result.Current, result.Latest)
+	return fmt.Errorf("self-update: update available (%s -> %s)", current, latest)
 }
