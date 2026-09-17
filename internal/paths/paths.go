@@ -96,10 +96,7 @@ func EnsurePrivateDir(dir string) error {
 	}
 	for i := len(missing) - 1; i >= 0; i-- {
 		created := missing[i]
-		if err := os.Mkdir(created, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
-			return err
-		}
-		if err := daemonlifecycle.ProtectOwnerOnly(created); err != nil {
+		if err := createPrivateDir(created); err != nil {
 			return err
 		}
 		if err := daemonlifecycle.ValidateOwnerOnly(created); err != nil {
@@ -113,6 +110,42 @@ func EnsurePrivateDir(dir string) error {
 		return fmt.Errorf("%s: %w (%v)", dir, ErrNotPrivate, err)
 	}
 	return nil
+}
+
+// createPrivateDir makes dir owner-only from the moment it exists, so a
+// concurrent caller never finds it unprotected. A directory another caller
+// made first is left as it is (and validated by the caller).
+//
+// On Unix mkdir with mode 0700 is already owner-only. Windows has no such
+// mode: a new directory inherits its parent's ACL, so it is made and
+// protected under a temporary name, then renamed into place; the rename
+// fails, and the temporary directory is removed, when dir already exists.
+func createPrivateDir(dir string) error {
+	if goruntime.GOOS != "windows" {
+		err := os.Mkdir(dir, 0o700)
+		if errors.Is(err, fs.ErrExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return daemonlifecycle.ProtectOwnerOnly(dir)
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), "."+filepath.Base(dir)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	if err = daemonlifecycle.ProtectOwnerOnly(tmp); err == nil {
+		err = os.Rename(tmp, dir)
+	}
+	if err == nil {
+		return nil
+	}
+	_ = os.Remove(tmp)
+	if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+		return nil
+	}
+	return err
 }
 
 // missingAncestors lists dir and each parent that does not exist yet,
