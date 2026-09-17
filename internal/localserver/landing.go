@@ -68,8 +68,8 @@ var pages = template.Must(template.New("pages").Parse(pageTemplates))
 type pageData struct {
 	Brand, Title, Body, Assistant, Fallback, Notice string
 	// App is the way back to an app the person was using (the TODO app).
-	App string
-	Code, Next, Continue                            string
+	App                  string
+	Code, Next, Continue string
 }
 
 func writePage(w http.ResponseWriter, status int, name string, data pageData) {
