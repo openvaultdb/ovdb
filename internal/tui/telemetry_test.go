@@ -276,7 +276,7 @@ func TestUsageCompletedOnDoneAndDatabasesOption(t *testing.T) {
 	m, rec := withTelemetry(t, realModel(t, freePort(t)), "phc_test")
 	m = installDemo(t, m)
 	m = send(t, m, key("t"))
-	m = send(t, m, key("enter")) // Done
+	_ = send(t, m, key("enter")) // Done
 	if got := rec.received(); got[len(got)-1] != "onboarding_completed" {
 		t.Fatalf("events = %v", got)
 	}
