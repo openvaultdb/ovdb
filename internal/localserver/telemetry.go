@@ -37,13 +37,14 @@ func (s *localServer) putTelemetry(w http.ResponseWriter, r *http.Request) {
 	if session {
 		channel = telemetry.ChannelWeb
 	}
-	_, changed, err := setup.ApplyTelemetryChange(s.opts.Dirs, change, channel, s.opts.Now())
+	outcome, err := setup.ChangeTelemetry(s.opts.Dirs, change, channel, s.opts.Now())
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	changed := outcome.Changed
 	document := telemetry.NewDocument(s.opts.Telemetry.Decide(), s.opts.Telemetry.Available())
-	document.Changed = &changed
+	document.Changed, document.Backup = &changed, outcome.Backup
 	envelope.WriteJSON(w, http.StatusOK, document)
 	if session && changed && change.State == telemetry.StateEnabled {
 		s.sendAfterResponse(w, r, telemetry.NewConsentEnabled())

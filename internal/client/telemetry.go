@@ -94,7 +94,7 @@ func (l *Local) SetTelemetry(ctx context.Context, change telemetry.Change) (tele
 			change.Channel = string(telemetry.DetectChannel(l.Telemetry.Getenv, l.Telemetry.Environ))
 		}
 	}
-	changed := false
+	changed, backup := false, ""
 	for attempt := 0; ; attempt++ {
 		state, err := l.inspect(ctx, false)
 		if err != nil {
@@ -109,12 +109,12 @@ func (l *Local) SetTelemetry(ctx context.Context, change telemetry.Change) (tele
 			if err := json.Unmarshal(response.Body, &document); err != nil {
 				return telemetry.Document{}, err
 			}
-			changed = document.Changed != nil && *document.Changed
+			changed, backup = document.Changed != nil && *document.Changed, document.Backup
 			break
 		}
 		warnings, err := runtime.WithHomeLock(ctx, l.Dirs, uicopy.T("telemetry.failed", nil), func() error {
-			var applyErr error
-			_, changed, applyErr = setup.ApplyTelemetryChange(l.Dirs, change, telemetry.ParseChannel(change.Channel), time.Now())
+			outcome, applyErr := setup.ChangeTelemetry(l.Dirs, change, telemetry.ParseChannel(change.Channel), time.Now())
+			changed, backup = outcome.Changed, outcome.Backup
 			return applyErr
 		})
 		for _, warning := range warnings {
@@ -137,6 +137,6 @@ func (l *Local) SetTelemetry(ctx context.Context, change telemetry.Change) (tele
 		}
 	}
 	document := l.TelemetryStatus()
-	document.Changed = &changed
+	document.Changed, document.Backup = &changed, backup
 	return document, nil
 }

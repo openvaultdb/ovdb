@@ -124,6 +124,7 @@
   "telemetry.enabled": "Usage statistics are on. Thank you.",
   "telemetry.already_enabled": "Usage statistics are already on.",
   "telemetry.disabled": "Usage statistics are off. The install id was removed.",
+  "telemetry.config_backed_up": "config.yaml couldn't be read, so a copy was saved first: {path}",
   "telemetry.already_disabled": "Usage statistics are already off.",
   "telemetry.next.enable": "Turn usage statistics on (it asks you first)",
   "telemetry.next.disable": "Turn usage statistics off",

@@ -11,6 +11,7 @@ import (
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
@@ -186,7 +187,13 @@ func (a *App) telemetryDisableCmd() *cobra.Command {
 		RunE: run(func(cmd *cobra.Command, _ []string) error {
 			t, err := a.resolve(0)
 			if err != nil {
-				return err
+				// Disable always works (review F7): an unreadable config.yaml
+				// must not stop it, so fall back to the default port.
+				dirs, dirsErr := a.dirs()
+				if dirsErr != nil {
+					return err
+				}
+				t = target{dirs: dirs, port: runtime.DefaultPort}
 			}
 			document, err := a.local(cmd, t).SetTelemetry(cmd.Context(), telemetry.Change{State: telemetry.StateDisabled})
 			if err != nil {
@@ -198,6 +205,9 @@ func (a *App) telemetryDisableCmd() *cobra.Command {
 					return
 				}
 				say(w, uicopy.T("telemetry.disabled", nil))
+				if document.Backup != "" {
+					say(w, uicopy.T("telemetry.config_backed_up", map[string]string{"path": document.Backup}))
+				}
 			})
 			return nil
 		}),

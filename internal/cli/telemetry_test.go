@@ -255,3 +255,41 @@ func TestTelemetryRelayFlagOnlyInAgentGuidance(t *testing.T) {
 		}
 	}
 }
+
+// Review F7: disable always works. An unreadable config.yaml is backed up
+// byte for byte, the disabled state is written, and a readable remainder
+// (here the server section) is kept.
+func TestTelemetryDisableWithUnreadableConfig(t *testing.T) {
+	for name, content := range map[string]string{
+		"yaml syntax":          "server:\n  port: [oops\n",
+		"bad telemetry":        "server:\n  port: 7001\ntelemetry: [enabled, yes]\n",
+		"unrelated bad values": "server:\n  port: not-a-port\ntelemetry:\n  state: enabled\n  install_id: 9c1b0a2e-2d1f-4c7a-8b1e-0f2a3b4c5d6e\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := telemetryEnv(t, "http://127.0.0.1:9")
+			if err := os.MkdirAll(e.dirs.Home, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(e.dirs.Home, "config.yaml")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r := e.run("telemetry", "disable", "--json")
+			var document telemetry.Document
+			if r.code != 0 || json.Unmarshal([]byte(r.stdout), &document) != nil || document.Telemetry.State != telemetry.StateDisabled || document.Backup == "" {
+				t.Fatalf("disable: %+v", r)
+			}
+			backup, err := os.ReadFile(document.Backup)
+			if err != nil || string(backup) != content {
+				t.Fatalf("backup %s = %q, %v", document.Backup, backup, err)
+			}
+			consent, err := telemetry.LoadConsent(e.dirs.Home)
+			if err != nil || consent.State != telemetry.StateDisabled || consent.InstallID != "" {
+				t.Fatalf("consent after disable = %+v, %v", consent, err)
+			}
+			if data, _ := os.ReadFile(path); name == "unrelated bad values" && !strings.Contains(string(data), "not-a-port") {
+				t.Errorf("unrelated content lost:\n%s", data)
+			}
+		})
+	}
+}

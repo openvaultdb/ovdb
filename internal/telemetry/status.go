@@ -31,10 +31,13 @@ type Status struct {
 // Document is the body of GET/PUT /api/local/v1/telemetry and the --json
 // output of `ovdb telemetry status|enable|disable`.
 type Document struct {
-	Schema    int             `json:"schema"`
-	Telemetry Status          `json:"telemetry"`
-	Changed   *bool           `json:"changed,omitempty"`
-	Next      []envelope.Next `json:"next"`
+	Schema    int    `json:"schema"`
+	Telemetry Status `json:"telemetry"`
+	Changed   *bool  `json:"changed,omitempty"`
+	// Backup is where an unreadable config.yaml was saved before disable
+	// rewrote it.
+	Backup string          `json:"backup,omitempty"`
+	Next   []envelope.Next `json:"next"`
 }
 
 // Change is the body of PUT /api/local/v1/telemetry.
