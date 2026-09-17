@@ -638,7 +638,7 @@ func (m Model) View() tea.View {
 	case m.screen == ScreenSettings:
 		body = m.viewSettings()
 	case m.screen == ScreenResult:
-		body = m.viewResult() + m.viewUsagePrompt()
+		body = m.viewResultWithUsage()
 	case m.screen == ScreenProblem:
 		body = m.viewProblem()
 	case m.screen == ScreenCreate:
@@ -669,6 +669,12 @@ func (m Model) View() tea.View {
 
 func (m Model) footer() string {
 	switch {
+	case m.screen == ScreenResult && m.usage.prompt && m.usage.details && !m.showHelp:
+		return helpStyle.Render(wordWrap(m.usagePromptFooter(), m.width))
+	case m.screen == ScreenResult && m.usage.prompt && !m.showHelp:
+		// The Result's own keys, then the prompt's.
+		m.usage.prompt = false
+		return m.footer() + "\n" + helpStyle.Render(wordWrap(m.usagePromptFooter(), m.width))
 	case m.showHelp:
 		return helpStyle.Render(uicopy.T("tui.help.body", nil))
 	case m.screen == ScreenHome:

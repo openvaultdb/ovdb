@@ -101,7 +101,7 @@ func TestJourneyATerminal(t *testing.T) {
 	}
 	press("enter", "enter")
 	if view := screenText(m); !strings.Contains(view, "Created database notes") || !strings.Contains(view, "u use in project") ||
-		!strings.Contains(view, "Help improve OpenVaultDB?") || !strings.Contains(view, "t Turn on · n No thanks · w What's collected?") {
+		!strings.Contains(view, "Help improve OpenVaultDB?") || !strings.Contains(view, "t turn on · n no thanks · w what's collected?") {
 		t.Fatalf("Result:\n%s", view)
 	}
 	press("u")

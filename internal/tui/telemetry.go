@@ -130,11 +130,20 @@ func (m Model) usageKey(key string) (bool, Model, tea.Cmd) {
 		case "w":
 			m.usage.details = !m.usage.details
 			return true, m, nil
-		case "enter", "esc", "backspace":
-			// Dismissed: nothing buffered is kept, and it isn't asked again.
+		case "esc", "backspace":
+			if m.usage.details {
+				m.usage.details = false
+				return true, m, nil
+			}
+			// Decide later: nothing buffered is kept, it isn't asked again,
+			// and the Result stays.
 			m.usage.prompt = false
 			m.local.Telemetry.Discard()
-			return false, m, nil
+			m.usage.message = uicopy.T("telemetry.prompt.later", nil)
+			return true, m, nil
+		case "enter":
+			// Enter never answers or dismisses it by accident (review L5).
+			return true, m, nil
 		}
 	case m.screen == ScreenSettings && m.settings.loaded && !m.settings.editing:
 		switch key {
@@ -181,6 +190,30 @@ func (m Model) updateUsage(msg usageSetMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+// viewResultWithUsage is the Result with the prompt under it, or, while
+// What's collected? is open, the prompt and both lists in the Result's
+// place, so the choices and footer always fit at 80×24 (review M3).
+func (m Model) viewResultWithUsage() string {
+	if m.usage.prompt && m.usage.details {
+		var b strings.Builder
+		b.WriteString(titleStyle.Render(uicopy.T("telemetry.prompt.title", nil)))
+		b.WriteString("\n")
+		b.WriteString(mutedStyle.Render(wordWrap(uicopy.T("telemetry.intro", nil), m.width)))
+		b.WriteString(m.viewCollected())
+		return b.String()
+	}
+	return m.viewResult() + m.viewUsagePrompt()
+}
+
+// usagePromptFooter lists the prompt's keys on one line: Turn on and No
+// thanks with equal weight.
+func (m Model) usagePromptFooter() string {
+	if m.usage.details {
+		return uicopy.T("telemetry.prompt.footer_details", nil)
+	}
+	return uicopy.T("telemetry.prompt.footer", nil)
+}
+
 func (m Model) viewUsagePrompt() string {
 	width := m.width
 	var b strings.Builder
@@ -190,12 +223,6 @@ func (m Model) viewUsagePrompt() string {
 		b.WriteString(itemStyle.Render(uicopy.T("telemetry.prompt.title", nil)))
 		b.WriteString("\n")
 		b.WriteString(mutedStyle.Render(wordWrap(uicopy.T("telemetry.intro", nil), width)))
-		b.WriteString("\n")
-		// Turn on and No thanks share one style: equal weight.
-		b.WriteString(wordWrap(uicopy.T("telemetry.prompt.keys", nil), width))
-		if m.usage.details {
-			b.WriteString(m.viewCollected())
-		}
 	case m.usage.message != "" && m.screen == ScreenResult:
 		b.WriteString("\n")
 		b.WriteString(wordWrap(m.usage.message, width))

@@ -76,16 +76,21 @@ func TestUsagePromptLateAndOnce(t *testing.T) {
 	}
 	m = installDemo(t, m)
 	view := flat(m.View().Content)
-	if !strings.Contains(view, promptText) || !strings.Contains(view, "t Turn on · n No thanks · w What's collected?") {
+	if !strings.Contains(view, promptText) || !strings.Contains(view, "t turn on · n no thanks · w what's collected? · Esc decide later") {
 		t.Fatalf("demo Result lacks the prompt:\n%s", view)
 	}
 	m = send(t, m, key("w"))
 	if view := flat(m.View().Content); !strings.Contains(view, "What's collected") || !strings.Contains(view, "Never collected") {
 		t.Errorf("What's collected? shows nothing:\n%s", view)
 	}
-	m = send(t, m, key("esc")) // dismiss
+	m = send(t, m, key("esc")) // back from the lists
+	m = send(t, m, key("esc")) // decide later
+	if view := flat(m.View().Content); m.screen != ScreenResult || strings.Contains(view, "Help improve") || !strings.Contains(view, "decide about usage statistics any time in Settings") {
+		t.Fatalf("decide later (%s):\n%s", m.screen, view)
+	}
+	m = send(t, m, key("esc"))
 	if m.screen != ScreenHome {
-		t.Fatalf("dismiss went to %s", m.screen)
+		t.Fatalf("esc went to %s", m.screen)
 	}
 	m = openCreate(t, m)
 	m = send(t, m, key("enter"))
@@ -173,5 +178,63 @@ func TestSettingsUsageStatistics(t *testing.T) {
 	}
 	if got := rec.received(); len(got) != 0 {
 		t.Errorf("key-less build sent %v", got)
+	}
+}
+
+// Review M3: at 80×24 the prompt's choices and the key footer stay on
+// screen, with What's collected? open too.
+func TestUsagePromptFitsAt80x24(t *testing.T) {
+	m, _ := withTelemetry(t, realModel(t, freePort(t)), "phc_test")
+	m = installDemo(t, m)
+	check := func(name string, wants ...string) {
+		t.Helper()
+		content := stripANSI(m.View().Content)
+		lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+		if len(lines) > 24 {
+			t.Errorf("%s: %d lines at 80x24:\n%s", name, len(lines), content)
+		}
+		noWiderThan(t, content, 80)
+		last := lines[len(lines)-1]
+		if !strings.Contains(last, "t turn on · n no thanks") {
+			t.Errorf("%s: footer %q lacks the choices", name, last)
+		}
+		for _, want := range wants {
+			if !strings.Contains(flat(content), want) {
+				t.Errorf("%s lacks %q:\n%s", name, want, content)
+			}
+		}
+	}
+	check("prompt", "Help improve OpenVaultDB?", "The TODO demo is ready")
+	m = send(t, m, key("w"))
+	check("details", "What's collected", "Never collected", "Anything you type")
+	m = send(t, m, key("w"))
+	check("back", "Help improve OpenVaultDB?")
+	// Enter does not silently dismiss it (review L5); Esc decides later.
+	m = send(t, m, key("enter"))
+	if m.screen != ScreenResult || !m.usage.prompt {
+		t.Fatalf("enter: screen %s prompt %v", m.screen, m.usage.prompt)
+	}
+	m = send(t, m, key("esc"))
+	if m.screen != ScreenResult || m.usage.prompt {
+		t.Fatalf("esc: screen %s prompt %v", m.screen, m.usage.prompt)
+	}
+}
+
+func TestUsagePromptOnCreateResultFitsAt80x24(t *testing.T) {
+	m, _ := withTelemetry(t, realModel(t, freePort(t)), "phc_test")
+	m = openCreate(t, m)
+	m = send(t, m, key("enter"))
+	m = typeText(t, m, "notes")
+	m = send(t, m, key("enter"))
+	m = send(t, m, key("enter"))
+	for _, step := range []string{"", "w"} {
+		if step != "" {
+			m = send(t, m, key(step))
+		}
+		content := stripANSI(m.View().Content)
+		lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+		if len(lines) > 24 || !strings.Contains(lines[len(lines)-1], "t turn on · n no thanks") {
+			t.Errorf("create result %q: %d lines:\n%s", step, len(lines), content)
+		}
 	}
 }
