@@ -94,6 +94,13 @@ func indentWrap(prefix, text string, width int) string {
 // currently selected.
 func nextLines(width int, next []envelope.Next, actionable []int, cursorAt int) []string {
 	var lines []string
+	// Commands line up when their labels fit beside them.
+	labelWidth := 0
+	for _, n := range next {
+		if n.Command != "" && (width <= 0 || 4+len([]rune(n.Label))+3+len([]rune(n.Command)) <= width) {
+			labelWidth = max(labelWidth, len([]rune(n.Label)))
+		}
+	}
 	for i, n := range next {
 		prefix := "  • "
 		if pos := indexOf(actionable, i); pos >= 0 {
@@ -107,7 +114,11 @@ func nextLines(width int, next []envelope.Next, actionable []int, cursorAt int) 
 			lines = append(lines, hangingWrap(prefix, n.Label, width))
 			continue
 		}
-		combined := prefix + n.Label + "   " + n.Command
+		padded := n.Label + strings.Repeat(" ", max(labelWidth-len([]rune(n.Label)), 0))
+		combined := prefix + padded + "   " + n.Command
+		if width > 0 && len([]rune(combined)) > width {
+			combined = prefix + n.Label + "   " + n.Command
+		}
 		if width <= 0 || len([]rune(combined)) <= width {
 			lines = append(lines, combined)
 			continue

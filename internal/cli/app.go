@@ -62,12 +62,13 @@ func (a *App) AddCommands(root *cobra.Command) {
 		command.SetFlagErrorFunc(flagError)
 		root.AddCommand(command)
 	}
-	// `ovdb databases remove` joins the legacy `ovdb databases`.
+	// `ovdb databases remove` and `reload` join the legacy `ovdb databases`.
 	if databases, _, err := root.Find([]string{"databases"}); err == nil && databases != root {
-		remove := a.databasesRemoveCmd()
-		remove.Hidden = hidden
-		remove.SetFlagErrorFunc(flagError)
-		databases.AddCommand(remove)
+		for _, command := range []*cobra.Command{a.databasesRemoveCmd(), a.databasesReloadCmd()} {
+			command.Hidden = hidden
+			command.SetFlagErrorFunc(flagError)
+			databases.AddCommand(command)
+		}
 	}
 }
 

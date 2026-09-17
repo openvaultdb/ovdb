@@ -177,13 +177,20 @@ func (m Model) updateCreateForm(key string) (tea.Model, tea.Cmd) {
 
 // createRemedy handles a Problem screen next action that returns to the
 // form: choose another name or location.
-func (m Model) createRemedy(action string) Model {
+func (m Model) createRemedy(next envelope.Next) Model {
 	m.screen = ScreenCreate
 	m.create.step = createForm
-	if action == setup.ActionEditLocation {
+	if next.Action == setup.ActionEditLocation {
 		m.create.field = 1
-	} else {
-		m.create.field = 0
+		return m
+	}
+	m.create.field = 0
+	// "Use the name notes-2 instead" uses notes-2.
+	if name := setup.SuggestedName(next); name != "" {
+		m.create.name = name
+		if !m.create.locationEdited {
+			m.create.location = m.defaultLocation()
+		}
 	}
 	return m
 }
@@ -241,11 +248,17 @@ func (m Model) viewCreate() string {
 	}
 	// Name and description share a line when every choice fits, as in the
 	// spec's example; otherwise each description wraps below its name.
-	oneLine := true
+	oneLine, truncate := true, false
+	lines := 0
 	for _, engine := range visible {
 		if width > 0 && 2+nameWidth+3+len([]rune(engine.Description)) > width {
 			oneLine = false
 		}
+		lines += 1 + len(strings.Split(indentWrap("    ", engine.Description, width), "\n"))
+	}
+	// In a short window, descriptions are cut to one line each instead.
+	if !oneLine && 5+lines+1 > m.bodyHeight() {
+		oneLine, truncate = true, true
 	}
 	dividerShown := false
 	for i, engine := range visible {
@@ -262,7 +275,11 @@ func (m Model) viewCreate() string {
 		}
 		padded := engine.Name + strings.Repeat(" ", nameWidth-len([]rune(engine.Name)))
 		if oneLine {
-			b.WriteString(style.Render(cursor+padded) + mutedStyle.Render("   "+engine.Description))
+			description := engine.Description
+			if truncate {
+				description = truncateEnd(description, width-len([]rune(cursor+padded))-3)
+			}
+			b.WriteString(style.Render(cursor+padded) + mutedStyle.Render("   "+description))
 		} else {
 			b.WriteString(style.Render(cursor + engine.Name))
 			b.WriteString("\n")

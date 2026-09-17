@@ -92,7 +92,7 @@ export interface Database {
   id: string
   engine?: string
   location?: string
-  state?: 'mounted' | 'needs_attention' | 'unknown'
+  state?: 'mounting' | 'mounted' | 'needs_attention' | 'unknown'
   reason?: string
   manifest: string
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/core"
+	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 	"gopkg.in/yaml.v3"
@@ -34,83 +35,235 @@ type Mounter interface {
 }
 
 // Registry is the running server's view of <home>/databases: it mounts
-// every manifest at start, keeps each one's mount state, and creates and
+// every manifest, keeps each one's mount state, and creates, reloads and
 // removes registrations while serving. Only the server holding home.lock
 // owns one (local-server-and-web-console#REQ:single-server-home-lock).
+//
+// Database ids are unique ignoring case (registry files live on file
+// systems that may ignore case); commands name a database by its exact id,
+// or by any casing when exactly one registered id matches.
 type Registry struct {
 	dirs   paths.Dirs
 	server Mounter
 	logf   func(format string, args ...any)
+	// MountTimeout bounds each database's mount, so one unreachable
+	// storage never holds up the others or the server.
+	mountTimeout time.Duration
 
 	mu     sync.Mutex
-	mounts []MountRecord // by manifest path, sorted
+	mounts []MountRecord  // sorted by id
+	gen    map[string]int // by manifest: bumps whenever a record is replaced
+	closed bool
 }
 
-// UnmountTimeout bounds the wait for in-flight requests when a database is
-// removed or the server stops.
-const UnmountTimeout = 10 * time.Second
+// Timeouts.
+const (
+	// UnmountTimeout bounds the wait for in-flight requests when a database
+	// is removed, reloaded or the server stops.
+	UnmountTimeout = 10 * time.Second
+	// DefaultMountTimeout bounds one database's mount.
+	DefaultMountTimeout = 5 * time.Second
+)
 
-// OpenRegistry mounts every manifest in <home>/databases on server. A
-// manifest that fails to mount is recorded as needing attention with a
-// redacted reason, logged, and never stops the others
-// (local-server-and-web-console#REQ:registry-serving). Mounting never writes
-// into user storage: catalogues live in <home>/catalogues and no git
-// identity is stamped.
-func OpenRegistry(dirs paths.Dirs, srv Mounter, logf func(format string, args ...any)) (*Registry, error) {
-	r := &Registry{dirs: dirs, server: srv, logf: logf}
+// RegistryOptions tune a registry; the zero value is the default.
+type RegistryOptions struct {
+	MountTimeout time.Duration
+}
+
+// OpenRegistry reads <home>/databases and records every registration as
+// mounting, without mounting anything: call MountAll once the server
+// listens. It never blocks on storage.
+func OpenRegistry(dirs paths.Dirs, srv Mounter, logf func(format string, args ...any), opts RegistryOptions) (*Registry, error) {
+	r := &Registry{dirs: dirs, server: srv, logf: logf, mountTimeout: opts.MountTimeout, gen: map[string]int{}}
 	if r.logf == nil {
 		r.logf = func(string, ...any) {}
 	}
-	if _, err := os.Stat(RegistryDir(dirs.Home)); errors.Is(err, fs.ErrNotExist) {
-		return r, r.writeMounts()
+	if r.mountTimeout <= 0 {
+		r.mountTimeout = DefaultMountTimeout
 	}
-	if err := paths.EnsurePrivateDir(CatalogueDir(dirs.Home)); err != nil && !errors.Is(err, paths.ErrNotPrivate) {
-		return nil, err
-	}
-	dbs, failures, err := mount.DirReportWithOptions(RegistryDir(dirs.Home), mount.Options{
-		CatalogueDir: CatalogueDir(dirs.Home), SkipGitIdentity: true,
-	})
-	if err != nil {
-		return nil, err
-	}
+	sweepStaging(dirs.Home)
 	registrations, err := ReadRegistry(dirs.Home)
 	if err != nil {
-		closeDatabases(dbs)
 		return nil, err
 	}
 	for _, registration := range registrations {
-		record := MountRecord{ID: registration.ID, Manifest: registration.Manifest}
-		if failure, failed := failures[registration.Manifest]; failed {
-			record.State, record.Reason = MountNeedsAttention, mountReason(failure, registration.Manifest)
-			r.logf("database %s needs attention: %s", registration.ID, record.Reason)
-		} else if db, ok := dbs[registration.ID]; ok && registration.Err == nil {
-			if err := srv.Mount(db); err != nil {
-				_ = db.Close()
-				record.State, record.Reason = MountNeedsAttention, mountReason(err, registration.Manifest)
-			} else {
-				record.State = MountMounted
-				delete(dbs, registration.ID)
-			}
-		} else {
-			// DirReport skips nothing it can read; a registration without a
-			// mount or a failure appeared between the two reads.
-			record.State, record.Reason = MountNeedsAttention, uicopy.T("database.reason.not_loaded", nil)
-		}
-		r.mounts = append(r.mounts, record)
+		r.setMount(MountRecord{ID: registration.ID, Manifest: registration.Manifest, State: MountMounting})
 	}
-	closeDatabases(dbs)
 	return r, r.writeMounts()
 }
 
-func closeDatabases(dbs map[string]*core.Database) {
-	for _, db := range dbs {
-		_ = db.Close()
+// sweepStaging removes manifests a crashed create left half-written.
+func sweepStaging(home string) {
+	entries, _ := os.ReadDir(RegistryDir(home))
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") && strings.HasSuffix(entry.Name(), ".creating") {
+			_ = os.Remove(filepath.Join(RegistryDir(home), entry.Name()))
+		}
 	}
 }
 
-// mountReason is a mount error as people read it: redacted, without the
-// manifest path the error starts with.
+// MountAll mounts every registration still mounting, each with its own
+// deadline and in parallel, and returns when all are settled or ctx ends
+// (a server stopping while storage is unreachable). A database that fails,
+// times out or whose storage is missing needs attention, with a redacted
+// reason in status, mounts.json and server.log
+// (local-server-and-web-console#REQ:registry-serving).
+func (r *Registry) MountAll(ctx context.Context) {
+	registrations, err := ReadRegistry(r.dirs.Home)
+	if err != nil {
+		r.logf("reading the registry: %s", redact.String(err.Error()))
+		return
+	}
+	if len(registrations) > 0 {
+		if err := paths.EnsurePrivateDir(CatalogueDir(r.dirs.Home)); err != nil && !errors.Is(err, paths.ErrNotPrivate) {
+			r.logf("creating %s: %s", CatalogueDir(r.dirs.Home), redact.String(err.Error()))
+		}
+	}
+	r.mu.Lock()
+	var pending []Registration
+	for _, registration := range registrations {
+		if record, ok := r.record(registration.Manifest); ok && record.State == MountMounting {
+			pending = append(pending, registration)
+		}
+	}
+	r.mu.Unlock()
+	r.mountEach(ctx, pending)
+}
+
+// mountEach mounts registrations in parallel and records each outcome.
+func (r *Registry) mountEach(ctx context.Context, registrations []Registration) {
+	var wg sync.WaitGroup
+	for _, registration := range registrations {
+		r.mu.Lock()
+		gen := r.gen[registration.Manifest]
+		r.mu.Unlock()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.mountOne(ctx, registration, gen)
+		}()
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+type mountOutcome struct {
+	db  *core.Database
+	err error
+}
+
+// mountOne mounts one registration within the mount deadline and records
+// the result for generation gen; a record replaced or removed meanwhile
+// wins, and a late database is closed.
+func (r *Registry) mountOne(ctx context.Context, registration Registration, gen int) {
+	record := MountRecord{ID: registration.ID, Manifest: registration.Manifest, State: MountNeedsAttention}
+	if reason := r.checkRegistration(registration); reason != "" {
+		record.Reason = reason
+		r.settle(record, gen, nil)
+		return
+	}
+	outcome := make(chan mountOutcome, 1)
+	go func() {
+		db, err := mount.FileWithOptions(registration.Manifest, mount.Options{CatalogueDir: CatalogueDir(r.dirs.Home), SkipGitIdentity: true})
+		outcome <- mountOutcome{db, err}
+	}()
+	timer := time.NewTimer(r.mountTimeout)
+	defer timer.Stop()
+	select {
+	case result := <-outcome:
+		if result.err != nil {
+			record.Reason = mountReason(result.err, registration.Manifest)
+			r.settle(record, gen, nil)
+			return
+		}
+		record.State = MountMounted
+		r.settle(record, gen, result.db)
+	case <-timer.C:
+		record.Reason = uicopy.T("database.reason.timeout", map[string]string{"seconds": strconv.Itoa(int(r.mountTimeout.Seconds()))})
+		if r.mountTimeout < time.Second {
+			record.Reason = uicopy.T("database.reason.timeout", map[string]string{"seconds": "1"})
+		}
+		r.settle(record, gen, nil)
+		go closeWhenDone(outcome)
+	case <-ctx.Done():
+		go closeWhenDone(outcome)
+	}
+}
+
+func closeWhenDone(outcome <-chan mountOutcome) {
+	if result := <-outcome; result.db != nil {
+		_ = result.db.Close()
+	}
+}
+
+// checkRegistration is why a registration cannot be mounted before trying:
+// a manifest that does not parse, an id used twice, or local storage that is
+// missing. Mounting would silently create missing storage empty.
+func (r *Registry) checkRegistration(registration Registration) string {
+	if registration.Parsed == nil {
+		return mountReason(registration.Err, registration.Manifest)
+	}
+	registrations, _ := ReadRegistry(r.dirs.Home)
+	for _, other := range registrations {
+		if other.Manifest != registration.Manifest && strings.EqualFold(other.ID, registration.ID) && other.Manifest < registration.Manifest {
+			return uicopy.T("database.reason.duplicate", map[string]string{"name": registration.ID, "manifest": other.Manifest})
+		}
+	}
+	if path, ok := localStorage(registration.Parsed, filepath.Dir(registration.Manifest)); ok {
+		if _, err := os.Stat(path); err != nil {
+			return uicopy.T("database.reason.storage_missing", map[string]string{"path": path, "name": registration.ID})
+		}
+	}
+	return ""
+}
+
+// localStorage is the file or folder a local engine keeps its data in.
+func localStorage(m *manifest.Manifest, baseDir string) (string, bool) {
+	switch {
+	case m.Storage.Engine == EngineSQLite:
+	case m.Storage.Engine == EngineInGitDB && (m.Storage.InGitDB == nil || m.Storage.InGitDB.GitHub == nil):
+	default:
+		return "", false
+	}
+	return Location(m, baseDir), true
+}
+
+// settle records a mount outcome and serves db, unless the record changed
+// since generation gen or the registry closed.
+func (r *Registry) settle(record MountRecord, gen int, db *core.Database) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.record(record.Manifest); !ok || r.closed || r.gen[record.Manifest] != gen {
+		if db != nil {
+			_ = db.Close()
+		}
+		return
+	}
+	if db != nil {
+		if err := r.server.Mount(db); err != nil {
+			_ = db.Close()
+			record.State, record.Reason = MountNeedsAttention, mountReason(err, record.Manifest)
+		}
+	}
+	if record.State == MountNeedsAttention {
+		r.logf("database %s needs attention: %s", record.ID, record.Reason)
+	}
+	r.setMountSameGen(record)
+	if err := r.writeMounts(); err != nil {
+		r.logf("writing mounts.json: %s", redact.String(err.Error()))
+	}
+}
+
+// mountReason is a mount error as people read it: redacted, on one line,
+// without the manifest path the error starts with.
 func mountReason(err error, manifestPath string) string {
+	if err == nil {
+		return ""
+	}
 	text := err.Error()
 	for {
 		trimmed := strings.TrimPrefix(text, manifestPath+": ")
@@ -130,6 +283,32 @@ func (r *Registry) writeMounts() error {
 	return WriteMounts(r.dirs.Runtime, Mounts{Databases: records})
 }
 
+func (r *Registry) record(manifestPath string) (MountRecord, bool) {
+	for _, record := range r.mounts {
+		if record.Manifest == manifestPath {
+			return record, true
+		}
+	}
+	return MountRecord{}, false
+}
+
+// setMount replaces the record for its manifest as a new generation.
+func (r *Registry) setMount(record MountRecord) {
+	r.gen[record.Manifest]++
+	r.setMountSameGen(record)
+}
+
+func (r *Registry) setMountSameGen(record MountRecord) {
+	r.mounts = slices.DeleteFunc(r.mounts, func(m MountRecord) bool { return m.Manifest == record.Manifest })
+	r.mounts = append(r.mounts, record)
+	slices.SortStableFunc(r.mounts, func(a, b MountRecord) int { return strings.Compare(a.ID, b.ID) })
+}
+
+func (r *Registry) dropMount(manifestPath string) {
+	r.gen[manifestPath]++
+	r.mounts = slices.DeleteFunc(r.mounts, func(m MountRecord) bool { return m.Manifest == manifestPath })
+}
+
 // Mounts is the current mount state.
 func (r *Registry) Mounts() *Mounts {
 	r.mu.Lock()
@@ -144,22 +323,27 @@ func (r *Registry) List() ([]Database, error) {
 
 // Close unmounts every database, releasing engine resources such as SQLite
 // file handles, and removes mounts.json: without a server, mount state is
-// unknown.
+// unknown. Mounts still in flight are closed when they finish.
 func (r *Registry) Close() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, record := range r.mounts {
-		if record.State != MountMounted {
-			continue
+	records := r.mounts
+	r.mounts, r.closed = nil, true
+	r.mu.Unlock()
+	for _, record := range records {
+		if record.State == MountMounted {
+			r.unmount(record.ID)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), UnmountTimeout)
-		if err := r.server.UnmountContext(ctx, record.ID); err != nil && !errors.Is(err, server.ErrDatabaseNotMounted) {
-			r.logf("closing database %s: %s", record.ID, redact.String(err.Error()))
-		}
-		cancel()
 	}
-	r.mounts = nil
 	_ = os.Remove(MountsPath(r.dirs.Runtime))
+}
+
+func (r *Registry) unmount(id string) {
+	ctx, cancel := context.WithTimeout(context.Background(), UnmountTimeout)
+	defer cancel()
+	if err := r.server.UnmountContext(ctx, id); err != nil && !errors.Is(err, server.ErrDatabaseNotMounted) {
+		// No longer served either way; it closes once its last request ends.
+		r.logf("closing database %s: %s", id, redact.String(err.Error()))
+	}
 }
 
 // CreateRequest is the body of POST /api/local/v1/databases. Path is the
@@ -170,8 +354,8 @@ type CreateRequest struct {
 	Path   string `json:"path"`
 }
 
-// DatabaseResult is the body of a successful create or remove, and the
-// --json output of `ovdb databases create|remove`.
+// DatabaseResult is the body of a successful create, reload or remove, and
+// the --json output of `ovdb databases create|reload|remove`.
 type DatabaseResult struct {
 	Schema   int             `json:"schema"`
 	Database Database        `json:"database"`
@@ -179,12 +363,23 @@ type DatabaseResult struct {
 }
 
 // Next actions presentations can act on in place (envelope.Next.Action).
+// For edit_name, a command naming a database (`ovdb databases create
+// notes-2`) carries the suggested name: see SuggestedName.
 const (
 	ActionEditName     = "edit_name"
 	ActionEditLocation = "edit_location"
 	ActionDatabases    = "databases"
 	ActionDone         = "done"
 )
+
+// SuggestedName is the name an edit_name next action suggests, or "".
+func SuggestedName(next envelope.Next) string {
+	fields := strings.Fields(next.Command)
+	if next.Action != ActionEditName || len(fields) < 4 || fields[1] != "databases" || fields[2] != "create" || strings.HasPrefix(fields[3], "<") {
+		return ""
+	}
+	return fields[3]
+}
 
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
@@ -201,8 +396,14 @@ func DefaultPath(dataHome, engine, id string) string {
 
 func createFailed() string { return uicopy.T("database.create.failed", nil) }
 
+func chooseLocation(request CreateRequest) envelope.Next {
+	return envelope.Next{Label: uicopy.T("next.choose_location", nil),
+		Command: "ovdb databases create " + request.ID + engineFlag(request.Engine) + " --path <another absolute path>", Action: ActionEditLocation}
+}
+
 // ValidateCreate checks a request without touching anything. It fills the
-// default engine.
+// default engine and normalizes the location with this OS's path rules
+// (so C:/Users/… is absolute on Windows, and a trailing separator is fine).
 func ValidateCreate(request *CreateRequest) *envelope.Error {
 	if request.Engine == "" {
 		request.Engine = EngineInGitDB
@@ -210,7 +411,7 @@ func ValidateCreate(request *CreateRequest) *envelope.Error {
 	if !idPattern.MatchString(request.ID) {
 		return envelope.New(envelope.InvalidArgument, createFailed()).
 			WithReason(uicopy.T("database.create.bad_name", map[string]string{"name": request.ID})).
-			WithNext(envelope.Next{Label: uicopy.T("next.choose_name", nil), Command: "ovdb databases create notes", Action: ActionEditName})
+			WithNext(envelope.Next{Label: uicopy.T("next.choose_name", nil), Command: "ovdb databases create <name>", Action: ActionEditName})
 	}
 	engine, known := FindEngine(request.Engine)
 	switch {
@@ -221,20 +422,23 @@ func ValidateCreate(request *CreateRequest) *envelope.Error {
 	case engine.Setup == SetupManifest:
 		return envelope.New(envelope.Unsupported, createFailed()).
 			WithReason(uicopy.T("database.create.manifest_only", map[string]string{"engine": engine.Name})).
-			WithNext(ManifestSteps(engine.ID)...)
+			WithNext(ManifestSteps(engine.ID, "")...)
 	}
-	if request.Path == "" || !filepath.IsAbs(request.Path) || filepath.Clean(request.Path) != request.Path {
+	switch {
+	case request.Path == "":
 		return envelope.New(envelope.InvalidArgument, createFailed()).
-			WithReason(uicopy.T("database.create.bad_path", map[string]string{"path": request.Path})).
-			WithNext(envelope.Next{Label: uicopy.T("next.choose_location", nil),
-				Command: "ovdb databases create " + request.ID + " --engine " + request.Engine + " --path <absolute path>", Action: ActionEditLocation})
+			WithReason(uicopy.T("database.create.no_path", nil)).WithNext(chooseLocation(*request))
+	case !filepath.IsAbs(request.Path):
+		return envelope.New(envelope.InvalidArgument, createFailed()).
+			WithReason(uicopy.T("database.create.bad_path", map[string]string{"path": request.Path})).WithNext(chooseLocation(*request))
 	}
+	request.Path = filepath.Clean(request.Path)
 	return nil
 }
 
 // Create registers, creates and mounts a new database without a restart.
-// It never overwrites: a registered id is already_exists and an existing
-// location is location_not_empty, both with nothing changed
+// It never overwrites: a registered id is already_exists and a location in
+// use is location_not_empty, both with nothing changed
 // (database-setup-and-providers#REQ:create-never-overwrites).
 func (r *Registry) Create(request CreateRequest) (DatabaseResult, error) {
 	if err := ValidateCreate(&request); err != nil {
@@ -247,35 +451,29 @@ func (r *Registry) Create(request CreateRequest) (DatabaseResult, error) {
 	if err != nil {
 		return DatabaseResult{}, err
 	}
-	taken := func(id string) bool {
-		return slices.ContainsFunc(registrations, func(reg Registration) bool {
-			return strings.EqualFold(reg.ID, id) || strings.EqualFold(filepath.Base(reg.Manifest), id+".yaml")
-		})
+	registeredAs := func(id string) string {
+		for _, reg := range registrations {
+			if strings.EqualFold(reg.ID, id) || strings.EqualFold(filepath.Base(reg.Manifest), id+".yaml") {
+				return reg.ID
+			}
+		}
+		return ""
 	}
-	if taken(request.ID) {
+	if existing := registeredAs(request.ID); existing != "" {
 		return DatabaseResult{}, envelope.New(envelope.AlreadyExists, createFailed()).
-			WithReason(uicopy.T("database.create.already_exists", map[string]string{"name": request.ID})).
-			WithNext(r.anotherName(request, taken, false), envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
+			WithReason(uicopy.T("database.create.already_exists", map[string]string{"name": existing})).
+			WithNext(r.anotherName(request, registeredAs), envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
 	}
-	if reason := locationInUse(request); reason != "" {
+	if reason := r.locationInUse(request, registrations); reason != "" {
 		return DatabaseResult{}, envelope.New(envelope.LocationNotEmpty, createFailed()).
 			WithReason(reason).
-			WithNext(r.anotherName(request, taken, true), envelope.Next{
-				Label:   uicopy.T("next.choose_location", nil),
-				Command: "ovdb databases create " + request.ID + engineFlag(request.Engine) + " --path <another absolute path>",
-				Action:  ActionEditLocation,
-			})
+			WithNext(chooseLocation(request),
+				envelope.Next{Label: uicopy.T("next.done", nil), Action: ActionDone})
 	}
 
-	db, manifestPath, err := r.provision(request)
+	manifestPath, err := r.provision(request)
 	if err != nil {
 		return DatabaseResult{}, err
-	}
-	if err := r.server.Mount(db); err != nil {
-		_ = db.Close()
-		_ = os.Remove(manifestPath)
-		return DatabaseResult{}, envelope.New(envelope.AlreadyExists, createFailed()).
-			WithReason(uicopy.T("database.create.already_exists", map[string]string{"name": request.ID}))
 	}
 	r.setMount(MountRecord{ID: request.ID, Manifest: manifestPath, State: MountMounted})
 	if err := r.writeMounts(); err != nil {
@@ -288,7 +486,7 @@ func (r *Registry) Create(request CreateRequest) (DatabaseResult, error) {
 }
 
 // CreatedNext is what to do after creating database: for SQLite, describing
-// a first collection's schema comes before anything that writes
+// the data comes before anything that writes
 // (database-setup-and-providers#REQ:sqlite-next-step-is-schema). Only
 // implemented commands are offered; Browse data, Explore data and AI agent
 // skills join as their increments land.
@@ -296,7 +494,7 @@ func CreatedNext(database Database) []envelope.Next {
 	var next []envelope.Next
 	if database.Engine == EngineSQLite {
 		next = append(next,
-			envelope.Next{Label: uicopy.T("next.describe_schema", map[string]string{"manifest": database.Manifest}), Command: "ovdb server restart"},
+			envelope.Next{Label: uicopy.T("next.describe_schema", map[string]string{"manifest": database.Manifest}), Command: "ovdb databases reload " + database.ID},
 			envelope.Next{Label: uicopy.T("next.schema_docs", map[string]string{"url": SchemaDocsURL})})
 	}
 	return append(next,
@@ -305,69 +503,143 @@ func CreatedNext(database Database) []envelope.Next {
 }
 
 func engineFlag(engine string) string {
-	if engine == EngineInGitDB {
+	if engine == EngineInGitDB || engine == "" {
 		return ""
 	}
 	return " --engine " + engine
 }
 
-// anotherName suggests the first free <id>-N; atDefault drops a custom path,
-// because the conflict was the location.
-func (r *Registry) anotherName(request CreateRequest, taken func(string) bool, atDefault bool) envelope.Next {
-	var suggestion string
+// anotherName suggests the first free <id>-N at its default location (or
+// next to the custom one).
+func (r *Registry) anotherName(request CreateRequest, registeredAs func(string) string) envelope.Next {
+	custom := request.Path != DefaultPath(r.dirs.Data, request.Engine, request.ID)
+	var suggestion, path string
 	for n := 2; ; n++ {
 		suggestion = request.ID + "-" + strconv.Itoa(n)
-		candidate := request
-		candidate.ID = suggestion
-		candidate.Path = DefaultPath(r.dirs.Data, request.Engine, suggestion)
-		if !taken(suggestion) && (!atDefault || locationInUse(candidate) == "") {
+		path = DefaultPath(r.dirs.Data, request.Engine, suggestion)
+		if custom {
+			path = filepath.Join(filepath.Dir(request.Path), suggestion+filepath.Ext(request.Path))
+		}
+		if _, err := os.Stat(path); registeredAs(suggestion) == "" && errors.Is(err, fs.ErrNotExist) {
 			break
 		}
 	}
 	command := "ovdb databases create " + suggestion + engineFlag(request.Engine)
-	if !atDefault && request.Path != DefaultPath(r.dirs.Data, request.Engine, request.ID) {
-		command += " --path " + paths.QuoteArg(goruntime.GOOS, filepath.Join(filepath.Dir(request.Path), suggestion+filepath.Ext(request.Path)))
+	if custom {
+		command += " --path " + paths.QuoteArg(goruntime.GOOS, path)
 	}
 	return envelope.Next{Label: uicopy.T("next.use_name", map[string]string{"name": suggestion}), Command: command, Action: ActionEditName}
 }
 
-// locationInUse is why request's location cannot hold a new database, or "".
-func locationInUse(request CreateRequest) string {
-	info, err := os.Stat(request.Path)
-	if err != nil {
-		// Missing is the normal case; anything else (a file in the way, no
-		// permission) fails while creating, as storage_unavailable.
-		return ""
-	}
-	params := map[string]string{"path": request.Path}
-	if request.Engine == EngineInGitDB && info.IsDir() {
-		entries, err := os.ReadDir(request.Path)
-		if err == nil && len(entries) == 0 {
-			return ""
+// resolved is path with symlinks in its deepest existing ancestor resolved,
+// so two spellings of one place compare equal.
+func resolved(path string) string {
+	path = filepath.Clean(path)
+	var rest []string
+	for current := path; ; {
+		if real, err := filepath.EvalSymlinks(current); err == nil {
+			return filepath.Join(append([]string{real}, rest...)...)
 		}
-		return uicopy.T("database.create.folder_not_empty", params)
+		parent := filepath.Dir(current)
+		if parent == current {
+			return path
+		}
+		rest = append([]string{filepath.Base(current)}, rest...)
+		current = parent
 	}
-	return uicopy.T("database.create.file_exists", params)
 }
 
-// provision creates the storage, writes and mounts the manifest, and moves
-// it into the registry. On any failure it removes what it created.
-func (r *Registry) provision(request CreateRequest) (*core.Database, string, error) {
+// within reports whether path is dir or inside it.
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// locationInUse is why request's location cannot hold a new database, or "":
+// it overlaps OVDB's own folders or another database's storage, or it holds
+// data (a folder with files, an existing file or SQLite sidecar).
+func (r *Registry) locationInUse(request CreateRequest, registrations []Registration) string {
+	target := resolved(request.Path)
+	for _, own := range []string{r.dirs.Home, r.dirs.Runtime} {
+		if dir := resolved(own); within(target, dir) || within(dir, target) {
+			return uicopy.T("database.create.location_ovdb", map[string]string{"path": request.Path})
+		}
+	}
+	for _, reg := range registrations {
+		if reg.Parsed == nil {
+			continue
+		}
+		if storage, ok := localStorage(reg.Parsed, filepath.Dir(reg.Manifest)); ok {
+			if dir := resolved(storage); within(target, dir) || within(dir, target) {
+				return uicopy.T("database.create.location_overlaps", map[string]string{"path": request.Path, "name": reg.ID})
+			}
+		}
+	}
+	params := map[string]string{"path": request.Path}
+	info, err := os.Stat(request.Path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		// A file in the way or no permission fails while creating, with
+		// plain words (storageUnavailable).
+	case request.Engine == EngineInGitDB && info.IsDir():
+		if entries, err := os.ReadDir(request.Path); err != nil || len(entries) > 0 {
+			return uicopy.T("database.create.folder_not_empty", params)
+		}
+	default:
+		return uicopy.T("database.create.file_exists", params)
+	}
+	if request.Engine == EngineSQLite {
+		for _, suffix := range sqliteSidecars {
+			if _, err := os.Lstat(request.Path + suffix); err == nil {
+				return uicopy.T("database.create.file_exists", map[string]string{"path": request.Path + suffix})
+			}
+		}
+	}
+	return ""
+}
+
+var sqliteSidecars = []string{"-journal", "-wal", "-shm"}
+
+// storageUnavailable is a create failure in plain words, always with the
+// remedy of another location.
+func storageUnavailable(request CreateRequest, err error) *envelope.Error {
+	params := map[string]string{"path": request.Path, "error": redact.String(err.Error())}
+	reason := uicopy.T("database.create.storage_failed", params)
+	switch {
+	case errors.Is(err, fs.ErrPermission):
+		reason = uicopy.T("database.create.storage_permission", params)
+	case errors.Is(err, fs.ErrExist), strings.Contains(err.Error(), "not a directory"):
+		reason = uicopy.T("database.create.storage_in_the_way", params)
+	}
+	return envelope.New(envelope.StorageUnavailable, createFailed()).WithReason(reason).WithNext(chooseLocation(request))
+}
+
+// provision creates the storage, writes and mounts the manifest, moves it
+// into the registry and serves the database. On any failure it removes
+// exactly what it created.
+func (r *Registry) provision(request CreateRequest) (string, error) {
 	var created []string // removed in reverse on failure
 	rollback := func() {
 		for i := len(created) - 1; i >= 0; i-- {
 			_ = os.RemoveAll(created[i])
 		}
 	}
-	unavailable := func(err error) error {
+	fail := func(err *envelope.Error, cause error) error {
 		rollback()
-		r.logf("creating database %s failed: %s", request.ID, redact.String(err.Error()))
-		return envelope.New(envelope.StorageUnavailable, createFailed()).WithReason(redact.String(err.Error()))
+		r.logf("creating database %s failed: %s", request.ID, redact.String(cause.Error()))
+		return err
+	}
+	unavailable := func(err error) error { return fail(storageUnavailable(request, err), err) }
+	createdIfMissing := func(path string) {
+		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+			created = append(created, path)
+		}
 	}
 
 	for _, dir := range []string{RegistryDir(r.dirs.Home), CatalogueDir(r.dirs.Home)} {
 		if err := paths.EnsurePrivateDir(dir); err != nil && !errors.Is(err, paths.ErrNotPrivate) {
-			return nil, "", unavailable(err)
+			return "", unavailable(err)
 		}
 	}
 	storageDir := request.Path
@@ -376,45 +648,57 @@ func (r *Registry) provision(request CreateRequest) (*core.Database, string, err
 	}
 	missing, err := missingDirs(storageDir)
 	if err != nil {
-		return nil, "", unavailable(err)
-	}
-	if err := os.MkdirAll(storageDir, 0o755); err != nil {
-		return nil, "", unavailable(err)
+		return "", unavailable(err)
 	}
 	if len(missing) > 0 {
 		created = append(created, missing[len(missing)-1]) // the outermost new directory
+	}
+	if err := os.MkdirAll(storageDir, 0o755); err != nil {
+		return "", unavailable(err)
 	}
 	switch request.Engine {
 	case EngineInGitDB:
 		if len(missing) == 0 {
 			// An empty folder that already existed: remove only what OVDB adds.
-			created = append(created, filepath.Join(request.Path, ".git"))
+			for _, name := range []string{".git", ".ingitdb"} {
+				createdIfMissing(filepath.Join(request.Path, name))
+			}
 		}
 		// A Git history per write batch; inGitDB also works without git.
 		_ = exec.Command("git", "-C", request.Path, "init", "-q").Run()
 	case EngineSQLite:
-		for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
-			created = append(created, request.Path+suffix)
+		createdIfMissing(request.Path)
+		for _, suffix := range sqliteSidecars {
+			createdIfMissing(request.Path + suffix)
 		}
 	}
 
 	staging := filepath.Join(RegistryDir(r.dirs.Home), "."+request.ID+".creating")
-	created = append(created, staging, filepath.Join(CatalogueDir(r.dirs.Home), request.ID+".inferred.json"))
+	catalogue := filepath.Join(CatalogueDir(r.dirs.Home), request.ID+".inferred.json")
+	createdIfMissing(catalogue)
+	created = append(created, staging)
 	if err := paths.WriteFilePrivate(staging, []byte(newManifest(request))); err != nil {
-		return nil, "", unavailable(err)
+		return "", unavailable(err)
 	}
 	// OVDB created this storage, so the first mount may give its new Git
 	// repository the identity commits need; later mounts never touch it.
 	db, err := mount.FileWithOptions(staging, mount.Options{CatalogueDir: CatalogueDir(r.dirs.Home)})
 	if err != nil {
-		return nil, "", unavailable(errors.New(mountReason(err, staging)))
+		return "", unavailable(errors.New(mountReason(err, staging)))
 	}
 	manifestPath := ManifestPath(r.dirs.Home, request.ID)
 	if err := os.Rename(staging, manifestPath); err != nil {
 		_ = db.Close()
-		return nil, "", unavailable(err)
+		return "", unavailable(err)
 	}
-	return db, manifestPath, nil
+	created = append(created, manifestPath)
+	if err := r.server.Mount(db); err != nil {
+		_ = db.Close()
+		return "", fail(envelope.New(envelope.Internal, createFailed()).
+			WithReason(uicopy.T("database.create.serve_failed", map[string]string{"name": request.ID, "error": redact.String(err.Error())})).
+			WithNext(envelope.Next{Label: uicopy.T("next.restart_server", nil), Command: "ovdb server restart"}), err)
+	}
+	return manifestPath, nil
 }
 
 // missingDirs lists dir and its missing parents, deepest first.
@@ -439,7 +723,7 @@ func missingDirs(dir string) ([]string, error) {
 
 // newManifest is the registry manifest for a new database. SQLite accepts
 // only strict mode, which needs one described collection to start: the
-// manifest declares an example one and says how to describe real ones.
+// manifest declares a placeholder one and says how to describe real ones.
 func newManifest(request CreateRequest) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Registered by OVDB. See %s\n", ManifestDocsURL)
@@ -456,13 +740,13 @@ func newManifest(request CreateRequest) string {
 	if request.Engine == EngineSQLite {
 		fmt.Fprintf(&b, `schemas:
   collections:
-    # SQLite stores records only in collections described here. Describe
-    # yours like this one (%s),
-    # then run: ovdb server restart
+    # SQLite stores records only in collections described here. "example"
+    # is a placeholder: rename it and describe your fields (%s),
+    # then run: ovdb databases reload %s
     example:
       fields:
         title: {type: string, required: true}
-`, SchemaDocsURL)
+`, SchemaDocsURL, request.ID)
 	}
 	return b.String()
 }
@@ -472,57 +756,153 @@ func yamlScalar(s string) string {
 	return strings.TrimSuffix(string(data), "\n")
 }
 
-func (r *Registry) setMount(record MountRecord) {
-	r.mounts = slices.DeleteFunc(r.mounts, func(m MountRecord) bool { return m.Manifest == record.Manifest })
-	r.mounts = append(r.mounts, record)
-	slices.SortStableFunc(r.mounts, func(a, b MountRecord) int { return strings.Compare(a.ID, b.ID) })
+// find is the registration named id: the exact id, or the only one that
+// matches ignoring case.
+func find(registrations []Registration, id string) (Registration, bool) {
+	var folded []Registration
+	for _, reg := range registrations {
+		if reg.ID == id {
+			return reg, true
+		}
+		if strings.EqualFold(reg.ID, id) {
+			folded = append(folded, reg)
+		}
+	}
+	if len(folded) == 1 {
+		return folded[0], true
+	}
+	return Registration{}, false
+}
+
+func notFound(message, id string) *envelope.Error {
+	return envelope.New(envelope.NotFound, message).
+		WithReason(uicopy.T("database.remove.not_found", map[string]string{"name": id})).
+		WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
 }
 
 // Remove unregisters database id without deleting its data, and says where
-// the data remains (database-setup-and-providers#REQ:list-and-remove).
+// the data remains (database-setup-and-providers#REQ:list-and-remove). The
+// manifest goes first, so a failure leaves the database registered and
+// served; the drain of in-flight requests happens without the registry
+// lock, so status and lists never wait on it.
 func (r *Registry) Remove(ctx context.Context, id string) (DatabaseResult, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	registrations, err := ReadRegistry(r.dirs.Home)
 	if err != nil {
+		r.mu.Unlock()
 		return DatabaseResult{}, err
 	}
-	index := slices.IndexFunc(registrations, func(reg Registration) bool { return reg.ID == id })
-	if index < 0 {
-		return DatabaseResult{}, envelope.New(envelope.NotFound, uicopy.T("database.remove.failed", nil)).
-			WithReason(uicopy.T("database.remove.not_found", map[string]string{"name": id})).
-			WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
+	registration, ok := find(registrations, id)
+	if !ok {
+		r.mu.Unlock()
+		return DatabaseResult{}, notFound(uicopy.T("database.remove.failed", nil), id)
 	}
-	registration := registrations[index]
-	database := registration.Describe()
-
-	if slices.ContainsFunc(r.mounts, func(m MountRecord) bool { return m.Manifest == registration.Manifest && m.State == MountMounted }) {
-		unmountCtx, cancel := context.WithTimeout(ctx, UnmountTimeout)
-		err := r.server.UnmountContext(unmountCtx, id)
-		cancel()
-		if err != nil && !errors.Is(err, server.ErrDatabaseNotMounted) {
-			// The database is no longer served either way; it closes once
-			// its last request finishes.
-			r.logf("closing database %s: %s", id, redact.String(err.Error()))
-		}
-	}
+	record, _ := r.record(registration.Manifest)
 	if err := os.Remove(registration.Manifest); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return DatabaseResult{}, err
+		r.mu.Unlock()
+		return DatabaseResult{}, envelope.New(envelope.StorageUnavailable, uicopy.T("database.remove.failed", nil)).
+			WithReason(uicopy.T("database.remove.manifest_failed", map[string]string{"manifest": registration.Manifest, "error": redact.String(err.Error())}))
 	}
-	_ = os.Remove(filepath.Join(CatalogueDir(r.dirs.Home), id+".inferred.json"))
-	r.mounts = slices.DeleteFunc(r.mounts, func(m MountRecord) bool { return m.Manifest == registration.Manifest })
+	r.dropMount(registration.Manifest)
 	if err := r.writeMounts(); err != nil {
 		r.logf("writing mounts.json: %s", redact.String(err.Error()))
 	}
-	r.logf("removed database %s (data kept)", id)
-	return NewRemovedResult(database), nil
+	r.mu.Unlock()
+
+	if record.State == MountMounted {
+		r.unmount(registration.ID)
+	}
+	_ = os.Remove(filepath.Join(CatalogueDir(r.dirs.Home), registration.ID+".inferred.json"))
+	r.logf("removed database %s (data kept)", registration.ID)
+	return NewRemovedResult(registration.Describe()), nil
 }
 
 // NewRemovedResult is the result of removing database.
 func NewRemovedResult(database Database) DatabaseResult {
 	database.State = ""
 	return DatabaseResult{Schema: envelope.Schema, Database: database, Next: []envelope.Next{
-		{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases},
 		{Label: uicopy.T("home.menu.create_database", nil), Command: "ovdb databases create <name>"},
+		{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases},
+		{Label: uicopy.T("next.done", nil), Action: ActionDone},
 	}}
+}
+
+// Reload mounts database id again from its manifest, so an edited manifest
+// (a SQLite schema, a fixed connection variable) or restored storage takes
+// effect without restarting the server.
+func (r *Registry) Reload(ctx context.Context, id string) (DatabaseResult, error) {
+	registrations, err := ReadRegistry(r.dirs.Home)
+	if err != nil {
+		return DatabaseResult{}, err
+	}
+	registration, ok := find(registrations, id)
+	if !ok {
+		return DatabaseResult{}, notFound(uicopy.T("database.reload.failed", nil), id)
+	}
+	r.reload(ctx, []Registration{registration})
+	list, err := r.List()
+	if err != nil {
+		return DatabaseResult{}, err
+	}
+	for _, db := range list {
+		if db.Manifest == registration.Manifest {
+			return DatabaseResult{Schema: envelope.Schema, Database: db, Next: ReloadedNext(db)}, nil
+		}
+	}
+	return DatabaseResult{}, notFound(uicopy.T("database.reload.failed", nil), id)
+}
+
+// ReloadAll reloads every registration, picks up manifests added to
+// <home>/databases by hand and forgets ones deleted by hand.
+func (r *Registry) ReloadAll(ctx context.Context) (DatabasesDocument, error) {
+	registrations, err := ReadRegistry(r.dirs.Home)
+	if err != nil {
+		return DatabasesDocument{}, err
+	}
+	r.mu.Lock()
+	var gone []MountRecord
+	for _, record := range r.mounts {
+		if !slices.ContainsFunc(registrations, func(reg Registration) bool { return reg.Manifest == record.Manifest }) {
+			gone = append(gone, record)
+			r.dropMount(record.Manifest)
+		}
+	}
+	r.mu.Unlock()
+	for _, record := range gone {
+		if record.State == MountMounted {
+			r.unmount(record.ID)
+		}
+	}
+	r.reload(ctx, registrations)
+	list, err := r.List()
+	return NewDatabasesDocument(list), err
+}
+
+// reload unmounts each registration's current database (without the lock)
+// and mounts it again as a new generation.
+func (r *Registry) reload(ctx context.Context, registrations []Registration) {
+	r.mu.Lock()
+	var mounted []string
+	for _, registration := range registrations {
+		if record, ok := r.record(registration.Manifest); ok && record.State == MountMounted {
+			mounted = append(mounted, record.ID)
+		}
+		r.setMount(MountRecord{ID: registration.ID, Manifest: registration.Manifest, State: MountMounting})
+	}
+	r.mu.Unlock()
+	for _, id := range mounted {
+		r.unmount(id)
+	}
+	r.mountEach(ctx, registrations)
+}
+
+// ReloadedNext is what to do after a reload.
+func ReloadedNext(database Database) []envelope.Next {
+	next := []envelope.Next{}
+	if database.State == MountNeedsAttention {
+		next = append(next,
+			envelope.Next{Label: uicopy.T("next.reload_again", nil), Command: "ovdb databases reload " + database.ID},
+			envelope.Next{Label: uicopy.T("next.remove_database", nil), Command: "ovdb databases remove " + database.ID})
+	}
+	return append(next, envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
 }

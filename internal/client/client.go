@@ -179,7 +179,7 @@ func (l *Local) Home(ctx context.Context) ([]byte, error) {
 // Engines is the storage catalogue (capability 8). It is the same data in
 // every binary, so without a server it is built here.
 func (l *Local) Engines(ctx context.Context) ([]byte, error) {
-	return l.read(ctx, EnginesPath, func() any { return setup.NewEnginesDocument() })
+	return l.read(ctx, EnginesPath, func() any { return setup.NewEnginesDocument(l.Dirs.Home) })
 }
 
 // Databases lists registered databases (capability 11): from the running
@@ -213,6 +213,28 @@ func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest,
 		return nil, err
 	}
 	response, err := c.Do(ctx, http.MethodPost, DatabasesPath, request)
+	return response.Body, err
+}
+
+// ReloadDatabase mounts database id again from its manifest through the
+// server, starting it unless noStart.
+func (l *Local) ReloadDatabase(ctx context.Context, id string, noStart bool) ([]byte, error) {
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, DatabasesPath+"/"+url.PathEscape(id)+"/reload", struct{}{})
+	return response.Body, err
+}
+
+// ReloadAllDatabases reloads every registration and picks up manifests
+// added by hand.
+func (l *Local) ReloadAllDatabases(ctx context.Context, noStart bool) ([]byte, error) {
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, DatabasesPath+"/reload", struct{}{})
 	return response.Body, err
 }
 

@@ -30,6 +30,7 @@ const (
 
 // Mount states.
 const (
+	MountMounting       = "mounting" // loading after a start or reload
 	MountMounted        = "mounted"
 	MountNeedsAttention = "needs_attention"
 	MountUnknown        = "unknown" // no server running

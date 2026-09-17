@@ -57,7 +57,9 @@ func newRoot(app *cli.App) *cobra.Command {
 	databases := &cobra.Command{Use: "databases", RunE: func(*cobra.Command, []string) error { return errors.New("legacy databases") }}
 	databases.Flags().String("url", "", "")
 	create := &cobra.Command{Use: "create <id>", RunE: func(*cobra.Command, []string) error { return errors.New("legacy create") }}
-	create.Flags().String("addr", "", "")
+	for _, name := range []string{"addr", "label", "token", "owner-token"} {
+		create.Flags().String(name, "", "")
+	}
 	create.Flags().Bool("json", false, "")
 	databases.AddCommand(create)
 	root.AddCommand(databases)

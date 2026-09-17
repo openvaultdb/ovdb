@@ -68,7 +68,8 @@ describe('storage picker', () => {
     const steps = wrapper.get('[data-testid="manifest-steps"]')
     expect(steps.text()).toContain('Set this up with a manifest file')
     expect(steps.text()).toContain('ovdb init --engine postgres --id <name>')
-    expect(steps.text()).toContain('Connect with a manifest file')
+    expect(steps.text()).toContain('ovdb databases reload <name>')
+    expect(steps.text()).toContain('Guided connect is coming.')
     expect(steps.get('a').attributes('href')).toBe('https://github.com/openvaultdb/openvaultdb-go#manifest-examples')
     expect(wrapper.findAll('input')).toHaveLength(0)
     expect(calls.filter((c) => c.method !== 'GET')).toEqual([])
@@ -137,7 +138,7 @@ describe('create form and result', () => {
     expect(items[0].text()).toContain('Describe your data first')
     expect(items[0].text()).toContain('ovdb server restart')
     expect(items[1].get('a').attributes('href')).toBe('https://github.com/openvaultdb/openvaultdb-go#schema-modes')
-    expect(wrapper.text()).toContain('Stored in /home/a/ovdb/shop.sqlite as one SQLite file.')
+    expect(wrapper.text()).toContain('Stored in /home/a/ovdb/shop.sqlite as one SQLite file, with a placeholder collection example to rename.')
     expect(wrapper.text()).not.toMatch(/ovdb (add|set) /)
   })
 
@@ -149,8 +150,8 @@ describe('create form and result', () => {
         message: "Couldn't create the database",
         reason: '/home/a/ovdb/notes already has files in it. OVDB never writes over existing data.',
         next: [
-          { label: 'Use the name notes-2 instead', command: 'ovdb databases create notes-2', action: 'edit_name' },
           { label: 'Choose another location', command: 'ovdb databases create notes --path <another absolute path>', action: 'edit_location' },
+          { label: 'Done', action: 'done' },
         ],
       },
     }
@@ -161,16 +162,41 @@ describe('create form and result', () => {
     await flushPromises()
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toContain("Couldn't create the database")
-    expect(alert.text()).toContain('ovdb databases create notes-2')
-    // The location field carries the reason; the remedy buttons focus the fields.
+    expect(alert.text()).toContain('ovdb databases create notes --path <another absolute path>')
+    expect(alert.text()).not.toContain('Done')
+    // The location field carries the reason; the remedy button focuses it.
     const location = wrapper.findAll('input')[1]
     expect(location.attributes('aria-invalid')).toBe('true')
     expect(wrapper.text()).toContain('/home/a/ovdb/notes already has files in it.')
     expect(alert.text()).not.toContain('Why:')
     await alert.findAll('button').find((b) => b.text() === 'Choose another location')!.trigger('click')
     expect(document.activeElement).toBe(location.element)
-    await alert.findAll('button').find((b) => b.text() === 'Choose another name')!.trigger('click')
-    expect(document.activeElement).toBe(wrapper.findAll('input')[0].element)
+  })
+
+  it('fills in the suggested name when a name is taken (F8)', async () => {
+    const problem = {
+      schema: 1,
+      error: {
+        code: 'already_exists',
+        message: "Couldn't create the database",
+        reason: 'A database named notes is already registered.',
+        next: [
+          { label: 'Use the name notes-2 instead', command: 'ovdb databases create notes-2', action: 'edit_name' },
+          { label: 'See your databases', command: 'ovdb databases', action: 'databases' },
+        ],
+      },
+    }
+    const { wrapper } = await openPicker({ 'POST /api/local/v1/databases': () => json(409, problem) })
+    await wrapper.get('[data-engine="ingitdb"]').trigger('click')
+    await wrapper.findAll('input')[0].setValue('notes')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const [name, location] = wrapper.findAll('input')
+    expect(name.attributes('aria-invalid')).toBe('true')
+    await wrapper.get('[role="alert"]').findAll('button').find((b) => b.text() === 'Use the name notes-2 instead')!.trigger('click')
+    expect((name.element as HTMLInputElement).value).toBe('notes-2')
+    expect((location.element as HTMLInputElement).value).toBe('/home/a/ovdb/notes-2')
+    expect(document.activeElement).toBe(name.element)
   })
 })
 
@@ -227,6 +253,25 @@ describe('Databases', () => {
     expect(wrapper.get('[role="status"]').text()).toContain('Removed database notes from OVDB')
     expect(wrapper.text()).toContain('Your data is still in /home/a/ovdb/notes.')
     expect(wrapper.find('[data-database="notes"]').exists()).toBe(false)
+  })
+
+  it('reloads a database and shows the state it ends in', async () => {
+    const calls = installFetch(
+      routes({
+        'GET /api/local/v1/databases': () => json(200, listed),
+        'POST /api/local/v1/databases/crm/reload': () =>
+          json(200, { schema: 1, database: { ...listed.databases[0], reason: 'still unreachable' }, next: [] }),
+      }),
+    )
+    const wrapper = mount(DatabasesScreen)
+    await flushPromises()
+    expect(wrapper.get('[data-database="crm"]').text()).toContain('/m/crm.yaml')
+    await wrapper.get('[data-reload="crm"]').trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/api/local/v1/databases/crm/reload')).toBe(true)
+    const notice = wrapper.get('[role="alert"]')
+    expect(notice.text()).toContain('Reloaded database crm · Needs attention')
+    expect(notice.text()).toContain('Why: still unreachable')
   })
 
   it('says when there are none', async () => {

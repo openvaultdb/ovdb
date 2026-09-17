@@ -15,3 +15,12 @@ export function defaultLocation(dataHome: string, engine: string, name: string):
   const base = dataHome.endsWith(separator) ? dataHome : dataHome + separator
   return base + name + (engine === 'sqlite' ? '.sqlite' : '')
 }
+
+/** The name an edit_name remedy suggests (`ovdb databases create notes-2`), as setup.SuggestedName reads it. */
+export function suggestedName(next: { command?: string; action?: string }): string {
+  const fields = (next.command ?? '').trim().split(/\s+/)
+  if (next.action !== 'edit_name' || fields.length < 4 || fields[1] !== 'databases' || fields[2] !== 'create' || fields[3].startsWith('<')) {
+    return ''
+  }
+  return fields[3]
+}

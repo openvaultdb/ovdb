@@ -24,7 +24,7 @@ import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
 import OvTextField from '../components/OvTextField.vue'
 import { t } from '../copy'
-import { defaultLocation, filterEngines } from '../engines'
+import { defaultLocation, filterEngines, suggestedName } from '../engines'
 import { navigate } from '../router'
 
 const engines = ref<Engine[]>([])
@@ -132,9 +132,16 @@ function hasAction(next: Next[], action: string) {
 }
 
 function remedy(item: Next) {
-  if (item.action === 'edit_name') nameField.value?.focus()
+  if (item.action === 'edit_name') {
+    // "Use the name notes-2 instead" uses notes-2 (setup.SuggestedName).
+    const suggested = suggestedName(item)
+    if (suggested) name.value = suggested
+    nameField.value?.focus()
+  }
   if (item.action === 'edit_location') locationField.value?.focus()
 }
+
+const problemNext = computed(() => problem.value?.next.filter((item) => item.action !== 'done') ?? [])
 
 // Result: commands to repeat in a terminal, and in-page actions as buttons.
 const resultCommands = computed(() => result.value?.next.filter((item) => !item.action) ?? [])
@@ -172,7 +179,7 @@ function go(event: MouseEvent, path: string) {
     <!-- Result -->
     <div v-else-if="result" ref="outcome" tabindex="-1" data-testid="create-result" class="flex flex-col gap-6">
       <OvNotice live tone="success" :title="t('database.created.title', { name: result.database.id })">
-        <p class="break-words">{{ storedText(result.database) }}</p>
+        <p class="break-words"><OvText :text="storedText(result.database)" /></p>
       </OvNotice>
       <section class="flex flex-col gap-4" aria-labelledby="what-next">
         <h2 id="what-next" class="text-lg font-semibold tracking-tight">{{ t('home.what_next') }}</h2>
@@ -290,11 +297,11 @@ function go(event: MouseEvent, path: string) {
       <div ref="outcome" tabindex="-1">
         <!-- The field shows the reason when the problem is about a field. -->
         <div v-if="problem" role="alert" class="flex flex-col gap-3">
-          <OvNotice tone="problem" :title="problem.message" :reason="nameError || locationError ? undefined : problem.reason" :next="problem.next" />
+          <OvNotice tone="problem" :title="problem.message" :reason="nameError || locationError ? undefined : problem.reason" :next="problemNext" />
           <div v-if="problem.next.some((item) => item.action === 'edit_name' || item.action === 'edit_location')" class="flex flex-wrap gap-3">
             <template v-for="item in problem.next" :key="item.label">
               <OvButton v-if="item.action === 'edit_name' || item.action === 'edit_location'" variant="secondary" @click="remedy(item)">
-                {{ item.action === 'edit_name' ? t('next.choose_name') : t('next.choose_location') }}
+                {{ item.action === 'edit_location' ? t('next.choose_location') : suggestedName(item) ? item.label : t('next.choose_name') }}
               </OvButton>
             </template>
           </div>

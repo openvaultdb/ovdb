@@ -99,7 +99,7 @@ func TestCatalogueMatchesBinary(t *testing.T) {
 		if guided := engine.ID == EngineInGitDB || engine.ID == EngineSQLite; guided != (engine.Setup == SetupGuided) || guided != engine.Pinned {
 			t.Errorf("%s: setup %s pinned %v", engine.ID, engine.Setup, engine.Pinned)
 		}
-		if engine.Setup == SetupManifest && (len(engine.ManifestSteps) != 3 || engine.ManifestSteps[0].Command != "ovdb init --engine "+engine.ID+" --id <name>") {
+		if engine.Setup == SetupManifest && (len(engine.ManifestSteps) != 4 || engine.ManifestSteps[0].Command != "ovdb init --engine "+engine.ID+" --id <name>") {
 			t.Errorf("%s manifest steps = %+v", engine.ID, engine.ManifestSteps)
 		}
 	}

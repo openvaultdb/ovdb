@@ -76,22 +76,34 @@ func Engines() []Engine {
 
 func manifestEngine(id, name, description string, modes []string) Engine {
 	return Engine{ID: id, Name: name, Description: description, SchemaModes: modes, Setup: SetupManifest,
-		ManifestSteps: ManifestSteps(id)}
+		ManifestSteps: ManifestSteps(id, "")}
 }
 
-// ManifestSteps is how to set up a manifest-only engine: write a manifest,
-// edit it, connect it, and where to read more.
-func ManifestSteps(engine string) []envelope.Next {
+// ManifestSteps is how to set up a manifest-only engine today: write a
+// manifest, edit it, put it in the registry folder and load it; guided
+// connect comes later. home is OVDB home ("" names it generically).
+func ManifestSteps(engine, home string) []envelope.Next {
+	registry := uicopy.T("engine.manifest.registry_generic", nil)
+	if home != "" {
+		registry = RegistryDir(home)
+	}
 	return []envelope.Next{
 		{Label: uicopy.T("engine.manifest.step_init", nil), Command: "ovdb init --engine " + engine + " --id <name>"},
-		{Label: uicopy.T("engine.manifest.step_connect", nil), Command: "ovdb databases connect --manifest <absolute path to the file>"},
+		{Label: uicopy.T("engine.manifest.step_place", map[string]string{"dir": registry}), Command: "ovdb databases reload <name>"},
+		{Label: uicopy.T("engine.manifest.coming", nil)},
 		{Label: uicopy.T("engine.manifest.step_docs", map[string]string{"url": ManifestDocsURL})},
 	}
 }
 
-// NewEnginesDocument wraps the catalogue.
-func NewEnginesDocument() EnginesDocument {
-	return EnginesDocument{Schema: envelope.Schema, Engines: Engines(), Next: []envelope.Next{
+// NewEnginesDocument wraps the catalogue for OVDB home.
+func NewEnginesDocument(home string) EnginesDocument {
+	engines := Engines()
+	for i := range engines {
+		if engines[i].Setup == SetupManifest {
+			engines[i].ManifestSteps = ManifestSteps(engines[i].ID, home)
+		}
+	}
+	return EnginesDocument{Schema: envelope.Schema, Engines: engines, Next: []envelope.Next{
 		{Label: uicopy.T("home.menu.create_database", nil), Command: "ovdb databases create <name>"},
 	}}
 }

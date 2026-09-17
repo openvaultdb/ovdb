@@ -39,6 +39,8 @@ function badge(db: Database) {
       return { tone: 'ok' as const, label: t('databases.state.mounted') }
     case 'needs_attention':
       return { tone: 'warn' as const, label: t('databases.state.needs_attention') }
+    case 'mounting':
+      return { tone: 'neutral' as const, label: t('databases.state.mounting') }
     default:
       return { tone: 'neutral' as const, label: t('databases.state.unknown') }
   }
@@ -58,7 +60,30 @@ async function cancel(id: string) {
   document.querySelector<HTMLElement>(`[data-remove="${id}"]`)?.focus()
 }
 
+const reloading = ref<string | null>(null)
+const reloaded = ref<DatabaseResult | null>(null)
+
+// Reload loads the database again from its manifest (after editing it or
+// restoring its storage) and shows the state it ends in.
+async function reload(id: string) {
+  reloading.value = id
+  removed.value = null
+  reloaded.value = null
+  problem.value = null
+  const response = await api<DatabaseResult>('POST', `/api/local/v1/databases/${encodeURIComponent(id)}/reload`, {})
+  reloading.value = null
+  if (response.ok) {
+    reloaded.value = response.data
+    await load()
+  } else {
+    problem.value = response.error
+  }
+  await nextTick()
+  outcome.value?.focus()
+}
+
 async function remove(id: string) {
+  reloaded.value = null
   removing.value = true
   const response = await api<DatabaseResult>('DELETE', `/api/local/v1/databases/${encodeURIComponent(id)}`)
   removing.value = false
@@ -103,6 +128,13 @@ function go(event: MouseEvent, path: string) {
           }}
         </p>
       </OvNotice>
+      <OvNotice
+        v-if="reloaded"
+        live
+        :tone="reloaded.database.state === 'mounted' ? 'success' : 'problem'"
+        :title="t('database.reloaded.title', { name: reloaded.database.id }) + ' · ' + badge(reloaded.database).label"
+        :reason="reloaded.database.reason"
+      />
       <OvNotice v-if="problem" live tone="problem" :title="problem.message" :reason="problem.reason" :next="problem.next" />
     </div>
 
@@ -121,9 +153,14 @@ function go(event: MouseEvent, path: string) {
             <h2 class="text-lg font-semibold tracking-tight break-all">{{ db.id }}</h2>
             <OvStatusBadge :tone="badge(db).tone" :label="badge(db).label" />
           </div>
-          <OvButton v-if="confirming !== db.id" variant="secondary" :data-remove="db.id" @click="ask(db.id)">
-            {{ t('database.remove.button') }}
-          </OvButton>
+          <div v-if="confirming !== db.id" class="flex flex-wrap gap-3">
+            <OvButton variant="secondary" :data-reload="db.id" :busy="reloading === db.id" @click="reload(db.id)">
+              {{ t('next.reload_database') }}
+            </OvButton>
+            <OvButton variant="secondary" :data-remove="db.id" @click="ask(db.id)">
+              {{ t('database.remove.button') }}
+            </OvButton>
+          </div>
         </div>
         <dl class="flex flex-col gap-3">
           <div v-if="db.engine" class="grid gap-x-8 gap-y-0.5 sm:grid-cols-[9rem_1fr]">

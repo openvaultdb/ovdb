@@ -93,7 +93,7 @@ func TestCreatePostgresShowsManifestSteps(t *testing.T) {
 	}
 	view := stripANSI(m.View().Content)
 	for _, want := range []string{"Set this up with a manifest file", "ovdb init --engine postgres --id <name>",
-		"Connect with a manifest file", "ovdb databases connect --manifest", setup.ManifestDocsURL} {
+		"Guided connect is coming.", "ovdb databases reload <name>", setup.ManifestDocsURL} {
 		if !strings.Contains(view, want) {
 			t.Errorf("manifest view lacks %q:\n%s", want, view)
 		}
@@ -164,9 +164,10 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	if m.screen != ScreenProblem || m.problem.err.Code != envelope.AlreadyExists {
 		t.Fatalf("again: screen %s problem %+v", m.screen, m.problem.err)
 	}
-	m = send(t, m, key("enter")) // Use the name notes-2 instead → edit the name
-	if m.screen != ScreenCreate || m.create.step != createForm || m.create.field != 0 {
-		t.Errorf("remedy: screen %s step %s field %d", m.screen, m.create.step, m.create.field)
+	m = send(t, m, key("enter")) // Use the name notes-2 instead → the form with notes-2
+	if m.screen != ScreenCreate || m.create.step != createForm || m.create.field != 0 || m.create.name != "notes-2" ||
+		m.create.location != filepath.Join(m.local.Dirs.Data, "notes-2") {
+		t.Errorf("remedy: screen %s step %s field %d name %q location %q", m.screen, m.create.step, m.create.field, m.create.name, m.create.location)
 	}
 
 	// Databases: remove after confirming; the data stays.
@@ -184,9 +185,21 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	if view := flat(m.viewDatabases()); !strings.Contains(view, "notes [Ready]") || !strings.Contains(view, folder) {
 		t.Errorf("list:\n%s", view)
 	}
+	m = send(t, m, key("enter")) // details, not straight to Remove
+	if view := flat(m.viewDatabases()); m.databases.view != databasesDetails || !strings.Contains(view, "Manifest file:") ||
+		!strings.Contains(view, "> Reload") {
+		t.Fatalf("details (%s):\n%s", m.databases.view, view)
+	}
+	m = send(t, m, key("enter")) // Reload
+	if m.screen != ScreenResult || !strings.Contains(m.result.title, "Reloaded database notes") || m.result.lines[0] != "Ready" {
+		t.Fatalf("reload: screen %s result %+v problem %+v", m.screen, m.result, m.problem.err)
+	}
+	m = send(t, m, key("d"))
 	m = send(t, m, key("enter"))
-	if !m.databases.confirm || !m.databases.keepFocus {
-		t.Fatalf("confirm = %v keep %v", m.databases.confirm, m.databases.keepFocus)
+	m = send(t, m, key("down"))
+	m = send(t, m, key("enter")) // Remove
+	if m.databases.view != databasesConfirm || !m.databases.keep {
+		t.Fatalf("confirm = %s keep %v", m.databases.view, m.databases.keep)
 	}
 	if view := flat(m.viewDatabases()); !strings.Contains(view, "Remove notes from OVDB?") || !strings.Contains(view, "Its data stays where it is: "+folder) {
 		t.Errorf("confirm view:\n%s", view)
@@ -212,6 +225,11 @@ func TestDatabasesScreenSizes(t *testing.T) {
 		{ID: "crm", Engine: "postgres", Location: "connection from $CRM_DSN", State: setup.MountNeedsAttention,
 			Reason: "failed to open Postgres via $CRM_DSN: dalgo2postgres: PingContext(\"postgres://[redacted]@nohost/db\"): failed to connect"},
 	}}
+	many := setup.DatabasesDocument{}
+	for i := range 12 {
+		many.Databases = append(many.Databases, setup.Database{ID: "db" + itoa(i), Engine: "ingitdb", State: setup.MountNeedsAttention,
+			Location: "/home/someone/with/a/rather/long/path/that/goes/on/and/on/ovdb/db" + itoa(i), Reason: "The data is missing."})
+	}
 	created := setup.DatabaseResult{
 		Database: setup.Database{ID: "shop", Engine: "sqlite", Location: "/home/someone/ovdb/shop.sqlite"},
 		Next:     setup.CreatedNext(setup.Database{ID: "shop", Engine: "sqlite", Manifest: "/home/someone/.config/ovdb/databases/shop.yaml"}),
@@ -240,7 +258,27 @@ func TestDatabasesScreenSizes(t *testing.T) {
 		}},
 		{"confirm", func(m Model) Model {
 			m.screen = ScreenDatabases
-			m.databases = databasesScreen{loaded: true, document: databases, confirm: true, keepFocus: true}
+			m.databases = databasesScreen{loaded: true, document: databases, view: databasesConfirm, keep: true}
+			return m
+		}},
+		{"details", func(m Model) Model {
+			m.screen = ScreenDatabases
+			m.databases = databasesScreen{loaded: true, document: databases, cursor: 1, view: databasesDetails}
+			return m
+		}},
+		{"many-top", func(m Model) Model {
+			m.screen = ScreenDatabases
+			m.databases = databasesScreen{loaded: true, document: many, view: databasesList}
+			return m
+		}},
+		{"many-middle", func(m Model) Model {
+			m.screen = ScreenDatabases
+			m.databases = databasesScreen{loaded: true, document: many, cursor: 7, view: databasesList}
+			return m
+		}},
+		{"many-create", func(m Model) Model {
+			m.screen = ScreenDatabases
+			m.databases = databasesScreen{loaded: true, document: many, cursor: len(many.Databases), view: databasesList}
 			return m
 		}},
 		{"result", func(m Model) Model {
@@ -265,6 +303,19 @@ func TestDatabasesScreenSizes(t *testing.T) {
 					return
 				}
 				noWiderThan(t, content, size.w)
+				if lines := strings.Count(content, "\n") + 1; lines > size.h {
+					t.Errorf("%d lines, want <= %d:\n%s", lines, size.h, stripANSI(content))
+				}
+				// The selected row stays visible.
+				if m.screen == ScreenDatabases && m.databases.view == databasesList {
+					want := "Create a database"
+					if m.databases.cursor < len(m.databases.document.Databases) {
+						want = "> " + m.databases.document.Databases[m.databases.cursor].ID + " "
+					}
+					if !strings.Contains(stripANSI(content), want) {
+						t.Errorf("selected row %q not visible:\n%s", want, stripANSI(content))
+					}
+				}
 			})
 		}
 	}

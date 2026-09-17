@@ -29,9 +29,24 @@ func (m Model) loadEnginesCmd() tea.Cmd {
 }
 
 type databaseResultMsg struct {
-	result  setup.DatabaseResult
-	removed bool
-	err     error
+	result   setup.DatabaseResult
+	removed  bool
+	reloaded bool
+	err      error
+}
+
+// reloadCmd loads a database again from its manifest.
+func (m Model) reloadCmd(id string) tea.Cmd {
+	local, ctx := m.local, m.ctx
+	return func() tea.Msg {
+		body, err := local.ReloadDatabase(ctx, id, false)
+		if err != nil {
+			return databaseResultMsg{err: err, reloaded: true}
+		}
+		var result setup.DatabaseResult
+		err = json.Unmarshal(body, &result)
+		return databaseResultMsg{result: result, reloaded: true, err: err}
+	}
 }
 
 // createCmd creates a database through the server, starting it when needed

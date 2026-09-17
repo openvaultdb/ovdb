@@ -9,6 +9,7 @@
 package localserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -49,6 +50,9 @@ type Options struct {
 	Console http.Handler
 	// Databases are mounted next to the registry's (tests).
 	Databases map[string]*core.Database
+	// MountTimeout bounds each registered database's mount;
+	// setup.DefaultMountTimeout when zero.
+	MountTimeout time.Duration
 }
 
 type localServer struct {
@@ -72,6 +76,12 @@ func (h *Handler) Flush() error { return h.server.sessions.flush() }
 // Close unmounts every registered database, releasing engine resources, and
 // removes mounts.json. Call it after the HTTP server has shut down.
 func (h *Handler) Close() { h.server.registry.Close() }
+
+// MountDatabases mounts the registered databases, each within its deadline,
+// returning when all are settled or ctx ends. Run calls it in the background
+// once the server listens, so no storage can keep the server from starting
+// or stopping.
+func (h *Handler) MountDatabases(ctx context.Context) { h.server.registry.MountAll(ctx) }
 
 // logf writes one redacted, timestamped line to w (server.log).
 func logf(w io.Writer, now func() time.Time) func(format string, args ...any) {
@@ -106,7 +116,7 @@ func New(opts Options) (*Handler, error) {
 	}
 	dataServer := server.New(opts.Record.Version, opts.Databases,
 		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}))
-	registry, err := setup.OpenRegistry(opts.Dirs, dataServer, logf(opts.ErrorLog, opts.Now))
+	registry, err := setup.OpenRegistry(opts.Dirs, dataServer, logf(opts.ErrorLog, opts.Now), setup.RegistryOptions{MountTimeout: opts.MountTimeout})
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +158,8 @@ var endpoints = []endpoint{
 	{http.MethodGet, "/api/local/v1/engines", accessOwner, (*localServer).engines},
 	{http.MethodGet, "/api/local/v1/databases", accessOwner, (*localServer).databases},
 	{http.MethodPost, "/api/local/v1/databases", accessOwner, (*localServer).createDatabase},
+	{http.MethodPost, "/api/local/v1/databases/{id}/reload", accessOwner, (*localServer).reloadDatabase},
+	{http.MethodPost, "/api/local/v1/databases/reload", accessOwner, (*localServer).reloadAll},
 	{http.MethodDelete, "/api/local/v1/databases/{id}", accessOwner, (*localServer).removeDatabase},
 }
 
@@ -319,7 +331,7 @@ func (s *localServer) home(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *localServer) engines(w http.ResponseWriter, _ *http.Request) {
-	envelope.WriteJSON(w, http.StatusOK, setup.NewEnginesDocument())
+	envelope.WriteJSON(w, http.StatusOK, setup.NewEnginesDocument(s.opts.Dirs.Home))
 }
 
 func (s *localServer) databases(w http.ResponseWriter, _ *http.Request) {
@@ -342,6 +354,24 @@ func (s *localServer) createDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	envelope.WriteJSON(w, http.StatusCreated, result)
+}
+
+func (s *localServer) reloadDatabase(w http.ResponseWriter, r *http.Request) {
+	result, err := s.registry.Reload(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, result)
+}
+
+func (s *localServer) reloadAll(w http.ResponseWriter, r *http.Request) {
+	document, err := s.registry.ReloadAll(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, document)
 }
 
 func (s *localServer) removeDatabase(w http.ResponseWriter, r *http.Request) {
@@ -415,7 +445,7 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 // anything else as internal, without the raw text (REQ:redacted-errors).
 func writeError(w http.ResponseWriter, err error) {
 	if e := envelope.As(err); e != nil {
-		e.Reason = redact.String(e.Reason)
+		e.Message, e.Reason = redact.String(e.Message), redact.String(e.Reason)
 		envelope.Write(w, e)
 		return
 	}

@@ -86,7 +86,8 @@ export const engines = {
       setup: 'manifest',
       manifest_steps: [
         { label: 'Write a manifest file, then edit it', command: `ovdb init --engine ${id} --id <name>` },
-        { label: 'Connect with a manifest file', command: 'ovdb databases connect --manifest <absolute path to the file>' },
+        { label: 'Put the edited file in /home/a/.config/ovdb/databases, then load it', command: 'ovdb databases reload <name>' },
+        { label: 'Guided connect is coming.' },
         { label: 'Read how manifest files work: https://github.com/openvaultdb/openvaultdb-go#manifest-examples' },
       ],
     })),

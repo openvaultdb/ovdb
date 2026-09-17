@@ -246,9 +246,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = ScreenProblem
 			return m, nil
 		}
-		if msg.removed {
+		switch {
+		case msg.removed:
 			m.result = newRemovedResult(msg.result)
-		} else {
+		case msg.reloaded:
+			m.result = newReloadedResult(msg.result)
+		default:
 			m.result = newCreatedResult(msg.result)
 			m.create = createScreen{step: createChoose}
 		}
@@ -471,7 +474,7 @@ func (m Model) updateProblem(key string) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.portRemedyCmd(port), tickCmd())
 			}
 		case (n.Action == setup.ActionEditName || n.Action == setup.ActionEditLocation) && m.create.chosen.ID != "":
-			return m.createRemedy(n.Action), nil
+			return m.createRemedy(*n), nil
 		case n.Action == setup.ActionDatabases:
 			return m.enterDatabases()
 		}

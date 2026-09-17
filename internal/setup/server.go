@@ -175,6 +175,10 @@ func DatabasesStatus(databases []Database) CopyRef {
 	switch {
 	case len(databases) == 0:
 		return CopyRef{Key: "home.status.databases_none"}
+	case attention > 0 && len(databases) == 1:
+		return CopyRef{Key: "home.status.database_one_attention"}
+	case attention == 1:
+		return CopyRef{Key: "home.status.databases_attention_one", Params: count}
 	case attention > 0:
 		return CopyRef{Key: "home.status.databases_attention", Params: count}
 	case len(databases) == 1:

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -67,14 +68,23 @@ func writeEngines(w io.Writer, engines []setup.Engine) {
 			say(w, "  "+strings.Repeat(" ", width)+"   "+engine.Note)
 		}
 	}
+	var ids []string
+	var steps []envelope.Next
 	for _, engine := range engines {
 		if engine.Setup == setup.SetupManifest {
-			say(w, "")
-			say(w, uicopy.T("engine.manifest.title", nil)+" ("+engine.Name+"):")
-			writeNext(w, engine.ManifestSteps)
-			return // the steps are the same for every manifest engine but the id
+			ids = append(ids, engine.ID)
+			steps = engine.ManifestSteps
 		}
 	}
+	if len(steps) == 0 {
+		return
+	}
+	// The steps differ only in the engine id, so they are shown once.
+	generic := slices.Clone(steps)
+	generic[0].Command = "ovdb init --engine <" + strings.Join(ids, "|") + "> --id <name>"
+	say(w, "")
+	say(w, uicopy.T("engine.manifest.title", nil)+":")
+	writeNext(w, generic)
 }
 
 // DatabasesPreview adds the preview behaviour to the legacy `ovdb
@@ -113,6 +123,15 @@ func (a *App) DatabasesPreview(list, create *cobra.Command) {
 	create.RunE = func(cmd *cobra.Command, args []string) error {
 		if cmd.Flags().Changed("addr") {
 			return legacyCreate(cmd, args)
+		}
+		// Flags of the legacy server path mean nothing to the local server;
+		// say so instead of ignoring them.
+		for _, flag := range []string{"label", "token", "owner-token"} {
+			if cmd.Flags().Changed(flag) {
+				return run(func(*cobra.Command, []string) error {
+					return usageError(cmd, uicopy.T("usage.addr_only_flag", map[string]string{"flag": "--" + flag}))
+				})(cmd, args)
+			}
 		}
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		return a.createDatabase(cmd, setup.CreateRequest{ID: args[0], Engine: engine, Path: path}, noStart, jsonOut)
@@ -180,6 +199,8 @@ func StateLabel(state string) string {
 		return uicopy.T("databases.state.mounted", nil)
 	case setup.MountNeedsAttention:
 		return uicopy.T("databases.state.needs_attention", nil)
+	case setup.MountMounting:
+		return uicopy.T("databases.state.mounting", nil)
 	default:
 		return uicopy.T("databases.state.unknown", nil)
 	}

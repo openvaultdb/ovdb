@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
@@ -20,6 +21,20 @@ func previewEnv(t *testing.T) *env {
 	e := newEnv(t)
 	e.app.ChildEnv = append(e.app.ChildEnv, preview.EnvVar+"=1")
 	return e
+}
+
+// waitMounted waits until the server has settled every database: mounting
+// runs in the background after it starts listening.
+func (e *env) waitMounted() {
+	e.t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if !strings.Contains(e.api(http.MethodGet, "/api/local/v1/databases"), `"state":"mounting"`) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	e.t.Fatal("databases still mounting after 15s")
 }
 
 // AC:auto-start-and-no-start, AC:cli-json-matches-api for the databases
@@ -87,12 +102,20 @@ func TestDatabasesThroughTheServer(t *testing.T) {
 	if err := json.Unmarshal([]byte(shop.stdout), &result); err != nil || shop.code != 0 {
 		t.Fatalf("sqlite create = %+v", shop)
 	}
-	if result.Next[0].Command != "ovdb server restart" || !strings.Contains(result.Next[0].Label, "schema") {
+	if result.Next[0].Command != "ovdb databases reload shop" || !strings.Contains(result.Next[0].Label, "Describe your data") {
 		t.Errorf("sqlite next = %+v", result.Next)
 	}
 	if strings.Contains(shop.stdout, "ovdb add") || strings.Contains(shop.stdout, "ovdb set") {
 		t.Errorf("sqlite result suggests a write: %s", shop.stdout)
 	}
+	reloaded := e.run("databases", "reload", "shop", "--json")
+	if reloaded.code != 0 || !strings.HasPrefix(reloaded.stdout, `{"schema":1,"database":{"id":"shop"`) || !strings.Contains(reloaded.stdout, `"state":"mounted"`) {
+		t.Errorf("reload = %+v", reloaded)
+	}
+	if all := e.run("databases", "reload", "--all", "--json"); all.code != 0 || all.stdout != e.api(http.MethodGet, "/api/local/v1/databases") {
+		t.Errorf("reload --all = %+v", all)
+	}
+	_ = decodeError(t, e.run("databases", "reload", "nope", "--json"), envelope.NotFound)
 
 	// A folder with files is refused, and nothing is registered.
 	diary := filepath.Join(e.dirs.Data, "diary")
@@ -104,7 +127,7 @@ func TestDatabasesThroughTheServer(t *testing.T) {
 	}
 	refused := e.run("databases", "create", "diary")
 	if refused.code != 1 || !strings.Contains(refused.stderr, "Couldn't create the database") ||
-		!strings.Contains(refused.stderr, "already has files in it") || !strings.Contains(refused.stderr, "ovdb databases create diary-2") {
+		!strings.Contains(refused.stderr, "already has files in it") || !strings.Contains(refused.stderr, "ovdb databases create diary --path <another absolute path>") {
 		t.Errorf("not empty = %+v", refused)
 	}
 
@@ -179,6 +202,7 @@ func TestConnectionStringNeverLeaks(t *testing.T) {
 	if r := e.run("server", "start"); r.code != 0 {
 		t.Fatalf("start = %+v", r)
 	}
+	e.waitMounted()
 
 	var status setup.Status
 	statusJSON := e.api(http.MethodGet, "/api/local/v1/status")
@@ -265,6 +289,13 @@ func TestLegacyDatabasesPaths(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(setup.RegistryDir(e.dirs.Home)); len(entries) != 0 {
 		t.Errorf("legacy path registered %v", entries)
+	}
+	// Legacy-only flags are refused on the local path, not ignored.
+	for _, flag := range []string{"--label=x", "--token=t", "--owner-token=t"} {
+		failure := decodeError(t, e.run("databases", "create", "crm", flag, "--no-start", "--json"), envelope.InvalidArgument)
+		if !strings.Contains(failure.Reason, "works only with --addr") {
+			t.Errorf("%s = %+v", flag, failure)
+		}
 	}
 
 	t.Setenv(preview.EnvVar, "")
