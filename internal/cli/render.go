@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 )
 
@@ -18,6 +20,13 @@ import (
 // theirs. args are the raw arguments, because a flag error happens before
 // --json itself is parsed.
 func Render(err error, args []string, stdout, stderr io.Writer) bool {
+	// A data command's /v1 failure prints the /v1 error body unchanged with
+	// --json (configuration-parity#REQ:json-equals-api).
+	var v1 *client.V1Error
+	if errors.As(err, &v1) && wantsJSON(args) {
+		_, _ = stdout.Write(v1.Body)
+		return true
+	}
 	e := envelope.As(err)
 	if e == nil {
 		return false

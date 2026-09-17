@@ -70,6 +70,9 @@ jobs:
       - name: pnpm install
         run: pnpm -C web install --frozen-lockfile
 
+      - name: pnpm lint (text-only rendering, vue/no-v-html)
+        run: pnpm -C web lint
+
       - name: pnpm build
         run: pnpm -C web build
 
@@ -134,8 +137,10 @@ jobs:
         with:
           go-version: '1.26.1'
           cache: true
-      - name: go test (runtime, paths, cli)
-        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/cli/...
+      # Project contexts (symlinks, Windows drive letters and case, Git
+      # worktrees) and data paths join the matrix in increment 3.
+      - name: go test (runtime, paths, context, cli)
+        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/setup/dbcontext/... ./internal/datapath/... ./internal/cli/...
 
   # Fail fast on go.mod/go.sum drift.
   #

@@ -34,11 +34,12 @@ const (
 	ScreenProblem   = "problem"
 	ScreenCreate    = "create"
 	ScreenDatabases = "databases"
+	ScreenBrowse    = "browse"
 )
 
 // ScreenIDs lists every screen id the TUI registers.
 func ScreenIDs() []string {
-	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases}
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse}
 }
 
 // minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
@@ -69,6 +70,7 @@ type Model struct {
 	problem   problemScreen
 	create    createScreen
 	databases databasesScreen
+	browse    browseScreen
 
 	busy *busyState
 }
@@ -238,6 +240,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.databases.cursor = min(m.databases.cursor, len(msg.document.Databases))
 		return m, nil
 
+	case browseDatabasesMsg:
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.browse.loaded = true
+		m.browse.databases, m.browse.currentDB = msg.databases, msg.current
+		for i, db := range msg.databases {
+			if db.ID == msg.current {
+				m.browse.cursor = i
+			}
+		}
+		return m, nil
+
+	case browseLoadedMsg:
+		return m.updateBrowseLoaded(msg)
+
+	case contextSetMsg:
+		m.busy = nil
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.result = resultScreen{title: msg.document.Message, next: msg.next}
+		m.screen = ScreenResult
+		return m, nil
+
 	case databaseResultMsg:
 		m.busy = nil
 		m.pullNotices()
@@ -293,7 +326,7 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// "?" is text while typing a filter, name or location.
-	typing := m.screen == ScreenCreate && m.create.step != createManifest
+	typing := m.screen == ScreenCreate && m.create.step != createManifest || m.screen == ScreenBrowse && m.browse.typing
 	if key == "?" && !typing {
 		m.showHelp = !m.showHelp
 		return m, nil
@@ -313,6 +346,8 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.updateCreate(key)
 	case ScreenDatabases:
 		return m.updateDatabases(key)
+	case ScreenBrowse:
+		return m.updateBrowse(key)
 	}
 	return m, nil
 }
@@ -329,17 +364,24 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 	options := m.home.document.Options
 	switch key {
 	case "up", "k":
-		if m.home.cursor > 0 {
-			m.home.cursor--
+		// Disabled options are skipped.
+		for i := m.home.cursor - 1; i >= 0; i-- {
+			if !options[i].Disabled {
+				m.home.cursor = i
+				break
+			}
 		}
 	case "down", "j":
-		if m.home.cursor < len(options)-1 {
-			m.home.cursor++
+		for i := m.home.cursor + 1; i < len(options); i++ {
+			if !options[i].Disabled {
+				m.home.cursor = i
+				break
+			}
 		}
 	case "q":
 		return m, tea.Quit
 	case "enter":
-		if !m.home.loaded || m.home.cursor >= len(options) {
+		if !m.home.loaded || m.home.cursor >= len(options) || options[m.home.cursor].Disabled {
 			return m, nil
 		}
 		target := screenFor(options[m.home.cursor].ID)
@@ -349,6 +391,8 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 			return m.enterCreate()
 		case ScreenDatabases:
 			return m.enterDatabases()
+		case ScreenBrowse:
+			return m.enterBrowse()
 		case ScreenServer:
 			m.server.loaded = false
 			m.server.linkShown = false
@@ -445,11 +489,15 @@ func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
 
 func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case "d":
-		// "See your databases", when the result offers it.
+	case "d", "u":
+		// "See your databases" and "Use it in this project", when the result
+		// offers them.
 		for _, n := range m.result.next {
-			if n.Action == setup.ActionDatabases {
+			switch {
+			case key == "d" && n.Action == setup.ActionDatabases:
 				return m.enterDatabases()
+			case key == "u" && n.Action == setup.ActionUse:
+				return m.useInProject(strings.TrimPrefix(n.Command, "ovdb use "))
 			}
 		}
 	case "enter", "esc", "backspace":
@@ -511,6 +559,8 @@ func (m Model) View() tea.View {
 		body = m.viewCreate()
 	case m.screen == ScreenDatabases:
 		body = m.viewDatabases()
+	case m.screen == ScreenBrowse:
+		body = m.viewBrowse()
 	}
 	sections := []string{header, body}
 	if len(m.noticeLines) > 0 {
@@ -537,7 +587,14 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(uicopy.T("create.hint.choose", nil), m.width))
 	case m.screen == ScreenCreate && m.create.step == createForm:
 		return helpStyle.Render(wordWrap(uicopy.T("create.hint.form", nil), m.width))
+	case m.screen == ScreenBrowse:
+		return helpStyle.Render(wordWrap(m.browseFooter(), m.width))
 	case m.screen == ScreenResult && len(m.result.next) > 0:
+		for _, n := range m.result.next {
+			if n.Action == setup.ActionUse {
+				return helpStyle.Render(wordWrap(uicopy.T("result.hint.created", nil), m.width))
+			}
+		}
 		for _, n := range m.result.next {
 			if n.Action == setup.ActionDatabases {
 				return helpStyle.Render(wordWrap(uicopy.T("result.hint.databases", nil), m.width))

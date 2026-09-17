@@ -23,7 +23,13 @@ export function installFetch(routes: Record<string, Handler>) {
   const calls: { method: string; path: string; body?: unknown }[] = []
   const fetch = vi.fn(async (path: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET'
-    calls.push({ method, path, body: init.body ? JSON.parse(String(init.body)) : undefined })
+    let body: unknown
+    try {
+      body = init.body ? JSON.parse(String(init.body)) : undefined
+    } catch {
+      body = String(init.body) // a DTQL YAML document
+    }
+    calls.push({ method, path, body })
     const handler = routes[`${method} ${path}`]
     const answer = handler ? handler(init) : json(404, { schema: 1, error: { code: 'not_found', message: 'nothing', next: [] } })
     if (answer === 'network-error') throw new TypeError('Failed to fetch')

@@ -5,12 +5,16 @@ import { computed, ref } from 'vue'
 
 import routes from '../routes.json'
 
-export type Screen = 'home' | 'server' | 'settings' | 'databases' | 'create' | 'not-found'
+export type Screen = 'home' | 'server' | 'settings' | 'databases' | 'create' | 'browse' | 'not-found'
 
 export const currentPath = ref(typeof window === 'undefined' ? '/' : window.location.pathname)
 
 export const screen = computed<Screen>(
-  () => (routes.find((route) => route.path === currentPath.value)?.screen as Screen | undefined) ?? 'not-found',
+  () =>
+    (routes.find(
+      (route) =>
+        route.path === currentPath.value || ('prefix' in route && route.prefix && currentPath.value.startsWith(route.path + '/')),
+    )?.screen as Screen | undefined) ?? 'not-found',
 )
 
 export function navigate(path: string) {

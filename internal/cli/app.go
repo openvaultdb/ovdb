@@ -45,6 +45,9 @@ type App struct {
 	TermSize func() (width, height int)
 	// OpenBrowser launches a URL; browser.Opener{}.Open when nil.
 	OpenBrowser func(url string) error
+	// Getwd is the working directory project contexts are found from;
+	// os.Getwd when nil.
+	Getwd func() (string, error)
 }
 
 func (a *App) getenv(key string) string {
@@ -57,7 +60,8 @@ func (a *App) getenv(key string) string {
 // AddCommands registers the new commands on root, hidden without the gate.
 func (a *App) AddCommands(root *cobra.Command) {
 	hidden := !preview.On()
-	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd(), a.enginesCmd()} {
+	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd(), a.enginesCmd(),
+		a.useCmd(), a.cdCmd(), a.pwdCmd(), a.listCmd(), a.getCmd(), a.setCmd(), a.addCmd(), a.deleteCmd()} {
 		command.Hidden = hidden
 		command.SetFlagErrorFunc(flagError)
 		root.AddCommand(command)
@@ -104,6 +108,7 @@ func (a *App) resolve(flagPort int) (target, error) {
 func (a *App) local(cmd *cobra.Command, t target) *client.Local {
 	return &client.Local{
 		Dirs: t.dirs, Version: a.Version, Port: t.port, ExplicitPort: t.explicit, Notices: cmd.ErrOrStderr(),
+		Where: a.where(""),
 		Command: func(port int) *exec.Cmd {
 			executable := a.Executable
 			if executable == "" {

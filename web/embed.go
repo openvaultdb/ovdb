@@ -161,6 +161,8 @@ var routesJSON []byte
 type Route struct {
 	Path   string `json:"path"`
 	Screen string `json:"screen"`
+	// Prefix routes also match every path below Path (/browse/todo/lists).
+	Prefix bool `json:"prefix,omitempty"`
 }
 
 // Routes returns the console's client-side routes.

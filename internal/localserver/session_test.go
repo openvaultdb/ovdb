@@ -189,6 +189,14 @@ func TestSessionCredentialTable(t *testing.T) {
 	if f.shutdowns != 0 {
 		t.Errorf("a session shut the server down")
 	}
+	// Parity E3: a session sets only the global default; a project context
+	// needs a terminal's working directory and the instance secret
+	// (configuration-parity#AC:endpoints-authenticated).
+	project := `{"scope":"project","dir":"/p/a","database":"todo"}`
+	assertEnvelope(t, browser(request{method: http.MethodPut, path: "/api/local/v1/context", body: project}), http.StatusForbidden, envelope.Forbidden)
+	if rec := f.do(t, request{method: http.MethodPut, path: "/api/local/v1/context", body: project, bearer: testSecret}); rec.Code != http.StatusNotFound {
+		t.Errorf("instance secret project context for an unknown database = %d %s", rec.Code, rec.Body)
+	}
 
 	// Pages: the console for a session, the landing page for everyone else.
 	if rec := browser(request{path: "/"}); rec.Body.String() != "console:/" {
@@ -522,7 +530,7 @@ func TestNoStoreVaryAndHome(t *testing.T) {
 	}
 	rec := f.do(t, request{path: "/api/local/v1/home", cookie: f.signIn(t)})
 	want := string(envelope.Marshal(setup.NewHome(setup.RunningServer(&runtime.Record{Port: testPort, Version: "1.2.3", PID: 42,
-		StartedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, f.dirs), nil)))
+		StartedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, f.dirs), nil, nil)))
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Errorf("home = %d %s\nwant %s", rec.Code, rec.Body, want)
 	}

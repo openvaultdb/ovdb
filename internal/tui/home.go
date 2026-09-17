@@ -32,6 +32,8 @@ func screenFor(id string) string {
 		return ScreenCreate
 	case "databases":
 		return ScreenDatabases
+	case "browse":
+		return ScreenBrowse
 	default:
 		return ScreenHome
 	}
@@ -81,6 +83,9 @@ func (m Model) viewHome() string {
 			style = selectedItemStyle
 		}
 		label := uicopy.T(option.LabelKey, nil)
+		if option.Disabled {
+			style = mutedStyle
+		}
 		if option.Badge != nil {
 			label += "  [" + uicopy.T(option.Badge.LabelKey, nil) + "]"
 		}

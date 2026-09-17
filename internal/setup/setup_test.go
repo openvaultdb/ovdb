@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 )
 
 func testDirs(t *testing.T) paths.Dirs {
@@ -104,13 +106,13 @@ func TestConfigRoundTrip(t *testing.T) {
 func TestStatusNextListsImplementedOptionsInOrder(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
-	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs), nil)
+	stopped := NewStatus("1.0.0", dirs, StoppedServer(6832, dirs), nil, nil)
 	if len(stopped.Next) != 3 || stopped.Next[0].Command != "ovdb server start" || stopped.Next[1].Command != "ovdb open" ||
 		stopped.Next[2].Command != "ovdb databases create <name>" {
 		t.Errorf("stopped next = %+v", stopped.Next)
 	}
 	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
-	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs), nil)
+	running := NewStatus("1.0.0", dirs, RunningServer(record, dirs), nil, nil)
 	if len(running.Next) != 2 || running.Next[0].Command != "ovdb open" {
 		t.Errorf("running next = %+v", running.Next)
 	}
@@ -128,8 +130,8 @@ func TestHomeDocument(t *testing.T) {
 	t.Parallel()
 	dirs := testDirs(t)
 	record := &runtime.Record{Port: 7000, Version: "1.0.0", PID: 5, StartedAt: time.Unix(0, 0).UTC()}
-	running := NewHome(RunningServer(record, dirs), nil)
-	stopped := NewHome(StoppedServer(6832, dirs), nil)
+	running := NewHome(RunningServer(record, dirs), nil, nil)
+	stopped := NewHome(StoppedServer(6832, dirs), nil, nil)
 	for _, home := range []HomeDocument{running, stopped} {
 		ids := []string{}
 		keys := []string{home.QuestionKey}
@@ -148,7 +150,7 @@ func TestHomeDocument(t *testing.T) {
 				keys = append(keys, option.Badge.LabelKey)
 			}
 		}
-		if !slices.Equal(ids, []string{"create/primary", "server/primary", "settings/secondary"}) {
+		if !slices.Equal(ids, []string{"create/primary", "server/primary", "browse/secondary", "settings/secondary"}) {
 			t.Errorf("options = %v", ids)
 		}
 		for _, key := range keys {
@@ -174,9 +176,22 @@ func TestHomeDocument(t *testing.T) {
 	if running.Options[1].DescriptionKey != "home.menu.server_help" || stopped.Options[1].DescriptionKey != "home.menu.server_help_stopped" {
 		t.Errorf("server help: running %q, stopped %q", running.Options[1].DescriptionKey, stopped.Options[1].DescriptionKey)
 	}
-	withDatabases := NewHome(StoppedServer(6832, dirs), []Database{{ID: "notes", State: MountUnknown}})
-	if ids := []string{withDatabases.Options[2].ID, withDatabases.StatusLine[1].Key}; ids[0] != "databases" || ids[1] != "home.status.database_one" {
-		t.Errorf("home with a database = %v", ids)
+	if browse := running.Options[2]; !browse.Disabled || browse.DescriptionKey != "home.menu.needs_database" {
+		t.Errorf("browse without databases = %+v", browse)
+	}
+	// A returning user: databases · current database · server, with Browse
+	// data enabled (first-run-onboarding#REQ:returning-user-home).
+	context := &dbcontext.Context{Database: "notes", Path: "/", Scope: dbcontext.ScopeProject, Dir: "/p/a"}
+	withDatabases := NewHome(RunningServer(record, dirs), []Database{{ID: "notes", State: MountMounted}, {ID: "todo", State: MountMounted}}, context)
+	var summary []string
+	for _, ref := range withDatabases.StatusLine {
+		summary = append(summary, uicopy.T(ref.Key, ref.Params))
+	}
+	if got := strings.Join(summary, " · "); got != "2 databases · using notes (this project) · OVDB server running at http://ovdb.localhost:7000" {
+		t.Errorf("returning-user summary = %q", got)
+	}
+	if ids := []string{withDatabases.Options[2].ID, withDatabases.Options[3].ID}; ids[0] != "browse" || ids[1] != "databases" || withDatabases.Options[2].Disabled {
+		t.Errorf("home with databases = %v", withDatabases.Options)
 	}
 	if option := running.Options[1]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
 		t.Errorf("server option = %+v", option)

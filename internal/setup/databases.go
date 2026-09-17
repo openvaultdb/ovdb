@@ -26,6 +26,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/redact"
+	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 )
 
 // Mounter is the part of the openvaultdb-go server the registry drives.
@@ -370,6 +371,11 @@ const (
 	ActionEditLocation = "edit_location"
 	ActionDatabases    = "databases"
 	ActionDone         = "done"
+	// ActionUse makes the database current: for this project in the TUI,
+	// as the default for all projects in the web console (parity E3).
+	ActionUse = "use"
+	// ActionBrowse opens Browse data for the database.
+	ActionBrowse = "browse"
 )
 
 // SuggestedName is the name an edit_name next action suggests, or "".
@@ -498,6 +504,7 @@ func CreatedNext(database Database) []envelope.Next {
 			envelope.Next{Label: uicopy.T("next.schema_docs", map[string]string{"url": SchemaDocsURL})})
 	}
 	return append(next,
+		envelope.Next{Label: uicopy.T("next.use_in_project", nil), Command: "ovdb use " + database.ID, Action: ActionUse},
 		envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases},
 		envelope.Next{Label: uicopy.T("next.done", nil), Action: ActionDone})
 }
@@ -813,6 +820,10 @@ func (r *Registry) Remove(ctx context.Context, id string) (DatabaseResult, error
 		r.unmount(registration.ID)
 	}
 	_ = os.Remove(filepath.Join(CatalogueDir(r.dirs.Home), registration.ID+".inferred.json"))
+	// No project or default keeps pointing at a database OVDB no longer serves.
+	if err := dbcontext.ClearDatabase(r.dirs.Home, registration.ID); err != nil {
+		r.logf("clearing contexts for %s: %s", registration.ID, redact.String(err.Error()))
+	}
 	r.logf("removed database %s (data kept)", registration.ID)
 	return NewRemovedResult(registration.Describe()), nil
 }

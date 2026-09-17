@@ -60,6 +60,13 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 			t.Errorf("capability %s (%s): web route %q is not in web/routes.json", row.ID, row.Capability, row.Web)
 		}
 		for _, endpoint := range row.API {
+			if strings.Contains(endpoint, " /v1/") {
+				// The data API is openvaultdb-go's; only its shape is checked.
+				if !strings.HasPrefix(strings.Fields(endpoint)[1], "/v1/databases/{db}") {
+					t.Errorf("capability %s (%s): data endpoint %q is not under /v1/databases/{db}", row.ID, row.Capability, endpoint)
+				}
+				continue
+			}
 			if !slices.Contains(endpoints, endpoint) {
 				t.Errorf("capability %s (%s): endpoint %q does not exist", row.ID, row.Capability, endpoint)
 			}
@@ -74,7 +81,13 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 		}
 		// A row is implemented only when every interface has it, or an
 		// exception (a permanent gap) covers it.
-		missing := row.TUI == "" || (row.Web == "" && len(row.Exceptions) == 0)
+		// E4 (no cd) and E5 (no record editing) leave both the TUI and the
+		// web console out on purpose.
+		noUI := slices.Contains(row.Exceptions, "E4") || slices.Contains(row.Exceptions, "E5")
+		missing := (row.TUI == "" && !noUI) || (row.Web == "" && len(row.Exceptions) == 0)
+		if noUI && (row.TUI != "" || row.Web != "") {
+			t.Errorf("capability %s (%s) has no TUI or web cell by exception but names one", row.ID, row.Capability)
+		}
 		if row.Implemented && missing {
 			t.Errorf("capability %s (%s) is marked implemented with a missing cell and no exception", row.ID, row.Capability)
 		}

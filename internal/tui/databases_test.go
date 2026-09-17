@@ -175,6 +175,7 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	m = send(t, m, key("esc"))
 	m = send(t, m, key("down"))
 	m = send(t, m, key("down"))
+	m = send(t, m, key("down"))
 	if option := m.home.document.Options[m.home.cursor]; option.ID != "databases" {
 		t.Fatalf("home option %d = %s", m.home.cursor, option.ID)
 	}
@@ -187,16 +188,20 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	}
 	m = send(t, m, key("enter")) // details, not straight to Remove
 	if view := flat(m.viewDatabases()); m.databases.view != databasesDetails || !strings.Contains(view, "Manifest file:") ||
-		!strings.Contains(view, "> Reload") {
+		!strings.Contains(view, "> Browse data Use it in this project Reload Remove Back") {
 		t.Fatalf("details (%s):\n%s", m.databases.view, view)
 	}
+	m = send(t, m, key("down"))
+	m = send(t, m, key("down"))
 	m = send(t, m, key("enter")) // Reload
 	if m.screen != ScreenResult || !strings.Contains(m.result.title, "Reloaded database notes") || m.result.lines[0] != "Ready" {
 		t.Fatalf("reload: screen %s result %+v problem %+v", m.screen, m.result, m.problem.err)
 	}
 	m = send(t, m, key("d"))
 	m = send(t, m, key("enter"))
-	m = send(t, m, key("down"))
+	for range 3 {
+		m = send(t, m, key("down"))
+	}
 	m = send(t, m, key("enter")) // Remove
 	if m.databases.view != databasesConfirm || !m.databases.keep {
 		t.Fatalf("confirm = %s keep %v", m.databases.view, m.databases.keep)

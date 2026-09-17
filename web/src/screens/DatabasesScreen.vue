@@ -5,12 +5,13 @@
 // (database-setup-and-providers#REQ:list-and-remove).
 import { nextTick, onMounted, ref } from 'vue'
 
-import { api, type ApiError, type Database, type DatabaseResult, type DatabasesDocument } from '../api'
+import { api, type ApiError, type ContextDocument, type Database, type DatabaseResult, type DatabasesDocument } from '../api'
 import OvBackLink from '../components/OvBackLink.vue'
 import OvButton from '../components/OvButton.vue'
 import OvNotice from '../components/OvNotice.vue'
 import OvStatusBadge from '../components/OvStatusBadge.vue'
 import { t } from '../copy'
+import { browseRoute } from '../datapath'
 import { navigate } from '../router'
 
 const databases = ref<Database[] | null>(null)
@@ -28,10 +29,38 @@ async function load() {
   else loadProblem.value = response.error
 }
 
+const defaultDb = ref<string | null>(null)
+const usedDefault = ref<string | null>(null)
+const choosing = ref<string | null>(null)
+
 onMounted(async () => {
-  const [, engines] = await Promise.all([load(), api<{ engines: { id: string; name: string }[] }>('GET', '/api/local/v1/engines')])
+  const [, engines, context] = await Promise.all([
+    load(),
+    api<{ engines: { id: string; name: string }[] }>('GET', '/api/local/v1/engines'),
+    api<ContextDocument>('GET', '/api/local/v1/context'),
+  ])
   if (engines.ok) engineNames.value = Object.fromEntries(engines.data.engines.map((engine) => [engine.id, engine.name]))
+  if (context.ok) defaultDb.value = context.data.global?.database ?? null
 })
+
+// Use as default: the default database for all projects. Choosing one for a
+// project needs its directory, so that stays with the CLI and TUI (parity E3).
+async function useAsDefault(id: string) {
+  choosing.value = id
+  removed.value = null
+  reloaded.value = null
+  problem.value = null
+  const response = await api<ContextDocument>('PUT', '/api/local/v1/context', { scope: 'global', database: id })
+  choosing.value = null
+  if (response.ok) {
+    defaultDb.value = response.data.global?.database ?? id
+    usedDefault.value = response.data.message ?? null
+  } else {
+    problem.value = response.error
+  }
+  await nextTick()
+  outcome.value?.focus()
+}
 
 function badge(db: Database) {
   switch (db.state) {
@@ -66,6 +95,7 @@ const reloaded = ref<DatabaseResult | null>(null)
 // Reload loads the database again from its manifest (after editing it or
 // restoring its storage) and shows the state it ends in.
 async function reload(id: string) {
+  usedDefault.value = null
   reloading.value = id
   removed.value = null
   reloaded.value = null
@@ -83,6 +113,7 @@ async function reload(id: string) {
 }
 
 async function remove(id: string) {
+  usedDefault.value = null
   reloaded.value = null
   removing.value = true
   const response = await api<DatabaseResult>('DELETE', `/api/local/v1/databases/${encodeURIComponent(id)}`)
@@ -135,6 +166,7 @@ function go(event: MouseEvent, path: string) {
         :title="t('database.reloaded.title', { name: reloaded.database.id }) + ' · ' + badge(reloaded.database).label"
         :reason="reloaded.database.reason"
       />
+      <OvNotice v-if="usedDefault" live tone="success" :title="usedDefault" />
       <OvNotice v-if="problem" live tone="problem" :title="problem.message" :reason="problem.reason" :next="problem.next" />
     </div>
 
@@ -152,8 +184,19 @@ function go(event: MouseEvent, path: string) {
           <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h2 class="text-lg font-semibold tracking-tight break-all">{{ db.id }}</h2>
             <OvStatusBadge :tone="badge(db).tone" :label="badge(db).label" />
+            <OvStatusBadge v-if="db.id === defaultDb" tone="neutral" :label="t('browse.default')" />
           </div>
           <div v-if="confirming !== db.id" class="flex flex-wrap gap-3">
+            <a
+              :href="browseRoute(db.id)"
+              :data-browse="db.id"
+              class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
+              @click="go($event, browseRoute(db.id))"
+              >{{ t('home.menu.browse') }}</a
+            >
+            <OvButton v-if="db.id !== defaultDb" variant="secondary" :data-use="db.id" :busy="choosing === db.id" @click="useAsDefault(db.id)">
+              {{ t('browse.use_as_default') }}
+            </OvButton>
             <OvButton variant="secondary" :data-reload="db.id" :busy="reloading === db.id" @click="reload(db.id)">
               {{ t('next.reload_database') }}
             </OvButton>
