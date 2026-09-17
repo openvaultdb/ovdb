@@ -38,7 +38,7 @@ func TestTryADemoInstallsAndOpensTheApp(t *testing.T) {
 	m = send(t, m, key("enter"))
 	view = flat(m.View().Content)
 	for _, want := range []string{"The TODO demo is ready", "Two lists, To buy and To watch, are stored as files in", "Your apps and AI agents can use them through the OVDB server.",
-		"What next? • Open TODO app ovdb demo open", "o open the TODO app · Enter done"} {
+		"What next? • Open TODO app ovdb demo open • Install TODO AI skill ovdb skills install todo-demo", "o open the TODO app · s install TODO AI skill · Enter done"} {
 		if m.screen != ScreenResult || !strings.Contains(view, want) {
 			t.Errorf("result (%s) lacks %q:\n%s", m.screen, want, view)
 		}

@@ -1,11 +1,11 @@
 package cli_test
 
 // The journey regression gate (configuration-parity#REQ:journey-a-terminal,
-// REQ:journey-c-agent, REQ:journey-d-todo-demo), as far as increment 4
-// reaches: Journey A without the telemetry prompt (increment 9), Journey C
-// without skills (increment 7), and Journey D without the TODO skill
-// (increment 7) or Explore data (increment 8). Journey D's browser half, the
-// agent's change appearing in the open app, is web/e2e/todo.spec.ts.
+// REQ:journey-c-agent, REQ:journey-d-todo-demo), as far as increment 8
+// reaches: Journey A and C without telemetry (increment 9), and Journey D
+// without Explore data (increment 7). Journey D's browser half — the skill
+// consent step in the web console and the agent's change appearing in the
+// open app — is web/e2e/todo.spec.ts.
 
 import (
 	"bytes"
@@ -74,6 +74,7 @@ func TestJourneyATerminal(t *testing.T) {
 	lookup := dbcontext.Find(src)
 	local := &client.Local{
 		Dirs: e.dirs, Version: testVersion, Port: e.port(),
+		Getenv: func(key string) string { return e.vars[key] },
 		Where: dbcontext.Request{Dirs: lookup.Dirs, Root: lookup.Root},
 		Command: func(port int) *exec.Cmd {
 			command := exec.Command(os.Args[0], "server", "run", "--port", strconv.Itoa(port))
@@ -175,14 +176,17 @@ func TestJourneyCAgent(t *testing.T) {
 }
 
 // Journey D (partial): `ovdb` → Try a demo → install → Open TODO app signs
-// the browser in to /apps/todo/; an agent (no terminal) then changes the
-// same lists with data commands and reads them back (AC:journey-d-passes).
+// the browser in to /apps/todo/ → Install TODO AI skill after the consent
+// step; an agent (no terminal) then changes the same lists with the
+// commands the skill maps the request to, and reads them back
+// (AC:journey-d-passes). Explore data joins with increment 7.
 func TestJourneyDTodoDemo(t *testing.T) {
 	e := previewEnv(t)
 	e.in(t.TempDir())
 	var opened []string
 	local := &client.Local{
 		Dirs: e.dirs, Version: testVersion, Port: e.port(), ConsoleBuilt: func() bool { return true },
+		Getenv: func(key string) string { return e.vars[key] },
 		Command: func(port int) *exec.Cmd {
 			command := exec.Command(os.Args[0], "server", "run", "--port", strconv.Itoa(port))
 			command.Env = append(append(os.Environ(), childEnv+"=1"), e.dirs.Env()...)
@@ -206,6 +210,26 @@ func TestJourneyDTodoDemo(t *testing.T) {
 	press("o")
 	if len(opened) != 1 || !strings.Contains(opened[0], "next=%2Fapps%2Ftodo%2F") {
 		t.Fatalf("opened %v", opened)
+	}
+	// Install TODO AI skill: the consent step names Claude Code's exact
+	// directory before anything is written.
+	if err := os.MkdirAll(filepath.Join(e.vars["HOME"], ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	skillDir := filepath.Join(e.vars["HOME"], ".claude", "skills", "openvaultdb-todo-demo")
+	press("s")
+	if view := strings.ReplaceAll(screenText(m), " ", ""); !strings.Contains(view, "InstalltheTODOAIskill?") || !strings.Contains(view, skillDir) {
+		t.Fatalf("consent:\n%s", screenText(m))
+	}
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Fatalf("offer wrote the skill: %v", err)
+	}
+	press("down", "enter")
+	if view := screenText(m); !strings.Contains(view, "Installed the TODO AI skill") {
+		t.Fatalf("skill result:\n%s", view)
+	}
+	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err != nil {
+		t.Fatal(err)
 	}
 	press("enter", "q")
 

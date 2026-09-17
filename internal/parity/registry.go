@@ -93,6 +93,16 @@ var Rows = []Row{
 	// /apps/todo/; the web console, already signed in, links to it.
 	{ID: "19", Capability: "Open TODO app", CLI: []string{"ovdb demo open"}, TUI: "demo", Web: "/demo",
 		API: []string{"GET /api/local/v1/demo", "POST /api/local/v1/login-links"}, Implemented: true},
+	// AI agent skills: every interface lists both skills with the agents they
+	// are installed for. The CLI and TUI resolve directories from their own
+	// environment and send them; the web console names only agents the
+	// server found and never a directory. Installing is the person's
+	// decision: a consent step in the TUI and web console, a question or
+	// --yes on the CLI, which an agent relays only after the person's yes (E6).
+	{ID: "20", Capability: "List AI skills", CLI: []string{"ovdb skills list"}, TUI: "skills", Web: "/skills",
+		API: []string{"GET /api/local/v1/skills"}, Exceptions: []string{"E6"}, Implemented: true},
+	{ID: "21", Capability: "Install AI skill", CLI: []string{"ovdb skills install"}, TUI: "skills", Web: "/skills",
+		API: []string{"GET /api/local/v1/skills", "POST /api/local/v1/skills/install"}, Exceptions: []string{"E6"}, Implemented: true},
 	// Tokens and CORS origins are developer settings: CLI only, and a console
 	// session gets 403 on server.cors and /v1/tokens (E7). People grant an
 	// app access on the connect flow's consent page (/authorize) instead.

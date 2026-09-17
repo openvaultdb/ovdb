@@ -550,12 +550,15 @@ func resultNext(database Database, describeSchema bool) []envelope.Next {
 			envelope.Next{Label: uicopy.T("next.describe_schema", map[string]string{"manifest": database.Manifest}), Command: "ovdb databases reload " + database.ID},
 			envelope.Next{Label: uicopy.T("next.schema_docs", map[string]string{"url": SchemaDocsURL})})
 	}
-	return append(next,
+	next = append(next,
 		envelope.Next{Label: uicopy.T("home.menu.browse", nil), Command: "ovdb list / --db " + database.ID, Action: ActionBrowse},
 		envelope.Next{Label: uicopy.T("next.use_in_project", nil), Command: "ovdb use " + database.ID, Action: ActionUse},
-		envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases},
-		envelope.Next{Label: uicopy.T("next.connect_agent", nil), Command: "ovdb skills list", Action: skills.ActionSkills},
-		envelope.Next{Label: uicopy.T("next.done", nil), Action: ActionDone})
+		envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: ActionDatabases})
+	if !describeSchema {
+		// Describing a SQLite schema comes first; agents can connect after.
+		next = append(next, envelope.Next{Label: uicopy.T("next.connect_agent", nil), Command: "ovdb skills list", Action: skills.ActionSkills})
+	}
+	return append(next, envelope.Next{Label: uicopy.T("next.done", nil), Action: ActionDone})
 }
 
 func engineFlag(engine string) string {

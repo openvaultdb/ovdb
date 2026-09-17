@@ -69,8 +69,15 @@ func realModel(t *testing.T, port int) Model {
 	t.Helper()
 	base := t.TempDir()
 	dirs := paths.Dirs{Home: filepath.Join(base, "home"), Runtime: filepath.Join(base, "run"), Data: filepath.Join(base, "data")}
+	userHome := filepath.Join(base, "user")
 	local := &client.Local{
 		Dirs: dirs, Version: testVersion, Port: port, ExplicitPort: true,
+		Getenv: func(key string) string {
+			if key == "HOME" || key == "USERPROFILE" {
+				return userHome
+			}
+			return ""
+		},
 		Command: func(port int) *exec.Cmd {
 			command := exec.Command(os.Args[0], strconv.Itoa(port))
 			command.Env = append(append(os.Environ(), childEnv+"=serve"), dirs.Env()...)

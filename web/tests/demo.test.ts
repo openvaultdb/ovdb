@@ -29,6 +29,7 @@ const installed = {
   state: 'mounted',
   next: [
     { label: 'Open TODO app', command: 'ovdb demo open', action: 'open_app' },
+    { label: 'Install TODO AI skill', command: 'ovdb skills install todo-demo', action: 'install_skill' },
     { label: 'Done', action: 'done' },
   ],
 }
@@ -54,9 +55,11 @@ describe('Try a demo', () => {
     expect(result.text()).toContain('Two lists, To buy and To watch, are stored as files in /home/a/ovdb/demos/todo.')
     expect(result.findAll('a').map((a) => [a.text(), a.attributes('href')])).toEqual([
       ['Open TODO app', '/apps/todo/'],
+      ['Install TODO AI skill', '/skills?skill=todo-demo&from=/demo'],
       ['Done', '/'],
     ])
     expect(result.text()).toContain('ovdb demo open')
+    expect(result.text()).toContain('ovdb skills install todo-demo')
     expect(document.activeElement).toBe(result.element)
   })
 

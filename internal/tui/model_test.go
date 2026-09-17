@@ -27,6 +27,12 @@ func testModel(t *testing.T, width, height int) Model {
 			Home: filepath.Join(base, "home"), Runtime: filepath.Join(base, "run"), Data: filepath.Join(base, "data"),
 		},
 		Version: "9.9.9-test", Port: 6832,
+		Getenv: func(key string) string {
+			if key == "HOME" || key == "USERPROFILE" {
+				return filepath.Join(base, "user")
+			}
+			return ""
+		},
 	}
 	m := New(context.Background(), local, nil, width, height)
 	// A real bubbletea Program calls Init() before any input reaches
@@ -135,8 +141,9 @@ func TestHomeDownThenEnterOpensSettings(t *testing.T) {
 	m = send(t, m, key("down"))
 	m = send(t, m, key("down"))
 	m = send(t, m, key("down")) // Browse data is disabled without databases
-	if m.home.cursor != 5 {
-		t.Fatalf("cursor = %d, want 5", m.home.cursor)
+	m = send(t, m, key("down")) // AI agent skills
+	if m.home.cursor != 6 {
+		t.Fatalf("cursor = %d, want 6", m.home.cursor)
 	}
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenSettings {
