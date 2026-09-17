@@ -35,7 +35,7 @@ func newStopResult(wasRunning bool) resultScreen {
 func (m Model) viewResult() string {
 	width := m.width
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(m.result.title))
+	b.WriteString(titleStyle.Render(wordWrap(m.result.title, width)))
 	b.WriteString("\n\n")
 	for _, line := range m.result.lines {
 		b.WriteString(wordWrap(line, width))

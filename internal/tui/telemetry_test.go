@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
@@ -282,5 +283,20 @@ func TestUsageCompletedOnDoneAndDatabasesOption(t *testing.T) {
 	props := telemetry.NewOptionSelected("databases").Properties(telemetry.Meta{})
 	if props["option"] != "databases" {
 		t.Errorf("databases option = %v", props["option"])
+	}
+}
+
+// Review L8: a long Result title wraps, and next-step labels written for
+// agents ("(ask the person first)") read as plain actions for the person.
+func TestResultTitleWrapsAndLabelsSpeakToThePerson(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 60, 20)
+	m.result = resultScreen{title: "Now using notes for this project (/tmp/a/very/long/path/that/does/not/fit/on/one/line)",
+		next: []envelope.Next{{Label: "Install TODO AI skill (ask the person first)", Command: "ovdb skills install todo-demo"}}}
+	m.screen = ScreenResult
+	content := stripANSI(m.View().Content)
+	noWiderThan(t, content, 60)
+	if view := flat(content); !strings.Contains(strings.ReplaceAll(view, " ", ""), "line)") || strings.Contains(view, "ask the person") || !strings.Contains(view, "Install TODO AI skill") {
+		t.Errorf("result:\n%s", content)
 	}
 }
