@@ -528,9 +528,9 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.openDemoCmd(), tickCmd())
 			}
 		}
-	case "b", "d", "u":
-		// "Browse data", "See your databases" and "Use it in this project",
-		// when the result offers them.
+	case "b", "d", "u", "e":
+		// "Browse data", "See your databases", "Use it in this project" and
+		// "Explore data", when the result offers them.
 		for _, n := range m.result.next {
 			switch {
 			case key == "b" && n.Action == setup.ActionBrowse:
@@ -540,6 +540,12 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 				return m.enterDatabases()
 			case key == "u" && n.Action == setup.ActionUse:
 				return m.useInProject(strings.TrimPrefix(n.Command, "ovdb use "))
+			case key == "e" && n.Action == demo.ActionExplore:
+				// The command names the database ("ovdb explore --db
+				// todo"): explore that one specifically, not whatever the
+				// current context resolves to (review-inc-7.md F6).
+				fields := strings.Fields(n.Command)
+				return m.exploreDatabase(fields[len(fields)-1])
 			}
 		}
 	case "enter", "esc", "backspace":

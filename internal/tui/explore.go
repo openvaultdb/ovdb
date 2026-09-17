@@ -1,12 +1,16 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/client"
+	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
 )
@@ -64,10 +68,30 @@ func (m Model) enterExplore() (Model, tea.Cmd) {
 		if err := json.Unmarshal(body, &document); err != nil {
 			return exploreMenuMsg{err: err}
 		}
-		database := ""
-		if document.Context != nil {
-			database = document.Context.Database
+		if document.Context == nil {
+			// Never show "Where would you like to explore 's data?" for a
+			// blank database name — a clear message and a next step
+			// instead (review-inc-7.md F6).
+			return exploreMenuMsg{err: envelope.New(envelope.InvalidArgument, uicopy.T("explore.failed", nil)).
+				WithReason(uicopy.T("explore.no_current_database", nil)).
+				WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases", Action: setup.ActionDatabases})}
 		}
+		return exploreForDatabase(local, ctx, document.Context.Database)()
+	}
+}
+
+// exploreDatabase opens Explore data for db specifically — the demo
+// Result's "Explore data" next action already names it, so it must never
+// fall back to whatever the current context happens to resolve to
+// (review-inc-7.md F6).
+func (m Model) exploreDatabase(db string) (Model, tea.Cmd) {
+	m.screen = ScreenExplore
+	m.explore = exploreScreen{}
+	return m, exploreForDatabase(m.local, m.ctx, db)
+}
+
+func exploreForDatabase(local *client.Local, ctx context.Context, database string) tea.Cmd {
+	return func() tea.Msg {
 		menuBody, err := local.ExploreMenu(ctx, database)
 		if err != nil {
 			return exploreMenuMsg{err: err}
@@ -138,18 +162,22 @@ func (m Model) updateExplore(key string) (tea.Model, tea.Cmd) {
 				m.explore.cursor--
 			}
 		case "down", "j":
-			if m.explore.cursor < 1 {
+			if m.explore.cursor < 2 {
 				m.explore.cursor++
 			}
 		case "enter":
 			if !m.explore.loaded {
 				return m, nil
 			}
-			if m.explore.cursor == 0 {
+			switch m.explore.cursor {
+			case 0:
 				m.busy = &busyState{label: uicopy.T("console.loading", nil)}
 				return m, tea.Batch(m.loadExploreCLICmd(), tickCmd())
+			case 1:
+				m.explore.view = exploreAppView
+			default: // Back (REQ:intent-first-menu)
+				return m.backHome()
 			}
-			m.explore.view = exploreAppView
 		case "esc", "backspace":
 			return m.backHome()
 		}
@@ -192,9 +220,11 @@ func (m Model) viewExplore() string {
 	case exploreMenuView:
 		b.WriteString(wordWrap(uicopy.T("explore.question", map[string]string{"database": m.explore.database}), width))
 		b.WriteString("\n\n")
-		options := [2]struct{ label, help string }{
+		// REQ:intent-first-menu: DataTug CLI, DataTug.app and Back.
+		options := [3]struct{ label, help string }{
 			{uicopy.T("explore.menu.datatug_cli", nil), uicopy.T(m.explore.menu.DataTugCLIKey, nil)},
 			{uicopy.T("explore.menu.datatug_app", nil), uicopy.T(m.explore.menu.DataTugAppKey, nil)},
+			{uicopy.T("explore.menu.back", nil), ""},
 		}
 		for i, option := range options {
 			cursor, style := "  ", itemStyle
@@ -203,8 +233,10 @@ func (m Model) viewExplore() string {
 			}
 			b.WriteString(style.Render(cursor + option.label))
 			b.WriteString("\n")
-			b.WriteString(mutedStyle.Render(indentWrap("    ", option.help, width)))
-			b.WriteString("\n")
+			if option.help != "" {
+				b.WriteString(mutedStyle.Render(indentWrap("    ", option.help, width)))
+				b.WriteString("\n")
+			}
 		}
 	case exploreCLIView:
 		// Prose (the ready/missing message, "saved to …") wraps normally,

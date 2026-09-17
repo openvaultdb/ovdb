@@ -15,6 +15,7 @@ import OvCard from '../components/OvCard.vue'
 import OvCommand from '../components/OvCommand.vue'
 import OvNotice from '../components/OvNotice.vue'
 import { t } from '../copy'
+import { navigate } from '../router'
 
 type View = 'menu' | 'cli' | 'app'
 
@@ -39,7 +40,13 @@ async function currentDatabase(): Promise<string | null> {
 onMounted(async () => {
   const db = await currentDatabase()
   if (!db) {
-    loadProblem.value = { code: 'not_found', message: t('explore.failed'), next: [] }
+    // Never a bare failure with no way forward (review-inc-7.md F6).
+    loadProblem.value = {
+      code: 'invalid_argument',
+      message: t('explore.failed'),
+      reason: t('explore.no_current_database'),
+      next: [{ label: t('next.see_databases'), command: 'ovdb databases' }],
+    }
     return
   }
   database.value = db
@@ -77,6 +84,12 @@ function chooseDataTugApp() {
 function backToMenu() {
   view.value = 'menu'
 }
+
+// REQ:intent-first-menu: the menu's third choice is Back, not just the
+// page-level "‹ Home" link (review-inc-7.md F6).
+function goHome() {
+  navigate('/')
+}
 </script>
 
 <template>
@@ -108,6 +121,14 @@ function backToMenu() {
         >
           <span class="text-lg font-semibold text-ink">{{ t('explore.menu.datatug_app') }}</span>
           <span class="text-muted">{{ datatugAppHelp }}</span>
+        </button>
+        <button
+          type="button"
+          data-option="back"
+          class="px-5 py-3 text-left font-medium text-accent transition-colors hover:bg-surface-2"
+          @click="goHome"
+        >
+          {{ t('explore.menu.back') }}
         </button>
       </div>
     </template>

@@ -136,4 +136,28 @@ describe('Explore data', () => {
     expect(openLink.text()).toBe('Open DataTug.app')
     expect(wrapper.findAll('button, a').map((el) => el.text())).not.toContain('Open database')
   })
+
+  // F6 (review-inc-7.md): no current database (no ?db and no global
+  // default) is a clear message and a next step, never a bare failure.
+  it('shows a clear message and a next step when there is no current database', async () => {
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/context': () => json(200, { ...context, global: null }) })
+    const wrapper = mount(ExploreScreen)
+    await flushPromises()
+    expect(wrapper.text()).toContain("Couldn't open Explore data")
+    expect(wrapper.text()).toContain('Choose a database to explore first.')
+    expect(wrapper.text()).toContain('ovdb databases')
+  })
+
+  // F6: the menu offers a visible Back choice (REQ:intent-first-menu), not
+  // just the page-level "‹ Home" link.
+  it('offers a Back choice in the menu itself', async () => {
+    window.history.replaceState({}, '', '/explore?db=notes')
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/demo': () => json(200, notesDemo) })
+    const wrapper = mount(ExploreScreen)
+    await flushPromises()
+    const back = wrapper.get('[data-option="back"]')
+    expect(back.text()).toBe('Back')
+    await back.trigger('click')
+    expect(window.location.pathname).toBe('/')
+  })
 })

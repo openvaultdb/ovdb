@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/demo"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
 )
 
@@ -160,5 +162,104 @@ func TestExploreCLICommandsAreNeverHardWrapped(t *testing.T) {
 	want := explore.CopyText(cli)
 	if got := fmt.Sprintf("%v", msg); got != want {
 		t.Errorf("clipboard content = %q, want %q", got, want)
+	}
+}
+
+// F6 (review-inc-7.md): the demo Result's "Explore data" (key "e") opens
+// Explore data for the database its own command names ("ovdb explore --db
+// todo"), never whatever the current context happens to resolve to — with
+// a second database registered and no context chosen, that would otherwise
+// be empty.
+func TestResultExploreKeyOpensTheNamedDatabase(t *testing.T) {
+	port := freePort(t)
+	m := realModel(t, port)
+	if _, err := m.local.CreateDatabase(m.ctx, setup.CreateRequest{ID: "other"}, false); err != nil {
+		t.Fatal(err)
+	}
+	m = send(t, m, key("enter")) // Home -> Try a demo
+	m = send(t, m, key("enter")) // install todo
+	if m.screen != ScreenResult {
+		t.Fatalf("screen = %q, want result", m.screen)
+	}
+	found := false
+	for _, n := range m.result.next {
+		if n.Action == demo.ActionExplore {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("result.next lacks an explore action: %+v", m.result.next)
+	}
+
+	m = send(t, m, key("e"))
+	if m.screen != ScreenExplore || m.explore.view != exploreMenuView {
+		t.Fatalf("screen=%q view=%v, want the explore menu", m.screen, m.explore.view)
+	}
+	if m.explore.database != "todo" {
+		t.Errorf("database = %q, want todo (named by the result's own command)", m.explore.database)
+	}
+	if view := flat(m.View().Content); !strings.Contains(view, "Where would you like to explore todo's data?") {
+		t.Errorf("view names the wrong database:\n%s", view)
+	}
+}
+
+// F6: Home's Explore data with no current database (two databases
+// registered, neither chosen) is a clear Problem naming what to do — never
+// "Where would you like to explore 's data?" with a blank name.
+func TestHomeExploreWithNoCurrentDatabaseIsAClearProblem(t *testing.T) {
+	port := freePort(t)
+	m := realModel(t, port)
+	for _, id := range []string{"one", "two"} {
+		if _, err := m.local.CreateDatabase(m.ctx, setup.CreateRequest{ID: id}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	updated, cmd := m.backHome() // reload Home now that both databases exist
+	m = drain(t, updated.(Model), cmd)
+	options := m.home.document.Options
+	exploreIdx := -1
+	for i, o := range options {
+		if o.ID == "explore" {
+			exploreIdx = i
+		}
+	}
+	if exploreIdx < 0 || options[exploreIdx].Disabled {
+		t.Fatalf("explore option = %+v, options=%v", options, options)
+	}
+	m.home.cursor = exploreIdx
+	m = send(t, m, key("enter"))
+	if m.screen != ScreenProblem {
+		t.Fatalf("screen = %q, want problem (databases=%v, context loaded=%v)", m.screen, options, m.explore)
+	}
+	if m.problem.err == nil || m.problem.err.Reason != "Choose a database to explore first." {
+		t.Errorf("problem = %+v, want the no-current-database reason", m.problem.err)
+	}
+	if len(m.problem.err.Next) == 0 || m.problem.err.Next[0].Command != "ovdb databases" {
+		t.Errorf("problem next = %+v, want ovdb databases", m.problem.err.Next)
+	}
+}
+
+// F6: the menu's third option is Back (REQ:intent-first-menu), reachable by
+// keyboard and returning Home.
+func TestExploreMenuHasABackOption(t *testing.T) {
+	port := freePort(t)
+	m := realModel(t, port)
+	m = send(t, m, key("enter")) // Home -> Try a demo
+	m = send(t, m, key("enter")) // install
+	m = send(t, m, key("e"))     // Result -> Explore data for todo
+	if m.screen != ScreenExplore {
+		t.Fatalf("screen = %q", m.screen)
+	}
+	m = send(t, m, key("down"))
+	m = send(t, m, key("down"))
+	if m.explore.cursor != 2 {
+		t.Fatalf("cursor = %d, want 2 (Back)", m.explore.cursor)
+	}
+	if view := flat(m.View().Content); !strings.Contains(view, "Back") {
+		t.Errorf("menu lacks a visible Back option:\n%s", view)
+	}
+	m = send(t, m, key("enter"))
+	if m.screen != ScreenHome {
+		t.Fatalf("screen = %q, want home after choosing Back", m.screen)
 	}
 }
