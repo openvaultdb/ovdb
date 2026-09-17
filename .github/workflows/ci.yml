@@ -141,8 +141,10 @@ jobs:
       # worktrees) and data paths join the matrix in increment 3.
       # The TODO demo service writes inGitDB records, which work on Windows
       # since ingitdb/dalgo2ingitdb v0.6.1 (increment 4).
-      - name: go test (runtime, paths, context, demo, cli)
-        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/setup/dbcontext/... ./internal/setup/demo/... ./internal/datapath/... ./internal/cli/...
+      # AI agent skills are installed into harness folders with skillsync's
+      # locks, atomic renames and ownership marker on every OS (increment 8).
+      - name: go test (runtime, paths, context, demo, skills, cli)
+        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/setup/dbcontext/... ./internal/setup/demo/... ./internal/setup/skills/... ./internal/datapath/... ./internal/cli/...
       # Connecting existing storage reads Git repositories and SQLite files
       # through OS paths (a file: URI on Windows) and must leave them as they
       # are on every OS (increment 5).
