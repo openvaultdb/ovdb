@@ -42,6 +42,9 @@ func snapshot(t *testing.T, root string) map[string]string {
 			return nil
 		}
 		data, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil // a lock git itself removed meanwhile
+		}
 		if err != nil {
 			return err
 		}
@@ -142,7 +145,7 @@ func ingitdbRepo(t *testing.T) string {
 		t.Fatal(err)
 	}
 	// A repository as a person clones it: everything committed.
-	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-q", "-m", "Seed notes"}} {
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "gc.auto=0", "-c", "maintenance.auto=false", "commit", "-q", "-m", "Seed notes"}} {
 		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
@@ -574,7 +577,7 @@ func TestConnectRefusesAFolderThatIsNotInGitDB(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-q", "-m", "Project"}} {
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "gc.auto=0", "-c", "maintenance.auto=false", "commit", "-q", "-m", "Project"}} {
 		if out, err := exec.Command("git", append([]string{"-C", project}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
