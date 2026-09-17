@@ -19,6 +19,19 @@ before:
     # go.mod declared the new one. `-diff` writes nothing and exits non-zero
     # on drift, so the release stops instead of healing itself.
     - go mod tidy -diff
+    # The console and TODO app are embedded in the binary by web/embed.go,
+    # and web/dist is git-ignored (only web/dist/.gitkeep is tracked), so a
+    # release that skipped this would ship an ovdb whose web console serves
+    # the "not built" page (spec/features/local-server-and-web-console
+    # #REQ:embedded-assets). `sh -c` because GoReleaser's `hooks` run each
+    # entry as a single argv, and `||`/pipes need a real shell. No corepack:
+    # the pnpm version is pinned in web/package.json's `packageManager`, and
+    # pnpm's own self-installer honors that pin once pnpm itself is on PATH.
+    - sh -c 'command -v pnpm >/dev/null || npm i -g pnpm@11.7.0'
+    - sh -c 'pnpm -C web install --frozen-lockfile && pnpm -C web build'
+    # A build that emitted nothing must fail the release here rather than
+    # ship a binary that looks fine until someone opens the console.
+    - sh -c 'test -f web/dist/index.html'
 
 builds:
   - id: ovdb
