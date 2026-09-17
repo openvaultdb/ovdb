@@ -104,10 +104,22 @@ const (
 // variable can turn telemetry on (REQ:enable-requires-a-person).
 const EnvTelemetry = "OVDB_TELEMETRY"
 
-// ciMarkers are the CI variables that force telemetry off, with the
-// case-sensitive "true" match copied from specscore-cli
-// internal/telemetry/optout.go (CollectOSEnvSignals).
-var ciMarkers = []string{"CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "CIRCLECI"}
+// ciFlags are CI variables set to a boolean-like value: any value but
+// empty, "0" or "false" counts. The first five are specscore-cli's
+// (internal/telemetry/optout.go), which matches only the literal "true";
+// OVDB widens that match (review F5) and adds TF_BUILD (Azure Pipelines),
+// TRAVIS and APPVEYOR.
+var ciFlags = []string{"CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "CIRCLECI", "TF_BUILD", "TRAVIS", "APPVEYOR"}
+
+// ciPresence are CI variables holding a URL, version or build number:
+// being set at all counts.
+var ciPresence = []string{"JENKINS_URL", "TEAMCITY_VERSION", "BITBUCKET_BUILD_NUMBER", "CODEBUILD_BUILD_ID"}
+
+// truthy is any value but empty, "0" or "false" (any case).
+func truthy(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && value != "0" && !strings.EqualFold(value, "false")
+}
 
 // ForcedOff is the forced-off reason in the environment getenv reads, or ""
 // (the opt-out precedence of specscore-cli's ResolveOptOut, rungs 2 and 3:
@@ -120,11 +132,16 @@ func ForcedOff(getenv func(string) string) string {
 	if strings.TrimSpace(getenv(EnvTelemetry)) == "0" {
 		return ReasonEnvOVDB
 	}
-	if dnt := strings.TrimSpace(getenv("DO_NOT_TRACK")); dnt != "" && dnt != "0" && !strings.EqualFold(dnt, "false") {
+	if truthy(getenv("DO_NOT_TRACK")) {
 		return ReasonDoNotTrack
 	}
-	for _, key := range ciMarkers {
-		if getenv(key) == "true" {
+	for _, key := range ciFlags {
+		if truthy(getenv(key)) {
+			return ReasonCI
+		}
+	}
+	for _, key := range ciPresence {
+		if strings.TrimSpace(getenv(key)) != "" {
 			return ReasonCI
 		}
 	}

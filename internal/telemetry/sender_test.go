@@ -181,7 +181,7 @@ func TestClientDoNotTrackWins(t *testing.T) {
 		t.Fatalf("reason = %q", got)
 	}
 	for _, off := range []string{"0", "false", "FALSE", ""} {
-		if got := telemetry.ForcedOff(env(map[string]string{"DO_NOT_TRACK": off, "CI": "1", "OVDB_TELEMETRY": "1"})); got != "" {
+		if got := telemetry.ForcedOff(env(map[string]string{"DO_NOT_TRACK": off, "CI": "0", "OVDB_TELEMETRY": "1"})); got != "" {
 			t.Errorf("DO_NOT_TRACK=%q forced %q", off, got)
 		}
 	}
