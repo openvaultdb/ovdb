@@ -36,3 +36,14 @@ func TestTodoExamplesAddItemsNotInTheSeed(t *testing.T) {
 		}
 	}
 }
+
+// Review L3: the storage skill says when an agent may raise usage
+// statistics: at most once, after a first success, and only by asking.
+func TestStorageSkillSaysWhenToAskAboutUsageStatistics(t *testing.T) {
+	text := strings.Join(strings.Fields(skillText(t, "openvaultdb")), " ")
+	for _, want := range []string{"at most once", "after the first thing the person set up works", "only by asking", "ovdb telemetry disable"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("storage skill lacks %q", want)
+		}
+	}
+}
