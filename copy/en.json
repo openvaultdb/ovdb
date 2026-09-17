@@ -501,6 +501,7 @@
   "skills.result.unchanged": "already up to date",
   "skills.result.conflict": "left as it is",
   "skills.result.removed": "removed",
+  "skills.install.not_found": "{names} wasn't found on this computer; the skill waits there until it is installed.",
   "skills.install.confirm_needed": "Installing a skill changes your AI agent's setup, so the person must agree first. It would be installed in: {dirs}",
   "skills.install.confirm_flag": "Install it (ask the person first)",
   "skills.consent.question": "Install the {name}?",

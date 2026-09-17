@@ -179,9 +179,12 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 // terminal; anywhere else it fails with confirmation_required naming --yes,
 // having written nothing (ai-agent-skills#REQ:explicit-consent-to-install).
 func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string, harnesses []string, dir string, jsonOut bool) (bool, error) {
-	var dirs, changed []string
+	var dirs, changed, missing []string
 	for _, target := range plan.Targets {
 		dirs = append(dirs, target.Dir)
+		if !target.Detected && target.Harness != "" {
+			missing = append(missing, target.Name)
+		}
 		if target.State == skills.StateChanged {
 			changed = append(changed, target.Dir)
 		}
@@ -197,6 +200,9 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string
 		command += " --replace-changed"
 	}
 	reason := uicopy.T("skills.install.confirm_needed", map[string]string{"dirs": strings.Join(dirs, ", ")})
+	if len(missing) > 0 {
+		reason += " " + uicopy.T("skills.install.not_found", map[string]string{"names": strings.Join(missing, ", ")})
+	}
 	if plan.Request.ReplaceChanged && len(changed) > 0 {
 		reason += " " + uicopy.T("skills.install.replaces_changes", map[string]string{"dirs": strings.Join(changed, ", ")})
 	}
