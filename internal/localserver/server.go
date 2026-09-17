@@ -97,7 +97,13 @@ func (h *Handler) Flush() error { return h.server.sessions.flush() }
 
 // Close unmounts every registered database, releasing engine resources, and
 // removes mounts.json. Call it after the HTTP server has shut down.
-func (h *Handler) Close() { h.server.registry.Close() }
+func (h *Handler) Close() {
+	// Queued usage statistics get their 2 s bound, not more.
+	ctx, cancel := context.WithTimeout(context.Background(), telemetry.Timeout)
+	defer cancel()
+	h.server.opts.Telemetry.Drain(ctx)
+	h.server.registry.Close()
+}
 
 // MountDatabases mounts the registered databases, each within its deadline,
 // returning when all are settled or ctx ends. Run calls it in the background

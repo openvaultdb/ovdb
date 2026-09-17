@@ -1,6 +1,7 @@
 package localserver
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
@@ -86,7 +88,7 @@ func TestConsoleTelemetryConsentAndEvents(t *testing.T) {
 	if json.Unmarshal(rec.Body.Bytes(), &result) != nil || result.Accepted != 4 || result.Sent {
 		t.Fatalf("events before consent = %d %s", rec.Code, rec.Body)
 	}
-	if got := stub.received(); len(got) != 0 {
+	if got := f.drained(t, stub); len(got) != 0 {
 		t.Fatalf("sent before consent: %v", got)
 	}
 
@@ -116,7 +118,7 @@ func TestConsoleTelemetryConsentAndEvents(t *testing.T) {
 	}
 
 	names := []string{}
-	for _, event := range stub.received() {
+	for _, event := range f.drained(t, stub) {
 		names = append(names, event["event"].(string))
 		data, _ := json.Marshal(event)
 		if event["channel"] != "web" || strings.Contains(string(data), "/home/ann") || strings.Contains(string(data), "notes") {
@@ -127,7 +129,7 @@ func TestConsoleTelemetryConsentAndEvents(t *testing.T) {
 	if strings.Join(names, ",") != want {
 		t.Fatalf("events = %v\nwant %s", names, want)
 	}
-	if got := stub.received(); got[5]["engine"] != "sqlite" || got[5]["success"] != true || got[6]["success"] != false || got[7]["error_code"] != "already_exists" || got[4]["engine"] != "other" {
+	if got := f.drained(t, stub); got[5]["engine"] != "sqlite" || got[5]["success"] != true || got[6]["success"] != false || got[7]["error_code"] != "already_exists" || got[4]["engine"] != "other" {
 		t.Fatalf("event properties = %v", got[4:])
 	}
 
@@ -166,7 +168,51 @@ func TestServerEnvironmentForcesConsoleTelemetryOff(t *testing.T) {
 		t.Fatalf("status = %+v", on.Telemetry)
 	}
 	_ = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/telemetry/events", body: `{"events":[{"event":"onboarding_started"}]}`, cookie: session, header: same})
-	if got := stub.received(); len(got) != 0 {
+	if got := f.drained(t, stub); len(got) != 0 {
 		t.Fatalf("sent with DO_NOT_TRACK: %v", got)
 	}
+}
+
+// Review M5: with telemetry on, a console action returns without waiting
+// for PostHog; the batch still arrives, sent in the background.
+func TestConsoleActionsDoNotWaitForTheSend(t *testing.T) {
+	t.Parallel()
+	arrived := make(chan struct{}, 8)
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		arrived <- struct{}{}
+		<-release
+	}))
+	t.Cleanup(func() { close(release); slow.Close() })
+	f := newFixture(t, func(o *Options) {
+		o.Telemetry = &telemetry.Recorder{Channel: telemetry.ChannelWeb, Home: o.Dirs.Home, Version: o.Record.Version,
+			Getenv: func(string) string { return "" }, Key: "phc_test", Endpoint: slow.URL}
+	})
+	session := f.signIn(t)
+	same := sameOrigin(testHost)
+	_ = f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"enabled","confirmed_by_user":true}`, cookie: session, header: same})
+	for _, action := range []request{
+		{method: http.MethodPost, path: "/api/local/v1/telemetry/events", body: `{"events":[{"event":"onboarding_started"}]}`, cookie: session, header: same},
+		{method: http.MethodPost, path: "/api/local/v1/demo/install", body: `{}`, cookie: session, header: same},
+	} {
+		start := time.Now()
+		rec := f.do(t, action)
+		if elapsed := time.Since(start); rec.Code >= 400 || elapsed > 500*time.Millisecond {
+			t.Errorf("%s = %d after %s", action.path, rec.Code, elapsed)
+		}
+	}
+	select {
+	case <-arrived:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no batch reached the endpoint")
+	}
+}
+
+// drained waits for the background sender, then returns what arrived.
+func (f *fixture) drained(t *testing.T, stub *posthogStub) []map[string]any {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	f.handler.server.opts.Telemetry.Drain(ctx)
+	return stub.received()
 }

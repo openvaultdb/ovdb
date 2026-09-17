@@ -102,15 +102,11 @@ func (s *localServer) postTelemetryEvents(w http.ResponseWriter, r *http.Request
 	}
 }
 
-// sendAfterResponse flushes the response to the browser, then sends events
-// synchronously within the 2 s bound, so a slow endpoint never delays what
-// the person sees.
-func (s *localServer) sendAfterResponse(w http.ResponseWriter, r *http.Request, events ...telemetry.Event) {
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
+// sendAfterResponse records events and hands them to the background
+// sender, so a slow endpoint never delays the response (review M5).
+func (s *localServer) sendAfterResponse(_ http.ResponseWriter, _ *http.Request, events ...telemetry.Event) {
 	s.opts.Telemetry.Record(events...)
-	s.opts.Telemetry.Flush(r.Context())
+	s.opts.Telemetry.FlushInBackground()
 }
 
 // captured keeps a handler's status and a bounded copy of its body, for the

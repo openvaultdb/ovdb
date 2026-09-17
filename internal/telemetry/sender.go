@@ -54,6 +54,21 @@ type Recorder struct {
 
 	mu      sync.Mutex
 	pending []pending
+
+	// The background sender (FlushInBackground): a bounded queue of
+	// batches and one worker.
+	queueOnce sync.Once
+	queue     chan batchJob
+	inFlight  sync.WaitGroup
+}
+
+// MaxQueuedBatches bounds the background sender's queue; a batch that finds
+// it full is dropped, never blocking the caller.
+const MaxQueuedBatches = 16
+
+type batchJob struct {
+	events []Event
+	meta   Meta
 }
 
 // pending is one recorded event. buffered marks an event recorded while
@@ -163,6 +178,59 @@ func (r *Recorder) Flush(ctx context.Context) {
 	if r == nil {
 		return
 	}
+	events, meta, ok := r.take()
+	if ok {
+		r.send(ctx, events, meta)
+	}
+}
+
+// FlushInBackground is Flush without waiting: the batch goes to a bounded
+// queue that one worker sends, each batch within Timeout (review M5). The
+// server uses it so a console action never waits for PostHog.
+func (r *Recorder) FlushInBackground() {
+	if r == nil {
+		return
+	}
+	events, meta, ok := r.take()
+	if !ok {
+		return
+	}
+	r.queueOnce.Do(func() {
+		r.queue = make(chan batchJob, MaxQueuedBatches)
+		go func() {
+			for job := range r.queue {
+				r.send(context.Background(), job.events, job.meta)
+				r.inFlight.Done()
+			}
+		}()
+	})
+	r.inFlight.Add(1)
+	select {
+	case r.queue <- batchJob{events: events, meta: meta}:
+	default:
+		r.inFlight.Done() // full: dropped
+	}
+}
+
+// Drain waits for queued background batches, at most until ctx ends (the
+// server's shutdown).
+func (r *Recorder) Drain(ctx context.Context) {
+	if r == nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		r.inFlight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+}
+
+// take removes what this process may send now, with its meta.
+func (r *Recorder) take() ([]Event, Meta, bool) {
 	d := r.Decide()
 	r.mu.Lock()
 	var events []Event
@@ -179,13 +247,13 @@ func (r *Recorder) Flush(ctx context.Context) {
 	r.pending = kept
 	r.mu.Unlock()
 	if !d.Sending || len(events) == 0 {
-		return
+		return nil, Meta{}, false
 	}
 	channel := r.Channel
 	if channel == "" {
 		channel = DetectChannel(r.Getenv, r.Environ)
 	}
-	r.send(ctx, events, Meta{Channel: channel, Version: r.Version, InstallID: d.Consent.InstallID})
+	return events, Meta{Channel: channel, Version: r.Version, InstallID: d.Consent.InstallID}, true
 }
 
 type batchEvent struct {
