@@ -36,6 +36,13 @@ type App struct {
 	Executable string
 	// ChildEnv is appended to the detached server's environment (tests).
 	ChildEnv []string
+	// IsTerminal reports whether fd is a real terminal; term.IsTerminal when
+	// nil. Tests inject a fake so RootRunE's TUI-vs-non-interactive branch
+	// does not depend on the process's actual stdio.
+	IsTerminal func(fd uintptr) bool
+	// TermSize resolves the TUI's starting width and height; term.GetSize
+	// on os.Stdout when nil. Tests inject a fake for the same reason.
+	TermSize func() (width, height int)
 	// OpenBrowser launches a URL; browser.Opener{}.Open when nil.
 	OpenBrowser func(url string) error
 }

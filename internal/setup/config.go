@@ -180,11 +180,22 @@ func ParseOrigins(value string) ([]string, *envelope.Error) {
 	return origins, nil
 }
 
+// MinPort and MaxPort bound every port ovdb accepts, from a flag, an
+// environment variable, `ovdb config set server.port` or the TUI's own
+// pre-submit check — one place so the range cannot drift between them.
+const (
+	MinPort = 1
+	MaxPort = 65535
+)
+
+// ValidPort reports whether port is in range for a TCP listener.
+func ValidPort(port int) bool { return port >= MinPort && port <= MaxPort }
+
 // ParsePort validates a port number given through source (a flag, variable
 // or key name).
 func ParsePort(value, source string) (int, *envelope.Error) {
 	port, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || port < 1 || port > 65535 {
+	if err != nil || !ValidPort(port) {
 		return 0, envelope.New(envelope.InvalidArgument, uicopy.T("port.invalid.message", nil)).
 			WithReason(uicopy.T("port.invalid.reason", map[string]string{"value": value, "source": source})).
 			WithNext(envelope.Next{Label: uicopy.T("next.use_default_port", nil), Command: "ovdb server start --port " + strconv.Itoa(runtime.DefaultPort)})

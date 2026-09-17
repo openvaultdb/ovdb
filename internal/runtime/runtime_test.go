@@ -596,15 +596,29 @@ func TestRuntimeFilesArePrivate(t *testing.T) {
 
 func TestIPv6UnavailableContinuesOnIPv4(t *testing.T) {
 	t.Parallel()
-	port := freePort(t)
-	listeners, err := runtime.Listen(port, func(network, address string) (net.Listener, error) {
-		if network == "tcp6" {
-			return nil, &net.OpError{Op: "listen", Net: network, Err: os.NewSyscallError("bind", ipv6UnavailableErrno)}
+	// freePort's listener closes before this test's own real tcp4 bind on
+	// the same numeric port; another process (or another parallel test)
+	// can win that small window and take the port first — seen flaking on
+	// PR #12 CI. Retry with a fresh port rather than widen the window by
+	// holding a listener open across two separate binds.
+	var listeners []net.Listener
+	var lastErr error
+	for attempt := 0; attempt < 10; attempt++ {
+		port := freePort(t)
+		result, err := runtime.Listen(port, func(network, address string) (net.Listener, error) {
+			if network == "tcp6" {
+				return nil, &net.OpError{Op: "listen", Net: network, Err: os.NewSyscallError("bind", ipv6UnavailableErrno)}
+			}
+			return net.Listen(network, address)
+		})
+		if err == nil {
+			listeners, lastErr = result, nil
+			break
 		}
-		return net.Listen(network, address)
-	})
-	if err != nil {
-		t.Fatalf("Listen = %v", err)
+		lastErr = err
+	}
+	if lastErr != nil {
+		t.Fatalf("Listen = %v (after retries)", lastErr)
 	}
 	defer func() {
 		for _, l := range listeners {

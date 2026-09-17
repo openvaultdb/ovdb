@@ -9,6 +9,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/localserver"
+	"github.com/openvaultdb/ovdb/internal/tui"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -26,9 +27,15 @@ func rootCommand() *cobra.Command {
 	return root
 }
 
+// TestRegistryNamesExistingCommandsAndEndpoints is
+// configuration-parity#REQ:capability-registry's existence test: dropping a
+// row's named CLI command, TUI screen, web route or local API endpoint
+// fails here, naming the row and the interface (AC:missing-cell-fails).
 func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 	root := rootCommand()
 	endpoints := localserver.Endpoints()
+	screens := tui.ScreenIDs()
+	routes := web.Routes()
 	seen := map[string]bool{}
 	for _, row := range Rows {
 		if seen[row.ID] {
@@ -42,7 +49,10 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 				t.Errorf("capability %s (%s): CLI command %q does not exist", row.ID, row.Capability, path)
 			}
 		}
-		if row.Web != "" && !slices.ContainsFunc(web.Routes(), func(r web.Route) bool { return r.Path == row.Web }) {
+		if row.TUI != "" && !slices.Contains(screens, row.TUI) {
+			t.Errorf("capability %s (%s): TUI screen %q does not exist", row.ID, row.Capability, row.TUI)
+		}
+		if row.Web != "" && !slices.ContainsFunc(routes, func(r web.Route) bool { return r.Path == row.Web }) {
 			t.Errorf("capability %s (%s): web route %q is not in web/routes.json", row.ID, row.Capability, row.Web)
 		}
 		for _, endpoint := range row.API {
@@ -58,8 +68,8 @@ func TestRegistryNamesExistingCommandsAndEndpoints(t *testing.T) {
 				t.Errorf("capability %s: unknown exception %q", row.ID, exception)
 			}
 		}
-		// A row is implemented only when every interface has it or an
-		// exception covers the gap.
+		// A row is implemented only when every interface has it, or an
+		// exception (a permanent gap) covers it.
 		missing := row.TUI == "" || (row.Web == "" && len(row.Exceptions) == 0)
 		if row.Implemented && missing {
 			t.Errorf("capability %s (%s) is marked implemented with a missing cell and no exception", row.ID, row.Capability)
