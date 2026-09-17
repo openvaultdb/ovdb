@@ -428,8 +428,10 @@ func TestConnectManifestCopiesWithAbsolutePaths(t *testing.T) {
 		t.Errorf("database = %+v, want location %s", result.Database, want)
 	}
 	copied, _ := os.ReadFile(ManifestPath(f.dirs.Home, "journal"))
-	if !strings.Contains(string(copied), "My journal") || !strings.Contains(string(copied), "kept next to this file") {
-		t.Errorf("copy lost comments:\n%s", copied)
+	// The copy is re-encoded from the typed manifest (anchors and merge keys
+	// resolved), so the original's comments are not kept.
+	if !strings.Contains(string(copied), yamlScalar(want)) || strings.Contains(string(copied), "./data/journal") {
+		t.Errorf("copy path is not absolute:\n%s", copied)
 	}
 	if original, _ := os.ReadFile(manifestPath); string(original) != text {
 		t.Errorf("original changed:\n%s", original)
@@ -588,5 +590,61 @@ func TestConnectRefusesAFolderThatIsNotInGitDB(t *testing.T) {
 	}
 	if list, _ := f.registry.List(); len(list) != 0 {
 		t.Errorf("registered: %+v", list)
+	}
+}
+
+// F4: YAML merge keys and anchors are resolved before paths are made
+// absolute and checked, so the checked location is the mounted one and a
+// relative path never lands in OVDB home.
+func TestConnectManifestResolvesMergeKeys(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shop := filepath.Join(dir, "data", "shop.sqlite")
+	source := sqliteFile(t, `CREATE TABLE things (id TEXT PRIMARY KEY, title TEXT)`)
+	data, _ := os.ReadFile(source)
+	if err := os.WriteFile(shop, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for i, text := range []string{
+		"database: {id: m1, schema_mode: strict}\nstorage:\n  <<: {engine: sqlite, path: data/shop.sqlite}\nschemas:\n  collections:\n    things:\n      fields:\n        title: {type: string}\n",
+		"database: {id: m2, schema_mode: strict}\nstorage:\n  <<: &engine {engine: sqlite}\n  path: &path data/shop.sqlite\nschemas:\n  collections:\n    things:\n      fields:\n        title: {type: string}\n",
+	} {
+		manifestPath := filepath.Join(dir, "m"+string(rune('1'+i))+".yaml")
+		if err := os.WriteFile(manifestPath, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			// The same storage again, through an anchor: refused as overlapping.
+			_, err := f.registry.Connect(ConnectRequest{Manifest: manifestPath})
+			if e := envelope.As(err); e == nil || e.Code != envelope.InvalidArgument || !strings.Contains(e.Reason, "overlaps the storage of the database m1") {
+				t.Errorf("anchor manifest = %v", err)
+			}
+			continue
+		}
+		result, err := f.registry.Connect(ConnectRequest{Manifest: manifestPath})
+		if err != nil {
+			t.Fatalf("merge-key manifest = %v", err)
+		}
+		if result.Database.Location != shop {
+			t.Errorf("location = %s, want %s", result.Database.Location, shop)
+		}
+		copied, _ := os.ReadFile(result.Database.Manifest)
+		if !strings.Contains(string(copied), yamlScalar(shop)) {
+			t.Errorf("copy lacks the absolute path:\n%s", copied)
+		}
+	}
+	found := []string{}
+	_ = filepath.WalkDir(f.dirs.Home, func(path string, _ fs.DirEntry, _ error) error {
+		if strings.Contains(path, ".sqlite") {
+			found = append(found, path)
+		}
+		return nil
+	})
+	if len(found) != 0 {
+		t.Errorf("storage created in OVDB home: %v", found)
 	}
 }

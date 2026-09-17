@@ -365,7 +365,7 @@ func planManifest(request ConnectRequest) (connectPlan, error) {
 			WithNext(envelope.Next{Label: uicopy.T("next.policy_store", nil)}, connectChooseManifest())
 	}
 	baseDir := filepath.Dir(request.Manifest)
-	copied, err := absoluteManifest(data, baseDir)
+	copied, err := absoluteManifest(parsed, baseDir)
 	if err != nil {
 		params["error"] = redact.String(err.Error())
 		return connectPlan{}, envelope.New(envelope.InvalidArgument, connectFailed()).
@@ -378,52 +378,46 @@ func planManifest(request ConnectRequest) (connectPlan, error) {
 			WithReason(uicopy.T("database.connect.manifest_invalid", params)).WithNext(connectChooseManifest())
 	}
 	plan := connectPlan{id: reparsed.Database.ID, engine: reparsed.Storage.Engine, manifest: copied, parsed: reparsed}
-	if location, ok := localStorage(reparsed, baseDir); ok {
+	// The copy's paths are absolute: the location checked is the one mounted
+	// from the registry folder.
+	location, local := localStorage(reparsed, "")
+	original, _ := localStorage(parsed, baseDir)
+	if local && (!filepath.IsAbs(location) || location != original) {
+		params["error"] = uicopy.T("database.connect.path_not_plain", nil)
+		return connectPlan{}, envelope.New(envelope.InvalidArgument, connectFailed()).
+			WithReason(uicopy.T("database.connect.manifest_invalid", params)).WithNext(connectChooseManifest())
+	}
+	if local {
 		plan.location = location
 	}
 	return plan, nil
 }
 
-// absoluteManifest is a manifest's text with storage.path and
-// acl_store.path made absolute against baseDir, comments kept.
-func absoluteManifest(data []byte, baseDir string) ([]byte, error) {
-	var document yaml.Node
-	if err := yaml.Unmarshal(data, &document); err != nil {
-		return nil, err
+// absoluteManifest is the canonical copy OVDB registers for a parsed
+// manifest: YAML anchors and merge keys are already resolved in m, and its
+// storage.path and acl_store.path are made absolute against baseDir, so the
+// location OVDB checks is the one it mounts. The copy is re-encoded from the
+// typed manifest, so comments in the original are not kept.
+func absoluteManifest(m *manifest.Manifest, baseDir string) ([]byte, error) {
+	copied := *m
+	storage := copied.Storage
+	if storage.Path != "" && !filepath.IsAbs(storage.Path) {
+		storage.Path = filepath.Join(baseDir, storage.Path)
 	}
-	if len(document.Content) == 0 {
-		return data, nil
-	}
-	changed := false
-	for _, section := range []string{"storage", "acl_store"} {
-		value := mapValue(mapValue(document.Content[0], section), "path")
-		if value != nil && value.Kind == yaml.ScalarNode && value.Value != "" && !filepath.IsAbs(value.Value) {
-			value.Value = filepath.Join(baseDir, value.Value)
-			value.Style = yaml.DoubleQuotedStyle
-			changed = true
+	copied.Storage = storage
+	if m.ACLStore != nil {
+		store := *m.ACLStore
+		if store.Path != "" && !filepath.IsAbs(store.Path) {
+			store.Path = filepath.Join(baseDir, store.Path)
 		}
+		copied.ACLStore = &store
 	}
-	header := "# Connected by OVDB from " + filepath.ToSlash(filepath.Clean(filepath.Join(baseDir))) + ". See " + ManifestDocsURL + "\n"
-	if !changed {
-		return append([]byte(header), data...), nil
-	}
-	out, err := yaml.Marshal(&document)
+	out, err := yaml.Marshal(&copied)
 	if err != nil {
 		return nil, err
 	}
+	header := "# Connected by OVDB from a copy of " + filepath.ToSlash(baseDir) + ". See " + ManifestDocsURL + "\n"
 	return append([]byte(header), out...), nil
-}
-
-func mapValue(node *yaml.Node, key string) *yaml.Node {
-	if node == nil || node.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return node.Content[i+1]
-		}
-	}
-	return nil
 }
 
 // InGitDBDir is the folder that makes a folder an inGitDB database.
