@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
@@ -26,17 +28,22 @@ func testModel(t *testing.T, width, height int) Model {
 		},
 		Version: "9.9.9-test", Port: 6832,
 	}
-	return New(context.Background(), local, width, height)
+	m := New(context.Background(), local, nil, width, height)
+	// A real bubbletea Program calls Init() before any input reaches
+	// Update, so Home already has its (pure-read) document loaded; tests
+	// that navigate straight from Home rely on that, exactly like the TUI
+	// itself in tmux.
+	return drain(t, m, m.Init())
 }
 
-// send feeds msg to m.Update, then keeps draining whatever tea.Cmd(s) come
-// back — including tea.Batch's BatchMsg, which the real bubbletea Program
-// unpacks into its constituent Cmds rather than ever handing to Update —
-// until nothing is left to run. That mirrors what a live Program does, so
-// tests can drive a full start/stop/remedy round trip synchronously.
-func send(t *testing.T, m Model, msg tea.Msg) Model {
+// drain runs cmd and keeps feeding whatever tea.Cmd(s) come back —
+// including tea.Batch's BatchMsg, which the real bubbletea Program unpacks
+// into its constituent Cmds rather than ever handing to Update — until
+// nothing is left to run. That mirrors what a live Program does, so tests
+// can drive a full start/stop/remedy round trip synchronously.
+func drain(t *testing.T, m Model, cmd tea.Cmd) Model {
 	t.Helper()
-	pending := []tea.Cmd{func() tea.Msg { return msg }}
+	pending := []tea.Cmd{cmd}
 	for len(pending) > 0 {
 		cmd := pending[0]
 		pending = pending[1:]
@@ -64,6 +71,12 @@ func send(t *testing.T, m Model, msg tea.Msg) Model {
 	return m
 }
 
+// send feeds one message straight to Update and drains anything it returns.
+func send(t *testing.T, m Model, msg tea.Msg) Model {
+	t.Helper()
+	return drain(t, m, func() tea.Msg { return msg })
+}
+
 func key(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Text: s} }
 
 // ---------------------------------------------------------------------------
@@ -84,11 +97,11 @@ func TestNewStartsOnHome(t *testing.T) {
 func TestInitLoadsHomeStatus(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 80, 24)
-	m = send(t, m, statusLoadedMsg{status: setup.Status{Server: setup.Server{State: setup.StateNotRunning, Port: 6832}}})
+	m = send(t, m, homeLoadedMsg{document: setup.NewHome(setup.Server{State: setup.StateNotRunning, Port: 6832})})
 	if !m.home.loaded {
-		t.Error("home.loaded should be true after statusLoadedMsg")
+		t.Error("home.loaded should be true after homeLoadedMsg")
 	}
-	if !strings.Contains(m.viewHome(), "OVDB server: not running") {
+	if !strings.Contains(m.viewHome(), "OVDB server not running") {
 		t.Errorf("Home view missing not-running status:\n%s", m.viewHome())
 	}
 }
@@ -134,7 +147,7 @@ func TestHomeCursorDoesNotOverflow(t *testing.T) {
 	for range 5 {
 		m = send(t, m, key("down"))
 	}
-	if want := len(m.home.menu()) - 1; m.home.cursor != want {
+	if want := len(m.home.document.Options) - 1; m.home.cursor != want {
 		t.Errorf("cursor = %d, want clamped to %d", m.home.cursor, want)
 	}
 	for range 5 {
@@ -177,7 +190,8 @@ func TestServerScreenShowsRunningMenuAfterStart(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 80, 24)
 	m.screen = ScreenServer
-	m.server = serverScreen{loaded: true, server: setup.Server{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832", Version: "9.9.9-test"}}
+	server := setup.Server{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832", Version: "9.9.9-test"}
+	m.server = serverScreen{loaded: true, server: server, next: setup.NewServerDocument(server).Next}
 	menu := m.server.menu()
 	if len(menu) != 3 {
 		t.Fatalf("running menu has %d items, want 3 (open browser, restart, stop)", len(menu))
@@ -187,6 +201,37 @@ func TestServerScreenShowsRunningMenuAfterStart(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Errorf("server view missing %q:\n%s", want, view)
 		}
+	}
+}
+
+// TestOpenBrowserFailureShowsDistinctMessage is the review fix for a real
+// bug: a launch failure must not render identically to a successful one, or
+// a person has no way to tell "your browser is opening" from "open this
+// link yourself".
+func TestOpenBrowserFailureShowsDistinctMessage(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 80, 24)
+	m.screen = ScreenServer
+	server := setup.Server{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832"}
+	m.server = serverScreen{loaded: true, server: server, next: setup.NewServerDocument(server).Next}
+	link := localserver.LoginLink{URL: "http://ovdb.localhost:6832/login?code=x", FallbackURL: "http://127.0.0.1:6832/login?code=x"}
+
+	failed := send(t, m, loginLinkMsg{link: link, openErr: errors.New("no opener on PATH")})
+	failedView := failed.viewServer()
+	if !strings.Contains(failedView, "Couldn't open a browser here") {
+		t.Errorf("failed open should show the failure wording:\n%s", failedView)
+	}
+	if strings.Contains(failedView, "If the console didn't open") {
+		t.Errorf("failed open should not show the success wording:\n%s", failedView)
+	}
+
+	opened := send(t, m, loginLinkMsg{link: link, openErr: nil})
+	openedView := opened.viewServer()
+	if !strings.Contains(openedView, "If the console didn't open") {
+		t.Errorf("successful open should show the success wording:\n%s", openedView)
+	}
+	if strings.Contains(openedView, "Couldn't open a browser here") {
+		t.Errorf("successful open should not show the failure wording:\n%s", openedView)
 	}
 }
 
@@ -304,37 +349,54 @@ func stripANSI(s string) string {
 	return b.String()
 }
 
+// homeServerStates covers both Home status-line shapes: not running (short)
+// and running (long — address plus fallback address concatenated is the
+// review-reported overflow at 80 and 60 columns), so TestSizes exercises
+// the one state whose status line is actually long.
+func homeServerStates() []setup.Server {
+	return []setup.Server{
+		{State: setup.StateNotRunning, Port: 6832},
+		{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832", Port: 6832, Version: "9.9.9-test"},
+	}
+}
+
 func TestSizes(t *testing.T) {
 	sizes := []struct{ w, h int }{{80, 24}, {120, 40}, {60, 20}, {50, 15}}
 	screens := []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem}
 	for _, size := range sizes {
 		for _, screen := range screens {
-			t.Run(screenSizeName(screen, size.w, size.h), func(t *testing.T) {
-				t.Parallel()
-				m := testModel(t, size.w, size.h)
-				m = send(t, m, statusLoadedMsg{status: setup.Status{Server: setup.Server{State: setup.StateNotRunning, Port: 6832}}})
-				m.screen = screen
-				m.server = serverScreen{loaded: true, server: setup.Server{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832", Version: "9.9.9-test"}}
-				m.settings = settingsScreen{loaded: true}
-				m.result = newStopResult(true)
-				m.problem.setError(envelope.New(envelope.PortInUse, "Couldn't start the OVDB server").
-					WithReason("Port 6832 is already used by another program.").
-					WithNext(envelope.Next{Label: "Use port 6833 instead", Command: "ovdb server start --port 6833", Action: "use_port"}))
+			for _, homeServer := range homeServerStates() {
+				if screen != ScreenHome && homeServer.State == setup.StateRunning {
+					continue // only Home's rendering varies by server state
+				}
+				t.Run(screenSizeName(screen, size.w, size.h)+"_home_"+homeServer.State, func(t *testing.T) {
+					t.Parallel()
+					m := testModel(t, size.w, size.h)
+					m = send(t, m, homeLoadedMsg{document: setup.NewHome(homeServer)})
+					m.screen = screen
+					runningServer := setup.Server{State: setup.StateRunning, Address: "http://ovdb.localhost:6832", FallbackAddress: "http://127.0.0.1:6832", Version: "9.9.9-test"}
+					m.server = serverScreen{loaded: true, server: runningServer, next: setup.NewServerDocument(runningServer).Next}
+					m.settings = settingsScreen{loaded: true}
+					m.result = newStopResult(true)
+					m.problem.setError(envelope.New(envelope.PortInUse, "Couldn't start the OVDB server").
+						WithReason("Port 6832 is already used by another program.").
+						WithNext(envelope.Next{Label: "Use port 6833 instead", Command: "ovdb server start --port 6833", Action: "use_port"}))
 
-				view := m.View()
-				content := view.Content
+					view := m.View()
+					content := view.Content
 
-				if size.w < minWidth || size.h < minHeight {
-					if !strings.Contains(content, "Make the window a little bigger") {
-						t.Errorf("%dx%d should show the too-small message:\n%s", size.w, size.h, content)
+					if size.w < minWidth || size.h < minHeight {
+						if !strings.Contains(content, "Make the window a little bigger") {
+							t.Errorf("%dx%d should show the too-small message:\n%s", size.w, size.h, content)
+						}
+						return
 					}
-					return
-				}
-				noWiderThan(t, content, size.w)
-				if strings.Contains(content, "Make the window a little bigger") {
-					t.Errorf("%dx%d should not show the too-small message", size.w, size.h)
-				}
-			})
+					noWiderThan(t, content, size.w)
+					if strings.Contains(content, "Make the window a little bigger") {
+						t.Errorf("%dx%d should not show the too-small message", size.w, size.h)
+					}
+				})
+			}
 		}
 	}
 }

@@ -7,5 +7,5 @@
     "skipLibCheck": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src/**/*", "apps/**/*", "tests/**/*", "vite.config.ts"]
+  "include": ["src/**/*", "apps/**/*", "tests/**/*", "e2e/**/*", "vite.config.ts", "playwright.config.ts", "routes.json"]
 }

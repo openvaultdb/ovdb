@@ -80,7 +80,8 @@ func realModel(t *testing.T, port int) Model {
 	t.Cleanup(func() {
 		_, _ = runtime.Stop(context.Background(), dirs.Runtime, 0)
 	})
-	return New(context.Background(), local, 80, 24)
+	m := New(context.Background(), local, nil, 80, 24)
+	return drain(t, m, m.Init())
 }
 
 // TestHomeServerStartOpenBrowserStop drives the exact manual flow the task
@@ -114,8 +115,9 @@ func TestHomeServerStartOpenBrowserStop(t *testing.T) {
 		t.Errorf("login link missing a URL: %+v", m.server.link)
 	}
 
-	m = send(t, m, key("down")) // -> restart
-	m = send(t, m, key("down")) // -> stop
+	// menu is [Open in browser, Stop, Restart] (Next lists stop before
+	// restart); one "down" selects Stop.
+	m = send(t, m, key("down"))
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenResult {
 		t.Fatalf("after stop, screen = %q, want %q", m.screen, ScreenResult)

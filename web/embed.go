@@ -16,13 +16,13 @@
 // sneat-dev/wb's hub/web/embed.go, the reference implementation this pattern
 // was proven against.
 //
-// Handler is not yet mounted by main.go: this package is compiled and
-// tested, but not served, until the increment that adds the local server
-// (spec/features/local-server-and-web-console).
+// internal/localserver mounts Handler for signed-in browsers; everyone else
+// gets its landing page.
 package web
 
 import (
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"path"
@@ -63,6 +63,11 @@ func Handler() http.Handler { return handlerFor(distFS, Built()) }
 // pages are both testable in a checkout that has only one of them.
 func handlerFor(files fs.FS, built bool) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet && request.Method != http.MethodHead {
+			writer.Header().Set("Allow", "GET, HEAD")
+			http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
 		if !built {
 			writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			writer.WriteHeader(http.StatusOK)
@@ -78,6 +83,14 @@ func handlerFor(files fs.FS, built bool) http.Handler {
 				return
 			}
 			name = path.Join(name, indexPage)
+		} else if err != nil && path.Ext(name) == "" {
+			// Client-side routes (/settings, /apps/todo/lists/x) load their
+			// app's index.html and let the app's router take over.
+			if strings.HasPrefix(name, todoApp) {
+				name = todoApp + indexPage
+			} else {
+				name = indexPage
+			}
 		}
 		content, err := fs.ReadFile(files, name)
 		if err != nil {
@@ -85,9 +98,19 @@ func handlerFor(files fs.FS, built bool) http.Handler {
 			return
 		}
 		writer.Header().Set("Content-Type", contentType(name))
+		if strings.HasPrefix(name, "assets/") {
+			// Vite names every file under assets/ by its content hash; the
+			// console is only served to signed-in browsers, so private.
+			writer.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+		} else {
+			writer.Header().Set("Cache-Control", "no-store")
+		}
 		_, _ = writer.Write(content)
 	})
 }
+
+// todoApp is the TODO app's directory in dist/.
+const todoApp = "apps/todo/"
 
 // notBuiltPage renders through uicopy.T so its wording lives in
 // copy/en.json alongside every other user-facing string
@@ -126,3 +149,32 @@ func contentType(name string) string {
 		return "application/octet-stream"
 	}
 }
+
+// routesJSON lists the console's client-side routes. src/router.ts builds
+// its route table from the same file, and the capability registry test in
+// internal/parity checks every web cell against it.
+//
+//go:embed routes.json
+var routesJSON []byte
+
+// Route is one console route.
+type Route struct {
+	Path   string `json:"path"`
+	Screen string `json:"screen"`
+}
+
+// Routes returns the console's client-side routes.
+func Routes() []Route {
+	var routes []Route
+	if err := json.Unmarshal(routesJSON, &routes); err != nil {
+		panic("web: routes.json: " + err.Error()) // embedded at compile time
+	}
+	return routes
+}
+
+// TokensCSS is the design token stylesheet (colours for light and dark) the
+// console is built from. The Go-rendered landing and sign-in pages serve it
+// too, so both look like one product without a second copy of the tokens.
+//
+//go:embed src/tokens.css
+var TokensCSS []byte

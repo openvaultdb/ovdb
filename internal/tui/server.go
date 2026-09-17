@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
@@ -12,11 +13,28 @@ import (
 type serverAction int
 
 const (
-	actionStart serverAction = iota
+	actionUnknown serverAction = iota
+	actionStart
 	actionOpenBrowser
 	actionRestart
 	actionStop
 )
+
+// actionForCommand maps one of the server document's own Next commands to
+// the action the TUI runs for it, so labels and behaviour both come from
+// the server rather than being duplicated here.
+func actionForCommand(command string) serverAction {
+	switch command {
+	case "ovdb server start":
+		return actionStart
+	case "ovdb server restart":
+		return actionRestart
+	case "ovdb server stop":
+		return actionStop
+	default:
+		return actionUnknown
+	}
+}
 
 type serverMenuItem struct {
 	label  string
@@ -24,12 +42,14 @@ type serverMenuItem struct {
 }
 
 // serverScreen is the "OVDB server" screen: capability rows 4 (server
-// status), 5 (stop/restart) and 6 (open in browser, via matrix TUI cell
-// "Open in browser"). Row 3 (start server)'s TUI cell is the same "Start the
-// OVDB server" action, offered here whenever the server is not running.
+// status), 5 (stop/restart) and 6 (open in browser). Its state-changing
+// actions come straight from the server document's Next list (label and
+// command it already computed); "Open in browser" is the one TUI-only
+// addition, offered whenever the server is running.
 type serverScreen struct {
 	loaded bool
 	server setup.Server
+	next   []envelope.Next
 	cursor int
 
 	linkShown     bool
@@ -38,23 +58,25 @@ type serverScreen struct {
 }
 
 func (s serverScreen) menu() []serverMenuItem {
+	var items []serverMenuItem
 	if s.loaded && s.server.State == setup.StateRunning {
-		return []serverMenuItem{
-			{label: uicopy.T("server.menu.open_browser", nil), action: actionOpenBrowser},
-			{label: uicopy.T("server.menu.restart", nil), action: actionRestart},
-			{label: uicopy.T("server.menu.stop", nil), action: actionStop},
+		items = append(items, serverMenuItem{label: uicopy.T("server.menu.open_browser", nil), action: actionOpenBrowser})
+	}
+	for _, n := range s.next {
+		if action := actionForCommand(n.Command); action != actionUnknown {
+			items = append(items, serverMenuItem{label: n.Label, action: action})
 		}
 	}
-	return []serverMenuItem{{label: uicopy.T("home.menu.start_server", nil), action: actionStart}}
+	return items
 }
 
 func (m Model) viewServer() string {
 	width := m.width
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(uicopy.T("server.screen.title", nil)))
+	b.WriteString(titleStyle.Render(uicopy.T("server.title", nil)))
 	b.WriteString("\n\n")
 	if !m.server.loaded {
-		b.WriteString(uicopy.T("home.loading", nil))
+		b.WriteString(uicopy.T("console.loading", nil))
 		return b.String()
 	}
 	if m.server.server.State == setup.StateRunning {
@@ -81,7 +103,11 @@ func (m Model) viewServer() string {
 	}
 	if m.server.linkShown {
 		b.WriteString("\n")
-		b.WriteString(wordWrap(uicopy.T("open.intro", nil), width))
+		if m.server.browserFailed {
+			b.WriteString(wordWrap(uicopy.T("open.failed", nil), width))
+		} else {
+			b.WriteString(wordWrap(uicopy.T("open.if_not_opened", nil), width))
+		}
 		b.WriteString("\n  ")
 		b.WriteString(m.server.link.URL)
 		b.WriteString("\n")

@@ -17,33 +17,43 @@ type settingsScreen struct {
 	editing  bool
 	input    string
 	invalid  bool
+	// savedMessage is the confirmation shown after a save (config.saved or
+	// config.unchanged, matching the web console's own wording); cleared
+	// when editing starts again.
+	savedMessage string
 }
 
-func (s settingsScreen) portLine() string {
-	port := s.document.Config.Server.Port
-	if port == 0 {
-		return uicopy.T("settings.port.label_default", map[string]string{"value": strconv.Itoa(runtime.DefaultPort)})
+func (s settingsScreen) currentPort() int {
+	if port := s.document.Config.Server.Port; port != 0 {
+		return port
 	}
-	return uicopy.T("settings.port.label", map[string]string{"value": strconv.Itoa(port)})
+	return runtime.DefaultPort
 }
 
 func (m Model) viewSettings() string {
+	width := m.width
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(uicopy.T("settings.title", nil)))
 	b.WriteString("\n\n")
 	if !m.settings.loaded {
-		b.WriteString(uicopy.T("home.loading", nil))
+		b.WriteString(uicopy.T("console.loading", nil))
 		return b.String()
 	}
-	switch {
-	case m.settings.editing:
+	if m.settings.editing {
 		b.WriteString(selectedItemStyle.Render(uicopy.T("settings.port.input", map[string]string{"value": m.settings.input})))
 		if m.settings.invalid {
 			b.WriteString("\n")
 			b.WriteString(errorStyle.Render(uicopy.T("settings.port.invalid", nil)))
 		}
-	default:
-		b.WriteString(itemStyle.Render(m.settings.portLine()))
+		return b.String()
+	}
+	b.WriteString(itemStyle.Render(uicopy.T("settings.port.label", nil)))
+	b.WriteString("\n")
+	port := strconv.Itoa(m.settings.currentPort())
+	b.WriteString(mutedStyle.Render(wordWrap(uicopy.T("settings.port.help", map[string]string{"port": port}), width)))
+	if m.settings.savedMessage != "" {
+		b.WriteString("\n\n")
+		b.WriteString(wordWrap(m.settings.savedMessage, width))
 	}
 	return b.String()
 }

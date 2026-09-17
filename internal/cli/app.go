@@ -43,6 +43,8 @@ type App struct {
 	// TermSize resolves the TUI's starting width and height; term.GetSize
 	// on os.Stdout when nil. Tests inject a fake for the same reason.
 	TermSize func() (width, height int)
+	// OpenBrowser launches a URL; browser.Opener{}.Open when nil.
+	OpenBrowser func(url string) error
 }
 
 func (a *App) getenv(key string) string {

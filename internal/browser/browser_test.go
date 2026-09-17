@@ -1,59 +1,53 @@
 package browser
 
 import (
-	"os/exec"
+	"errors"
+	"slices"
 	"testing"
 )
 
-func TestCommandForPlatforms(t *testing.T) {
+func TestCommandPerPlatform(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		platform string
-		name     string
-		args     []string
-	}{
-		{"darwin", "open", []string{"http://x"}},
-		{"windows", "rundll32", []string{"url.dll,FileProtocolHandler", "http://x"}},
-		{"linux", "xdg-open", []string{"http://x"}},
-		{"freebsd", "xdg-open", []string{"http://x"}},
-	}
-	for _, tc := range cases {
-		name, args := commandFor(tc.platform, "http://x")
-		if name != tc.name || len(args) != len(tc.args) || args[len(args)-1] != tc.args[len(tc.args)-1] {
-			t.Errorf("commandFor(%q) = %q %v, want %q %v", tc.platform, name, args, tc.name, tc.args)
+	const url = "http://ovdb.localhost:6832/login?code=a&next=%2F"
+	for goos, want := range map[string][]string{
+		"linux":   {"xdg-open", url},
+		"freebsd": {"xdg-open", url},
+		"darwin":  {"open", url},
+		"windows": {"rundll32", "url.dll,FileProtocolHandler", url},
+	} {
+		name, args := Command(goos, url)
+		if got := append([]string{name}, args...); !slices.Equal(got, want) {
+			t.Errorf("%s: %v, want %v", goos, got, want)
 		}
 	}
 }
 
-func TestOpenUsesCommandAndStarts(t *testing.T) {
-	var gotName string
-	var gotArgs []string
-	orig := Command
-	defer func() { Command = orig }()
-	Command = func(name string, args ...string) *exec.Cmd {
-		gotName, gotArgs = name, args
-		return exec.Command("true")
+func TestOpen(t *testing.T) {
+	t.Parallel()
+	env := func(vars map[string]string) func(string) string { return func(key string) string { return vars[key] } }
+	found := func(string) (string, error) { return "/usr/bin/opener", nil }
+	missing := func(string) (string, error) { return "", errors.New("not found") }
+	for _, tc := range []struct {
+		name     string
+		opener   Opener
+		want     error
+		launched bool
+	}{
+		{"linux with a display", Opener{GOOS: "linux", Getenv: env(map[string]string{"DISPLAY": ":0"}), LookPath: found}, nil, true},
+		{"linux on wayland", Opener{GOOS: "linux", Getenv: env(map[string]string{"WAYLAND_DISPLAY": "wayland-0"}), LookPath: found}, nil, true},
+		{"linux over ssh", Opener{GOOS: "linux", Getenv: env(nil), LookPath: found}, ErrUnavailable, false},
+		{"linux without xdg-open", Opener{GOOS: "linux", Getenv: env(map[string]string{"DISPLAY": ":0"}), LookPath: missing}, ErrUnavailable, false},
+		{"macOS", Opener{GOOS: "darwin", Getenv: env(nil), LookPath: found}, nil, true},
+		{"windows", Opener{GOOS: "windows", Getenv: env(nil), LookPath: found}, nil, true},
+	} {
+		launched := false
+		tc.opener.Start = func(string, ...string) error { launched = true; return nil }
+		if err := tc.opener.Open("http://127.0.0.1:6832/"); !errors.Is(err, tc.want) || launched != tc.launched {
+			t.Errorf("%s: err %v launched %t", tc.name, err, launched)
+		}
 	}
-	if err := Open("http://example.com"); err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	name, args := commandFor(goos, "http://example.com")
-	if gotName != name {
-		t.Errorf("Command called with %q, want %q", gotName, name)
-	}
-	if len(gotArgs) != len(args) {
-		t.Errorf("Command args %v, want %v", gotArgs, args)
-	}
-}
-
-func TestOpenReportsUnstartableCommand(t *testing.T) {
-	orig := Command
-	defer func() { Command = orig }()
-	Command = func(string, ...string) *exec.Cmd {
-		return exec.Command("ovdb-browser-test-binary-that-does-not-exist")
-	}
-	err := Open("http://example.com")
-	if err == nil {
-		t.Fatal("Open with a missing opener binary should return an error")
+	failing := Opener{GOOS: "darwin", LookPath: found, Start: func(string, ...string) error { return errors.New("boom") }}
+	if err := failing.Open("http://x"); err == nil || errors.Is(err, ErrUnavailable) {
+		t.Errorf("start failure = %v", err)
 	}
 }

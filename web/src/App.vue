@@ -1,30 +1,81 @@
 <script setup lang="ts">
-// Placeholder console entry (spec/features/local-server-and-web-console).
-// It proves the embedded multi-page build end to end (S3) and the shared
-// copy catalogue (S6); the real Home screen with status and navigation
-// arrives in increment 1b.
-import { t } from './copy'
+// The console shell: brand header, the current screen, and the two states
+// that replace any screen — a session that ended (any 401) and a server that
+// stopped (local-server-and-web-console#REQ:session-ended-copy).
+import { nextTick, watch, watchEffect } from 'vue'
 
-const menuItems = [
-  t('home.menu.try_demo'),
-  t('home.menu.create_database'),
-  t('home.menu.connect_database'),
-  t('home.menu.start_server'),
-]
+import { connection } from './api'
+import OvText from './components/OvText.vue'
+import { t } from './copy'
+import { navigate, screen } from './router'
+import HomeScreen from './screens/HomeScreen.vue'
+import ServerScreen from './screens/ServerScreen.vue'
+import SettingsScreen from './screens/SettingsScreen.vue'
+import { useServer } from './useServer'
+
+// The shell keeps the server poll running on every screen.
+useServer()
+
+const titles = {
+  home: () => t('app.name'),
+  server: () => t('console.title', { screen: t('server.title') }),
+  settings: () => t('console.title', { screen: t('settings.title') }),
+  'not-found': () => t('app.name'),
+}
+
+watchEffect(() => {
+  document.title = titles[screen.value]()
+})
+
+// Move focus to the new screen's heading so keyboard and screen reader
+// users land at the top of what changed.
+watch([screen, connection], async () => {
+  await nextTick()
+  document.querySelector<HTMLElement>('main h1')?.focus()
+})
+
+function home(event: MouseEvent) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+  event.preventDefault()
+  navigate('/')
+}
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-screen max-w-xl flex-col gap-6 px-6 py-16 text-slate-900">
-    <h1 class="text-2xl font-semibold">{{ t('console.placeholder.title') }}</h1>
-    <p class="text-slate-600">{{ t('console.placeholder.body', { name: 'ovdb' }) }}</p>
-    <ul class="flex flex-col gap-2">
-      <li
-        v-for="item in menuItems"
-        :key="item"
-        class="rounded-md border border-slate-200 px-4 py-2"
-      >
-        {{ item }}
-      </li>
-    </ul>
-  </main>
+  <div class="min-h-screen">
+    <header class="border-b border-line">
+      <div class="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+        <a href="/" class="text-lg leading-7 font-bold tracking-tight text-ink" @click="home">{{ t('app.name') }}</a>
+        <form v-if="connection === 'ok'" method="post" action="/logout">
+          <button type="submit" class="rounded-md px-2 leading-7 font-medium text-accent hover:underline">
+            {{ t('console.sign_out') }}
+          </button>
+        </form>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-3xl px-4 pt-8 pb-16 sm:px-6 sm:pt-12">
+      <div v-if="connection === 'session-ended'" data-testid="session-ended" class="flex flex-col gap-4" role="status">
+        <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {{ t('console.session_ended.title') }}
+        </h1>
+        <p class="text-lg"><OvText :text="t('console.session_ended.next')" /></p>
+      </div>
+      <div v-else-if="connection === 'unreachable'" data-testid="server-stopped" class="flex flex-col gap-4" role="alert">
+        <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {{ t('server.not_running.message') }}
+        </h1>
+        <p class="text-lg"><OvText :text="t('server.stopped_copy')" /></p>
+      </div>
+      <HomeScreen v-else-if="screen === 'home'" />
+      <ServerScreen v-else-if="screen === 'server'" />
+      <SettingsScreen v-else-if="screen === 'settings'" />
+      <div v-else class="flex flex-col gap-4">
+        <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight">{{ t('api.not_found') }}</h1>
+        <p>
+          <a href="/" class="font-medium text-accent hover:underline" @click="home">{{ t('nav.home') }}</a>
+        </p>
+      </div>
+    </main>
+  </div>
 </template>

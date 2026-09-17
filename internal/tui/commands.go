@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
-	"github.com/openvaultdb/ovdb/internal/browser"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/setup"
@@ -19,16 +18,16 @@ import (
 // document it returns, and report the result as a message; they hold no
 // business logic of their own.
 
-func decodeServer(body []byte) (setup.Server, error) {
-	var document setup.ServerDocument
+func decodeHome(body []byte) (setup.HomeDocument, error) {
+	var document setup.HomeDocument
 	err := json.Unmarshal(body, &document)
-	return document.Server, err
+	return document, err
 }
 
-func decodeStatus(body []byte) (setup.Status, error) {
-	var status setup.Status
-	err := json.Unmarshal(body, &status)
-	return status, err
+func decodeServer(body []byte) (setup.ServerDocument, error) {
+	var document setup.ServerDocument
+	err := json.Unmarshal(body, &document)
+	return document, err
 }
 
 func decodeConfig(body []byte) (setup.ConfigDocument, error) {
@@ -47,26 +46,29 @@ func asProblem(err error) *envelope.Error {
 	return envelope.New(envelope.Internal, uicopy.T("api.internal", nil)).WithReason(err.Error())
 }
 
-type statusLoadedMsg struct {
-	status setup.Status
-	err    error
+type homeLoadedMsg struct {
+	document setup.HomeDocument
+	err      error
 }
 
-func (m Model) loadStatusCmd() tea.Cmd {
+// loadHomeCmd loads GET /api/local/v1/home — the server's own status line,
+// question and options (first-run-onboarding#REQ:home-menu-options); Home
+// renders it as given rather than building a menu itself.
+func (m Model) loadHomeCmd() tea.Cmd {
 	local, ctx := m.local, m.ctx
 	return func() tea.Msg {
-		body, err := local.Status(ctx)
+		body, err := local.Home(ctx)
 		if err != nil {
-			return statusLoadedMsg{err: err}
+			return homeLoadedMsg{err: err}
 		}
-		status, decErr := decodeStatus(body)
-		return statusLoadedMsg{status: status, err: decErr}
+		document, decErr := decodeHome(body)
+		return homeLoadedMsg{document: document, err: decErr}
 	}
 }
 
 type serverLoadedMsg struct {
-	server setup.Server
-	err    error
+	document setup.ServerDocument
+	err      error
 }
 
 func (m Model) loadServerCmd() tea.Cmd {
@@ -76,16 +78,16 @@ func (m Model) loadServerCmd() tea.Cmd {
 		if err != nil {
 			return serverLoadedMsg{err: err}
 		}
-		server, decErr := decodeServer(body)
-		return serverLoadedMsg{server: server, err: decErr}
+		document, decErr := decodeServer(body)
+		return serverLoadedMsg{document: document, err: decErr}
 	}
 }
 
 // serverActionMsg is the result of starting or restarting the server; both
 // return the same document shape (internal/client.StartOutcome).
 type serverActionMsg struct {
-	server setup.Server
-	err    error
+	document setup.ServerDocument
+	err      error
 }
 
 func (m Model) startCmd() tea.Cmd {
@@ -95,8 +97,8 @@ func (m Model) startCmd() tea.Cmd {
 		if err != nil {
 			return serverActionMsg{err: err}
 		}
-		server, decErr := decodeServer(outcome.Body)
-		return serverActionMsg{server: server, err: decErr}
+		document, decErr := decodeServer(outcome.Body)
+		return serverActionMsg{document: document, err: decErr}
 	}
 }
 
@@ -107,8 +109,8 @@ func (m Model) restartCmd() tea.Cmd {
 		if err != nil {
 			return serverActionMsg{err: err}
 		}
-		server, decErr := decodeServer(outcome.Body)
-		return serverActionMsg{server: server, err: decErr}
+		document, decErr := decodeServer(outcome.Body)
+		return serverActionMsg{document: document, err: decErr}
 	}
 }
 
@@ -129,8 +131,8 @@ func (m Model) portRemedyCmd(port int) tea.Cmd {
 		if err != nil {
 			return serverActionMsg{err: err}
 		}
-		server, decErr := decodeServer(outcome.Body)
-		return serverActionMsg{server: server, err: decErr}
+		document, decErr := decodeServer(outcome.Body)
+		return serverActionMsg{document: document, err: decErr}
 	}
 }
 
@@ -157,8 +159,14 @@ type loginLinkMsg struct {
 	err     error
 }
 
+// openBrowserCmd creates a login link and hands it to m.openBrowser (the
+// same internal/browser.Opener the CLI's `ovdb open` uses, or a fake
+// injected for tests). openErr — not err — carries a launch failure: the
+// link was created fine, so the Server screen still shows it, just with the
+// "couldn't open a browser" wording instead of the success one (review: a
+// failed launch must not look identical to a successful one).
 func (m Model) openBrowserCmd() tea.Cmd {
-	local, ctx := m.local, m.ctx
+	local, ctx, openBrowser := m.local, m.ctx, m.openBrowser
 	return func() tea.Msg {
 		body, err := local.LoginLink(ctx, false)
 		if err != nil {
@@ -168,7 +176,7 @@ func (m Model) openBrowserCmd() tea.Cmd {
 		if decErr := json.Unmarshal(body, &link); decErr != nil {
 			return loginLinkMsg{err: decErr}
 		}
-		return loginLinkMsg{link: link, openErr: browser.Open(link.URL)}
+		return loginLinkMsg{link: link, openErr: openBrowser(link.URL)}
 	}
 }
 

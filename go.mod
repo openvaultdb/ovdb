@@ -16,6 +16,7 @@ require (
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/dal-go/record v0.1.3
 	github.com/openvaultdb/openvaultdb-go v0.5.1
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.2.0
@@ -52,7 +53,6 @@ require (
 	github.com/dal-go/dalgo2postgres v0.2.0 // indirect
 	github.com/dal-go/dalgo2sql v0.14.0 // indirect
 	github.com/dal-go/dalgo2sqlite v0.1.8 // indirect
-	github.com/dal-go/record v0.1.3 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect

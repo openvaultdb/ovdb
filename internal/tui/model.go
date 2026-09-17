@@ -18,7 +18,9 @@ import (
 	"charm.land/lipgloss/v2"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/browser"
 	"github.com/openvaultdb/ovdb/internal/client"
+	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
 // Screen ids named by the capability registry (internal/parity); dropping
@@ -48,9 +50,10 @@ const (
 // Model is the root bubbletea model. It owns the current screen and the one
 // *client.Local every screen calls.
 type Model struct {
-	ctx     context.Context
-	local   *client.Local
-	notices *noticeBuffer
+	ctx         context.Context
+	local       *client.Local
+	notices     *noticeBuffer
+	openBrowser func(url string) error
 
 	width, height int
 	screen        string
@@ -89,19 +92,24 @@ func tickCmd() tea.Cmd {
 // New creates the root model on Home. local's Notices field is redirected
 // from cmd.ErrOrStderr() (internal/cli's default) to a buffer this model
 // drains, because writing straight to stderr would corrupt bubbletea's
-// alt-screen.
-func New(ctx context.Context, local *client.Local, width, height int) Model {
+// alt-screen. openBrowser launches a URL for the Server screen's "Open in
+// browser" — the same internal/browser.Opener the CLI's `ovdb open` uses —
+// or a fake a caller injects for tests; nil defaults to the real opener.
+func New(ctx context.Context, local *client.Local, openBrowser func(string) error, width, height int) Model {
 	notices := &noticeBuffer{}
 	local.Notices = notices
+	if openBrowser == nil {
+		openBrowser = browser.Opener{}.Open
+	}
 	return Model{
-		ctx: ctx, local: local, notices: notices,
+		ctx: ctx, local: local, notices: notices, openBrowser: openBrowser,
 		width: width, height: height,
 		screen: ScreenHome,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.loadStatusCmd()
+	return m.loadHomeCmd()
 }
 
 // pullNotices replaces noticeLines with whatever internal/client logged for
@@ -132,9 +140,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg.String())
 
-	case statusLoadedMsg:
+	case homeLoadedMsg:
 		m.home.loaded = true
-		m.home.status = msg.status
+		m.home.document = msg.document
 		m.home.err = msg.err
 		return m, nil
 
@@ -146,7 +154,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.server.loaded = true
-		m.server.server = msg.server
+		m.server.server = msg.document.Server
+		m.server.next = msg.document.Next
 		m.server.cursor = 0
 		return m, nil
 
@@ -159,7 +168,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.server.loaded = true
-		m.server.server = msg.server
+		m.server.server = msg.document.Server
+		m.server.next = msg.document.Next
 		m.server.cursor = 0
 		m.server.linkShown = false
 		m.screen = ScreenServer
@@ -214,6 +224,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settings.editing = false
 		m.settings.input = ""
 		m.settings.invalid = false
+		port := strconv.Itoa(msg.document.Config.Server.Port)
+		if msg.document.Changed != nil && !*msg.document.Changed {
+			m.settings.savedMessage = uicopy.T("settings.port.unchanged", map[string]string{"port": port})
+		} else {
+			m.settings.savedMessage = uicopy.T("settings.port.saved", map[string]string{"port": port})
+		}
 		return m, nil
 	}
 	return m, nil
@@ -249,20 +265,23 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
-	items := m.home.menu()
+	options := m.home.document.Options
 	switch key {
 	case "up", "k":
 		if m.home.cursor > 0 {
 			m.home.cursor--
 		}
 	case "down", "j":
-		if m.home.cursor < len(items)-1 {
+		if m.home.cursor < len(options)-1 {
 			m.home.cursor++
 		}
 	case "q":
 		return m, tea.Quit
 	case "enter":
-		target := items[m.home.cursor].target
+		if !m.home.loaded || m.home.cursor >= len(options) {
+			return m, nil
+		}
+		target := screenFor(options[m.home.cursor].ID)
 		m.screen = target
 		switch target {
 		case ScreenServer:
@@ -272,6 +291,7 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 		case ScreenSettings:
 			m.settings.loaded = false
 			m.settings.editing = false
+			m.settings.savedMessage = ""
 			return m, m.loadConfigCmd()
 		}
 	}
@@ -304,13 +324,13 @@ func (m Model) updateServer(key string) (tea.Model, tea.Cmd) {
 			m.busy = &busyState{label: uicopy.T("server.stopping", nil)}
 			return m, tea.Batch(m.stopCmd(), tickCmd())
 		case actionOpenBrowser:
-			m.busy = &busyState{label: uicopy.T("open.opening", nil)}
+			m.busy = &busyState{label: uicopy.T("open.opened", nil)}
 			return m, tea.Batch(m.openBrowserCmd(), tickCmd())
 		}
 	case "esc", "backspace":
 		m.screen = ScreenHome
 		m.home.loaded = false
-		return m, m.loadStatusCmd()
+		return m, m.loadHomeCmd()
 	}
 	return m, nil
 }
@@ -320,7 +340,7 @@ func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
 		switch key {
 		case "enter":
 			port, err := strconv.Atoi(m.settings.input)
-			if err != nil || port < 1 || port > 65535 {
+			if err != nil || !setup.ValidPort(port) {
 				m.settings.invalid = true
 				return m, nil
 			}
@@ -349,10 +369,11 @@ func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
 		m.settings.editing = true
 		m.settings.input = ""
 		m.settings.invalid = false
+		m.settings.savedMessage = ""
 	case "esc", "backspace":
 		m.screen = ScreenHome
 		m.home.loaded = false
-		return m, m.loadStatusCmd()
+		return m, m.loadHomeCmd()
 	}
 	return m, nil
 }
@@ -362,7 +383,7 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 	case "enter", "esc", "backspace":
 		m.screen = ScreenHome
 		m.home.loaded = false
-		return m, m.loadStatusCmd()
+		return m, m.loadHomeCmd()
 	}
 	return m, nil
 }
@@ -383,7 +404,7 @@ func (m Model) updateProblem(key string) (tea.Model, tea.Cmd) {
 	case "esc", "backspace":
 		m.screen = ScreenHome
 		m.home.loaded = false
-		return m, m.loadStatusCmd()
+		return m, m.loadHomeCmd()
 	}
 	return m, nil
 }
@@ -394,7 +415,7 @@ func (m Model) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
-	header := headerStyle.Width(max(m.width, 1)).Render(uicopy.T("home.title", nil))
+	header := headerStyle.Width(max(m.width, 1)).Render(uicopy.T("app.name", nil))
 	var body string
 	switch {
 	case m.busy != nil:
@@ -422,11 +443,16 @@ func (m Model) View() tea.View {
 }
 
 func (m Model) footer() string {
-	if m.showHelp {
+	switch {
+	case m.showHelp:
 		return helpStyle.Render(uicopy.T("tui.help.body", nil))
-	}
-	if m.screen == ScreenHome {
+	case m.screen == ScreenHome:
 		return helpStyle.Render(uicopy.T("tui.footer.home", nil))
+	case m.screen == ScreenSettings && m.settings.editing:
+		return helpStyle.Render(uicopy.T("settings.hint.edit", nil))
+	case m.screen == ScreenSettings:
+		return helpStyle.Render(uicopy.T("settings.hint.view", nil))
+	default:
+		return helpStyle.Render(uicopy.T("tui.footer.back", nil))
 	}
-	return helpStyle.Render(uicopy.T("tui.footer.back", nil))
 }

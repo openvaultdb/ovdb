@@ -67,7 +67,7 @@ func (a *App) runTUI(cmd *cobra.Command) error {
 	}
 	local := a.local(cmd, t)
 	width, height := a.termSize()
-	model := tui.New(cmd.Context(), local, width, height)
+	model := tui.New(cmd.Context(), local, a.openBrowser, width, height)
 	program := tea.NewProgram(model, tea.WithContext(cmd.Context()))
 	_, runErr := program.Run()
 	return runErr

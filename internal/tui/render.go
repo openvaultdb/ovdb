@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
 // wordWrap breaks text into lines no wider than width, breaking only at
@@ -107,7 +108,7 @@ func parsePort(command string) (int, bool) {
 		return 0, false
 	}
 	port, err := strconv.Atoi(fields[len(fields)-1])
-	if err != nil || port < 1 || port > 65535 {
+	if err != nil || !setup.ValidPort(port) {
 		return 0, false
 	}
 	return port, true
