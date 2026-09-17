@@ -178,9 +178,12 @@ func TestDemoOpen(t *testing.T) {
 	}
 	built = true
 
-	// Not installed yet.
+	// Not installed yet: said without starting a server (review F8).
 	if next := decodeError(t, e.run("demo", "open", "--json"), envelope.NotFound).Next; len(next) != 1 || next[0].Command != "ovdb demo install --yes" {
 		t.Errorf("not installed next = %+v", next)
+	}
+	if state, _ := runtime.Inspect(context.Background(), e.dirs.Runtime); state.Running {
+		t.Error("demo open started a server for a demo that isn't installed")
 	}
 
 	e.ok("demo", "install", "--yes")
@@ -215,5 +218,37 @@ func TestDemoOpen(t *testing.T) {
 	}
 	if !slices.ContainsFunc(strings.Split(e.ok("demo", "open", "--json").stdout, ","), func(s string) bool { return strings.Contains(s, `"fallback_url"`) }) {
 		t.Error("--json lacks fallback_url")
+	}
+}
+
+// Review F1 through the CLI: a user's database in a folder named demos is not
+// the demo; status says so and install installs the lists.
+func TestDemoIsNotAnyDatabaseInADemosFolder(t *testing.T) {
+	e := previewEnv(t)
+	notes := filepath.Join(t.TempDir(), "work", "demos", "notes")
+	e.ok("databases", "create", "notes", "--path", notes)
+	e.ok("add", "/customers", `{"name":"ACME"}`, "--db", "notes")
+	if r := e.ok("demo", "status"); !strings.Contains(r.stdout, "The TODO demo isn't installed") {
+		t.Errorf("status = %q", r.stdout)
+	}
+	if r := e.ok("demo", "install", "--yes"); !strings.HasPrefix(r.stdout, "The TODO demo is ready") {
+		t.Errorf("install = %q", r.stdout)
+	}
+	if got := e.listTitles("/lists/to-buy/items"); len(got) != 3 {
+		t.Errorf("to-buy = %v", got)
+	}
+	if r := e.ok("demo", "status"); !strings.Contains(r.stdout, "installed as todo in "+filepath.Join(e.dirs.Data, "demos", "todo")) {
+		t.Errorf("status after = %q", r.stdout)
+	}
+}
+
+// Review F9: in a terminal, an installed demo is reported without asking.
+func TestDemoInstallDoesNotAskWhenInstalled(t *testing.T) {
+	e := previewEnv(t)
+	e.ok("demo", "install", "--yes")
+	e.app.IsTerminal = func(uintptr) bool { return true }
+	r := e.ok("demo", "install")
+	if !strings.HasPrefix(r.stdout, "The TODO demo is already installed") || strings.Contains(r.stderr, "Install the TODO demo?") {
+		t.Errorf("install in a terminal = %+v", r)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
@@ -50,7 +51,7 @@ func (a *App) demoInstallCmd() *cobra.Command {
 				if id != "" {
 					where = demo.Location(t.dirs.Data, id)
 				}
-				confirmed, err := a.confirmDemo(cmd, where, id, jsonOut)
+				confirmed, err := a.confirmDemo(cmd, local, where, id, jsonOut)
 				if err != nil || !confirmed {
 					return err
 				}
@@ -89,7 +90,7 @@ func (a *App) demoInstallCmd() *cobra.Command {
 // confirmDemo shows where the demo will be stored and asks in a terminal;
 // anywhere else it fails with confirmation_required naming --yes, having
 // written and started nothing (first-run-onboarding#REQ:never-block-without-terminal).
-func (a *App) confirmDemo(cmd *cobra.Command, where, id string, jsonOut bool) (bool, error) {
+func (a *App) confirmDemo(cmd *cobra.Command, local *client.Local, where, id string, jsonOut bool) (bool, error) {
 	command := "ovdb demo install --yes"
 	if id != "" {
 		command = "ovdb demo install --id " + id + " --yes"
@@ -100,6 +101,13 @@ func (a *App) confirmDemo(cmd *cobra.Command, where, id string, jsonOut bool) (b
 	in, isFile := cmd.InOrStdin().(*os.File)
 	if jsonOut || a.getenv(EnvNonInteractive) == "1" || !isFile || !a.isTerminal(in.Fd()) {
 		return false, needed
+	}
+	// Installed already: installing writes nothing and says so, no question.
+	if body, err := local.Demo(cmd.Context()); err == nil {
+		var document demo.Document
+		if json.Unmarshal(body, &document) == nil && document.Installed && (id == "" || strings.EqualFold(id, document.Database)) {
+			return true, nil
+		}
 	}
 	_, _ = io.WriteString(cmd.ErrOrStderr(), uicopy.T("demo.install.confirm", map[string]string{"path": where}))
 	answer, _ := bufio.NewReader(in).ReadString('\n')

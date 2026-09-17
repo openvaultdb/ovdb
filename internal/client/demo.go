@@ -58,7 +58,9 @@ func (l *Local) consoleBuilt() bool {
 // unless noStart (todo-demo#REQ:todo-app-same-origin). A binary without the
 // web console, or a demo not installed yet, fails with what to do instead of
 // opening a page that cannot work
-// (local-server-and-web-console#REQ:embedded-assets).
+// (local-server-and-web-console#REQ:embedded-assets). Whether the demo is
+// installed is read first, from the running server or the registry, so a
+// demo that isn't there never starts a server.
 func (l *Local) DemoLink(ctx context.Context, noStart bool) ([]byte, error) {
 	failed := uicopy.T("demo.open.failed", nil)
 	if !l.consoleBuilt() {
@@ -67,16 +69,12 @@ func (l *Local) DemoLink(ctx context.Context, noStart bool) ([]byte, error) {
 			WithNext(envelope.Next{Label: uicopy.T("next.install_homebrew", nil), Command: "brew install --cask openvaultdb/tap/ovdb"},
 				envelope.Next{Label: uicopy.T("next.download_release", nil)})
 	}
-	c, err := l.Connect(ctx, noStart)
-	if err != nil {
-		return nil, err
-	}
-	response, err := c.Do(ctx, http.MethodGet, DemoPath, nil)
+	body, err := l.Demo(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var document demo.Document
-	if err := json.Unmarshal(response.Body, &document); err != nil {
+	if err := json.Unmarshal(body, &document); err != nil {
 		return nil, err
 	}
 	if !document.Installed {
@@ -84,6 +82,10 @@ func (l *Local) DemoLink(ctx context.Context, noStart bool) ([]byte, error) {
 			WithReason(uicopy.T("demo.open.not_installed", nil)).
 			WithNext(envelope.Next{Label: uicopy.T("demo.next.install", nil), Command: "ovdb demo install --yes", Action: demo.ActionInstall})
 	}
-	response, err = c.Do(ctx, http.MethodPost, LoginLinksPath, localserver.LoginLinkRequest{Next: document.AppPath})
+	c, err := l.Connect(ctx, noStart)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.Do(ctx, http.MethodPost, LoginLinksPath, localserver.LoginLinkRequest{Next: document.AppPath})
 	return response.Body, err
 }
