@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ingitdb/ingitdb-go/ingitdb/demos/todo"
+
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
@@ -48,8 +50,18 @@ const (
 	ActionInstall = "install_demo"
 )
 
-// Lists are the demo's list paths, in the order apps show them.
-var Lists = []string{"/lists/to-buy", "/lists/to-watch"}
+// Lists are the demo's list paths, in the order apps show them: todo.Lists
+// (github.com/ingitdb/ingitdb-go/ingitdb/demos/todo), the shared TODO demo
+// records package, with a leading slash.
+var Lists = leadingSlash(todo.Lists)
+
+func leadingSlash(paths []string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = "/" + p
+	}
+	return out
+}
 
 // Location is where database id keeps the demo under dataHome.
 func Location(dataHome, id string) string { return setup.DemoLocation(dataHome, id) }
@@ -299,29 +311,19 @@ func (s *Service) logf(format string, args ...any) {
 
 // seed is the demo data: two lists and their items, added a second apart so
 // every client shows them in the same order, before anything added later.
+// The records themselves come from todo.Records
+// (github.com/ingitdb/ingitdb-go/ingitdb/demos/todo), the package shared
+// with ingitdb-cli's own `ingitdb demo install`
+// (todo-demo#REQ:seed-from-shared-package), so both installs never drift.
 func (s *Service) seed() []Op {
 	now := time.Now
 	if s.Now != nil {
 		now = s.Now
 	}
-	// Five items a second apart, the last one now: none is in the future.
-	at := now().UTC().Truncate(time.Second).Add(-4 * time.Second)
-	var ops []Op
-	add := func(list, listTitle string, items ...[2]string) {
-		ops = append(ops, Op{Path: "/lists/" + list, Data: map[string]any{"title": listTitle}})
-		for _, item := range items {
-			ops = append(ops, Op{Path: "/lists/" + list + "/items/" + item[0], Data: map[string]any{
-				"title": item[1], "done": false, "added_at": at.Format(time.RFC3339),
-			}})
-			at = at.Add(time.Second)
-		}
+	records := todo.Records(now())
+	ops := make([]Op, len(records))
+	for i, record := range records {
+		ops[i] = Op{Path: "/" + record.Key, Data: record.Data}
 	}
-	add("to-buy", uicopy.T("demo.seed.to_buy", nil),
-		[2]string{"milk", uicopy.T("demo.seed.milk", nil)},
-		[2]string{"bananas", uicopy.T("demo.seed.bananas", nil)},
-		[2]string{"coffee", uicopy.T("demo.seed.coffee", nil)})
-	add("to-watch", uicopy.T("demo.seed.to_watch", nil),
-		[2]string{"the-matrix", uicopy.T("demo.seed.the_matrix", nil)},
-		[2]string{"interstellar", uicopy.T("demo.seed.interstellar", nil)})
 	return ops
 }
