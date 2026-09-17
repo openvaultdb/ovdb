@@ -334,6 +334,11 @@ func TestCopyStatesTheNetworkAddress(t *testing.T) {
 	if !strings.Contains(all, "IP address") {
 		t.Errorf("collected lists do not mention the IP address:\n%s", all)
 	}
+	// Review L6: with $ip set, PostHog stores the placeholder, not the
+	// connection address (posthog.com tutorials/web-redact-properties).
+	if !strings.Contains(all, "PostHog stores "+telemetry.IPPlaceholder+" in its place") || strings.Contains(all, "only if the project") {
+		t.Errorf("IP copy overstates or understates what is stored:\n%s", all)
+	}
 	for _, line := range telemetry.NeverCollected() {
 		if strings.Contains(line, "addresses") && !strings.Contains(line, "database") {
 			t.Errorf("never-collected line claims addresses in general: %q", line)

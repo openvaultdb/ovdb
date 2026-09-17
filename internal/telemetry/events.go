@@ -240,11 +240,12 @@ func FromWire(w Wire) (Event, bool) {
 	return Event{}, false
 }
 
-// IPPlaceholder is sent as $ip on every event: PostHog records a property
-// $ip in place of the connection's address (posthog.com tutorials,
-// web-redact-properties "Hiding customer IP address"). The address still
-// reaches PostHog's servers; the project's "Discard client IP data" setting
-// keeps it out of stored events (a release precondition).
+// IPPlaceholder is sent as $ip on every event: PostHog uses the client IP
+// address only when $ip isn't passed in the properties (posthog.com
+// tutorials/web-redact-properties, docs/product-analytics/privacy), so it
+// stores the placeholder. The address still reaches PostHog's servers; the
+// project's "Discard client IP data" setting stays a release precondition
+// in case a transformation reads the connection address.
 const IPPlaceholder = "0.0.0.0"
 
 // Meta is what every event carries besides its own properties.

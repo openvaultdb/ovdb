@@ -104,7 +104,7 @@
   "telemetry.collected.steps": "Which setup steps you use and whether they succeed",
   "telemetry.collected.storage": "Storage type chosen (for example inGitDB), error types, timings",
   "telemetry.collected.version": "OVDB version, operating system, a random install id",
-  "telemetry.collected.network": "Your IP address reaches PostHog with each send. OVDB puts 0.0.0.0 in its place in the events, and PostHog stores it only if the project keeps client IP data",
+  "telemetry.collected.network": "Your IP address reaches PostHog's servers when statistics are sent; PostHog stores 0.0.0.0 in its place, not your address",
   "telemetry.never.title": "Never collected",
   "telemetry.never.data": "Your data, database names, file paths, or database and server addresses",
   "telemetry.never.queries": "Queries, schemas, tokens or connection details",
