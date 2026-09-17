@@ -234,21 +234,6 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 	return path, body
 }
 
-func TestConnectFlowIsNotSupported(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	for _, r := range []request{
-		{path: "/authorize"}, {method: http.MethodPost, path: "/authorize", contentType: "application/x-www-form-urlencoded"},
-		{method: http.MethodPost, path: "/token", bearer: testSecret},
-	} {
-		rec := f.do(t, r)
-		assertSecurityHeaders(t, rec)
-		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `"code":"not_supported"`) {
-			t.Errorf("%s %s = %d %s", r.method, r.path, rec.Code, rec.Body)
-		}
-	}
-}
-
 // AC:dns-rebinding-blocked.
 func TestHostAllowlist(t *testing.T) {
 	t.Parallel()
@@ -398,11 +383,11 @@ func TestPanicIsRecoveredRedacted(t *testing.T) {
 	}
 }
 
-func TestWellKnownOmitsConnectEndpoints(t *testing.T) {
+func TestWellKnownNamesConnectEndpoints(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	rec := f.do(t, request{path: "/.well-known/openvaultdb"})
-	if want := `{"authEnabled":true,"name":"OpenVaultDB","protocol":"openvaultdb/0.1","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
+	if want := `{"authEnabled":true,"authorizeEndpoint":"/authorize","name":"OpenVaultDB","protocol":"openvaultdb/0.1","tokenEndpoint":"/token","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
 		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
 	}
 }

@@ -48,7 +48,6 @@
   "api.host_not_allowed": "This address isn't allowed. Open OVDB at ovdb.localhost or 127.0.0.1 with its port.",
   "api.token_not_allowed": "Access tokens can't use the local API.",
   "api.unauthorized": "Sign in first.",
-  "api.connect_not_supported": "Connecting apps isn't available on this OVDB server yet.",
   "api.json_required": "Send the request body as application/json.",
   "api.method_not_allowed": "{method} isn't supported at this address.",
   "api.not_found": "There's nothing at this address.",
@@ -421,5 +420,18 @@
   "demo.next.default_location": "Install it in the default place",
   "landing.todo_app": "To open your TODO lists again, run:",
   "todo.come_back": "To come back to your lists, run `ovdb demo open`.",
-  "todo.removed.title": "The TODO demo database was removed"
+  "todo.removed.title": "The TODO demo database was removed",
+  "connect.sign_in_first": "An app asked to connect to OVDB. Sign in to the console first, then open the app's connect link again.",
+  "connect.title": "Allow {app} to use {database}?",
+  "connect.body": "{app} gets an access token for this database only, with the access below. The token ends after an hour; revoke it sooner with `ovdb token revoke`. Allow only apps you trust.",
+  "connect.database": "Database",
+  "connect.access": "Access",
+  "connect.returns_to": "Returns you to",
+  "connect.allow": "Allow",
+  "connect.deny": "Deny",
+  "connect.returning": "Returning you to {app}…",
+  "connect.invalid": "This connect request isn't valid",
+  "connect.invalid_hint": "Ask the app's developer to check its connect link.",
+  "connect.form_invalid": "The connect form couldn't be read.",
+  "connect.redirect_not_web": "redirect_uri must be an http or https address."
 }
