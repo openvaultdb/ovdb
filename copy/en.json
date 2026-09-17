@@ -433,7 +433,7 @@
   "connect.invalid": "This connect request isn't valid",
   "connect.invalid_hint": "Ask the app's developer to check its connect link.",
   "connect.form_invalid": "The connect form couldn't be read.",
-  "connect.redirect_not_web": "redirect_uri must be an http or https address.",
+  "connect.redirect_not_web": "redirect_uri must be an https address, or an http address on this computer (localhost), without a user name, password or #fragment.",
   "token.created": "Token created.",
   "token.secret_once": "Save this token now. OVDB shows it only once:",
   "token.none": "No tokens.",

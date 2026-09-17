@@ -173,15 +173,31 @@ func (s *localServer) connectRequest(r *http.Request, method string, values url.
 	return recorder
 }
 
-// webRedirectOnly refuses a redirect_uri that is not http or https: the
-// return page puts it in a link and a refresh, where another scheme could
-// run something.
+// webRedirectOnly refuses a redirect_uri the browser should not be sent to
+// with a code: anything but https, or http back to this computer (another
+// host would receive the code in clear text); user info, which can make
+// https://localhost:5173@evil.example read as localhost; and a fragment. The
+// return page puts the address in a link and a refresh, and Deny uses it too,
+// so it is checked before anything is shown or decided.
 func webRedirectOnly(values url.Values) string {
-	redirect, err := url.Parse(values.Get("redirect_uri"))
-	if err == nil && redirect.Scheme != "" && redirect.Scheme != "http" && redirect.Scheme != "https" {
+	raw := values.Get("redirect_uri")
+	redirect, err := url.Parse(raw)
+	if err != nil || redirect.Host == "" {
+		return "" // not absolute: openvaultdb-go says so
+	}
+	scheme := strings.ToLower(redirect.Scheme)
+	allowed := scheme == "https" || scheme == "http" && isLoopbackHost(redirect.Hostname())
+	if !allowed || redirect.User != nil || strings.Contains(raw, "#") {
 		return uicopy.T("connect.redirect_not_web", nil)
 	}
 	return ""
+}
+
+// isLoopbackHost reports whether host names this computer: localhost, a
+// *.localhost name (browsers resolve those to loopback), 127.0.0.1 or ::1.
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 // onlyConnectFields keeps the connect parameters (and the decision), so

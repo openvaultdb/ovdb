@@ -173,11 +173,17 @@ func TestInvalidConnectRequests(t *testing.T) {
 	f := connectFixture(t)
 	session := f.signIn(t)
 	for name, change := range map[string]func(url.Values){
-		"unknown database":   func(v url.Values) { v.Set("db", "nope") },
-		"no client":          func(v url.Values) { v.Del("client_id") },
-		"relative redirect":  func(v url.Values) { v.Set("redirect_uri", "/callback") },
-		"script redirect":    func(v url.Values) { v.Set("redirect_uri", "javascript://x/%0aalert(1)") },
-		"unknown capability": func(v url.Values) { v.Set("capabilities", "records:everything") },
+		"unknown database":    func(v url.Values) { v.Set("db", "nope") },
+		"no client":           func(v url.Values) { v.Del("client_id") },
+		"relative redirect":   func(v url.Values) { v.Set("redirect_uri", "/callback") },
+		"script redirect":     func(v url.Values) { v.Set("redirect_uri", "javascript://x/%0aalert(1)") },
+		"remote http":         func(v url.Values) { v.Set("redirect_uri", "http://evil.example/cb") },
+		"localhost lookalike": func(v url.Values) { v.Set("redirect_uri", "http://localhost.evil.example/cb") },
+		"user info":           func(v url.Values) { v.Set("redirect_uri", "https://localhost:5173@evil.example/cb") },
+		"password":            func(v url.Values) { v.Set("redirect_uri", "https://user:pw@evil.example/cb") },
+		"fragment":            func(v url.Values) { v.Set("redirect_uri", "https://evil.example/cb#frag") },
+		"empty fragment":      func(v url.Values) { v.Set("redirect_uri", "https://evil.example/cb#") },
+		"unknown capability":  func(v url.Values) { v.Set("capabilities", "records:everything") },
 	} {
 		query := connectQuery()
 		change(query)
@@ -187,11 +193,13 @@ func TestInvalidConnectRequests(t *testing.T) {
 			strings.Contains(rec.Body.String(), `name="decision"`) {
 			t.Errorf("%s: GET = %d %s", name, rec.Code, rec.Body)
 		}
-		query.Set("decision", "approve")
-		post := f.do(t, request{method: http.MethodPost, path: "/authorize", cookie: session, body: query.Encode(),
-			contentType: "application/x-www-form-urlencoded", header: sameOrigin(testHost)})
-		if post.Code != http.StatusBadRequest || returnLocation(post) != "" {
-			t.Errorf("%s: POST = %d %s", name, post.Code, post.Body)
+		for _, decision := range []string{"approve", "deny"} {
+			query.Set("decision", decision)
+			post := f.do(t, request{method: http.MethodPost, path: "/authorize", cookie: session, body: query.Encode(),
+				contentType: "application/x-www-form-urlencoded", header: sameOrigin(testHost)})
+			if post.Code != http.StatusBadRequest || returnLocation(post) != "" {
+				t.Errorf("%s: POST %s = %d %s", name, decision, post.Code, post.Body)
+			}
 		}
 	}
 }
@@ -298,5 +306,21 @@ func TestTokenResponsesAreNotCached(t *testing.T) {
 	}
 	if issued.Code != http.StatusOK || refused.Code != http.StatusBadRequest {
 		t.Errorf("issued %d, refused %d", issued.Code, refused.Code)
+	}
+}
+
+// Redirects the consent page accepts: https anywhere, http only back to
+// this computer.
+func TestConnectRedirectsAllowed(t *testing.T) {
+	t.Parallel()
+	f := connectFixture(t)
+	session := f.signIn(t)
+	for _, redirect := range []string{"https://app.example/cb", "http://localhost:5173/cb", "http://127.0.0.1:8080/cb",
+		"http://[::1]:5173/cb", "http://todo.localhost:3000/cb", "HTTP://LOCALHOST/cb?x=1"} {
+		query := connectQuery()
+		query.Set("redirect_uri", redirect)
+		if rec := f.do(t, request{path: "/authorize?" + query.Encode(), cookie: session}); rec.Code != http.StatusOK {
+			t.Errorf("%s = %d %s", redirect, rec.Code, rec.Body)
+		}
 	}
 }
