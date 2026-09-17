@@ -147,7 +147,12 @@ jobs:
       # through OS paths (a file: URI on Windows) and must leave them as they
       # are on every OS (increment 5).
       - name: go test (connect existing storage)
-        run: go test -count=1 -timeout 10m -run 'TestConnect|TestWriteWithoutGitIdentity' ./internal/setup/ ./internal/localserver/
+        run: go test -count=1 -timeout 10m -run 'TestConnect' ./internal/setup/ && go test -count=1 -timeout 10m -run 'TestWriteWithoutGitIdentity' ./internal/localserver/
+      # auth.json is made owner-only by the server itself (increment 6):
+      # openvaultdb-go's 0600 means nothing on Windows, where the file would
+      # otherwise inherit whatever the OVDB home's ACL allows.
+      - name: go test (scoped tokens and auth.json ACL)
+        run: go test -count=1 -timeout 10m -run 'TestAuthStoreOwnerOnlyInASharedHome|TestScopedTokenAgainstLocalServer' ./internal/localserver/
 
   # Fail fast on go.mod/go.sum drift.
   #

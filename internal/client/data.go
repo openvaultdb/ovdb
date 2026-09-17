@@ -171,9 +171,19 @@ func (e *V1Error) Unwrap() error { return e.Envelope }
 // unless noStart (database-context-navigation#REQ:data-commands-use-server).
 // A 2xx response returns its body; any other returns a *V1Error.
 func (l *Local) Data(ctx context.Context, request DataRequest, noStart bool) ([]byte, error) {
+	status, body, err := l.v1(ctx, request, noStart)
+	if err != nil || status < http.StatusMultipleChoices {
+		return body, err
+	}
+	return nil, MapV1(status, body, request.Op)
+}
+
+// v1 calls the data API with the instance secret, starting the server
+// unless noStart, and returns the response as it came.
+func (l *Local) v1(ctx context.Context, request DataRequest, noStart bool) (int, []byte, error) {
 	c, err := l.Connect(ctx, noStart)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	var payload io.Reader
 	if request.Raw != nil {
@@ -181,13 +191,13 @@ func (l *Local) Data(ctx context.Context, request DataRequest, noStart bool) ([]
 	} else if request.Body != nil {
 		data, err := json.Marshal(request.Body)
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 		payload = bytes.NewReader(data)
 	}
 	httpRequest, err := http.NewRequestWithContext(ctx, request.Method, runtime.BaseURL(c.state.Record.Port)+request.URLPath, payload)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	httpRequest.Header.Set("Authorization", "Bearer "+c.state.Secret)
 	if request.Raw != nil {
@@ -197,17 +207,14 @@ func (l *Local) Data(ctx context.Context, request DataRequest, noStart bool) ([]
 	}
 	response, err := c.http.Do(httpRequest)
 	if err != nil {
-		return nil, NotRunning().WithReason(err.Error())
+		return 0, nil, NotRunning().WithReason(err.Error())
 	}
 	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
-	if response.StatusCode < http.StatusMultipleChoices {
-		return body, nil
-	}
-	return nil, MapV1(response.StatusCode, body, request.Op)
+	return response.StatusCode, body, nil
 }
 
 type v1ErrorBody struct {

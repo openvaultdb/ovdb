@@ -98,6 +98,31 @@ func TestEnsurePrivateDirCreatesOwnerOnlyChain(t *testing.T) {
 
 // AC:existing-dirs-not-chmodded (the paths half): an existing 0755
 // directory is reported, never changed.
+// Concurrent first starts create the same chain at once. None may find a
+// directory another has made but not yet protected (seen on Windows CI).
+func TestEnsurePrivateDirConcurrentCreators(t *testing.T) {
+	t.Parallel()
+	for round := 0; round < 20; round++ {
+		dir := filepath.Join(t.TempDir(), "cache", "ovdb", "run")
+		errs := make(chan error, 8)
+		for i := 0; i < cap(errs); i++ {
+			go func() { errs <- EnsurePrivateDir(dir) }()
+		}
+		for i := 0; i < cap(errs); i++ {
+			if err := <-errs; err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		if err := daemonlifecycle.ValidateOwnerOnly(dir); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+		entries, _ := os.ReadDir(filepath.Dir(dir))
+		if len(entries) != 1 {
+			t.Fatalf("round %d: leftovers next to run: %v", round, entries)
+		}
+	}
+}
+
 func TestEnsurePrivateDirLeavesExistingDirAlone(t *testing.T) {
 	t.Parallel()
 	if goruntime.GOOS == "windows" {

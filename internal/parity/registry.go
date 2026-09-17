@@ -94,8 +94,10 @@ var Rows = []Row{
 	{ID: "19", Capability: "Open TODO app", CLI: []string{"ovdb demo open"}, TUI: "demo", Web: "/demo",
 		API: []string{"GET /api/local/v1/demo", "POST /api/local/v1/login-links"}, Implemented: true},
 	// Tokens and CORS origins are developer settings: CLI only, and a console
-	// session gets 403 on server.cors and /v1/tokens (E7).
+	// session gets 403 on server.cors and /v1/tokens (E7). People grant an
+	// app access on the connect flow's consent page (/authorize) instead.
 	{ID: "25", Capability: "Access tokens and browser app origins",
-		CLI: []string{"ovdb token create", "ovdb token list", "ovdb token revoke", "ovdb config set", "ovdb config get"},
-		API: []string{"PUT /api/local/v1/config"}, Exceptions: []string{"E7"}},
+		CLI:        []string{"ovdb token create", "ovdb token list", "ovdb token revoke", "ovdb config set", "ovdb config get"},
+		API:        []string{"POST /v1/tokens", "GET /v1/tokens", "DELETE /v1/tokens/{id}", "GET /api/local/v1/config", "PUT /api/local/v1/config"},
+		Exceptions: []string{"E7"}, Implemented: true},
 }

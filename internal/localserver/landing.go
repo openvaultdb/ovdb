@@ -32,6 +32,7 @@ const (
 <meta name="referrer" content="no-referrer">
 <title>{{.Title}}</title>
 <link rel="stylesheet" href="` + pageCSSPath + `">
+{{with .Connect}}{{if .Location}}<meta http-equiv="refresh" content="0;url={{.Location}}">{{end}}{{end}}
 </head>
 <body>
 <header class="bar"><div class="column"><span class="brand">{{.Brand}}</span></div></header>
@@ -60,6 +61,28 @@ const (
 </form>
 <script src="` + submitJSPath + `"></script>
 {{template "foot" .}}{{end}}
+{{define "consent"}}{{template "head" .}}<h1>{{.Title}}</h1>
+<p>{{.Body}}</p>
+{{with .Connect}}<dl class="grant">
+<dt>{{.DatabaseLabel}}</dt><dd><code>{{.Database}}</code></dd>
+<dt>{{.AccessLabel}}</dt><dd><ul class="capabilities">{{range .Capabilities}}<li><span>{{.Label}}</span> <code>{{.Name}}</code></li>
+{{end}}</ul></dd>
+<dt>{{.RedirectLabel}}</dt><dd><code>{{.Redirect}}</code></dd>
+</dl>
+<form method="post" action="` + authorizePath + `" class="actions">
+{{range .Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">
+{{end}}<button type="submit" name="decision" value="approve">{{.Allow}}</button>
+<button type="submit" name="decision" value="deny" class="secondary">{{.Deny}}</button>
+</form>{{end}}
+{{template "foot" .}}{{end}}
+{{define "return"}}{{template "head" .}}<h1>{{.Title}}</h1>
+<p class="muted">{{.Body}}</p>
+<p><a class="button" href="{{.Connect.Location}}">{{.Continue}}</a></p>
+{{template "foot" .}}{{end}}
+{{define "problem"}}{{template "head" .}}<h1>{{.Title}}</h1>
+<p>{{.Body}}</p>
+<p class="hint">{{.Assistant}}</p>
+{{template "foot" .}}{{end}}
 `
 )
 
@@ -70,6 +93,8 @@ type pageData struct {
 	// App is the way back to an app the person was using (the TODO app).
 	App                  string
 	Code, Next, Continue string
+	// Connect is the connect flow's consent or return page.
+	Connect *connectView
 }
 
 func writePage(w http.ResponseWriter, status int, name string, data pageData) {
@@ -92,6 +117,11 @@ func (s *localServer) landing(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeLanding(w http.ResponseWriter, r *http.Request, status int) {
+	writePage(w, status, "landing", landingPage(r))
+}
+
+// landingPage is the landing page's content for r's host and path.
+func landingPage(r *http.Request) pageData {
 	page := pageData{
 		Title:     uicopy.T("landing.title", nil),
 		Body:      uicopy.T("landing.body", nil),
@@ -106,7 +136,7 @@ func writeLanding(w http.ResponseWriter, r *http.Request, status int) {
 	if r.URL.Path == signedOutPath {
 		page.Notice = uicopy.T("landing.signed_out", nil)
 	}
-	writePage(w, status, "landing", page)
+	return page
 }
 
 // pageAsset serves the landing and login page's stylesheet — the console's

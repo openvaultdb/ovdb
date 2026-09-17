@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/openvaultdb/ovdb/internal/cli"
+	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
 // tokenFlags holds the flags shared across all token subcommands.
@@ -21,7 +24,7 @@ type tokenFlags struct {
 }
 
 // newTokenCmd returns the "ovdb token" command group.
-func newTokenCmd() *cobra.Command {
+func newTokenCmd(app *cli.App) *cobra.Command {
 	var tf tokenFlags
 	cmd := &cobra.Command{
 		Use:   "token",
@@ -45,6 +48,9 @@ Revoking a token takes effect immediately on the running server.`,
 		newTokenListCmd(&tf),
 		newTokenRevokeCmd(&tf),
 	)
+	// With OVDB_PREVIEW=1 they manage the local OVDB server's tokens unless
+	// --addr or --owner-token asks for today's behaviour.
+	app.TokensPreview(cmd)
 	return cmd
 }
 
@@ -95,33 +101,11 @@ func doRequest(method, url, ownerToken string, body any) ([]byte, int, error) {
 }
 
 // scopeCapabilities maps a scope name to capability strings.
-// Exported as a testable pure function.
-func scopeCapabilities(scope string) ([]string, error) {
-	switch scope {
-	case "read-only":
-		return []string{"records:read", "collections:read", "schema:read"}, nil
-	case "read-write", "":
-		return []string{"records:read", "collections:read", "schema:read",
-			"records:write", "records:delete"}, nil
-	case "create-db":
-		// Deliberately NO records capabilities: a provisioning token can only
-		// create databases; each created database gets its own scoped token.
-		return []string{"databases:create"}, nil
-	default:
-		return nil, fmt.Errorf("unknown scope %q: use read-only, read-write or create-db", scope)
-	}
-}
+func scopeCapabilities(scope string) ([]string, error) { return setup.ScopeCapabilities(scope) }
 
 // hasCreateDBCapability reports whether the capability list contains
 // databases:create (a server-level token needs no --db).
-func hasCreateDBCapability(caps []string) bool {
-	for _, c := range caps {
-		if c == "databases:create" {
-			return true
-		}
-	}
-	return false
-}
+func hasCreateDBCapability(caps []string) bool { return setup.HasCreateDBCapability(caps) }
 
 // newTokenCreateCmd returns "ovdb token create".
 func newTokenCreateCmd(tf *tokenFlags) *cobra.Command {

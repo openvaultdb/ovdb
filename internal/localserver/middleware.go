@@ -167,11 +167,11 @@ func crossOrigin(next http.Handler) http.Handler {
 
 // corsPaths are the only routes browser apps on other origins may call.
 func corsPath(path string) bool {
-	return path == "/v1" || strings.HasPrefix(path, "/v1/") || path == "/token"
+	return path == "/v1" || strings.HasPrefix(path, "/v1/") || path == tokenPath
 }
 
-// cors lets browser apps on the origins listed in server.cors call /v1/… and
-// /token with bearer tokens. Cookie requests never get CORS headers, and no
+// cors lets browser apps on the origins listed in server.cors call /v1/… with
+// bearer tokens and exchange connect codes at /token. Cookie requests never get CORS headers, and no
 // response allows credentials, so a cross-origin page cannot read anything
 // with the console session.
 func cors(origins []string) func(http.Handler) http.Handler {
@@ -203,7 +203,9 @@ func cors(origins []string) func(http.Handler) http.Handler {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			if credentialOf(r).isBearer() {
+			// A code exchange at /token carries no credential: the code is
+			// one. A cookie request never gets CORS headers.
+			if credential := credentialOf(r); credential.isBearer() || (r.URL.Path == tokenPath && credential == credentialNone) {
 				header.Set("Access-Control-Allow-Origin", origin)
 			}
 			next.ServeHTTP(w, r)

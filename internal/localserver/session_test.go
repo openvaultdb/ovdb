@@ -233,12 +233,6 @@ func TestSessionCredentialTable(t *testing.T) {
 	if rec := f.do(t, request{path: "/v1/databases", cookie: session, bearer: "wrong"}); rec.Code != http.StatusUnauthorized {
 		t.Errorf("invalid bearer with a cookie on /v1 = %d", rec.Code)
 	}
-	// /authorize and /token stay unsupported for sessions too.
-	for _, path := range []string{"/authorize", "/token"} {
-		if rec := browser(request{method: http.MethodPost, path: path}); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not_supported") {
-			t.Errorf("session POST %s = %d %s", path, rec.Code, rec.Body)
-		}
-	}
 }
 
 // REQ:sessions: hashed on disk, survive a restart, 30-day sliding expiry,
@@ -542,10 +536,10 @@ func TestSessionCannotManageTokensOrCORS(t *testing.T) {
 		return f.do(t, request{method: method, path: path, cookie: session, body: body, header: sameOrigin(testHost)})
 	}
 	for _, tc := range []struct{ method, path, body, command string }{
-		{http.MethodPut, "/api/local/v1/config", `{"key":"server.cors","value":"https://evil.example"}`, "ovdb config get server.cors"},
-		{http.MethodPost, "/v1/tokens", `{"capabilities":["databases:create"]}`, "ovdb token list"},
+		{http.MethodPut, "/api/local/v1/config", `{"key":"server.cors","value":"https://evil.example"}`, "ovdb config set server.cors <origins>"},
+		{http.MethodPost, "/v1/tokens", `{"capabilities":["databases:create"]}`, "ovdb token create --db <database> --scope read-only"},
 		{http.MethodGet, "/v1/tokens", "", "ovdb token list"},
-		{http.MethodDelete, "/v1/tokens/abc", "", "ovdb token list"},
+		{http.MethodDelete, "/v1/tokens/abc", "", "ovdb token revoke <token-id>"},
 	} {
 		rec := browser(tc.method, tc.path, tc.body)
 		assertEnvelope(t, rec, http.StatusForbidden, envelope.Forbidden)
