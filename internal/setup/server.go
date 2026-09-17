@@ -16,6 +16,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 // Server states.
@@ -171,6 +172,7 @@ func NewHome(server Server, databases []Database, context *dbcontext.Context) Ho
 	if len(databases) > 0 {
 		options = append(options, HomeOption{ID: "databases", Group: "secondary", LabelKey: "home.menu.databases"})
 	}
+	options = append(options, HomeOption{ID: "skills", Group: "secondary", LabelKey: "home.menu.skills"})
 	options = append(options, HomeOption{ID: "settings", Group: "secondary", LabelKey: "home.menu.settings"})
 	return HomeDocument{
 		Schema: envelope.Schema, StatusLine: StatusLine(server, databases, context), QuestionKey: "home.question",
@@ -250,27 +252,66 @@ type Status struct {
 	// (capability 14); null when none does.
 	Context *dbcontext.Context `json:"context"`
 	// Demo says whether the TODO demo is installed, and where.
-	Demo DemoStatus      `json:"demo"`
-	Next []envelope.Next `json:"next"`
+	Demo DemoStatus `json:"demo"`
+	// Skills lists each OVDB skill and the AI agents it is installed for,
+	// as whoever built the document resolves their directories.
+	Skills []skills.Installed `json:"skills"`
+	Next   []envelope.Next    `json:"next"`
 }
 
-// NewStatus builds the status for this ovdb version, locations, server and
-// registered databases. next lists only implemented options, in the
-// founder's order.
-func NewStatus(version string, dirs paths.Dirs, server Server, databases []Database, context *dbcontext.Context) Status {
+// NewStatus builds the status for this ovdb version, locations, server,
+// registered databases and installed skills. next is the bootstrap list an
+// agent without a skill relays (ai-agent-skills#REQ:agent-bootstrap-without-skill):
+// terminal, web and command setup, then the demo and the storage skill while
+// they are not installed.
+func NewStatus(version string, dirs paths.Dirs, server Server, databases []Database, context *dbcontext.Context, installed []skills.Installed) Status {
 	if databases == nil {
 		databases = []Database{}
 	}
+	status := Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Demo: NewDemoStatus(dirs, databases)}
+	status.SetSkills(installed)
+	return status
+}
+
+// BootstrapNext is what non-interactive bare `ovdb` offers, always all five
+// (first-run-onboarding#REQ:bare-ovdb-non-interactive): set up in the
+// terminal, in the browser or with commands, try the demo, or install the
+// storage skill after asking the person.
+func BootstrapNext() []envelope.Next {
+	return []envelope.Next{
+		{Label: uicopy.T("next.setup_terminal", nil), Command: "ovdb"},
+		{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
+		{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"},
+		{Label: uicopy.T("next.try_demo", nil), Command: "ovdb demo install --yes"},
+		{Label: uicopy.T("skills.next.install_storage", nil), Command: "ovdb skills install " + skills.Storage + " --yes"},
+	}
+}
+
+// SetSkills replaces the skills field group and the next entries that
+// depend on it. A client calls it with the skills it resolved itself, so
+// `ovdb status` agrees with `ovdb skills list` whichever shell started the
+// server (local-server-and-web-console#REQ:client-values-and-mismatch).
+func (s *Status) SetSkills(installed []skills.Installed) {
+	if installed == nil {
+		installed = []skills.Installed{}
+	}
 	next := []envelope.Next{}
-	if server.State != StateRunning {
+	if s.Server.State != StateRunning {
 		next = append(next, envelope.Next{Label: uicopy.T("home.menu.start_server", nil), Command: "ovdb server start"})
 	}
 	next = append(next,
+		envelope.Next{Label: uicopy.T("next.setup_terminal", nil), Command: "ovdb"},
 		envelope.Next{Label: uicopy.T("next.open_web_setup", nil), Command: "ovdb open"},
 		envelope.Next{Label: uicopy.T("next.setup_commands", nil), Command: "ovdb databases create <name>"})
-	demo := NewDemoStatus(dirs, databases)
-	if !demo.Installed {
+	if !s.Demo.Installed {
 		next = append(next, envelope.Next{Label: uicopy.T("next.try_demo", nil), Command: "ovdb demo install --yes"})
 	}
-	return Status{Schema: envelope.Schema, Version: version, Locations: dirs, Server: server, Databases: databases, Context: context, Demo: demo, Next: next}
+	storage := false
+	for _, skill := range installed {
+		storage = storage || skill.ID == skills.Storage && len(skill.InstalledFor) > 0
+	}
+	if !storage {
+		next = append(next, envelope.Next{Label: uicopy.T("skills.next.install_storage", nil), Command: "ovdb skills install " + skills.Storage + " --yes"})
+	}
+	s.Skills, s.Next = installed, next
 }

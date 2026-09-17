@@ -73,6 +73,9 @@ type Local struct {
 	// ConsoleBuilt reports whether this binary embeds the web console and
 	// TODO app; web.Built when nil.
 	ConsoleBuilt func() bool
+	// Getenv resolves this client's environment-dependent values, such as AI
+	// agent skill directories; os.Getenv when nil.
+	Getenv func(string) string
 	// DataTugLookPath resolves whether datatug is on this process's own
 	// PATH for Explore data (capability row 22); exec.LookPath when nil.
 	// The CLI and TUI run in this process, so PrepareDataTugCLI uses it to
@@ -181,12 +184,24 @@ func (l *Local) Server(ctx context.Context) ([]byte, error) {
 }
 
 // Status is the whole-setup status document (first-run-onboarding#REQ:status-command).
+//
+// The skills field group is always this client's: the server's copy is
+// replaced with the skills resolved from the client's environment.
 func (l *Local) Status(ctx context.Context) ([]byte, error) {
-	return l.readErr(ctx, l.withWhere(StatusPath), func() (any, error) {
+	body, err := l.readErr(ctx, l.withWhere(StatusPath), func() (any, error) {
 		databases, err := setup.ListDatabases(l.Dirs.Home, nil)
 		context := dbcontext.Resolve(l.Dirs.Home, setup.DatabaseIDs(databases), l.Where).Context
-		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases, context), err
+		return setup.NewStatus(l.Version, l.Dirs, setup.StoppedServer(l.Port, l.Dirs), databases, context, l.installedSkills()), err
 	})
+	if err != nil {
+		return nil, err
+	}
+	var status setup.Status
+	if err := json.Unmarshal(body, &status); err != nil {
+		return nil, err
+	}
+	status.SetSkills(l.installedSkills())
+	return envelope.Marshal(status), nil
 }
 
 // Home is the Home menu document the TUI and web console render

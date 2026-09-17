@@ -79,7 +79,7 @@ test('Try a demo with the keyboard only, open the TODO app, and pass axe at 360 
   const result = page.getByTestId('demo-result')
   await expect(result).toContainText('The TODO demo is ready')
   await expect(result).toBeFocused()
-  await expect(result.getByRole('link')).toHaveText(['Open TODO app', 'Explore data', 'Done'])
+  await expect(result.getByRole('link')).toHaveText(['Open TODO app', 'Install TODO AI skill (ask the person first)', 'Explore data', 'Done'])
   await expectAccessible(page, 'Try a demo result')
 
   await tabTo(page, result.getByRole('link', { name: 'Open TODO app' }))

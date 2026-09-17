@@ -104,6 +104,9 @@ func newEnv(t *testing.T) *env {
 	e.vars = map[string]string{
 		paths.EnvHome: e.dirs.Home, paths.EnvRuntimeDir: e.dirs.Runtime, paths.EnvDataHome: e.dirs.Data,
 		"OVDB_PORT": strconv.Itoa(freePort(t)),
+		// The client's home, where it resolves AI agent skill directories;
+		// the detached server keeps the real one (git needs its identity).
+		"HOME": filepath.Join(base, "user"), "USERPROFILE": filepath.Join(base, "user"),
 	}
 	e.app = &cli.App{
 		Version: testVersion, Getenv: func(key string) string { return e.vars[key] },

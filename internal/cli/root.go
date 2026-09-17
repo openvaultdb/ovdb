@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	tea "charm.land/bubbletea/v2"
 
+	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 	"github.com/openvaultdb/ovdb/internal/tui"
 )
@@ -30,7 +34,39 @@ func (a *App) RootRunE(cmd *cobra.Command, _ []string) error {
 	if a.interactive() {
 		return a.runTUI(cmd)
 	}
-	return a.Status(cmd, false)
+	return a.bootstrap(cmd)
+}
+
+// bootstrap is non-interactive bare `ovdb`: a compact status and the five
+// ways to set up, never waiting for input and starting nothing
+// (first-run-onboarding#REQ:bare-ovdb-non-interactive).
+func (a *App) bootstrap(cmd *cobra.Command) error {
+	return run(func(cmd *cobra.Command, _ []string) error {
+		t, err := a.resolve(0)
+		if err != nil {
+			return err
+		}
+		body, err := a.local(cmd, t).Status(cmd.Context())
+		if err != nil {
+			return err
+		}
+		var status setup.Status
+		if err := json.Unmarshal(body, &status); err != nil {
+			return err
+		}
+		w := cmd.OutOrStdout()
+		say(w, uicopy.T("status.title", map[string]string{"version": status.Version}))
+		say(w, "")
+		parts := []string{}
+		for _, ref := range setup.StatusLine(status.Server, status.Databases, status.Context) {
+			parts = append(parts, uicopy.T(ref.Key, ref.Params))
+		}
+		say(w, strings.Join(parts, " · "))
+		say(w, "")
+		say(w, uicopy.T("problem.what_you_can_do", nil))
+		writeNext(w, setup.BootstrapNext())
+		return nil
+	})(cmd, nil)
 }
 
 func (a *App) isTerminal(fd uintptr) bool {

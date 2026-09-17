@@ -18,6 +18,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 const (
@@ -33,6 +34,7 @@ type fixture struct {
 	shutdowns int
 	now       time.Time
 	options   func(*Options) // adjusts Options before each (re)start
+	userHome  string         // HOME in the server's environment
 }
 
 // consoleStub stands in for the embedded console so tests see which
@@ -55,7 +57,11 @@ func newFixture(t *testing.T, options ...func(*Options)) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{dirs: dirs, token: "ovdb_scoped_token"}
+	f := &fixture{dirs: dirs, token: "ovdb_scoped_token", userHome: filepath.Join(base, "user")}
+	// Claude Code is "installed" for the server's user.
+	if err := os.MkdirAll(filepath.Join(f.userHome, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.CreateGrant(&auth.Grant{DatabaseID: "todo", Capabilities: []auth.Capability{{Action: "read"}}}, f.token); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +73,19 @@ func newFixture(t *testing.T, options ...func(*Options)) *fixture {
 	}
 	f.restart(t)
 	return f
+}
+
+// getenv is the server's environment: only the user's home is set.
+func (f *fixture) getenv(key string) string {
+	if key == "HOME" || key == "USERPROFILE" {
+		return f.userHome
+	}
+	return ""
+}
+
+func (f *fixture) installedSkills() []skills.Installed {
+	env, _ := skills.EnvFrom(f.getenv)
+	return skills.Status(env)
 }
 
 // restart builds a new handler over the same directories, as a server
@@ -84,6 +103,7 @@ func (f *fixture) restart(t *testing.T) {
 		RequestShutdown: func() { f.shutdowns++ },
 		Now:             func() time.Time { return f.now },
 		Console:         consoleStub,
+		Getenv:          f.getenv,
 	}
 	f.options(&opts)
 	handler, err := New(opts)
@@ -240,6 +260,8 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 		body = string(data)
 	case e.path == "/api/local/v1/demo/install":
 		body = `{"id":"credentials-demo"}`
+	case e.path == "/api/local/v1/skills/install":
+		body = `{"skill":"openvaultdb","harnesses":["claude"],"dry_run":true}`
 	case e.path == "/api/local/v1/explore/datatug":
 		// "credentials" itself is removed by the DELETE endpoint's own
 		// subtest earlier in the table; "credentials-connect" is not.
@@ -327,7 +349,7 @@ func TestLocalAPIDocuments(t *testing.T) {
 	if got, want := owner(request{path: "/api/local/v1/server"}).Body.String(), string(envelope.Marshal(setup.NewServerDocument(server))); got != want {
 		t.Errorf("server = %s, want %s", got, want)
 	}
-	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(setup.NewStatus("1.2.3", f.dirs, server, nil, nil))); got != want {
+	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(setup.NewStatus("1.2.3", f.dirs, server, nil, nil, f.installedSkills()))); got != want {
 		t.Errorf("status = %s, want %s", got, want)
 	}
 

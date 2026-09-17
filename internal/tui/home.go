@@ -38,6 +38,8 @@ func screenFor(id string) string {
 		return ScreenDatabases
 	case "browse":
 		return ScreenBrowse
+	case "skills":
+		return ScreenSkills
 	case "explore":
 		return ScreenExplore
 	default:

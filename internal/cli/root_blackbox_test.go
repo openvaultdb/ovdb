@@ -8,7 +8,7 @@ package cli_test
 
 import (
 	"bytes"
-	"context"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -16,8 +16,8 @@ import (
 
 // TestRootRunEPrintsStatusWhenNotInteractive is
 // first-run-onboarding#AC:tty-launches-tui and REQ:bare-ovdb-non-interactive:
-// piped `ovdb` prints the same status a person would get from `ovdb status`
-// and exits 0 without waiting for input.
+// piped `ovdb` prints a compact status and the five ways to set up, and
+// exits 0 without waiting for input.
 func TestRootRunEPrintsStatusWhenNotInteractive(t *testing.T) {
 	e := newEnv(t)
 	e.app.IsTerminal = func(uintptr) bool { return false }
@@ -35,15 +35,19 @@ func TestRootRunEPrintsStatusWhenNotInteractive(t *testing.T) {
 		t.Fatal("RootRunE (non-interactive) printed nothing")
 	}
 
-	// Same content `ovdb status` (human) prints for a fresh, unstarted setup.
-	statusRoot := &cobra.Command{Use: "ovdb", SilenceUsage: true, SilenceErrors: true}
-	statusRoot.SetContext(context.Background())
-	var wantOut bytes.Buffer
-	statusRoot.SetOut(&wantOut)
-	if err := e.app.Status(statusRoot, false); err != nil {
-		t.Fatalf("Status: %v", err)
+	// A compact status and exactly the five bootstrap entries
+	// (REQ:bare-ovdb-non-interactive), not the whole `ovdb status`.
+	for _, want := range []string{"OVDB server not running · Databases: none", "What you can do:",
+		"• Set up in the terminal   ovdb\n", "• Open web setup           ovdb open\n", "ovdb databases create <name>\n",
+		"ovdb demo install --yes\n", "(ask the person first)\n      ovdb skills install openvaultdb --yes\n"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("bare ovdb lacks %q:\n%s", want, stdout.String())
+		}
 	}
-	if stdout.String() != wantOut.String() {
-		t.Errorf("RootRunE (non-interactive) output =\n%s\nwant (same as `ovdb status`):\n%s", stdout.String(), wantOut.String())
+	if n := strings.Count(stdout.String(), "  • "); n != 5 {
+		t.Errorf("%d next entries, want 5:\n%s", n, stdout.String())
+	}
+	if strings.Contains(stdout.String(), "ovdb server start") {
+		t.Errorf("bare ovdb offers starting the server:\n%s", stdout.String())
 	}
 }

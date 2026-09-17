@@ -144,7 +144,7 @@ func TestInspectBeforeAndAfterInstall(t *testing.T) {
 	for _, n := range doc.Next {
 		commands = append(commands, n.Label+"|"+n.Command)
 	}
-	if !slices.Equal(commands, []string{"Open TODO app|ovdb demo open", "Explore data|ovdb explore --db todo-demo", "Done|"}) {
+	if !slices.Equal(commands, []string{"Open TODO app|ovdb demo open", "Install TODO AI skill (ask the person first)|ovdb skills install todo-demo", "Explore data|ovdb explore --db todo-demo", "Done|"}) {
 		t.Errorf("next = %v", commands)
 	}
 	// The record names a place: the same id elsewhere is not the demo.

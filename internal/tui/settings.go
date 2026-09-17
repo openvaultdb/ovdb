@@ -21,9 +21,16 @@ type settingsScreen struct {
 	// config.unchanged, matching the web console's own wording); cleared
 	// when editing starts again.
 	savedMessage string
+	// serverPort is the port the server uses now (review F10).
+	serverPort int
 }
 
+// currentPort is the port the server uses now: the running server's or the
+// resolved one, then the configured port, then the default.
 func (s settingsScreen) currentPort() int {
+	if s.serverPort != 0 {
+		return s.serverPort
+	}
 	if port := s.document.Config.Server.Port; port != 0 {
 		return port
 	}

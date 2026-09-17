@@ -22,6 +22,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 // Screen ids named by the capability registry (internal/parity); dropping
@@ -38,12 +39,13 @@ const (
 	ScreenBrowse    = "browse"
 	ScreenDemo      = "demo"
 	ScreenConnect   = "connect"
+	ScreenSkills    = "skills"
 	ScreenExplore   = "explore"
 )
 
 // ScreenIDs lists every screen id the TUI registers.
 func ScreenIDs() []string {
-	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo, ScreenConnect, ScreenExplore}
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo, ScreenConnect, ScreenExplore, ScreenSkills}
 }
 
 // minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
@@ -77,6 +79,7 @@ type Model struct {
 	browse    browseScreen
 	demo      demoScreen
 	connect   connectScreen
+	skills    skillsScreen
 	explore   exploreScreen
 	// problemFrom is the screen whose request raised the current Problem,
 	// when its remedies return there.
@@ -225,6 +228,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.settings.loaded = true
 		m.settings.document = msg.document
+		m.settings.serverPort = msg.serverPort
 		return m, nil
 
 	case enginesLoadedMsg:
@@ -275,6 +279,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectEnginesMsg, connectResultMsg:
 		return m.updateConnectMsg(msg)
 
+	case skillsLoadedMsg, skillInstalledMsg:
+		return m.updateSkillsMsg(msg)
 	case exploreMenuMsg, exploreCLIMsg, exploreAppOpenedMsg:
 		return m.updateExploreMsg(msg)
 
@@ -371,6 +377,8 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.updateDemo(key)
 	case ScreenConnect:
 		return m.updateConnect(key)
+	case ScreenSkills:
+		return m.updateSkills(key)
 	case ScreenExplore:
 		return m.updateExplore(key)
 	}
@@ -419,6 +427,8 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 			return m.enterCreate()
 		case ScreenConnect:
 			return m.enterConnect()
+		case ScreenSkills:
+			return m.enterSkills()
 		case ScreenExplore:
 			return m.enterExplore()
 		case ScreenDatabases:
@@ -528,6 +538,18 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.openDemoCmd(), tickCmd())
 			}
 		}
+	case "s", "a":
+		// "Install TODO AI skill" opens its consent step; "Connect an app or
+		// AI assistant" opens AI agent skills.
+		for _, n := range m.result.next {
+			switch {
+			case key == "s" && n.Action == skills.ActionInstall:
+				fields := strings.Fields(n.Command)
+				return m.offerSkill(fields[len(fields)-1])
+			case key == "a" && n.Action == skills.ActionSkills:
+				return m.enterSkills()
+			}
+		}
 	case "b", "d", "u", "e":
 		// "Browse data", "See your databases", "Use it in this project" and
 		// "Explore data", when the result offers them.
@@ -616,6 +638,8 @@ func (m Model) View() tea.View {
 		body = m.viewDemo()
 	case m.screen == ScreenConnect:
 		body = m.viewConnect()
+	case m.screen == ScreenSkills:
+		body = m.viewSkills()
 	case m.screen == ScreenExplore:
 		body = m.viewExplore()
 	}
@@ -656,6 +680,10 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(m.browseFooter(), m.width))
 	case m.screen == ScreenDemo:
 		return helpStyle.Render(wordWrap(uicopy.T("demo.hint.install", nil), m.width))
+	case m.screen == ScreenSkills && m.skills.consent != nil:
+		return helpStyle.Render(wordWrap(uicopy.T("skills.hint.consent", nil), m.width))
+	case m.screen == ScreenSkills:
+		return helpStyle.Render(wordWrap(uicopy.T("skills.hint.list", nil), m.width))
 	case m.screen == ScreenExplore && m.explore.view == exploreCLIView:
 		return helpStyle.Render(wordWrap(uicopy.T("explore.hint.cli", nil), m.width))
 	case m.screen == ScreenExplore && m.explore.view == exploreAppView:
@@ -664,8 +692,18 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(uicopy.T("explore.hint.menu", nil), m.width))
 	case m.screen == ScreenResult && len(m.result.next) > 0:
 		for _, n := range m.result.next {
-			if n.Action == demo.ActionOpenApp {
+			if n.Action == skills.ActionInstall {
 				return helpStyle.Render(wordWrap(uicopy.T("result.hint.demo", nil), m.width))
+			}
+		}
+		for _, n := range m.result.next {
+			if n.Action == demo.ActionOpenApp {
+				return helpStyle.Render(wordWrap(uicopy.T("result.hint.open_app", nil), m.width))
+			}
+		}
+		for _, n := range m.result.next {
+			if n.Action == skills.ActionSkills {
+				return helpStyle.Render(wordWrap(uicopy.T("result.hint.created_skills", nil), m.width))
 			}
 		}
 		for _, n := range m.result.next {

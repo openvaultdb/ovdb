@@ -155,6 +155,46 @@ export interface DemoDocument {
   next: Next[]
 }
 
+/** One place a skill can be installed (spec/features/ai-agent-skills). */
+export interface SkillTarget {
+  harness?: string
+  name: string
+  skills_dir: string
+  dir: string
+  detected: boolean
+  installed: boolean
+  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb'
+}
+
+export interface Skill {
+  id: string
+  dir: string
+  name: string
+  purpose: string
+  example: string
+  command: string
+  targets: SkillTarget[]
+  installed_for: string[]
+}
+
+/** GET /api/local/v1/skills: the harnesses are the ones the server found. */
+export interface SkillsDocument {
+  schema: number
+  skills: Skill[]
+  next: Next[]
+}
+
+/** POST /api/local/v1/skills/install */
+export interface SkillInstallDocument {
+  schema: number
+  skill: string
+  dir: string
+  name: string
+  already_up_to_date: boolean
+  targets: (SkillTarget & { result: string; reason?: string })[]
+  next: Next[]
+}
+
 export interface ConfigDocument {
   schema: number
   config: { server: { port?: number } }
