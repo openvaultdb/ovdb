@@ -55,6 +55,7 @@ export const home = {
   options: [
     { id: 'demo', group: 'primary', label_key: 'home.menu.try_demo', description_key: 'home.menu.try_demo_help' },
     { id: 'create', group: 'primary', label_key: 'home.menu.create_database', description_key: 'home.menu.create_database_help' },
+    { id: 'connect', group: 'primary', label_key: 'home.menu.connect_database', description_key: 'home.menu.connect_database_help' },
     {
       id: 'server',
       group: 'primary',
@@ -94,8 +95,7 @@ export const engines = {
       setup: 'manifest',
       manifest_steps: [
         { label: 'Write a manifest file, then edit it', command: `ovdb init --engine ${id} --id <name>` },
-        { label: 'Put the edited file in /home/a/.config/ovdb/databases, then load it', command: 'ovdb databases reload <name>' },
-        { label: 'Guided connect is coming.' },
+        { label: 'Connect the edited file', command: 'ovdb databases connect --manifest <absolute path>', action: 'edit_manifest' },
         { label: 'Read how manifest files work: https://github.com/openvaultdb/openvaultdb-go#manifest-examples' },
       ],
     })),

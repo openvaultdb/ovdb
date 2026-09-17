@@ -30,9 +30,11 @@ describe('Home', () => {
     expect(wrapper.get('[data-testid="status-line"]').text()).toBe('OVDB server running at http://ovdb.localhost:6832 · Databases: none')
     expect(wrapper.get('h1').text()).toBe('What would you like to do?')
     const options = wrapper.findAll('[data-option]').map((option) => option.attributes('data-option'))
-    expect(options).toEqual(['demo', 'create', 'server', 'settings'])
+    expect(options).toEqual(['demo', 'create', 'connect', 'server', 'settings'])
     expect(wrapper.get('[data-option="demo"]').attributes('href')).toBe('/demo')
     expect(wrapper.get('[data-option="create"]').attributes('href')).toBe('/databases/new')
+    expect(wrapper.get('[data-option="connect"]').attributes('href')).toBe('/databases/connect')
+    expect(wrapper.get('[data-option="connect"]').text()).toContain('Connect an existing database')
     const serverOption = wrapper.get('[data-option="server"]')
     expect(serverOption.text()).toContain('OVDB server')
     expect(serverOption.text()).toContain('Running')
@@ -48,7 +50,7 @@ describe('Home', () => {
         json(200, {
           ...home,
           status_line: [{ key: 'home.status.server_not_running' }],
-          options: [{ ...home.options[2], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
+          options: [{ ...home.options[3], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
         }),
     })
     const wrapper = mount(HomeScreen)

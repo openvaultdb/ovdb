@@ -446,7 +446,7 @@
   "next.describe_in_manifest": "Write a manifest file that describes its tables",
   "next.connect_manifest": "Then connect that manifest file",
   "next.git_name": "Before OVDB can save changes there, tell Git your name",
-  "next.git_email": "and your email",
+  "next.git_email": "Then tell Git your email",
   "data.git_identity_missing": "Git doesn't know your name and email, so it can't save changes in {path}.",
   "connect.question": "What would you like to connect?",
   "connect.manifest_option": "Connect with a manifest file",
