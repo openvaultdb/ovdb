@@ -34,7 +34,7 @@ func TestTodoSkillConsentAfterDemo(t *testing.T) {
 	view := flat(m.View().Content)
 	for _, want := range []string{
 		"Install the TODO AI skill?", "Lets your AI agent read and change your To buy and To watch lists.",
-		`"add bananas and coffee to my shopping list"`, "Install for: > [x] Claude Code", "Codex — not found", "Install skill Not now",
+		`"add tea to my shopping list and Arrival to my watch list"`, "Install for: > [x] Claude Code", "Codex — not found", "Install skill Not now",
 	} {
 		if m.screen != ScreenSkills || !strings.Contains(view, want) {
 			t.Errorf("consent lacks %q:\n%s", want, view)

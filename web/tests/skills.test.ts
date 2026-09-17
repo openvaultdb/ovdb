@@ -59,7 +59,7 @@ const document = (installed = false) => ({
       'openvaultdb-todo-demo',
       'TODO AI skill',
       'Lets your AI agent read and change your To buy and To watch lists.',
-      'For example: "add bananas and coffee to my shopping list".',
+      'For example: "add tea to my shopping list and Arrival to my watch list".',
       installed,
     ),
   ],
@@ -74,7 +74,7 @@ const installedDocument = {
   already_up_to_date: false,
   targets: [{ ...document().skills[1].targets[0], result: 'added', installed: true, state: 'installed' }],
   next: [
-    { label: 'Ask your AI agent: "add bananas and coffee to my shopping list"' },
+    { label: 'Ask your AI agent: "add tea to my shopping list and Arrival to my watch list"' },
     { label: 'Open TODO app', command: 'ovdb demo open', action: 'open_app' },
     { label: 'Done', action: 'done' },
   ],
@@ -97,7 +97,7 @@ describe('AI agent skills', () => {
     const consent = wrapper.get('[data-testid="skill-consent"]')
     expect(consent.get('h1').text()).toBe('Install the TODO AI skill?')
     expect(consent.text()).toContain('Lets your AI agent read and change your To buy and To watch lists.')
-    expect(consent.text()).toContain('"add bananas and coffee to my shopping list"')
+    expect(consent.text()).toContain('"add tea to my shopping list and Arrival to my watch list"')
     const claude = consent.get('[data-harness="claude"]')
     expect(claude.text()).toContain('Claude Code')
     expect(claude.get('code').text()).toBe('/home/a/.claude/skills/openvaultdb-todo-demo')
@@ -116,7 +116,7 @@ describe('AI agent skills', () => {
     const result = wrapper.get('[data-testid="skill-result"]')
     expect(result.text()).toContain('Installed the TODO AI skill')
     expect(result.text()).toContain('Claude Code: /home/a/.claude/skills/openvaultdb-todo-demo')
-    expect(result.text()).toContain('Ask your AI agent: "add bananas and coffee to my shopping list"')
+    expect(result.text()).toContain('Ask your AI agent: "add tea to my shopping list and Arrival to my watch list"')
     expect(result.findAll('a').map((a) => [a.text(), a.attributes('href')])).toEqual([
       ['Open TODO app', '/apps/todo/'],
       ['Done', '/'],
