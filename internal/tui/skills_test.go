@@ -25,7 +25,7 @@ func TestTodoSkillConsentAfterDemo(t *testing.T) {
 	}
 	m = send(t, m, key("enter")) // Try a demo
 	m = send(t, m, key("enter")) // install
-	if view := flat(m.View().Content); m.screen != ScreenResult || !strings.Contains(view, "Install TODO AI skill ovdb skills install todo-demo") {
+	if view := flat(m.View().Content); m.screen != ScreenResult || !strings.Contains(view, "Install TODO AI skill (ask the person first) ovdb skills install todo-demo") {
 		t.Fatalf("Result:\n%s", view)
 	}
 

@@ -47,13 +47,13 @@ test('Journey D: Try a demo, open the app, install the TODO skill after the cons
   await page.goto(primary() + '/demo')
   await page.getByTestId('install-demo').click()
   const result = page.getByTestId('demo-result')
-  await expect(result.getByRole('link')).toHaveText(['Open TODO app', 'Install TODO AI skill', 'Done'])
+  await expect(result.getByRole('link')).toHaveText(['Open TODO app', 'Install TODO AI skill (ask the person first)', 'Done'])
 
   const app = await context.newPage()
   await app.goto(primary() + '/apps/todo/')
   await expect(app.getByRole('heading', { name: 'To buy' })).toBeVisible()
 
-  await result.getByRole('link', { name: 'Install TODO AI skill' }).click()
+  await result.getByRole('link', { name: 'Install TODO AI skill (ask the person first)' }).click()
   await expect(page).toHaveURL(primary() + '/skills?skill=todo-demo&from=/demo')
   const consent = page.getByTestId('skill-consent')
   await expect(page.getByRole('heading', { name: 'Install the TODO AI skill?' })).toBeFocused()

@@ -402,3 +402,42 @@ func TestChangedSinceInstall(t *testing.T) {
 		t.Errorf("foreign state = %s", state)
 	}
 }
+
+// askFirst fails for any next entry that installs a skill without saying to
+// ask the person first (review F9).
+func askFirst(t *testing.T, where string, next []envelope.Next) int {
+	t.Helper()
+	n := 0
+	for _, entry := range next {
+		if strings.HasPrefix(entry.Command, "ovdb skills install") {
+			n++
+			if !strings.Contains(entry.Label, "ask the person first") {
+				t.Errorf("%s: %q (%s) doesn't say to ask the person first", where, entry.Label, entry.Command)
+			}
+		}
+	}
+	return n
+}
+
+// Review F9: every install entry in any document or error says to ask the
+// person first.
+func TestInstallEntriesAskFirst(t *testing.T) {
+	e := testEnv(t)
+	d, _ := Find(Todo)
+	found := askFirst(t, "skills document", Inspect(e).Next)
+	found += askFirst(t, "InstallNext", []envelope.Next{InstallNext(Todo), InstallNext(Storage)})
+	found += askFirst(t, "unknown skill", UnknownSkill("x").Next)
+	found += askFirst(t, "outside home", envelope.As(CheckUnderHome(d, e.Home, "/etc/x")).Next)
+	doc := mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}, DryRun: true})
+	found += askFirst(t, "dry run", doc.Next)
+	mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	if err := os.WriteFile(filepath.Join(e.Home, ".claude", "skills", "openvaultdb-todo-demo", "SKILL.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, targets, _ := e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	_, err := Build{}.Install(context.Background(), e, d, targets, false, false)
+	found += askFirst(t, "changed", envelope.As(err).Next)
+	if found < 8 {
+		t.Errorf("only %d install entries checked", found)
+	}
+}

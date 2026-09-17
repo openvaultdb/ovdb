@@ -41,7 +41,8 @@ func TestSkillInstallNeedsYesWithoutTerminal(t *testing.T) {
 	r := e.run("skills", "install", "todo-demo", "--json")
 	problem := decodeError(t, r, envelope.ConfirmationRequired)
 	want := filepath.Join(e.userHome(), ".claude", "skills", "openvaultdb-todo-demo")
-	if !strings.Contains(problem.Reason, want) || len(problem.Next) != 1 || problem.Next[0].Command != "ovdb skills install todo-demo --yes" {
+	if !strings.Contains(problem.Reason, want) || len(problem.Next) != 1 || problem.Next[0].Command != "ovdb skills install todo-demo --yes" ||
+		problem.Next[0].Label != "Install it (ask the person first)" {
 		t.Errorf("confirmation = %+v", problem)
 	}
 	human := e.run("skills", "install", "todo-demo")
@@ -56,7 +57,7 @@ func TestSkillInstallNeedsYesWithoutTerminal(t *testing.T) {
 		t.Errorf("files written: %v", files)
 	}
 	status := e.run("demo", "status", "--json")
-	if !strings.Contains(status.stdout, `"command":"ovdb skills install todo-demo","action":"install_skill"`) {
+	if !strings.Contains(status.stdout, `{"label":"Install TODO AI skill (ask the person first)","command":"ovdb skills install todo-demo","action":"install_skill"}`) {
 		t.Errorf("demo next lacks the TODO skill: %s", status.stdout)
 	}
 }
