@@ -74,7 +74,7 @@ func TestJourneyATerminal(t *testing.T) {
 	lookup := dbcontext.Find(src)
 	local := &client.Local{
 		Dirs: e.dirs, Version: testVersion, Port: e.port(),
-		Getenv: func(key string) string { return e.vars[key] },
+		Getenv:    func(key string) string { return e.vars[key] },
 		Where:     dbcontext.Request{Dirs: lookup.Dirs, Root: lookup.Root},
 		Telemetry: e.app.TUIRecorder(e.dirs.Home),
 		Command: func(port int) *exec.Cmd {
