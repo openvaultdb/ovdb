@@ -143,6 +143,11 @@ jobs:
       # since ingitdb/dalgo2ingitdb v0.6.1 (increment 4).
       - name: go test (runtime, paths, context, demo, cli)
         run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/setup/dbcontext/... ./internal/setup/demo/... ./internal/datapath/... ./internal/cli/...
+      # auth.json is made owner-only by the server itself (increment 6):
+      # openvaultdb-go's 0600 means nothing on Windows, where the file would
+      # otherwise inherit whatever the OVDB home's ACL allows.
+      - name: go test (scoped tokens and auth.json ACL)
+        run: go test -count=1 -timeout 10m -run 'TestAuthStoreOwnerOnlyInASharedHome|TestScopedTokenAgainstLocalServer' ./internal/localserver/
 
   # Fail fast on go.mod/go.sum drift.
   #
