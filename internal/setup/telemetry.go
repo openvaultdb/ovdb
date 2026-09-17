@@ -43,7 +43,7 @@ func ChangeTelemetry(dirs paths.Dirs, change telemetry.Change, channel telemetry
 	case telemetry.StateEnabled:
 		if !change.ConfirmedByUser {
 			// Local API callers read JSON: agent-directed.
-			return TelemetryOutcome{}, TelemetryConfirmationRequired(true)
+			return TelemetryOutcome{}, TelemetryConfirmationRequired()
 		}
 	case telemetry.StateDisabled:
 	default:
@@ -116,15 +116,12 @@ func disableUnreadable(path string, disabled telemetry.Consent, now time.Time) (
 	return TelemetryOutcome{Consent: disabled, Changed: true, Backup: backup}, nil
 }
 
-// TelemetryConfirmationRequired is enabling without the person's yes. Only
-// the agent-directed (JSON) form names the relay flag, and says it may be
-// passed only after the person said yes.
-func TelemetryConfirmationRequired(forAgents bool) *envelope.Error {
-	reason := uicopy.T("telemetry.enable.confirm_needed", nil)
-	if forAgents {
-		reason += " " + telemetry.AgentGuidance()
-	}
+// TelemetryConfirmationRequired is enabling without the person's yes. It
+// is only ever returned where no one could be asked (no terminal, an agent,
+// the local API), so it says to ask the person and then pass
+// --confirmed-by-user, and offers no command: the one that failed would
+// fail again (review L2). A person in a terminal is asked instead.
+func TelemetryConfirmationRequired() *envelope.Error {
 	return envelope.New(envelope.ConfirmationRequired, uicopy.T("telemetry.failed", nil)).
-		WithReason(reason).
-		WithNext(envelope.Next{Label: uicopy.T("telemetry.next.enable", nil), Command: telemetry.EnableCommand})
+		WithReason(uicopy.T("telemetry.enable.confirm_needed", nil) + " " + telemetry.AgentGuidance())
 }

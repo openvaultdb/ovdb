@@ -108,7 +108,7 @@ func TestTelemetryEnableNeedsAPersonThenDelivers(t *testing.T) {
 	recorder, endpoint := newPosthog(t)
 	e := telemetryEnv(t, endpoint)
 	refused := e.runCommand("telemetry", "enable")
-	if refused.code != 1 || !strings.Contains(refused.stdout, "What's collected") || !strings.Contains(refused.stderr, "ovdb telemetry enable") {
+	if refused.code != 1 || !strings.Contains(refused.stdout, "What's collected") || !strings.Contains(refused.stderr, "--confirmed-by-user") {
 		t.Fatalf("enable without a terminal: %+v", refused)
 	}
 	_ = decodeError(t, e.runCommand("telemetry", "enable", "--json"), envelope.ConfirmationRequired)
@@ -239,19 +239,23 @@ func TestTelemetryRelayFlagOnlyInAgentGuidance(t *testing.T) {
 	e := telemetryEnv(t, "http://127.0.0.1:9")
 	const flag = "--confirmed-by-user"
 	human := e.run("telemetry", "status")
+	if strings.Contains(human.stdout+human.stderr, flag) || !strings.Contains(human.stdout, "ovdb telemetry enable") {
+		t.Errorf("human status advertises the flag or lacks the command:\n%s", human.stdout)
+	}
+	// Review L2: a refusal (no terminal, or an agent) says to ask the person
+	// and then pass the flag, and never offers the command that just failed.
 	refused := e.run("telemetry", "enable")
-	for _, r := range []result{human, refused} {
-		if strings.Contains(r.stdout+r.stderr, flag) || !strings.Contains(r.stdout+r.stderr, "ovdb telemetry enable") {
-			t.Errorf("human output advertises the flag or lacks the command:\n%s\n%s", r.stdout, r.stderr)
-		}
+	if !strings.Contains(refused.stderr, "ask the person") || !strings.Contains(refused.stderr, flag) ||
+		strings.Contains(refused.stderr, "What you can do") {
+		t.Errorf("refusal:\n%s", refused.stderr)
 	}
 	document := e.telemetryStatus()
 	if g := document.Telemetry.AgentGuidance; !strings.Contains(g, flag) || !strings.Contains(g, "only after") {
 		t.Errorf("status --json agent guidance = %q", g)
 	}
 	failure := decodeError(t, e.run("telemetry", "enable", "--json"), envelope.ConfirmationRequired)
-	if !strings.Contains(failure.Reason, flag) || !strings.Contains(failure.Reason, "only after") {
-		t.Errorf("--json refusal reason = %q", failure.Reason)
+	if !strings.Contains(failure.Reason, flag) || !strings.Contains(failure.Reason, "only after") || len(failure.Next) != 0 {
+		t.Errorf("--json refusal = %+v", failure)
 	}
 	for _, next := range append(document.Next, failure.Next...) {
 		if strings.Contains(next.Command, flag) {
