@@ -216,7 +216,7 @@ func TestJourneyDTodoDemo(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(e.vars["HOME"], ".claude"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	skillDir := filepath.Join(e.vars["HOME"], ".claude", "skills", "openvaultdb-todo-demo")
+	skillDir := filepath.Join(e.userHome(), ".claude", "skills", "openvaultdb-todo-demo")
 	press("s")
 	if view := strings.ReplaceAll(screenText(m), " ", ""); !strings.Contains(view, "InstalltheTODOAIskill?") || !strings.Contains(view, skillDir) {
 		t.Fatalf("consent:\n%s", screenText(m))

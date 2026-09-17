@@ -498,11 +498,16 @@ func CheckUnderHome(d Definition, home, dir string) error {
 	realHome := Canonical(home)
 	realDir := Canonical(dir)
 	if !under(realHome, realDir) {
-		if under(realHome, filepath.Clean(dir)) {
-			// Inside the home by name, elsewhere through a link.
-			return throughLink
+		// Inside the home by name (an ancestor resolves into it), elsewhere
+		// through a link.
+		for ancestor := filepath.Dir(filepath.Clean(dir)); ; ancestor = filepath.Dir(ancestor) {
+			if real := Canonical(ancestor); real == realHome || under(realHome, real) {
+				return throughLink
+			}
+			if filepath.Dir(ancestor) == ancestor {
+				return refused
+			}
 		}
-		return refused
 	}
 	if _, err := skillsync.ValidateTarget(realDir); err != nil {
 		return throughLink

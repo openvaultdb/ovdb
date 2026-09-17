@@ -19,7 +19,9 @@ import (
 )
 
 // userHome is the client's HOME in e.
-func (e *env) userHome() string { return e.vars["HOME"] }
+// It is the canonical path the skills service resolves (Windows short
+// names and macOS /var are spelled out).
+func (e *env) userHome() string { return skills.Canonical(e.vars["HOME"]) }
 
 // skillFiles lists every file under the client's home, where skills go.
 func (e *env) skillFiles() []string {
