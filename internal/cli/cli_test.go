@@ -64,6 +64,23 @@ func newRoot(app *cli.App) *cobra.Command {
 	databases.AddCommand(create)
 	root.AddCommand(databases)
 	app.DatabasesPreview(databases, create)
+	// Stand-ins for the legacy `ovdb token create|list|revoke`, with their
+	// flags.
+	token := &cobra.Command{Use: "token"}
+	token.PersistentFlags().String("addr", "", "")
+	token.PersistentFlags().String("owner-token", "", "")
+	tokenCreate := &cobra.Command{Use: "create", RunE: func(*cobra.Command, []string) error { return errors.New("legacy token create") }}
+	for _, name := range []string{"db", "label", "scope", "expires"} {
+		tokenCreate.Flags().String(name, "", "")
+	}
+	tokenCreate.Flags().StringArray("capability", nil, "")
+	tokenCreate.Flags().Bool("json", false, "")
+	tokenList := &cobra.Command{Use: "list", RunE: func(*cobra.Command, []string) error { return errors.New("legacy token list") }}
+	tokenList.Flags().Bool("json", false, "")
+	tokenRevoke := &cobra.Command{Use: "revoke <token-id>", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error { return errors.New("legacy token revoke") }}
+	token.AddCommand(tokenCreate, tokenList, tokenRevoke)
+	root.AddCommand(token)
+	app.TokensPreview(token)
 	app.AddCommands(root)
 	return root
 }

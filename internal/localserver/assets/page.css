@@ -60,3 +60,15 @@ button {
 }
 button:hover { background: var(--ov-accent-hover); }
 :focus-visible { outline: 3px solid var(--ov-accent); outline-offset: 2px; border-radius: 6px; }
+/* The connect flow's consent page (REQ:connect-flow-in-local-mode). */
+.grant { margin: 0 0 1.25rem; }
+.grant dt { margin-top: 0.75rem; color: var(--ov-muted); font-size: 0.95rem; }
+.grant dd { margin: 0.25rem 0 0; overflow-wrap: anywhere; }
+.grant code { font: 0.95rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--ov-code); border-radius: 0.25rem; padding: 0 0.3rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+button.secondary { color: var(--ov-ink); background: var(--ov-surface-2); border: 1px solid var(--ov-line); }
+button.secondary:hover { background: var(--ov-code); }
+a.button { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1.25rem; border-radius: 0.5rem; font-weight: 600; color: var(--ov-on-accent); background: var(--ov-accent); text-decoration: none; }
+.capabilities { margin: 0; padding: 0; list-style: none; }
+.capabilities li { margin: 0.25rem 0; }
+.capabilities code { margin-left: 0.25rem; font-size: 0.85rem; color: var(--ov-muted); }

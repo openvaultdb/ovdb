@@ -134,6 +134,7 @@ func New(opts Options) (*Handler, error) {
 		logins: newLoginLinks(opts.Now), sessions: newSessions(opts.Dirs.Runtime, opts.Now),
 		registry: registry,
 	}
+	s.protectAuthStore()
 	s.demo = &demo.Service{Dirs: opts.Dirs, Registry: registry, Seed: s.seedData, Now: opts.Now, Logf: logf(opts.ErrorLog, opts.Now)}
 
 	var h http.Handler = http.HandlerFunc(s.route)
@@ -224,12 +225,13 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 	case path == "/.well-known/openvaultdb" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		s.wellKnown(w)
 	case path == "/v1" || strings.HasPrefix(path, "/v1/"):
+		tokens := path == "/v1/tokens" || strings.HasPrefix(path, "/v1/tokens/")
 		if credentialOf(r) == credentialSession {
-			if path == "/v1/tokens" || strings.HasPrefix(path, "/v1/tokens/") {
-				// Parity E7: tokens come from the CLI (or, later, the
-				// connect flow's consent page), never from a console session.
+			if tokens {
+				// Parity E7: tokens come from the CLI, or from the connect
+				// flow's consent page, never from a console session.
 				envelope.Write(w, envelope.New(envelope.Forbidden, uicopy.T("api.session_tokens_not_allowed", nil)).
-					WithNext(envelope.Next{Label: uicopy.T("next.tokens_cli", nil), Command: "ovdb token list"}))
+					WithNext(envelope.Next{Label: uicopy.T("next.tokens_cli", nil), Command: tokensCommand(r.Method)}))
 				return
 			}
 			// The console acts as the owner: openvaultdb-go sees exactly
@@ -243,25 +245,44 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.data.ServeHTTP(w, r)
+		if tokens && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			s.protectAuthStore()
+		}
 	case path == loginPath:
 		s.login(w, r)
 	case path == logoutPath:
 		s.logout(w, r)
 	case path == pageCSSPath || path == submitJSPath:
 		pageAsset(w, r)
-	case path == "/authorize" || path == "/token":
-		// The connect flow needs a console session to approve anything;
-		// until increment 6 adds that check it is not offered at all.
-		// The body uses the /v1 error shape these routes belong to.
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write(envelope.Marshal(v1Error{Error: v1ErrorDetail{
-			Code: "not_supported", Message: uicopy.T("api.connect_not_supported", nil),
-		}}))
+	case path == authorizePath:
+		s.authorize(w, r)
+	case path == tokenPath:
+		// Exchanging a code needs no credential: the code is the credential.
+		// The response carries a bearer token, so it is never cached
+		// (RFC 6749 §5.1).
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		s.data.ServeHTTP(w, r)
+		if r.Method == http.MethodPost {
+			s.protectAuthStore()
+		}
 	case credentialOf(r) == credentialSession && path != signedOutPath:
 		s.console.ServeHTTP(w, r)
 	default:
 		s.landing(w, r)
+	}
+}
+
+// tokensCommand is the CLI command a console session is sent to instead of a
+// /v1/tokens request with method.
+func tokensCommand(method string) string {
+	switch method {
+	case http.MethodPost:
+		return "ovdb token create --db <database> --scope read-only"
+	case http.MethodDelete:
+		return "ovdb token revoke <token-id>"
+	default:
+		return "ovdb token list"
 	}
 }
 
@@ -322,13 +343,14 @@ func isJSON(r *http.Request) bool {
 	return err == nil && mediaType == "application/json"
 }
 
-// wellKnown is openvaultdb-go's discovery document without the connect
-// endpoints, which local mode does not serve until increment 6.
+// wellKnown is openvaultdb-go's discovery document, connect endpoints
+// included.
 func (s *localServer) wellKnown(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(envelope.Marshal(map[string]any{
 		"name": "OpenVaultDB", "protocol": "openvaultdb/0.1", "version": s.opts.Record.Version, "authEnabled": true,
+		"authorizeEndpoint": authorizePath, "tokenEndpoint": tokenPath,
 	}))
 }
 
@@ -560,7 +582,7 @@ func (s *localServer) putConfig(w http.ResponseWriter, r *http.Request) {
 	if change.Key == setup.KeyServerCORS && credentialOf(r) != credentialInstanceSecret {
 		// Parity E7: browser app origins are a CLI-only developer setting.
 		envelope.Write(w, envelope.New(envelope.Forbidden, uicopy.T("api.session_cors_not_allowed", nil)).
-			WithNext(envelope.Next{Label: uicopy.T("next.cors_cli", nil), Command: "ovdb config get " + setup.KeyServerCORS}))
+			WithNext(envelope.Next{Label: uicopy.T("next.cors_cli", nil), Command: "ovdb config set " + setup.KeyServerCORS + " <origins>"}))
 		return
 	}
 	document, err := setup.ApplyConfigChange(s.opts.Dirs, change, true)
