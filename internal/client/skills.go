@@ -65,6 +65,10 @@ func (l *Local) PlanSkill(request skills.InstallRequest) (SkillPlan, error) {
 	for i, t := range request.Targets {
 		if abs, err := filepath.Abs(t.SkillsDir); err == nil && t.Harness == "" && t.SkillsDir != "" {
 			request.Targets[i].SkillsDir = abs
+			if err := skills.CheckUnderHome(mustFind(request.Skill), env.Home, abs); err == nil {
+				// A --dir through the home's own link is used by its real path.
+				request.Targets[i].SkillsDir = skills.Canonical(abs)
+			}
 		}
 	}
 	d, targets, err := env.Resolve(request)
@@ -104,4 +108,9 @@ func (l *Local) DryRunSkill(ctx context.Context, plan SkillPlan) ([]byte, error)
 		return nil, err
 	}
 	return envelope.Marshal(document), nil
+}
+
+func mustFind(id string) skills.Definition {
+	d, _ := skills.Find(id)
+	return d
 }

@@ -149,7 +149,7 @@ func EnvFrom(getenv func(string) string) (Env, error) {
 		}
 	}
 	home, err := filepath.Abs(home)
-	return Env{Home: home, Getenv: getenv}, err
+	return Env{Home: Canonical(home), Getenv: getenv}, err
 }
 
 // Target is one place a skill can be installed: a harness's skills directory,
@@ -499,25 +499,53 @@ func outsideLayout(d Definition, dir string) *envelope.Error {
 // CheckUnderHome refuses a --dir that is not a directory inside home, so an
 // install never writes to system or other people's folders.
 func CheckUnderHome(d Definition, home, dir string) error {
+	next := envelope.Next{Label: uicopy.T("skills.next.harness", nil), Command: "ovdb skills install " + d.ID + " --harness claude"}
 	refused := envelope.New(envelope.InvalidArgument, installFailed(d)).
 		WithReason(uicopy.T("skills.dir_outside_home", map[string]string{"path": dir, "home": home})).
-		WithNext(envelope.Next{Label: uicopy.T("skills.next.harness", nil), Command: "ovdb skills install " + d.ID + " --harness claude"})
+		WithNext(next)
 	if !filepath.IsAbs(dir) || home == "" {
 		return refused
 	}
-	canonicalDir, err := skillsync.ValidateTarget(filepath.Clean(dir))
-	if err != nil {
+	throughLink := envelope.New(envelope.InvalidArgument, installFailed(d)).
+		WithReason(uicopy.T("skills.dir_through_symlink", map[string]string{"path": dir})).
+		WithNext(next)
+	realHome := Canonical(home)
+	realDir := Canonical(dir)
+	if !under(realHome, realDir) {
+		if under(realHome, filepath.Clean(dir)) {
+			// Inside the home by name, elsewhere through a link.
+			return throughLink
+		}
 		return refused
 	}
-	canonicalHome, err := skillsync.ValidateTarget(home)
-	if err != nil {
-		canonicalHome = filepath.Clean(home)
-	}
-	rel, err := filepath.Rel(canonicalHome, canonicalDir)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return refused
+	if _, err := skillsync.ValidateTarget(realDir); err != nil {
+		return throughLink
 	}
 	return nil
+}
+
+// under reports whether path is strictly inside dir.
+func under(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// Canonical is path with the symbolic links of its deepest existing
+// ancestor resolved, so a home reached through a link is used by its real
+// path (skillsync refuses symlinked ancestors).
+func Canonical(path string) string {
+	path = filepath.Clean(path)
+	rest := ""
+	for current := path; ; current = filepath.Dir(current) {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return path
+		}
+		rest = filepath.Join(filepath.Base(current), rest)
+	}
 }
 
 // describeRequest is the target t in e, for plans and results.

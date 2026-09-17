@@ -441,3 +441,39 @@ func TestInstallEntriesAskFirst(t *testing.T) {
 		t.Errorf("only %d install entries checked", found)
 	}
 }
+
+// Review F11: a home reached through a symbolic link is used by its real
+// path, so skills install there and --dir under it is inside the home; a
+// --dir through another link says so instead of "outside your home".
+func TestSymlinkedHome(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "homelink")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	vars := map[string]string{"HOME": link, "USERPROFILE": link}
+	e, err := EnvFrom(func(key string) string { return vars[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := filepath.EvalSymlinks(real)
+	if e.Home != canonical {
+		t.Errorf("home = %s, want %s", e.Home, canonical)
+	}
+	doc := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
+	if doc.Outcomes[0].Result != "added" {
+		t.Errorf("install = %+v", doc)
+	}
+	d, _ := Find(Storage)
+	if err := CheckUnderHome(d, e.Home, filepath.Join(link, "x", "skills")); err != nil {
+		t.Errorf("--dir through the home link = %v", err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(real, "elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	problem := envelope.As(CheckUnderHome(d, e.Home, filepath.Join(real, "elsewhere", "skills")))
+	if problem == nil || !strings.Contains(problem.Reason, "symbolic link") {
+		t.Errorf("--dir through a link = %+v", problem)
+	}
+}

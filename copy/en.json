@@ -474,6 +474,7 @@
   "skills.consent.changed": "changed since install — installing replaces your changes",
   "skills.consent.update_available": "update available — installing updates it",
   "skills.next.install_previewed": "Install it as shown (ask the person first)",
+  "skills.dir_through_symlink": "A folder on the way to {path} is a symbolic link. OVDB installs skills only through real folders; use the folder the link points to.",
   "result.hint.open_app": "o open the TODO app · Enter done",
   "next.connect_agent": "Connect an app or AI assistant",
   "next.setup_terminal": "Set up in the terminal",
