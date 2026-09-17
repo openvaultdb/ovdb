@@ -142,7 +142,10 @@ func (a *App) telemetryEnableCmd() *cobra.Command {
 				writeCollected(out, status)
 				say(out, "")
 				in, isFile := cmd.InOrStdin().(*os.File)
-				if jsonOut || a.getenv(EnvNonInteractive) != "" || !isFile || !a.isTerminal(in.Fd()) {
+				// Under a detected agent harness a terminal is not a person:
+				// the agent must relay the person's yes explicitly (review F3).
+				agent := telemetry.DetectChannel(a.getenv, a.Environ) == telemetry.ChannelAgent
+				if agent || jsonOut || a.getenv(EnvNonInteractive) != "" || !isFile || !a.isTerminal(in.Fd()) {
 					return setup.TelemetryConfirmationRequired()
 				}
 				_, _ = io.WriteString(cmd.ErrOrStderr(), uicopy.T("telemetry.enable.confirm", nil))

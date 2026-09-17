@@ -16,6 +16,7 @@ require (
 	charm.land/fang/v2 v2.0.1
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/creack/pty v1.1.24
 	github.com/dal-go/record v0.1.3
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.0
 	github.com/openvaultdb/openvaultdb-go v0.6.2
