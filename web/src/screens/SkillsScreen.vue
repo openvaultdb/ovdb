@@ -199,7 +199,13 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
           <div class="flex flex-wrap gap-3">
             <template v-for="item in result.next" :key="item.label">
               <a v-if="item.action === 'open_app'" href="/apps/todo/" :class="link">{{ item.label }}</a>
-              <a v-else-if="item.action === 'done'" href="/" :class="link" @click="go($event, '/')">{{ item.label }}</a>
+              <a
+                v-else-if="item.action === 'done'"
+                href="/"
+                :class="link"
+                @click="recordUsage({ event: 'onboarding_completed', step: 'skills' }); go($event, '/')"
+                >{{ item.label }}</a
+              >
             </template>
           </div>
           <div v-if="commands.length" class="flex flex-col gap-2">

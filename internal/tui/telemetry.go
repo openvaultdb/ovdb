@@ -26,6 +26,9 @@ type usageState struct {
 	message string
 	// status is Settings' telemetry document.
 	status telemetry.Status
+	// step is the onboarding step the current Result completed, recorded
+	// as onboarding_completed when the person chooses Done.
+	step string
 }
 
 type usageSetMsg struct {
@@ -43,8 +46,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return updated, cmd
 	}
-	if _, isKey := msg.(tea.KeyPressMsg); isKey {
-		next.recordChoice(before)
+	if press, isKey := msg.(tea.KeyPressMsg); isKey {
+		if next.recordChoice(before, press.String()) {
+			cmd = tea.Batch(cmd, next.flushCmd())
+		}
 		return next, cmd
 	}
 	switch msg.(type) {
@@ -55,14 +60,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	if next.screen == ScreenResult {
-		next = next.offerUsagePrompt()
+		next.usage.step = completedStep(msg)
+		// A Result that ran no action ("already installed") doesn't ask
+		// (review L5).
+		if _, loaded := msg.(demoLoadedMsg); !loaded {
+			next = next.offerUsagePrompt()
+		}
 	}
 	return next, tea.Batch(cmd, next.flushCmd())
 }
 
-// recordChoice records the Home option or storage type a key just chose.
-func (m Model) recordChoice(before Model) {
+// completedStep is the onboarding step a successful action's message
+// finished, "" for anything else.
+func completedStep(msg tea.Msg) string {
+	switch msg := msg.(type) {
+	case demoInstalledMsg:
+		return "demo"
+	case databaseResultMsg:
+		if !msg.removed && !msg.reloaded {
+			return "create"
+		}
+	case connectResultMsg:
+		return "connect"
+	case skillInstalledMsg:
+		return "skills"
+	}
+	return ""
+}
+
+// recordChoice records the Home option or storage type a key just chose,
+// and onboarding_completed when Done leaves a completed step's Result; it
+// reports whether that step ended (and should be flushed).
+func (m Model) recordChoice(before Model, key string) bool {
 	switch {
+	case before.screen == ScreenResult && m.screen != ScreenResult && key == "enter" && before.usage.step != "":
+		m.local.Telemetry.Record(telemetry.NewOnboardingCompleted(before.usage.step))
+		return true
 	case before.screen == ScreenHome && m.screen != ScreenHome && before.home.cursor < len(before.home.document.Options):
 		m.local.Telemetry.Record(telemetry.NewOptionSelected(before.home.document.Options[before.home.cursor].ID))
 	case before.screen == ScreenCreate && before.create.step == createChoose && m.create.step != createChoose && m.create.chosen.ID != "":
@@ -70,6 +103,7 @@ func (m Model) recordChoice(before Model) {
 	case before.screen == ScreenConnect && before.connect.step == connectChoose && m.connect.step != connectChoose && m.connect.chosen.ID != "":
 		m.local.Telemetry.Record(telemetry.NewEngineSelected(m.connect.chosen.ID))
 	}
+	return false
 }
 
 // offerUsagePrompt shows the prompt on this Result when it was never shown

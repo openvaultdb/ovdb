@@ -69,6 +69,7 @@ function go(event: MouseEvent, path: string) {
 }
 
 function home(event: MouseEvent) {
+  recordUsage({ event: 'onboarding_completed', step: 'demo' })
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
   navigate('/')

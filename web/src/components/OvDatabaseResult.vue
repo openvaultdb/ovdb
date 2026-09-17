@@ -13,12 +13,15 @@ import OvCommand from './OvCommand.vue'
 import OvNotice from './OvNotice.vue'
 import OvText from './OvText.vue'
 import OvUsagePrompt from './OvUsagePrompt.vue'
+import { recordUsage } from '../usage'
 
 const props = defineProps<{
   result: DatabaseResult
   title: string
   stored: string
   another: string
+  // The onboarding step this Result completes: create or connect.
+  step?: string
 }>()
 defineEmits<{ another: [] }>()
 
@@ -38,6 +41,11 @@ async function useAsDefault(id: string) {
   using.value = false
   if (response.ok) usedDefault.value = response.data.message ?? null
   else problem.value = response.error
+}
+
+function done(event: MouseEvent) {
+  recordUsage({ event: 'onboarding_completed', step: props.step ?? 'create' })
+  go(event, '/')
 }
 
 function go(event: MouseEvent, path: string) {
@@ -85,7 +93,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
             v-else-if="item.action === 'done'"
             href="/"
             class="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-hover"
-            @click="go($event, '/')"
+            @click="done($event)"
             >{{ item.label }}</a
           >
         </template>

@@ -54,7 +54,7 @@ const Other = "other"
 
 // Options are the onboarding choices, also used as error and completion
 // steps.
-var Options = []string{"demo", "create", "connect", "server", "browse", "explore", "skills", "settings"}
+var Options = []string{"demo", "create", "connect", "server", "browse", "explore", "skills", "settings", "databases"}
 
 // Engines are the storage engine ids ovdb offers.
 var Engines = []string{"ingitdb", "sqlite", "firestore", "mysql", "postgres"}

@@ -159,6 +159,7 @@ function another() {
     <!-- Result -->
     <div v-else-if="result" ref="outcome" tabindex="-1" data-testid="connect-result">
       <OvDatabaseResult
+        step="connect"
         :result="result"
         :title="t('database.connected.title', { name: result.database.id })"
         :stored="t(result.database.engine === 'sqlite' ? 'database.connected.stored_sqlite' : 'database.connected.stored', { location: result.database.location ?? '' })"

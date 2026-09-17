@@ -143,6 +143,18 @@ describe('usage statistics prompt', () => {
   })
 })
 
+describe('onboarding_completed', () => {
+  it('is recorded when the person chooses Done on a completed step (review L1)', async () => {
+    installFetch({
+      ...routes(),
+      'POST /api/local/v1/demo/install': () => json(201, { ...demo, installed: true, database: 'todo', next: [{ label: 'Done', action: 'done' }] }),
+    })
+    const wrapper = await installDemo()
+    await wrapper.findAll('a').find((a) => a.text() === 'Done')!.trigger('click', { button: 0 })
+    expect(bufferedUsage().at(-1)).toEqual({ event: 'onboarding_completed', step: 'demo' })
+  })
+})
+
 describe('Settings → Usage statistics', () => {
   it('shows the shared state and turns it off', async () => {
     const calls = installFetch({ ...routes('enabled', { reason_text: 'Usage statistics are unavailable in this build, so nothing is sent.' }), 'GET /api/local/v1/config': () => json(200, { schema: 1, config: { server: {} }, next: [] }) })

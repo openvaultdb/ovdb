@@ -238,3 +238,19 @@ func TestUsagePromptOnCreateResultFitsAt80x24(t *testing.T) {
 		}
 	}
 }
+
+// Review L1: Done on a successful Result records onboarding_completed with
+// its step, and the Databases option keeps its name.
+func TestUsageCompletedOnDoneAndDatabasesOption(t *testing.T) {
+	m, rec := withTelemetry(t, realModel(t, freePort(t)), "phc_test")
+	m = installDemo(t, m)
+	m = send(t, m, key("t"))
+	m = send(t, m, key("enter")) // Done
+	if got := rec.received(); got[len(got)-1] != "onboarding_completed" {
+		t.Fatalf("events = %v", got)
+	}
+	props := telemetry.NewOptionSelected("databases").Properties(telemetry.Meta{})
+	if props["option"] != "databases" {
+		t.Errorf("databases option = %v", props["option"])
+	}
+}
