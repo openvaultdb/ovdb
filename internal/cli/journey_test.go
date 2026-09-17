@@ -160,7 +160,7 @@ func TestJourneyCAgent(t *testing.T) {
 		t.Errorf("skill entry label = %q", last.Label)
 	}
 	// Without the person's yes an agent cannot install it, and nothing waits.
-	decodeError(t, e.run("skills", "install", "openvaultdb", "--json"), envelope.ConfirmationRequired)
+	_ = decodeError(t, e.run("skills", "install", "openvaultdb", "--json"), envelope.ConfirmationRequired)
 	e.ok("databases", "create", "notes", "--json")
 	if r := e.ok("use", "notes", "--json"); !strings.Contains(r.stdout, `"scope":"project"`) {
 		t.Errorf("use --json = %s", r.stdout)
