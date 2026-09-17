@@ -90,7 +90,8 @@ func TestJourneyATerminal(t *testing.T) {
 	}
 	press("enter", "enter") // Create a database → inGitDB
 	press("n", "o", "t", "e", "s")
-	if view := screenText(m); !strings.Contains(view, filepath.Join(e.dirs.Data, "notes")) {
+	// A long location wraps, so compare without whitespace.
+	if view := strings.ReplaceAll(screenText(m), " ", ""); !strings.Contains(view, filepath.Join(e.dirs.Data, "notes")) {
 		t.Fatalf("suggested location missing:\n%s", view)
 	}
 	press("enter", "enter")

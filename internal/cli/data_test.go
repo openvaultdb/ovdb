@@ -33,7 +33,9 @@ func (e *env) ok(args ...string) result {
 	e.t.Helper()
 	r := e.run(args...)
 	if r.code != 0 {
-		e.t.Fatalf("ovdb %s: exit %d\nstdout %s\nstderr %s", strings.Join(args, " "), r.code, r.stdout, r.stderr)
+		// The server log says why a /v1 call was an internal error.
+		serverLog, _ := os.ReadFile(filepath.Join(e.dirs.Runtime, "server.log"))
+		e.t.Fatalf("ovdb %s: exit %d\nstdout %s\nstderr %s\nserver.log:\n%s", strings.Join(args, " "), r.code, r.stdout, r.stderr, serverLog)
 	}
 	return r
 }
