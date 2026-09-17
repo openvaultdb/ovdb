@@ -3,6 +3,11 @@ package telemetry_test
 import (
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -73,36 +78,135 @@ var (
 	installIDValue = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 )
 
-// everyEvent builds every event from input, through the constructors and
-// through the web page's wire format.
-func everyEvent(input string) []telemetry.Event {
-	err := envelope.New(envelope.Code(input), input).WithReason(input)
-	events := []telemetry.Event{
-		telemetry.NewOnboardingStarted(),
-		telemetry.NewOptionSelected(input),
-		telemetry.NewEngineSelected(input),
-		telemetry.NewDatabaseCreated(input, true, -5*time.Second),
-		telemetry.NewDatabaseConnected(input, false, 1500*time.Millisecond),
-		telemetry.NewServerStarted(false, true, time.Hour),
-		telemetry.NewDemoInstalled(true, true),
-		telemetry.NewDemoOpened(false),
-		telemetry.NewSkillInstalled(input, input, true),
-		telemetry.NewExploreDataSelected(input, true),
-		telemetry.NewConsentEnabled(),
-		telemetry.NewOnboardingCompleted(input),
-		telemetry.NewOnboardingError(input, err),
-		telemetry.NewOnboardingError(input, errors.New(input)),
+// constructors registers every exported function of package telemetry that
+// returns an Event; TestEveryConstructorIsRegistered fails when one is
+// missing, so a new event or constructor cannot skip the allowlist test.
+var constructors = map[string]any{
+	"NewOnboardingStarted":   telemetry.NewOnboardingStarted,
+	"NewOptionSelected":      telemetry.NewOptionSelected,
+	"NewEngineSelected":      telemetry.NewEngineSelected,
+	"NewDatabaseCreated":     telemetry.NewDatabaseCreated,
+	"NewDatabaseConnected":   telemetry.NewDatabaseConnected,
+	"NewServerStarted":       telemetry.NewServerStarted,
+	"NewDemoInstalled":       telemetry.NewDemoInstalled,
+	"NewDemoOpened":          telemetry.NewDemoOpened,
+	"NewSkillInstalled":      telemetry.NewSkillInstalled,
+	"NewExploreDataSelected": telemetry.NewExploreDataSelected,
+	"NewConsentEnabled":      telemetry.NewConsentEnabled,
+	"NewOnboardingCompleted": telemetry.NewOnboardingCompleted,
+	"NewOnboardingError":     telemetry.NewOnboardingError,
+	"FromWire":               telemetry.FromWire,
+}
+
+// TestEveryConstructorIsRegistered reads the package source for exported
+// functions whose first result is Event (review F9).
+func TestEveryConstructorIsRegistered(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, name := range telemetry.Names {
-		w := telemetry.Wire{Event: string(name), Option: input, Engine: input, Skill: input, Harness: input,
-			Target: input, Step: input, ErrorCode: input, Success: true, DurationMS: -1}
-		e, ok := telemetry.FromWire(w)
-		if !ok {
-			panic("FromWire refused " + name)
+	found := 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
 		}
-		events = append(events, e)
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Results == nil {
+				continue
+			}
+			if ident, ok := fn.Type.Results.List[0].Type.(*ast.Ident); !ok || ident.Name != "Event" {
+				continue
+			}
+			found++
+			if _, ok := constructors[fn.Name.Name]; !ok {
+				t.Errorf("%s returns Event but is not in constructors: the allowlist test would skip it", fn.Name.Name)
+			}
+		}
+	}
+	if found != len(constructors) {
+		t.Errorf("source has %d Event constructors, registry %d", found, len(constructors))
+	}
+}
+
+// everyEvent calls every registered constructor by reflection with input
+// in every string (including every string field of a Wire, once per event
+// name), both booleans, a negative duration and an error carrying input.
+func everyEvent(input string) []telemetry.Event {
+	var events []telemetry.Event
+	for name, constructor := range constructors {
+		fn := reflect.ValueOf(constructor)
+		for _, flag := range []bool{true, false} {
+			for _, wireName := range wireNames(fn.Type()) {
+				args := make([]reflect.Value, fn.Type().NumIn())
+				for i := range args {
+					args[i] = argument(fn.Type().In(i), input, flag, wireName)
+				}
+				out := fn.Call(args)
+				if len(out) == 2 && !out[1].Bool() {
+					panic(name + " refused " + wireName)
+				}
+				events = append(events, out[0].Interface().(telemetry.Event))
+			}
+		}
 	}
 	return events
+}
+
+var (
+	durationType = reflect.TypeOf(time.Duration(0))
+	errorType    = reflect.TypeOf((*error)(nil)).Elem()
+	wireType     = reflect.TypeOf(telemetry.Wire{})
+)
+
+// wireNames is every event name for a function taking a Wire, else one
+// empty entry.
+func wireNames(fn reflect.Type) []string {
+	for i := 0; i < fn.NumIn(); i++ {
+		if fn.In(i) == wireType {
+			names := []string{}
+			for _, name := range telemetry.Names {
+				names = append(names, string(name))
+			}
+			return names
+		}
+	}
+	return []string{""}
+}
+
+func argument(typ reflect.Type, input string, flag bool, wireName string) reflect.Value {
+	switch {
+	case typ == durationType:
+		return reflect.ValueOf(-5 * time.Second)
+	case typ == errorType:
+		if flag {
+			return reflect.ValueOf(error(envelope.New(envelope.Code(input), input).WithReason(input)))
+		}
+		return reflect.ValueOf(errors.New(input))
+	case typ == wireType:
+		w := reflect.New(wireType).Elem()
+		for i := 0; i < w.NumField(); i++ {
+			switch w.Field(i).Kind() {
+			case reflect.String:
+				w.Field(i).SetString(input)
+			case reflect.Bool:
+				w.Field(i).SetBool(flag)
+			case reflect.Int64:
+				w.Field(i).SetInt(-1)
+			}
+		}
+		w.FieldByName("Event").SetString(wireName)
+		return w
+	case typ.Kind() == reflect.String:
+		return reflect.ValueOf(input).Convert(typ)
+	case typ.Kind() == reflect.Bool:
+		return reflect.ValueOf(flag)
+	}
+	panic("no hostile argument for " + typ.String())
 }
 
 func TestEveryEventCarriesOnlyAllowlistedKeysAndValues(t *testing.T) {
