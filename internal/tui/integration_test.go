@@ -93,6 +93,7 @@ func TestHomeServerStartOpenBrowserStop(t *testing.T) {
 
 	m = send(t, m, key("down"))  // past Try a demo
 	m = send(t, m, key("down"))  // past Create a database
+	m = send(t, m, key("down"))  // past Connect an existing database
 	m = send(t, m, key("enter")) // Home -> Server (not running)
 	if m.screen != ScreenServer || m.server.server.State != setup.StateNotRunning {
 		t.Fatalf("after opening Server screen: screen=%q state=%q", m.screen, m.server.server.State)
@@ -147,6 +148,7 @@ func TestPortConflictProblemThenUsePortRemedy(t *testing.T) {
 	m := realModel(t, port)
 	m = send(t, m, key("down"))  // past Try a demo
 	m = send(t, m, key("down"))  // past Create a database
+	m = send(t, m, key("down"))  // past Connect an existing database
 	m = send(t, m, key("enter")) // Home -> Server
 	m = send(t, m, key("enter")) // Start -> fails: port in use
 

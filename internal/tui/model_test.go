@@ -113,7 +113,8 @@ func TestInitLoadsHomeStatus(t *testing.T) {
 func TestHomeEnterOnStartServerLoadsServerScreen(t *testing.T) {
 	t.Parallel()
 	m := testModel(t, 80, 24)
-	m = send(t, m, key("down")) // Try a demo and Create a database come first
+	m = send(t, m, key("down")) // Try a demo, Create and Connect come first
+	m = send(t, m, key("down"))
 	m = send(t, m, key("down"))
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenServer {
@@ -132,9 +133,10 @@ func TestHomeDownThenEnterOpensSettings(t *testing.T) {
 	m := testModel(t, 80, 24)
 	m = send(t, m, key("down"))
 	m = send(t, m, key("down"))
+	m = send(t, m, key("down"))
 	m = send(t, m, key("down")) // Browse data is disabled without databases
-	if m.home.cursor != 4 {
-		t.Fatalf("cursor = %d, want 4", m.home.cursor)
+	if m.home.cursor != 5 {
+		t.Fatalf("cursor = %d, want 5", m.home.cursor)
 	}
 	m = send(t, m, key("enter"))
 	if m.screen != ScreenSettings {

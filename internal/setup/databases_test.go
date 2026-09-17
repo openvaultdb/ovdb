@@ -160,7 +160,7 @@ func TestCreateValidatesInput(t *testing.T) {
 	}
 	// PostgreSQL is honest about needing a manifest, with steps that work today.
 	_, err := f.registry.Create(CreateRequest{ID: "crm", Engine: EnginePostgres, Path: abs})
-	if e := envelope.As(err); e == nil || e.Next[0].Command != "ovdb init --engine postgres --id <name>" || e.Next[1].Command != "ovdb databases reload <name>" {
+	if e := envelope.As(err); e == nil || e.Next[0].Command != "ovdb init --engine postgres --id <name>" || e.Next[1].Command != "ovdb databases connect --manifest <absolute path>" {
 		t.Errorf("postgres = %+v", e)
 	}
 	for _, id := range []string{"notes", "a", "A_b-9", "0x"} {
@@ -209,7 +209,7 @@ func TestCreateInGitDBServesWithoutRestart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(want, "items")); err != nil {
 		t.Errorf("record not stored as files: %v", err)
 	}
-	if got := commands(result.Next); !slices.Equal(got, []string{"ovdb use notes", "ovdb databases", ""}) {
+	if got := commands(result.Next); !slices.Equal(got, []string{"ovdb list / --db notes", "ovdb use notes", "ovdb databases", ""}) {
 		t.Errorf("next = %+v", result.Next)
 	}
 	mounts, _ := ReadMounts(f.dirs.Runtime)

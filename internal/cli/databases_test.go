@@ -311,3 +311,98 @@ func TestLegacyDatabasesPaths(t *testing.T) {
 		t.Error("engines is offered without the gate")
 	}
 }
+
+// AC:connect-leaves-folder-untouched, AC:connect-postgres-manifest (the
+// missing-variable half) and AC:dsn-never-leaks for `ovdb databases
+// connect`, through a real detached server.
+func TestDatabasesConnectThroughTheServer(t *testing.T) {
+	e := previewEnv(t)
+
+	// Checks that need no server fail before starting one.
+	_ = decodeError(t, e.run("databases", "connect", "notes", "--json"), envelope.InvalidArgument)
+	_ = decodeError(t, e.run("databases", "connect", "--manifest", "crm.yaml", "--path", "/x", "--json"), envelope.InvalidArgument)
+	if _, err := os.Stat(filepath.Join(e.dirs.Runtime, "server.json")); !os.IsNotExist(err) {
+		t.Fatalf("a refused connect started the server: %v", err)
+	}
+
+	// An existing inGitDB folder: created, removed (its data kept), connected
+	// again under another name without a file changing.
+	if r := e.run("databases", "create", "source"); r.code != 0 {
+		t.Fatalf("create = %+v", r)
+	}
+	folder := filepath.Join(e.dirs.Data, "source")
+	if r := e.run("databases", "remove", "source", "--yes"); r.code != 0 {
+		t.Fatalf("remove = %+v", r)
+	}
+	before := tree(t, folder)
+	connected := e.run("databases", "connect", "journal", "--path", folder)
+	if connected.code != 0 {
+		t.Fatalf("connect = %+v", connected)
+	}
+	for _, want := range []string{"Connected database journal", "Your data stays where it is: " + folder, "What next?", "Browse data", "ovdb list / --db journal", "Done"} {
+		if !strings.Contains(connected.stdout, want) {
+			t.Errorf("connect output lacks %q:\n%s", want, connected.stdout)
+		}
+	}
+	if after := tree(t, folder); after != before {
+		t.Errorf("connect changed the folder:\nbefore %s\nafter  %s", before, after)
+	}
+	e.waitMounted()
+	if listed := e.run("databases", "--json"); !strings.Contains(listed.stdout, `"id":"journal"`) || strings.Contains(listed.stdout, "needs_attention") {
+		t.Errorf("databases = %s", listed.stdout)
+	}
+
+	// A text file named .sqlite is refused.
+	text := filepath.Join(t.TempDir(), "x.sqlite")
+	if err := os.WriteFile(text, []byte("hello\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	notSQLite := decodeError(t, e.run("databases", "connect", "x", "--engine", "sqlite", "--path", text, "--json"), envelope.StorageUnavailable)
+	if !strings.Contains(notSQLite.Reason, "isn't a SQLite database file") {
+		t.Errorf("x.sqlite = %+v", notSQLite)
+	}
+
+	// A PostgreSQL manifest whose variable the server lacks: the variable is
+	// named, nothing is registered, and --json is the API body.
+	manifestPath := filepath.Join(t.TempDir(), "crm.yaml")
+	if err := os.WriteFile(manifestPath, []byte("database:\n  id: crm\n  schema_mode: strict\nstorage:\n  engine: postgres\n"+
+		"  postgres:\n    dsn_env: OVDB_TEST_CRM_DSN\nschemas:\n  collections:\n    contacts:\n      fields:\n        name: {type: string}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := e.run("databases", "connect", "--manifest", manifestPath, "--json")
+	e2 := decodeError(t, missing, envelope.StorageUnavailable)
+	if !strings.Contains(e2.Reason, "OVDB_TEST_CRM_DSN") || e2.Next[0].Label != "Set OVDB_TEST_CRM_DSN and run `ovdb server restart` from that shell" {
+		t.Errorf("missing variable = %+v", e2)
+	}
+	body, _ := json.Marshal(setup.ConnectRequest{Manifest: manifestPath})
+	if want := e.apiBody(http.MethodPost, "/api/local/v1/databases/connect", string(body)); missing.stdout != want {
+		t.Errorf("--json\n got %s\nwant %s", missing.stdout, want)
+	}
+	if _, err := os.Stat(setup.ManifestPath(e.dirs.Home, "crm")); !os.IsNotExist(err) {
+		t.Errorf("crm registered: %v", err)
+	}
+}
+
+// tree lists every file under root with its size and modification time.
+func tree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		data := []byte{}
+		if !info.IsDir() {
+			if data, err = os.ReadFile(path); err != nil {
+				return err
+			}
+		}
+		rel, _ := filepath.Rel(root, path)
+		b.WriteString(rel + " " + info.ModTime().String() + " " + string(data) + "\n")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}

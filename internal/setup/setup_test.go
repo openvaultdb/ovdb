@@ -163,7 +163,7 @@ func TestHomeDocument(t *testing.T) {
 				keys = append(keys, option.Badge.LabelKey)
 			}
 		}
-		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "server/primary", "browse/secondary", "settings/secondary"}) {
+		if !slices.Equal(ids, []string{"demo/primary", "create/primary", "connect/primary", "server/primary", "browse/secondary", "settings/secondary"}) {
 			t.Errorf("options = %v", ids)
 		}
 		for _, key := range keys {
@@ -180,16 +180,16 @@ func TestHomeDocument(t *testing.T) {
 	if line := running.StatusLine[0]; line.Key != "home.status.server_running" || line.Params["address"] != "http://ovdb.localhost:7000" {
 		t.Errorf("running status line = %+v", line)
 	}
-	if badge := running.Options[2].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
+	if badge := running.Options[3].Badge; badge.Tone != "ok" || badge.LabelKey != "server.badge.running" {
 		t.Errorf("running badge = %+v", badge)
 	}
-	if badge := stopped.Options[2].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
+	if badge := stopped.Options[3].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
 		t.Errorf("stopped home = %+v", stopped)
 	}
-	if running.Options[2].DescriptionKey != "home.menu.server_help" || stopped.Options[2].DescriptionKey != "home.menu.server_help_stopped" {
-		t.Errorf("server help: running %q, stopped %q", running.Options[2].DescriptionKey, stopped.Options[2].DescriptionKey)
+	if running.Options[3].DescriptionKey != "home.menu.server_help" || stopped.Options[3].DescriptionKey != "home.menu.server_help_stopped" {
+		t.Errorf("server help: running %q, stopped %q", running.Options[3].DescriptionKey, stopped.Options[3].DescriptionKey)
 	}
-	if browse := running.Options[3]; !browse.Disabled || browse.DescriptionKey != "home.menu.needs_database" {
+	if browse := running.Options[4]; !browse.Disabled || browse.DescriptionKey != "home.menu.needs_database" {
 		t.Errorf("browse without databases = %+v", browse)
 	}
 	// A returning user: databases · current database · server, with Browse
@@ -203,10 +203,10 @@ func TestHomeDocument(t *testing.T) {
 	if got := strings.Join(summary, " · "); got != "2 databases · using notes (this project) · OVDB server running at http://ovdb.localhost:7000" {
 		t.Errorf("returning-user summary = %q", got)
 	}
-	if ids := []string{withDatabases.Options[3].ID, withDatabases.Options[4].ID}; ids[0] != "browse" || ids[1] != "databases" || withDatabases.Options[3].Disabled {
+	if ids := []string{withDatabases.Options[4].ID, withDatabases.Options[5].ID}; ids[0] != "browse" || ids[1] != "databases" || withDatabases.Options[4].Disabled {
 		t.Errorf("home with databases = %v", withDatabases.Options)
 	}
-	if option := running.Options[2]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
+	if option := running.Options[3]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
 		t.Errorf("server option = %+v", option)
 	}
 }

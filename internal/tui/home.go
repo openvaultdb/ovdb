@@ -32,6 +32,8 @@ func screenFor(id string) string {
 		return ScreenSettings
 	case "create":
 		return ScreenCreate
+	case "connect":
+		return ScreenConnect
 	case "databases":
 		return ScreenDatabases
 	case "browse":

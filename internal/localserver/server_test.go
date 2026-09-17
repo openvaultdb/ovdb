@@ -228,6 +228,11 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 	case e.method == http.MethodPost && e.path == "/api/local/v1/databases":
 		data, _ := json.Marshal(setup.CreateRequest{ID: "credentials", Path: filepath.Join(f.dirs.Data, "credentials")})
 		body = string(data)
+	case e.path == "/api/local/v1/databases/connect":
+		existing := filepath.Join(f.dirs.Data, "existing")
+		_ = os.MkdirAll(existing, 0o755)
+		data, _ := json.Marshal(setup.ConnectRequest{ID: "credentials-connect", Path: existing})
+		body = string(data)
 	case e.path == "/api/local/v1/demo/install":
 		body = `{"id":"credentials-demo"}`
 	}

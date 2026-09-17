@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
+
+	"github.com/openvaultdb/ovdb/internal/preview"
 )
 
 func newInitCmd() *cobra.Command {
@@ -14,6 +16,9 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create a database manifest",
+		Long: `Write a database manifest file for one of the five storage engines:
+ingitdb, sqlite, firestore, mysql or postgres. Server engines take their
+connection from an environment variable the manifest names, never the file.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// PostgreSQL and MySQL accept only strict mode, and every server
 			// engine takes its connection from the environment, never the file.
@@ -82,5 +87,8 @@ schemas:
 	cmd.Flags().StringVar(&storagePath, "path", "", "storage path (default derived from id)")
 	cmd.Flags().StringVar(&out, "out", "", "output manifest file (default <id>.yaml)")
 	_ = cmd.MarkFlagRequired("id")
+	if preview.On() {
+		cmd.Long += "\n\nEdit the file, then connect it to OVDB:\n  ovdb databases connect --manifest <absolute path>"
+	}
 	return cmd
 }

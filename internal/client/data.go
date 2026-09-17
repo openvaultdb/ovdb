@@ -16,6 +16,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/redact"
 	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
 // DataOp names one data API call for error mapping: what was attempted, on
@@ -230,6 +231,8 @@ var v1Codes = map[string]envelope.Code{
 	"authorization_unsupported": envelope.Unsupported,
 	"authorization_unavailable": envelope.StorageUnavailable,
 	"internal":                  envelope.Internal,
+	// Local mode's own: Git has no name and email to commit a write with.
+	setup.GitIdentityMissingCode: envelope.StorageUnavailable,
 }
 
 // noSchemaDeclared is how openvaultdb-go's strict mode says a collection
@@ -293,6 +296,8 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 		e = e.WithNext(
 			envelope.Next{Label: uicopy.T("next.describe_collection", map[string]string{"collection": datapath.Printable(collection.Name()), "database": op.Database}), Command: "ovdb databases reload " + op.Database},
 			envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases"})
+	case v1Code == setup.GitIdentityMissingCode:
+		e = e.WithNext(setup.GitIdentityNext()...)
 	case code == envelope.ValidationFailed:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.check_schema", nil), Command: "ovdb databases"})
 	default:
