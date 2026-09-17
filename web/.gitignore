@@ -1,0 +1,7 @@
+node_modules/
+
+# dist/ is the //go:embed target in embed.go. Everything in it is a build
+# artifact except the placeholder that lets `go build` succeed in a checkout
+# where `pnpm build` has never run — see embed.go's doc comment.
+dist/*
+!dist/.gitkeep
