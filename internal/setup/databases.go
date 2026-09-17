@@ -310,6 +310,33 @@ func (r *Registry) dropMount(manifestPath string) {
 	r.mounts = slices.DeleteFunc(r.mounts, func(m MountRecord) bool { return m.Manifest == manifestPath })
 }
 
+// AwaitMount waits while database id is still mounting after a start or
+// reload, up to its mount deadline, so a data request that arrives right after
+// a command auto-started the server finds the database served rather than
+// not found (database-context-navigation#REQ:data-commands-use-server). It
+// returns at once for a database in any other state, or none.
+func (r *Registry) AwaitMount(ctx context.Context, id string) {
+	deadline := time.Now().Add(r.mountTimeout + time.Second)
+	for {
+		r.mu.Lock()
+		mounting := false
+		for _, record := range r.mounts {
+			if strings.EqualFold(record.ID, id) && record.State == MountMounting {
+				mounting = true
+			}
+		}
+		r.mu.Unlock()
+		if !mounting || !time.Now().Before(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
 // Mounts is the current mount state.
 func (r *Registry) Mounts() *Mounts {
 	r.mu.Lock()

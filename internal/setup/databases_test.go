@@ -595,6 +595,57 @@ func TestUnreachableStorageDoesNotBlock(t *testing.T) {
 	registry.Close()
 }
 
+// A data request that arrives while a database is still mounting after a
+// start waits for it instead of finding it missing (seen on Windows, where
+// mounting is slower than an auto-started `ovdb list`).
+func TestAwaitMount(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	if _, err := f.create("todo", EngineInGitDB); err != nil {
+		t.Fatal(err)
+	}
+	f.registry.Close()
+	registry, err := OpenRegistry(f.dirs, server.New("test", nil), nil, RegistryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(registry.Close)
+	if db := stateOf(t, registry, "todo"); db.State != MountMounting {
+		t.Fatalf("before mounting = %+v", db)
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		registry.MountAll(context.Background())
+	}()
+	started := time.Now()
+	registry.AwaitMount(context.Background(), "TODO")
+	if db := stateOf(t, registry, "todo"); db.State != MountMounted || time.Since(started) < 90*time.Millisecond {
+		t.Errorf("after AwaitMount = %+v (%v)", db, time.Since(started))
+	}
+	// Nothing to wait for: an unknown or settled database returns at once.
+	started = time.Now()
+	registry.AwaitMount(context.Background(), "todo")
+	registry.AwaitMount(context.Background(), "nope")
+	if elapsed := time.Since(started); elapsed > 50*time.Millisecond {
+		t.Errorf("waited %v with nothing mounting", elapsed)
+	}
+}
+
+func stateOf(t *testing.T, registry *Registry, id string) Database {
+	t.Helper()
+	list, err := registry.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, db := range list {
+		if db.ID == id {
+			return db
+		}
+	}
+	t.Fatalf("%s not listed", id)
+	return Database{}
+}
+
 // F2: missing storage is reported, never recreated empty, and stays removable.
 func TestMissingStorageNeedsAttention(t *testing.T) {
 	t.Parallel()

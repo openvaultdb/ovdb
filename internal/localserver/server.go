@@ -237,6 +237,11 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 			r = r.Clone(r.Context())
 			r.Header.Set("Authorization", "Bearer "+s.opts.Secret)
 		}
+		if credential := credentialOf(r); credential != credentialNone && credential != credentialInvalid {
+			if id, ok := databaseOf(path); ok {
+				s.registry.AwaitMount(r.Context(), id)
+			}
+		}
 		s.data.ServeHTTP(w, r)
 	case path == loginPath:
 		s.login(w, r)
@@ -258,6 +263,17 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.landing(w, r)
 	}
+}
+
+// databaseOf is the database id a /v1/databases/{db}/… path names.
+func databaseOf(path string) (string, bool) {
+	rest, ok := strings.CutPrefix(path, "/v1/databases/")
+	if !ok {
+		return "", false
+	}
+	id, _, _ := strings.Cut(rest, "/")
+	id, err := url.PathUnescape(id)
+	return id, err == nil && id != ""
 }
 
 func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {

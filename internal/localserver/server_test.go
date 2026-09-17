@@ -398,3 +398,19 @@ func TestWellKnownOmitsConnectEndpoints(t *testing.T) {
 		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestDatabaseOf(t *testing.T) {
+	t.Parallel()
+	for path, want := range map[string]string{
+		"/v1/databases/todo":                      "todo",
+		"/v1/databases/todo/records/lists/to-buy": "todo",
+		"/v1/databases/my%20db/query":             "my db",
+		"/v1/databases/":                          "",
+		"/v1/databases":                           "",
+		"/v1/status":                              "",
+	} {
+		if got, ok := databaseOf(path); got != want || ok != (want != "") {
+			t.Errorf("databaseOf(%q) = %q, %v", path, got, ok)
+		}
+	}
+}
