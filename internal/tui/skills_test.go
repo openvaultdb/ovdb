@@ -73,7 +73,8 @@ func TestTodoSkillConsentAfterDemo(t *testing.T) {
 	m = send(t, m, key("down"))
 	m = send(t, m, key("enter")) // Install skill
 	view = flat(m.View().Content)
-	if m.screen != ScreenResult || !strings.Contains(view, "Installed the TODO AI skill") || !strings.Contains(strings.ReplaceAll(view, " ", ""), dir) {
+	if m.screen != ScreenResult || !strings.Contains(view, "Installed the TODO AI skill") || !strings.Contains(strings.ReplaceAll(view, " ", ""), dir) ||
+		!strings.Contains(view, "o open the TODO app · Enter done") {
 		t.Fatalf("installed:\n%s", view)
 	}
 	entries, _ := os.ReadDir(filepath.Join(home, ".claude", "skills"))

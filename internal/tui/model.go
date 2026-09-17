@@ -669,8 +669,13 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(uicopy.T("skills.hint.list", nil), m.width))
 	case m.screen == ScreenResult && len(m.result.next) > 0:
 		for _, n := range m.result.next {
-			if n.Action == demo.ActionOpenApp {
+			if n.Action == skills.ActionInstall {
 				return helpStyle.Render(wordWrap(uicopy.T("result.hint.demo", nil), m.width))
+			}
+		}
+		for _, n := range m.result.next {
+			if n.Action == demo.ActionOpenApp {
+				return helpStyle.Render(wordWrap(uicopy.T("result.hint.open_app", nil), m.width))
 			}
 		}
 		for _, n := range m.result.next {
