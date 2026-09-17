@@ -514,5 +514,6 @@
   "database.connect.not_ingitdb": "{path} isn't an inGitDB database: it has no .ingitdb folder. OVDB won't store records in another kind of folder, such as a code project.",
   "next.create_instead": "Create a new inGitDB database instead",
   "next.choose_ingitdb_folder": "Choose the database folder (the one with .ingitdb inside)",
-  "database.connect.path_not_plain": "its storage path doesn't resolve to one place. Write storage.path as a plain path."
+  "database.connect.path_not_plain": "its storage path doesn't resolve to one place. Write storage.path as a plain path.",
+  "database.connect.sqlite_busy": "{path} is in use by another program that has it locked, so OVDB can't read its tables. Try again when that program is done."
 }

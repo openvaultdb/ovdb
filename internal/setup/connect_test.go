@@ -698,3 +698,36 @@ func TestConcurrentConnectsOfOneStorageRegisterOnce(t *testing.T) {
 		t.Errorf("refused %d, registered %+v", refused, list)
 	}
 }
+
+// F7: a SQLite file another program holds locked is reported as busy, not as
+// something that isn't a SQLite file.
+func TestConnectBusySQLiteFileSaysSo(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	path := sqliteFile(t, `CREATE TABLE things (id TEXT PRIMARY KEY, title TEXT)`)
+	holder, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close() }()
+	conn, err := holder.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(context.Background(), `BEGIN EXCLUSIVE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(context.Background(), `INSERT INTO things (id, title) VALUES ('a', 'b')`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.registry.Connect(ConnectRequest{ID: "busy", Engine: EngineSQLite, Path: path})
+	e := envelope.As(err)
+	if e == nil || e.Code != envelope.StorageUnavailable || !strings.Contains(e.Reason, "in use by another program") || strings.Contains(e.Reason, "isn't a SQLite") {
+		t.Errorf("busy file = %v", err)
+	}
+	if !strings.Contains(f.logText(), "busy") && !strings.Contains(f.logText(), "locked") {
+		t.Errorf("the driver's error is not logged: %s", f.logText())
+	}
+	_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
+}

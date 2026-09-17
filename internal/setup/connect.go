@@ -20,7 +20,7 @@ import (
 	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"gopkg.in/yaml.v3"
-	_ "modernc.org/sqlite" // read-only look at an existing SQLite file's tables
+	"modernc.org/sqlite" // read-only look at an existing SQLite file's tables
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
@@ -310,7 +310,7 @@ func (r *Registry) planConnect(request ConnectRequest) (connectPlan, error) {
 		}
 	}
 	if request.Manifest == "" {
-		if err := plan.describe(request); err != nil {
+		if err := plan.describe(request, r.logf); err != nil {
 			return connectPlan{}, err
 		}
 	}
@@ -506,14 +506,15 @@ func checkExistingStorage(engine, location string) string {
 // describe builds the registry manifest for a folder or file: inGitDB
 // schemaless, as created; SQLite strict with its existing tables as
 // collections, so mounting adds no table to the file.
-func (plan *connectPlan) describe(request ConnectRequest) error {
+func (plan *connectPlan) describe(request ConnectRequest, logf func(string, ...any)) error {
 	create := CreateRequest{ID: request.ID, Engine: request.Engine, Path: request.Path}
 	text := newManifest(create)
 	if request.Engine == EngineSQLite {
 		collections, err := sqliteCollections(request.Path)
 		if err != nil {
+			logf("reading the tables of %s: %s", request.Path, redact.String(err.Error()))
 			return envelope.New(envelope.StorageUnavailable, connectFailed()).
-				WithReason(uicopy.T("database.connect.not_sqlite", map[string]string{"path": request.Path})).
+				WithReason(sqliteFailure(request.Path, err)).
 				WithNext(connectChooseLocation(request))
 		}
 		if len(collections) == 0 {
@@ -533,6 +534,30 @@ func (plan *connectPlan) describe(request ConnectRequest) error {
 	}
 	plan.manifest, plan.parsed = []byte(text), parsed
 	return nil
+}
+
+// SQLite result codes (the primary code, in the low byte).
+const (
+	sqliteBusy   = 5
+	sqliteLocked = 6
+	sqliteNotADB = 26
+)
+
+// sqliteFailure says why an existing SQLite file's tables could not be read:
+// busy or locked by another program, not a database, or the driver's words.
+func sqliteFailure(path string, err error) string {
+	params := map[string]string{"path": path}
+	var driverErr *sqlite.Error
+	if errors.As(err, &driverErr) {
+		switch driverErr.Code() & 0xff {
+		case sqliteBusy, sqliteLocked:
+			return uicopy.T("database.connect.sqlite_busy", params)
+		case sqliteNotADB:
+			return uicopy.T("database.connect.not_sqlite", params)
+		}
+	}
+	params["error"] = redact.String(err.Error())
+	return uicopy.T("database.connect.unreadable", params)
 }
 
 // sqliteColumn is one column of an existing table.
