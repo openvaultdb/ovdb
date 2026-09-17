@@ -473,6 +473,7 @@
   "skills.install.confirm_replace": "You changed {dirs} since OVDB installed it. Replace your changes with this version? [y/N] ",
   "skills.consent.changed": "changed since install — installing replaces your changes",
   "skills.consent.update_available": "update available — installing updates it",
+  "skills.next.install_previewed": "Install it as shown (ask the person first)",
   "result.hint.open_app": "o open the TODO app · Enter done",
   "next.connect_agent": "Connect an app or AI assistant",
   "next.setup_terminal": "Set up in the terminal",

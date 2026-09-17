@@ -186,6 +186,10 @@ func TestDryRunAndConflict(t *testing.T) {
 	if doc.Outcomes[0].Result != "added" {
 		t.Errorf("dry run = %+v", doc)
 	}
+	// Review F8: a dry run's next step is the install it previewed.
+	if len(doc.Next) != 1 || doc.Next[0].Command != "ovdb skills install todo-demo --harness codex" || !strings.HasSuffix(doc.Next[0].Label, "(ask the person first)") {
+		t.Errorf("dry run next = %+v", doc.Next)
+	}
 	if _, err := os.Stat(filepath.Join(e.Home, ".codex")); !os.IsNotExist(err) {
 		t.Errorf("dry run wrote %v", err)
 	}

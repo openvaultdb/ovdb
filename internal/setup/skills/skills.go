@@ -654,6 +654,22 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 		next = append(next, envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
 		return doc, envelope.New(code, installFailed(d)).WithReason(strings.Join(failures, " ")).WithNext(next...)
 	}
+	if dryRun {
+		// Nothing was installed: the next step is the install it previewed.
+		command := "ovdb skills install " + d.ID
+		for _, t := range targets {
+			if t.Harness != "" {
+				command += " --harness " + t.Harness
+			} else {
+				command += " --dir " + t.SkillsDir
+			}
+		}
+		if replaceChanged {
+			command += " --replace-changed"
+		}
+		doc.Next = []envelope.Next{{Label: uicopy.T("skills.next.install_previewed", nil), Command: command}}
+		return doc, nil
+	}
 	doc.Next = installedNext(d)
 	return doc, nil
 }
