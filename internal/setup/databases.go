@@ -749,6 +749,16 @@ func (r *Registry) provision(request CreateRequest) (string, error) {
 		}
 		// A Git history per write batch; inGitDB also works without git.
 		_ = exec.Command("git", "-C", request.Path, "init", "-q").Run()
+		// dalgo2ingitdb writes .ingitdb/ lazily, on the first record write.
+		// Creating it here, empty, marks the folder as inGitDB storage from
+		// the start: a database removed from OVDB before any write (Remove
+		// keeps data) still passes isInGitDBFolder and can be connected
+		// again. Both files dalgo2ingitdb later writes there
+		// (root-collections.yaml, settings.yaml) tolerate being absent, so
+		// an empty directory is exactly what a not-yet-written database has.
+		if err := os.MkdirAll(filepath.Join(request.Path, InGitDBDir), 0o755); err != nil {
+			return "", unavailable(err)
+		}
 	case EngineSQLite:
 		createdIfMissing(request.Path)
 		for _, suffix := range sqliteSidecars {
