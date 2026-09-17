@@ -105,7 +105,8 @@ func TestJourneyATerminal(t *testing.T) {
 		t.Fatalf("Result:\n%s", view)
 	}
 	press("u")
-	if view := screenText(m); !strings.Contains(view, "Now using notes for this project ("+project+")") || !strings.Contains(view, "Help improve OpenVaultDB?") {
+	// The title wraps a long project path (review L8): compare without spaces.
+	if view := screenText(m); !strings.Contains(strings.ReplaceAll(view, " ", ""), strings.ReplaceAll("Now using notes for this project ("+project+")", " ", "")) || !strings.Contains(view, "Help improve OpenVaultDB?") {
 		t.Fatalf("Use in this project:\n%s", view)
 	}
 	press("n") // the telemetry prompt: No thanks
