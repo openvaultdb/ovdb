@@ -1,0 +1,12 @@
+
+  Show status of a running OpenVaultDB server                                                                           
+         
+  USAGE  
+         
+    ovdb status [--flags]  
+         
+  FLAGS  
+         
+    -h --help  Help for status
+    --url      Server base URL (http://127.0.0.1:6832)
+

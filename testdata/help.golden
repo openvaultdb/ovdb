@@ -1,0 +1,25 @@
+
+  OpenVaultDB — user-owned, portable databases with pluggable engines                                                   
+         
+  USAGE  
+         
+    ovdb [command] [--flags]  
+            
+  COMMANDS  
+            
+    cloud [command] [--flags]      Authenticate and manage OpenVaultDB Cloud access
+    completion [command]           Generate the autocompletion script for the specified shell
+    databases [command] [--flags]  List databases mounted on a running OpenVaultDB server
+    help [command]                 Help about any command
+    init [--flags]                 Create a database manifest
+    self-update [--flags]          Update the installed ovdb binary to the latest release
+    serve [--flags]                Run the OpenVaultDB API server
+    status [--flags]               Show status of a running OpenVaultDB server
+    token [command] [--flags]      Manage scoped API tokens (talks to a running ovdb server)
+    version                        Print version, commit and build date
+         
+  FLAGS  
+         
+    -h --help                      Help for ovdb
+    -v --version                   Version for ovdb
+

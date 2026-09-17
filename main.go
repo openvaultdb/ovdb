@@ -6,12 +6,15 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
 	"github.com/strongo/buildinfo"
 	"github.com/strongo/buildinfo/fangcmd"
+
+	"github.com/openvaultdb/ovdb/internal/cli"
 )
 
 // appVersion is this build's bare semver, resolved once in main() from
@@ -47,6 +50,14 @@ func main() {
 
 	addRootCommands(root, info.Version)
 
+	// New (preview) commands fail with the shared error envelope, printed by
+	// cli.Render; every other error keeps fang's output.
+	fangOpts = append(fangOpts, fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
+		if !cli.Render(err, os.Args[1:], os.Stdout, w) {
+			fang.DefaultErrorHandler(w, styles, err)
+		}
+	}))
+
 	if err := fang.Execute(context.Background(), root, fangOpts...); err != nil {
 		os.Exit(commandExitCode(err))
 	}
@@ -68,13 +79,15 @@ func commandExitCode(err error) int {
 }
 
 func addRootCommands(root *cobra.Command, currentVersion string) {
+	app := &cli.App{Version: currentVersion}
 	root.AddCommand(
 		newCloudCmd(),
 		newServeCmd(),
 		newInitCmd(),
-		newStatusCmd(),
+		newStatusCmd(app),
 		newDatabasesCmd(),
 		newTokenCmd(),
 		newSelfUpdateCmd(currentVersion),
 	)
+	app.AddCommands(root)
 }

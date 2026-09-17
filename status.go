@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/openvaultdb/ovdb/internal/cli"
+	"github.com/openvaultdb/ovdb/internal/preview"
 )
 
 func fetchJSON(url string) (map[string]any, error) {
@@ -31,12 +34,18 @@ func fetchJSON(url string) (map[string]any, error) {
 	return out, nil
 }
 
-func newStatusCmd() *cobra.Command {
+func newStatusCmd(app *cli.App) *cobra.Command {
 	var url string
+	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show status of a running OpenVaultDB server",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// With the preview gate, status reports the whole local setup;
+			// --url keeps today's behaviour (first-run-onboarding#REQ:status-command).
+			if preview.On() && !cmd.Flags().Changed("url") {
+				return app.Status(cmd, jsonOut)
+			}
 			status, err := fetchJSON(url + "/v1/status")
 			if err != nil {
 				return err
@@ -47,5 +56,10 @@ func newStatusCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&url, "url", "http://"+DefaultAddr, "server base URL")
+	if preview.On() {
+		// Registered only behind the gate, so `ovdb status --help` and a
+		// stray --json behave exactly as before without it.
+		cmd.Flags().BoolVar(&jsonOut, "json", false, "print the local setup status as JSON")
+	}
 	return cmd
 }
