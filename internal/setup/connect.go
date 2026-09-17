@@ -510,6 +510,19 @@ func notInGitDB(request ConnectRequest, plan connectPlan) *envelope.Error {
 		WithNext(next...)
 }
 
+// sqliteSideFile is the database file location is a -journal, -wal or -shm
+// side file of, or "".
+func sqliteSideFile(location string) string {
+	for _, suffix := range sqliteSidecars {
+		if database, ok := strings.CutSuffix(location, suffix); ok {
+			if info, err := os.Stat(database); err == nil && !info.IsDir() {
+				return database
+			}
+		}
+	}
+	return ""
+}
+
 // sqliteHeader starts every SQLite database file.
 const sqliteHeader = "SQLite format 3\x00"
 
@@ -528,6 +541,9 @@ func checkExistingStorage(engine, location string) string {
 		return uicopy.T("database.connect.not_a_folder", params)
 	case engine == EngineSQLite && info.IsDir():
 		return uicopy.T("database.connect.not_sqlite", params)
+	case engine == EngineSQLite && sqliteSideFile(location) != "":
+		params["database"] = sqliteSideFile(location)
+		return uicopy.T("database.connect.sqlite_side_file", params)
 	case engine == EngineSQLite:
 		file, err := os.Open(location)
 		if err != nil {

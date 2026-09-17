@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -239,6 +240,9 @@ func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest,
 	if request.Engine == "" {
 		request.Engine = setup.EngineInGitDB
 	}
+	if home, err := os.UserHomeDir(); err == nil && request.Path != "" {
+		request.Path = paths.ExpandHome(request.Path, home)
+	}
 	if request.Path == "" {
 		request.Path = setup.DefaultPath(l.Dirs.Data, request.Engine, request.ID)
 	} else if abs, err := filepath.Abs(request.Path); err == nil {
@@ -261,7 +265,11 @@ func (l *Local) CreateDatabase(ctx context.Context, request setup.CreateRequest,
 // absolute against this client's working directory before they are sent
 // (REQ:client-values-and-mismatch).
 func (l *Local) ConnectDatabase(ctx context.Context, request setup.ConnectRequest, noStart bool) ([]byte, error) {
+	home, _ := os.UserHomeDir()
 	for _, path := range []*string{&request.Path, &request.Manifest} {
+		if *path != "" && home != "" {
+			*path = paths.ExpandHome(*path, home)
+		}
 		if *path != "" {
 			if abs, err := filepath.Abs(*path); err == nil {
 				*path = abs

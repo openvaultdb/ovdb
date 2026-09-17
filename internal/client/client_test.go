@@ -17,6 +17,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
 func testLocal(t *testing.T) (*Local, *bytes.Buffer) {
@@ -147,5 +148,21 @@ func TestMapV1InvalidKey(t *testing.T) {
 	if e.Code != envelope.InvalidArgument || !strings.Contains(e.Reason, "invalid key segment") || len(e.Next) != 2 ||
 		e.Next[1].Command != "ovdb list /lists/to-buy/items --db todo" {
 		t.Errorf("invalid_key = %+v", e)
+	}
+}
+
+// Review F10: a path typed with a leading ~ (the TUI and web have no shell
+// to expand it) means the home folder.
+func TestConnectExpandsHome(t *testing.T) {
+	t.Parallel()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home folder")
+	}
+	local := &Local{Dirs: paths.Dirs{Home: t.TempDir(), Runtime: t.TempDir(), Data: t.TempDir()}}
+	_, err = local.ConnectDatabase(context.Background(), setup.ConnectRequest{ID: "bad name", Engine: setup.EngineInGitDB, Path: "~/notes"}, true)
+	e := envelope.As(err)
+	if e == nil || !strings.Contains(e.Next[0].Command, filepath.Join(home, "notes")) {
+		t.Errorf("connect ~/notes = %v %+v", err, e)
 	}
 }

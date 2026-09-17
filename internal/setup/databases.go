@@ -628,8 +628,12 @@ func (r *Registry) locationInUse(request CreateRequest, registrations []Registra
 func (r *Registry) locationOverlaps(request CreateRequest, registrations []Registration) string {
 	target := resolved(request.Path)
 	for _, own := range []string{r.dirs.Home, r.dirs.Runtime} {
-		if dir := resolved(own); within(target, dir) || within(dir, target) {
+		dir := resolved(own)
+		switch {
+		case within(target, dir):
 			return uicopy.T("database.create.location_ovdb", map[string]string{"path": request.Path})
+		case within(dir, target):
+			return uicopy.T("database.create.location_contains_ovdb", map[string]string{"path": request.Path})
 		}
 	}
 	for _, reg := range registrations {

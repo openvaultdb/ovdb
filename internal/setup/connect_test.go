@@ -785,3 +785,30 @@ func TestConnectProbesAreBoundedAndUnlocked(t *testing.T) {
 		t.Fatal("connect did not time out")
 	}
 }
+
+// F10: a location that contains OVDB's own folders says so, and a SQLite
+// side file points to its database file.
+func TestConnectLocationCopy(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	_, err := f.registry.Connect(ConnectRequest{ID: "root", Engine: EngineInGitDB, Path: filepath.Dir(f.dirs.Home)})
+	if e := envelope.As(err); e == nil || !strings.Contains(e.Reason, "contains OVDB's own settings folders") {
+		t.Errorf("around OVDB home = %v", err)
+	}
+	_, err = f.registry.Connect(ConnectRequest{ID: "inside", Engine: EngineInGitDB, Path: filepath.Join(f.dirs.Home, "x")})
+	if e := envelope.As(err); e == nil || !strings.Contains(e.Reason, "is inside OVDB's own settings folders") {
+		t.Errorf("inside OVDB home = %v", err)
+	}
+	database := sqliteFile(t, `CREATE TABLE things (id TEXT PRIMARY KEY)`)
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		side := database + suffix
+		if err := os.WriteFile(side, []byte("side"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.registry.Connect(ConnectRequest{ID: "side", Engine: EngineSQLite, Path: side})
+		if e := envelope.As(err); e == nil || e.Code != envelope.StorageUnavailable || !strings.Contains(e.Reason, "connect "+database+" instead") {
+			t.Errorf("%s = %v", suffix, err)
+		}
+		_ = os.Remove(side)
+	}
+}

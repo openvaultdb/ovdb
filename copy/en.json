@@ -453,7 +453,7 @@
   "connect.location.label.ingitdb": "Folder",
   "connect.location.label.sqlite": "File",
   "connect.location.help.ingitdb": "The full path of an inGitDB database folder (it has a .ingitdb folder inside). OVDB doesn't change your files or Git history.",
-  "connect.location.help.sqlite": "The full path of a SQLite file you already have. OVDB changes nothing in it.",
+  "connect.location.help.sqlite": "The full path of a SQLite file you already have. OVDB doesn't change your data; while it's open, SQLite may keep its usual -wal and -shm files beside it.",
   "connect.manifest.label": "Manifest file",
   "connect.manifest.help": "The full path of the manifest file. OVDB keeps a copy and leaves the original as it is.",
   "connect.submit": "Connect database",
@@ -515,5 +515,7 @@
   "next.create_instead": "Create a new inGitDB database instead",
   "next.choose_ingitdb_folder": "Choose the database folder (the one with .ingitdb inside)",
   "database.connect.path_not_plain": "its storage path doesn't resolve to one place. Write storage.path as a plain path.",
-  "database.connect.sqlite_busy": "{path} is in use by another program that has it locked, so OVDB can't read its tables. Try again when that program is done."
+  "database.connect.sqlite_busy": "{path} is in use by another program that has it locked, so OVDB can't read its tables. Try again when that program is done.",
+  "database.create.location_contains_ovdb": "{path} contains OVDB's own settings folders. Keep your data somewhere else.",
+  "database.connect.sqlite_side_file": "{path} is one of SQLite's side files; connect {database} instead."
 }
