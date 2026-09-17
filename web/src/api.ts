@@ -162,6 +162,44 @@ export interface ConfigDocument {
   next: Next[]
 }
 
+/** explore-data-handoff: Explore data's intent-first menu, computed without writing anything. */
+export interface ExploreMenu {
+  schema: number
+  database: string
+  is_demo: boolean
+  datatug_cli_description_key: string
+  datatug_app_description_key: string
+}
+
+export interface EnvLine {
+  name: string
+  value: string
+}
+
+/** GET /api/local/v1/explore/datatug?db=…: choosing DataTug CLI. */
+export interface DataTugCLIDocument {
+  schema: number
+  on_path: boolean
+  collection: string
+  descriptor_path: string
+  descriptor: { baseUrl: string; databaseId: string; tokenEnv: string; principalId: string }
+  env_lines: EnvLine[]
+  shell: 'sh' | 'powershell'
+  shell_text: string
+  token_command: string
+  query_command: string
+  install_commands?: string[]
+  next: Next[]
+}
+
+/** Choosing DataTug.app: a static, local document (no server round trip). */
+export interface DataTugAppDocument {
+  schema: number
+  database: string
+  url: string
+  next: Next[]
+}
+
 export type Result<T> = { ok: true; data: T } | { ok: false; error: ApiError }
 
 /**

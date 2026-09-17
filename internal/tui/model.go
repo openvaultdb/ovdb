@@ -38,11 +38,12 @@ const (
 	ScreenBrowse    = "browse"
 	ScreenDemo      = "demo"
 	ScreenConnect   = "connect"
+	ScreenExplore   = "explore"
 )
 
 // ScreenIDs lists every screen id the TUI registers.
 func ScreenIDs() []string {
-	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo, ScreenConnect}
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases, ScreenBrowse, ScreenDemo, ScreenConnect, ScreenExplore}
 }
 
 // minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
@@ -76,6 +77,7 @@ type Model struct {
 	browse    browseScreen
 	demo      demoScreen
 	connect   connectScreen
+	explore   exploreScreen
 	// problemFrom is the screen whose request raised the current Problem,
 	// when its remedies return there.
 	problemFrom string
@@ -273,6 +275,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectEnginesMsg, connectResultMsg:
 		return m.updateConnectMsg(msg)
 
+	case exploreMenuMsg, exploreCLIMsg, exploreAppOpenedMsg:
+		return m.updateExploreMsg(msg)
+
 	case contextSetMsg:
 		m.busy = nil
 		m.pullNotices()
@@ -366,6 +371,8 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.updateDemo(key)
 	case ScreenConnect:
 		return m.updateConnect(key)
+	case ScreenExplore:
+		return m.updateExplore(key)
 	}
 	return m, nil
 }
@@ -412,6 +419,8 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 			return m.enterCreate()
 		case ScreenConnect:
 			return m.enterConnect()
+		case ScreenExplore:
+			return m.enterExplore()
 		case ScreenDatabases:
 			return m.enterDatabases()
 		case ScreenBrowse:
@@ -519,9 +528,9 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.openDemoCmd(), tickCmd())
 			}
 		}
-	case "b", "d", "u":
-		// "Browse data", "See your databases" and "Use it in this project",
-		// when the result offers them.
+	case "b", "d", "u", "e":
+		// "Browse data", "See your databases", "Use it in this project" and
+		// "Explore data", when the result offers them.
 		for _, n := range m.result.next {
 			switch {
 			case key == "b" && n.Action == setup.ActionBrowse:
@@ -531,6 +540,12 @@ func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 				return m.enterDatabases()
 			case key == "u" && n.Action == setup.ActionUse:
 				return m.useInProject(strings.TrimPrefix(n.Command, "ovdb use "))
+			case key == "e" && n.Action == demo.ActionExplore:
+				// The command names the database ("ovdb explore --db
+				// todo"): explore that one specifically, not whatever the
+				// current context resolves to (review-inc-7.md F6).
+				fields := strings.Fields(n.Command)
+				return m.exploreDatabase(fields[len(fields)-1])
 			}
 		}
 	case "enter", "esc", "backspace":
@@ -601,6 +616,8 @@ func (m Model) View() tea.View {
 		body = m.viewDemo()
 	case m.screen == ScreenConnect:
 		body = m.viewConnect()
+	case m.screen == ScreenExplore:
+		body = m.viewExplore()
 	}
 	sections := []string{header, body}
 	if len(m.noticeLines) > 0 {
@@ -639,6 +656,12 @@ func (m Model) footer() string {
 		return helpStyle.Render(wordWrap(m.browseFooter(), m.width))
 	case m.screen == ScreenDemo:
 		return helpStyle.Render(wordWrap(uicopy.T("demo.hint.install", nil), m.width))
+	case m.screen == ScreenExplore && m.explore.view == exploreCLIView:
+		return helpStyle.Render(wordWrap(uicopy.T("explore.hint.cli", nil), m.width))
+	case m.screen == ScreenExplore && m.explore.view == exploreAppView:
+		return helpStyle.Render(wordWrap(uicopy.T("explore.hint.app", nil), m.width))
+	case m.screen == ScreenExplore:
+		return helpStyle.Render(wordWrap(uicopy.T("explore.hint.menu", nil), m.width))
 	case m.screen == ScreenResult && len(m.result.next) > 0:
 		for _, n := range m.result.next {
 			if n.Action == demo.ActionOpenApp {

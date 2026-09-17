@@ -35,6 +35,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
 )
 
 // Local API paths.
@@ -68,6 +69,11 @@ type Local struct {
 	// ConsoleBuilt reports whether this binary embeds the web console and
 	// TODO app; web.Built when nil.
 	ConsoleBuilt func() bool
+	// DataTugLookPath resolves whether datatug is on this process's own
+	// PATH for Explore data (capability row 22); exec.LookPath when nil.
+	// The CLI and TUI run in this process, so PrepareDataTugCLI uses it to
+	// override whatever the server itself saw (review-inc-7.md F2).
+	DataTugLookPath explore.LookPath
 }
 
 func (l *Local) notice(line string) {

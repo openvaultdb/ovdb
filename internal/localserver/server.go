@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
 	"github.com/openvaultdb/ovdb/web"
 )
 
@@ -60,6 +62,9 @@ type Options struct {
 	// MountTimeout bounds each registered database's mount;
 	// setup.DefaultMountTimeout when zero.
 	MountTimeout time.Duration
+	// DataTugLookPath resolves whether datatug is on PATH for Explore data
+	// (capability row 22); exec.LookPath when nil (tests).
+	DataTugLookPath explore.LookPath
 }
 
 type localServer struct {
@@ -179,6 +184,7 @@ var endpoints = []endpoint{
 	{http.MethodPut, "/api/local/v1/context", accessOwner, (*localServer).putContext},
 	{http.MethodGet, "/api/local/v1/demo", accessOwner, (*localServer).getDemo},
 	{http.MethodPost, "/api/local/v1/demo/install", accessOwner, (*localServer).installDemo},
+	{http.MethodPost, "/api/local/v1/explore/datatug", accessOwner, (*localServer).exploreDataTug},
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -566,6 +572,73 @@ func (s *localServer) installDemo(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK
 	}
 	envelope.WriteJSON(w, status, document)
+}
+
+// exploreDataTug chooses DataTug CLI (capability row 22,
+// explore-data-handoff#REQ:prepare-datatug-cli-connection): it checks
+// datatug on PATH, and writes db's four-key descriptor with no token, so it
+// is called only when the person actually chooses DataTug CLI, never while
+// the Explore data menu itself is open. It is a POST, not a GET, precisely
+// because it writes: a GET is a safe method under
+// http.CrossOriginProtection and would otherwise let a plain cross-site
+// top-level navigation (any link) write the descriptor (review-inc-7.md F9).
+func (s *localServer) exploreDataTug(w http.ResponseWriter, r *http.Request) {
+	databases, err := s.registry.List()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	db := r.URL.Query().Get("db")
+	if !slices.Contains(setup.DatabaseIDs(databases), db) {
+		writeError(w, explore.DatabaseNotFound(db))
+		return
+	}
+	collections, err := s.rootCollections(r.Context(), db)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	isDemo := explore.IsDemo(s.opts.Dirs.Home, db, databases)
+	collection, collectionErr := explore.ResolveCollection(isDemo, r.URL.Query().Get("collection"), collections, db)
+	if collectionErr != nil {
+		writeError(w, collectionErr)
+		return
+	}
+	result, err := explore.Prepare(s.opts.DataTugLookPath, s.opts.Dirs.Home, setup.FallbackAddress(s.opts.Record.Port), db, collection)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	envelope.WriteJSON(w, http.StatusOK, result)
+}
+
+// rootCollections lists db's root collections through the data API, as the
+// owner, so Explore data can require --collection when there is more than
+// one and default when there is exactly one (review-inc-7.md F5).
+func (s *localServer) rootCollections(ctx context.Context, db string) ([]string, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "/v1/databases/"+url.PathEscape(db), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+s.opts.Secret)
+	recorder := httptest.NewRecorder()
+	s.data.ServeHTTP(recorder, request)
+	if recorder.Code >= http.StatusMultipleChoices {
+		var failure v1Error
+		_ = json.Unmarshal(recorder.Body.Bytes(), &failure)
+		message := failure.Error.Message
+		if message == "" {
+			message = http.StatusText(recorder.Code)
+		}
+		return nil, fmt.Errorf("%s", message)
+	}
+	var document struct {
+		Collections []string `json:"collections"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
+		return nil, err
+	}
+	return document.Collections, nil
 }
 
 // seedData writes the demo's records in one batch through the data API, as
