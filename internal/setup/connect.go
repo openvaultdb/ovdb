@@ -309,6 +309,9 @@ func (r *Registry) planConnect(request ConnectRequest) (connectPlan, error) {
 			}
 			return connectPlan{}, envelope.New(envelope.StorageUnavailable, connectFailed()).WithReason(reason).WithNext(next)
 		}
+		if plan.engine == EngineInGitDB && !isInGitDBFolder(plan.location) {
+			return connectPlan{}, notInGitDB(request, plan)
+		}
 	}
 	if request.Manifest == "" {
 		if err := plan.describe(request); err != nil {
@@ -421,6 +424,36 @@ func mapValue(node *yaml.Node, key string) *yaml.Node {
 		}
 	}
 	return nil
+}
+
+// InGitDBDir is the folder that makes a folder an inGitDB database.
+const InGitDBDir = ".ingitdb"
+
+// isInGitDBFolder reports whether folder holds an inGitDB database: a
+// .ingitdb folder. Any other folder, such as a code project's Git
+// repository, would get OVDB's records committed into it on the first write
+// (database-setup-and-providers#REQ:connect-existing-storage).
+func isInGitDBFolder(folder string) bool {
+	info, err := os.Stat(filepath.Join(folder, InGitDBDir))
+	return err == nil && info.IsDir()
+}
+
+// notInGitDB refuses a folder without .ingitdb, pointing to Create or to
+// the database folder itself.
+func notInGitDB(request ConnectRequest, plan connectPlan) *envelope.Error {
+	id := plan.id
+	if !idPattern.MatchString(id) {
+		id = "<name>"
+	}
+	next := []envelope.Next{{Label: uicopy.T("next.create_instead", nil), Command: "ovdb databases create " + id}}
+	if request.Manifest != "" {
+		next = append(next, connectChooseManifest())
+	} else {
+		next = append(next, envelope.Next{Label: uicopy.T("next.choose_ingitdb_folder", nil), Command: connectChooseLocation(request).Command, Action: ActionEditLocation})
+	}
+	return envelope.New(envelope.InvalidArgument, connectFailed()).
+		WithReason(uicopy.T("database.connect.not_ingitdb", map[string]string{"path": plan.location})).
+		WithNext(next...)
 }
 
 // sqliteHeader starts every SQLite database file.

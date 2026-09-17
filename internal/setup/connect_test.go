@@ -346,7 +346,7 @@ func TestConnectManifestCopiesWithAbsolutePaths(t *testing.T) {
 	t.Parallel()
 	f := newRegistry(t)
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "data", "journal"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "data", "journal", InGitDBDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	manifestPath := filepath.Join(dir, "journal.yaml")
@@ -369,7 +369,7 @@ func TestConnectManifestCopiesWithAbsolutePaths(t *testing.T) {
 	if original, _ := os.ReadFile(manifestPath); string(original) != text {
 		t.Errorf("original changed:\n%s", original)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(dir, "data", "journal")); len(entries) != 0 {
+	if entries, _ := os.ReadDir(filepath.Join(dir, "data", "journal")); len(entries) != 1 {
 		t.Errorf("connect wrote into the folder: %v", entries)
 	}
 
@@ -486,5 +486,42 @@ func TestMaskEnvironmentValues(t *testing.T) {
 	got := maskValues(`parse "a\"b s3cret" failed: a"b s3cret; short ab`, []string{`a"b s3cret`, "ab", ""})
 	if strings.Contains(got, "s3cret") || !strings.Contains(got, "short ab") {
 		t.Errorf("masked = %q", got)
+	}
+}
+
+// F2: a folder that is not an inGitDB database (a code project's Git
+// repository, an empty folder) is refused with invalid_argument and next
+// steps, and nothing in it changes.
+func TestConnectRefusesAFolderThatIsNotInGitDB(t *testing.T) {
+	withGlobalGitIdentity(t)
+	requireGit(t)
+	f := newRegistry(t)
+	project := filepath.Join(t.TempDir(), "proj")
+	for name, text := range map[string]string{"src/main.go": "package main\n", "README.md": "# proj\n", "docs/a.yaml": "a: 1\n"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(project, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(project, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-q", "-m", "Project"}} {
+		if out, err := exec.Command("git", append([]string{"-C", project}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	empty := t.TempDir()
+	for _, folder := range []string{project, empty} {
+		before := snapshot(t, folder)
+		_, err := f.registry.Connect(ConnectRequest{ID: "proj", Engine: EngineInGitDB, Path: folder})
+		e := envelope.As(err)
+		if e == nil || e.Code != envelope.InvalidArgument || !strings.Contains(e.Reason, "isn't an inGitDB database") ||
+			!slices.Contains(commands(e.Next), "ovdb databases create proj") || !slices.ContainsFunc(e.Next, func(n envelope.Next) bool { return n.Action == ActionEditLocation }) {
+			t.Errorf("%s: Connect = %v %+v", folder, err, e)
+		}
+		sameSnapshot(t, folder, before, snapshot(t, folder))
+	}
+	if list, _ := f.registry.List(); len(list) != 0 {
+		t.Errorf("registered: %+v", list)
 	}
 }

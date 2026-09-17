@@ -126,7 +126,7 @@ func TestCreateManifestStepsLeadToConnect(t *testing.T) {
 func TestConnectThroughTheServer(t *testing.T) {
 	m := realModel(t, freePort(t))
 	folder := filepath.Join(t.TempDir(), "journal")
-	if err := os.MkdirAll(folder, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(folder, setup.InGitDBDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(folder, "keep.txt"), []byte("mine"), 0o600); err != nil {
@@ -166,7 +166,7 @@ func TestConnectThroughTheServer(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if !slices.Equal(names, []string{"keep.txt"}) {
+	if !slices.Equal(names, []string{setup.InGitDBDir, "keep.txt"}) {
 		t.Errorf("connect wrote into the folder: %v", names)
 	}
 	m = send(t, m, key("b"))

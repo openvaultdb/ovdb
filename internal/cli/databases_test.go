@@ -334,6 +334,10 @@ func TestDatabasesConnectThroughTheServer(t *testing.T) {
 	if r := e.run("databases", "remove", "source", "--yes"); r.code != 0 {
 		t.Fatalf("remove = %+v", r)
 	}
+	// An inGitDB database folder: .ingitdb appears with its first record.
+	if err := os.MkdirAll(filepath.Join(folder, setup.InGitDBDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	before := tree(t, folder)
 	connected := e.run("databases", "connect", "journal", "--path", folder)
 	if connected.code != 0 {

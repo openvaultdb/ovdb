@@ -230,7 +230,7 @@ func endpointRequest(f *fixture, e endpoint) (path, body string) {
 		body = string(data)
 	case e.path == "/api/local/v1/databases/connect":
 		existing := filepath.Join(f.dirs.Data, "existing")
-		_ = os.MkdirAll(existing, 0o755)
+		_ = os.MkdirAll(filepath.Join(existing, setup.InGitDBDir), 0o755)
 		data, _ := json.Marshal(setup.ConnectRequest{ID: "credentials-connect", Path: existing})
 		body = string(data)
 	case e.path == "/api/local/v1/demo/install":

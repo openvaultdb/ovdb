@@ -27,7 +27,7 @@ func TestWriteWithoutGitIdentityExplainsTheFix(t *testing.T) {
 	}
 	f := newFixture(t)
 	repo := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, setup.InGitDBDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command("git", "-C", repo, "init", "-q").CombinedOutput(); err != nil {

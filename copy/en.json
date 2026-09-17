@@ -452,7 +452,7 @@
   "connect.manifest_option_help": "Any storage: inGitDB, SQLite, Firestore, MySQL or PostgreSQL.",
   "connect.location.label.ingitdb": "Folder",
   "connect.location.label.sqlite": "File",
-  "connect.location.help.ingitdb": "The full path of an inGitDB folder you already have. OVDB changes nothing in it.",
+  "connect.location.help.ingitdb": "The full path of an inGitDB database folder (it has a .ingitdb folder inside). OVDB changes nothing in it.",
   "connect.location.help.sqlite": "The full path of a SQLite file you already have. OVDB changes nothing in it.",
   "connect.manifest.label": "Manifest file",
   "connect.manifest.help": "The full path of the manifest file. OVDB keeps a copy and leaves the original as it is.",
@@ -510,5 +510,8 @@
   "capability.in_collection": "{capability} in {collection}",
   "connect.server_capability": "{capability} can't be granted for one database. Ask the app's developer to remove it from the connect link.",
   "token.create_db_without_db": "A token that creates databases works for the whole server, so it can't name a database.",
-  "next.token_create_db": "Create a database-creating token without --db"
+  "next.token_create_db": "Create a database-creating token without --db",
+  "database.connect.not_ingitdb": "{path} isn't an inGitDB database: it has no .ingitdb folder. OVDB won't store records in another kind of folder, such as a code project.",
+  "next.create_instead": "Create a new inGitDB database instead",
+  "next.choose_ingitdb_folder": "Choose the database folder (the one with .ingitdb inside)"
 }
