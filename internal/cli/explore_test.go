@@ -12,7 +12,11 @@ import (
 )
 
 // explore-data-handoff#AC:menu-asks-intent-first: the bare command names the
-// database and presents both tools before any file is written.
+// database and presents both tools before any file is written, for a
+// non-demo database (the AC's own example, `notes`), with real "what works
+// today" copy — not the option's own label repeated as its description
+// (review-inc-7.md F3: the original version of this test enshrined that bug
+// by asserting the label key).
 func TestExploreMenuNamesCurrentDatabase(t *testing.T) {
 	e, _, _ := dataEnv(t)
 	r := e.ok("explore", "--db", "notes", "--json")
@@ -20,11 +24,24 @@ func TestExploreMenuNamesCurrentDatabase(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.stdout), &menu); err != nil {
 		t.Fatalf("decode: %v\n%s", err, r.stdout)
 	}
-	if menu.Database != "notes" || menu.IsDemo || menu.DataTugCLIKey != "explore.menu.datatug_cli" {
+	if menu.Database != "notes" || menu.IsDemo {
 		t.Errorf("menu = %+v", menu)
+	}
+	if menu.DataTugCLIKey != "explore.menu.datatug_cli_help" {
+		t.Errorf("datatug_cli_description_key = %q, want the help key, not the label", menu.DataTugCLIKey)
+	}
+	if menu.DataTugAppKey != "explore.menu.datatug_app_help" {
+		t.Errorf("datatug_app_description_key = %q, want the help key, not the label", menu.DataTugAppKey)
 	}
 	if !strings.Contains(r.stdout, `"database":"notes"`) {
 		t.Errorf("stdout = %s", r.stdout)
+	}
+	human := e.ok("explore", "--db", "notes")
+	if strings.Contains(human.stdout, "In the terminal with DataTug CLI\n    In the terminal with DataTug CLI") {
+		t.Errorf("the option's description repeats its own label:\n%s", human.stdout)
+	}
+	if !strings.Contains(human.stdout, "Read-only DTQL queries on root collections") {
+		t.Errorf("human output lacks the real DataTug CLI description:\n%s", human.stdout)
 	}
 }
 

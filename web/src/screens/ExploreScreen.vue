@@ -27,6 +27,7 @@ const cliLoading = ref(false)
 const cliProblem = ref<ApiError | null>(null)
 
 const datatugCLIHelp = computed(() => (menu.value ? t(menu.value.datatug_cli_description_key) : ''))
+const datatugAppHelp = computed(() => (menu.value ? t(menu.value.datatug_app_description_key) : ''))
 
 async function currentDatabase(): Promise<string | null> {
   const fromQuery = new URLSearchParams(window.location.search).get('db')
@@ -44,7 +45,18 @@ onMounted(async () => {
   database.value = db
   const demo = await api<DemoDocument>('GET', '/api/local/v1/demo')
   const isDemo = demo.ok && demo.data.installed && demo.data.database === db
-  menu.value = { schema: 1, database: db, is_demo: isDemo, datatug_cli_description_key: isDemo ? 'explore.menu.datatug_cli_demo' : 'explore.menu.datatug_cli', datatug_app_description_key: 'explore.menu.datatug_app_help' }
+  // Mirrors internal/setup/explore.NewMenu exactly: there is no read-only
+  // menu endpoint (GET .../explore/datatug also writes the descriptor, so
+  // the menu step never calls it — REQ:intent-first-menu's "before any file
+  // is written"), so the two keys are real "what works today" copy, never
+  // the option's own label (review-inc-7.md F3).
+  menu.value = {
+    schema: 1,
+    database: db,
+    is_demo: isDemo,
+    datatug_cli_description_key: isDemo ? 'explore.menu.datatug_cli_demo' : 'explore.menu.datatug_cli_help',
+    datatug_app_description_key: 'explore.menu.datatug_app_help',
+  }
 })
 
 async function chooseDataTugCLI() {
@@ -95,7 +107,7 @@ function backToMenu() {
           @click="chooseDataTugApp"
         >
           <span class="text-lg font-semibold text-ink">{{ t('explore.menu.datatug_app') }}</span>
-          <span class="text-muted">{{ t('explore.menu.datatug_app_help') }}</span>
+          <span class="text-muted">{{ datatugAppHelp }}</span>
         </button>
       </div>
     </template>

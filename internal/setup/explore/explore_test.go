@@ -171,13 +171,21 @@ func TestPrepareDataTugMissingShowsInstallCommands(t *testing.T) {
 	}
 }
 
+// F3 (review-inc-7.md): both description keys must be real "what works
+// today" copy — the *_help keys — never an option's own label key.
 func TestNewMenuDemoCopy(t *testing.T) {
 	menu := NewMenu("todo", true)
-	if menu.DataTugCLIKey != "explore.menu.datatug_cli_demo" || menu.DataTugAppKey != "explore.menu.datatug_app" || !menu.IsDemo {
+	if menu.DataTugCLIKey != "explore.menu.datatug_cli_demo" || menu.DataTugAppKey != "explore.menu.datatug_app_help" || !menu.IsDemo {
 		t.Errorf("demo menu = %+v", menu)
 	}
 	generic := NewMenu("notes", false)
-	if generic.DataTugCLIKey != "explore.menu.datatug_cli" || generic.IsDemo {
+	if generic.DataTugCLIKey != "explore.menu.datatug_cli_help" || generic.DataTugAppKey != "explore.menu.datatug_app_help" || generic.IsDemo {
 		t.Errorf("generic menu = %+v", generic)
+	}
+	// Neither key may equal the option's own label key.
+	for _, key := range []string{menu.DataTugCLIKey, menu.DataTugAppKey, generic.DataTugCLIKey, generic.DataTugAppKey} {
+		if key == "explore.menu.datatug_cli" || key == "explore.menu.datatug_app" {
+			t.Errorf("description key %q is a label key, not a description", key)
+		}
 	}
 }

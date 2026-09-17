@@ -190,7 +190,7 @@ func (m Model) viewExplore() string {
 		b.WriteString("\n\n")
 		options := [2]struct{ label, help string }{
 			{uicopy.T("explore.menu.datatug_cli", nil), uicopy.T(m.explore.menu.DataTugCLIKey, nil)},
-			{uicopy.T("explore.menu.datatug_app", nil), uicopy.T("explore.menu.datatug_app_help", nil)},
+			{uicopy.T("explore.menu.datatug_app", nil), uicopy.T(m.explore.menu.DataTugAppKey, nil)},
 		}
 		for i, option := range options {
 			cursor, style := "  ", itemStyle

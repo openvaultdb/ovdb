@@ -45,7 +45,7 @@ func (a *App) exploreCmd() *cobra.Command {
 				say(w, "  "+uicopy.T("explore.menu.datatug_cli", nil))
 				say(w, "    "+uicopy.T(menu.DataTugCLIKey, nil))
 				say(w, "  "+uicopy.T("explore.menu.datatug_app", nil))
-				say(w, "    "+uicopy.T("explore.menu.datatug_app_help", nil))
+				say(w, "    "+uicopy.T(menu.DataTugAppKey, nil))
 				say(w, "")
 				say(w, uicopy.T("home.what_next", nil))
 				say(w, "  • "+uicopy.T("explore.menu.datatug_cli", nil)+"   ovdb explore datatug-cli --db "+database)

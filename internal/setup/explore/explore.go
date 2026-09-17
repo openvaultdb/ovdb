@@ -249,20 +249,24 @@ type Menu struct {
 }
 
 // datatugCLIDescriptionKey is the demo-specific copy for the todo demo
-// (REQ:demo-copy-is-specific) or the generic "what works today" line.
+// (REQ:demo-copy-is-specific) or the generic "what works today" line —
+// never the option's own label (review-inc-7.md F3: an earlier version of
+// this returned "explore.menu.datatug_cli", the label key, so every
+// non-demo database's description read as its own heading repeated).
 func datatugCLIDescriptionKey(isDemo bool) string {
 	if isDemo {
 		return "explore.menu.datatug_cli_demo"
 	}
-	return "explore.menu.datatug_cli"
+	return "explore.menu.datatug_cli_help"
 }
 
 // NewMenu builds the menu for db; isDemo is whether db is the installed
-// TODO demo (setup.FindDemo).
+// TODO demo (setup.FindDemo). Both description keys name real "what works
+// today" copy, never the option's own label.
 func NewMenu(db string, isDemo bool) Menu {
 	return Menu{
 		Schema: envelope.Schema, Database: db, IsDemo: isDemo,
-		DataTugCLIKey: datatugCLIDescriptionKey(isDemo), DataTugAppKey: "explore.menu.datatug_app",
+		DataTugCLIKey: datatugCLIDescriptionKey(isDemo), DataTugAppKey: "explore.menu.datatug_app_help",
 	}
 }
 

@@ -54,6 +54,22 @@ describe('Explore data', () => {
     expect(calls.some((c) => c.method !== 'GET')).toBe(false)
   })
 
+  // F3 (review-inc-7.md): a non-demo database's DataTug CLI option must
+  // describe what it does today, never repeat its own label as the
+  // description.
+  it('describes what DataTug CLI does today for a non-demo database, not its own label', async () => {
+    window.history.replaceState({}, '', '/explore?db=notes')
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/demo': () => json(200, notesDemo) })
+    const wrapper = mount(ExploreScreen)
+    await flushPromises()
+    const option = wrapper.get('[data-option="datatug-cli"]')
+    expect(option.text()).toContain('Read-only DTQL queries on root collections')
+    expect(option.text()).not.toContain('In the terminal with DataTug CLI\n    In the terminal with DataTug CLI')
+    const heading = option.find('span.text-lg')
+    const help = option.find('span.text-muted')
+    expect(heading.text()).not.toBe(help.text())
+  })
+
   it('resolves the current database from the console global default when no ?db is given', async () => {
     installFetch({ ...defaultRoutes, 'GET /api/local/v1/context': () => json(200, context), 'GET /api/local/v1/demo': () => json(200, notesDemo) })
     const wrapper = mount(ExploreScreen)
