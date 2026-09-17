@@ -258,6 +258,10 @@ func (s *localServer) route(w http.ResponseWriter, r *http.Request) {
 		s.authorize(w, r)
 	case path == tokenPath:
 		// Exchanging a code needs no credential: the code is the credential.
+		// The response carries a bearer token, so it is never cached
+		// (RFC 6749 §5.1).
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
 		s.data.ServeHTTP(w, r)
 		if r.Method == http.MethodPost {
 			s.protectAuthStore()

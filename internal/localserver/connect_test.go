@@ -279,3 +279,24 @@ func TestAuthStoreOwnerOnlyInASharedHome(t *testing.T) {
 		}
 	}
 }
+
+// RFC 6749 §5.1: a token response, issued or refused, is never cached.
+func TestTokenResponsesAreNotCached(t *testing.T) {
+	t.Parallel()
+	f := connectFixture(t)
+	session := f.signIn(t, primaryHost)
+	location, err := url.Parse(returnLocation(f.approve(t, session, "approve", sameOrigin(primaryHost))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued := f.exchange(t, location.Query().Get("code"))
+	refused := f.exchange(t, location.Query().Get("code"))
+	for name, rec := range map[string]*httptest.ResponseRecorder{"issued": issued, "refused": refused} {
+		if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Pragma") != "no-cache" {
+			t.Errorf("%s /token (%d) headers = %v", name, rec.Code, rec.Header())
+		}
+	}
+	if issued.Code != http.StatusOK || refused.Code != http.StatusBadRequest {
+		t.Errorf("issued %d, refused %d", issued.Code, refused.Code)
+	}
+}
