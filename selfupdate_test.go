@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/strongo/selfupdate"
+	"github.com/strongo/cli-helpers/selfupdate"
 )
 
 func TestNewSelfUpdateConfigIdentity(t *testing.T) {
@@ -22,8 +22,11 @@ func TestNewSelfUpdateConfigIdentity(t *testing.T) {
 	if cfg.CurrentVersion != "1.2.3" {
 		t.Errorf("CurrentVersion = %q, want 1.2.3", cfg.CurrentVersion)
 	}
-	if len(cfg.UndeterminedVersions) != 1 || cfg.UndeterminedVersions[0] != "dev" {
-		t.Errorf("UndeterminedVersions = %v, want [dev]", cfg.UndeterminedVersions)
+	// The catalog entry declares no UndeterminedVersions override, so this
+	// stays empty and the library's own withDefaults falls back to ["dev"],
+	// unchanged from before the catalog migration.
+	if len(cfg.UndeterminedVersions) != 0 {
+		t.Errorf("UndeterminedVersions = %v, want none (library defaults to [dev])", cfg.UndeterminedVersions)
 	}
 }
 

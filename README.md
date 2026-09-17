@@ -49,7 +49,22 @@ ovdb --help
   checksum-verified and replaced atomically. `--yes` skips confirmation,
   `--dry-run` shows the exact action without executing it, and `--version`
   pins are supported only for manual installs because Homebrew does not
-  guarantee arbitrary historical cask releases.
+  guarantee arbitrary historical cask releases. Built on
+  `github.com/strongo/cli-helpers/selfupdate`; its release identity (GitHub
+  repository, supported platforms, flat `checksums.txt` naming, and the
+  executable `brew upgrade --cask ovdb` manager) comes from ovdb's own entry
+  in `cli-helpers`' compiled-in `cliinstall` catalog
+  (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
+  fleet CLI's own `install ovdb` also resolves releases from.
+- **`ovdb install`** — list, show details for, and install fleet CLIs
+  relevant to ovdb (`ingitdb`, `datatug`); see
+  [Installing related CLIs](#installing-related-clis) below.
+- **`ovdb upgrade`** — the fleet-wide counterpart to `self-update`: report
+  or apply upgrades for every *installed* catalog CLI plus ovdb itself. No
+  `update` alias — that alias stays reserved for `self-update` alone. `ovdb
+  self-update` is exactly `ovdb upgrade ovdb`, built from the same
+  `HostConfig`, so the two never disagree; see
+  [Upgrading related CLIs](#upgrading-related-clis) below.
 
 ```sh
 ovdb self-update --check
@@ -59,6 +74,49 @@ ovdb self-update --yes
 ovdb self-update --dry-run
 # Manual installs only:
 ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
+```
+
+### Installing related CLIs
+
+`ovdb install` lists the other fleet CLIs relevant to OpenVaultDB (currently
+`ingitdb`, whose inGitDB engine `ovdb` runs directly, and `datatug`, which
+queries a running `ovdb serve` database as an `openvaultdb` catalog), each
+with its live installed status. `ovdb install <name>...` shows fuller
+details and installs the named CLIs the same way `ovdb` itself was
+installed: `brew install --cask` on a Homebrew host whose target publishes a
+cask for the host OS, otherwise a checksum-verified direct release download
+placed beside a manually installed `ovdb` or in the per-user bin directory.
+Both are entirely offline and read-only until an install is actually
+confirmed. Built on `github.com/strongo/cli-helpers/cliinstall`, whose
+compiled-in catalog and host → target relevance texts are the single source
+every other fleet CLI's own `install ovdb` also resolves from.
+
+```sh
+ovdb install
+ovdb install --all --format json
+ovdb install ingitdb --dry-run
+ovdb install ingitdb datatug --yes
+```
+
+### Upgrading related CLIs
+
+`ovdb upgrade` reports current/latest/verdict for every *installed* catalog
+CLI plus ovdb itself (not merely the relevance matrix `install` lists — a
+target that is relevant but not installed has nothing to upgrade).
+`ovdb upgrade --all` and `ovdb upgrade <name>...` upgrade what the report
+showed, after one confirmation. `--check` reports without applying
+anything; `--dry-run` walks the same decision path without asking. ovdb
+itself is always upgraded last, classified and versioned from its own
+`self-update` configuration — never a `PATH` probe of its own binary — so
+`ovdb self-update` and `ovdb upgrade ovdb` reach the exact same library
+call and report the same verdict. Built on
+`github.com/strongo/cli-helpers/cliinstall`'s `upgrade` command.
+
+```sh
+ovdb upgrade
+ovdb upgrade --all --check --format json
+ovdb upgrade --all --dry-run
+ovdb upgrade ovdb --check   # identical outcome to `ovdb self-update --check`
 ```
 
 ### Owner token and access policies
