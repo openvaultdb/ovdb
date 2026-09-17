@@ -4,6 +4,13 @@ go 1.26.1
 
 toolchain go1.27.0
 
+// web/node_modules holds thousands of third-party npm packages, some with
+// file names or symlinks the go command's module-graph walk need not (and
+// should not) traverse. S3 (spec/features/configuration-parity
+// #REQ:increment-zero-spikes) embeds web/dist, not web/node_modules, so
+// nothing under it is ever a Go import path.
+ignore ./web/node_modules
+
 require (
 	charm.land/fang/v2 v2.0.1
 	github.com/openvaultdb/openvaultdb-go v0.5.1

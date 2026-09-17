@@ -42,6 +42,54 @@ jobs:
       # toolchain-driven coverage-counting swings) — better to add a real
       # floor once test coverage is deliberately built out.
 
+  # Proves S3 (spec/features/configuration-parity#REQ:increment-zero-spikes):
+  # the web console and TODO app build with pnpm and actually end up embedded
+  # in the ovdb binary. A red run here means a release would ship the
+  # "web console isn't built" fallback instead of the real console.
+  web:
+    name: Web build, test and embed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # No corepack: web/package.json's packageManager field pins the exact
+      # pnpm version, and this action reads it, same pin the release hook in
+      # .goreleaser.yaml uses.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: pnpm install
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: pnpm build
+        run: pnpm -C web build
+
+      - name: pnpm test
+        run: pnpm -C web test -- --maxWorkers=1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.1'
+          cache: true
+
+      # single-target keeps this to one build (the runner's own OS/arch)
+      # rather than GoReleaser's full release matrix — this job exists to
+      # prove the embed, not to reproduce release-targets.
+      - name: goreleaser build --snapshot (proves the embed)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: build --snapshot --clean --single-target
+
   # Fail fast on go.mod/go.sum drift.
   #
   # This is the signal that would have caught datatug-cli's v0.13.2 before it
