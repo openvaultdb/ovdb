@@ -184,24 +184,55 @@ func ShellText(goos string, lines []EnvLine) string {
 
 // TokenCommand is the command that mints the read-only token Explore data
 // names but never mints or prints itself (REQ:prepare-datatug-cli-connection).
-func TokenCommand(db string) string {
-	return "ovdb token create --db " + db + " --scope read-only"
+func TokenCommand(goos, db string) string {
+	return "ovdb token create --db " + shellQuote(goos, db) + " --scope read-only"
+}
+
+// safeShellChars are the characters shellQuote leaves bare: a run of only
+// these needs no quoting in sh or PowerShell alike.
+const safeShellChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-:\\"
+
+// shellQuote single-quotes s for goos's shell unless it is already safe to
+// use bare — spike S4's own printed example leaves an ordinary id like
+// "lists" or "todo" unquoted — with a real escape for an embedded single
+// quote (sh: '\”; PowerShell: ”) rather than leaving it unquoted, which a
+// shell would split into extra arguments (review-inc-7.md F7; live:
+// --collection 'a b;touch PWNED' printed as --from a b;touch PWNED).
+func shellQuote(goos, s string) string {
+	if s != "" && strings.Trim(s, safeShellChars) == "" {
+		return s
+	}
+	if goos == "windows" {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // QueryCommand is the exact `datatug query run` command for goos, with
 // --no-policies always present: spike S4 proved a fresh DataTug home has no
 // access policies, so a newcomer following the command without it always
-// hits accesspolicies.ErrNoPolicies.
+// hits accesspolicies.ErrNoPolicies. The --db target is always quoted (spike
+// S4's own text), unlike --from/--as, which stay bare for an ordinary value
+// exactly as spike S4 shows and are quoted only when shellQuote must.
 func QueryCommand(goos, descriptorPath, collection string) string {
-	// A plain double-quoted literal, not %q: a Windows path's backslashes
-	// are not escape sequences in sh or PowerShell, and %q would double them.
-	target := `"openvaultdb://` + descriptorPath + `"`
+	target := quoteAlways(goos, "openvaultdb://"+descriptorPath)
+	from := shellQuote(goos, collection)
 	if goos == "windows" {
 		return fmt.Sprintf("datatug query run --db %s `\n  --from %s --as %s --no-policies --format json",
-			target, collection, PrincipalID)
+			target, from, PrincipalID)
 	}
 	return fmt.Sprintf("datatug query run --db %s \\\n  --from %s --as %s --no-policies --format json",
-		target, collection, PrincipalID)
+		target, from, PrincipalID)
+}
+
+// quoteAlways single-quotes s for goos's shell unconditionally — the --db
+// target is always shown quoted (spike S4), unlike shellQuote's other
+// callers, which leave a safe value bare.
+func quoteAlways(goos, s string) string {
+	if goos == "windows" {
+		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // DataTugCLI is the body of Choosing DataTug CLI: the four-key descriptor
@@ -240,7 +271,7 @@ func Prepare(lookPath LookPath, home, baseURL, db, collection string) (DataTugCL
 	if err := WriteDescriptor(path, descriptor); err != nil {
 		return DataTugCLI{}, err
 	}
-	tokenCommand := TokenCommand(db)
+	tokenCommand := TokenCommand(goruntime.GOOS, db)
 	lines := EnvLines(descriptor, tokenCommand)
 	result := DataTugCLI{
 		Collection: collection, DescriptorPath: path, Descriptor: descriptor, EnvLines: lines,
