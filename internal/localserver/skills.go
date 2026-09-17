@@ -1,6 +1,7 @@
 package localserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -58,17 +59,38 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 		envelope.Write(w, envelope.New(envelope.InvalidArgument, uicopy.T("api.bad_json", nil)).WithReason(err.Error()))
 		return
 	}
-	var request skills.InstallRequest
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	_, namesDir := fields["dir"]
-	if namesDir || credentialOf(r) == credentialSession && len(fields["targets"]) > 0 && string(fields["targets"]) != "null" {
-		envelope.Write(w, envelope.New(envelope.InvalidArgument, uicopy.T("skills.api.dir_refused", nil)).
-			WithReason(uicopy.T("skills.api.dir_refused_reason", nil)).
-			WithNext(envelope.Next{Label: uicopy.T("skills.next.dir_in_terminal", nil), Command: "ovdb skills install <skill> --dir <path>"}))
-		return
+	session := credentialOf(r) == credentialSession
+	// encoding/json matches field names in any case, so the refusal looks at
+	// every spelling: a directory is never taken from a console session, and
+	// never as a bare "dir" from anyone (review F1).
+	for name := range fields {
+		switch strings.ToLower(name) {
+		case "dir", "skills_dir":
+			writeDirRefused(w)
+			return
+		case "targets":
+			if session {
+				writeDirRefused(w)
+				return
+			}
+		}
 	}
-	if err := decoder.Decode(&request); err != nil {
+	var request skills.InstallRequest
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if session {
+		// A session may send only a skill, harness names and dry_run.
+		var sessionRequest struct {
+			Skill     string   `json:"skill"`
+			Harnesses []string `json:"harnesses"`
+			DryRun    bool     `json:"dry_run"`
+		}
+		err = decoder.Decode(&sessionRequest)
+		request = skills.InstallRequest{Skill: sessionRequest.Skill, Harnesses: sessionRequest.Harnesses, DryRun: sessionRequest.DryRun}
+	} else {
+		err = decoder.Decode(&request)
+	}
+	if err != nil {
 		envelope.Write(w, envelope.New(envelope.InvalidArgument, uicopy.T("api.bad_json", nil)).WithReason(err.Error()))
 		return
 	}
@@ -82,11 +104,12 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	session := credentialOf(r) == credentialSession
 	for _, t := range targets {
 		if session {
-			// The console offers only harnesses found in the server's home.
-			if found := env.Plan(d, []skills.RequestTarget{t}); !found[0].Detected {
+			// The console offers only harnesses found in the server's home,
+			// at the directory the server itself resolves for them.
+			h, known := skills.Harness(t.Harness)
+			if found := env.Plan(d, []skills.RequestTarget{t}); !known || !found[0].Detected || t.SkillsDir != h.SkillsDir(env.Home, env.Getenv) {
 				envelope.Write(w, envelope.New(envelope.InvalidArgument, uicopy.T("skills.install.failed", map[string]string{"name": env.Describe(d).Name})).
 					WithReason(uicopy.T("skills.api.harness_not_found", map[string]string{"harness": skills.HarnessName(t.Harness)})).
 					WithNext(envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"}))
@@ -109,4 +132,10 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 	envelope.WriteJSON(w, status, document)
+}
+
+func writeDirRefused(w http.ResponseWriter) {
+	envelope.Write(w, envelope.New(envelope.InvalidArgument, uicopy.T("skills.api.dir_refused", nil)).
+		WithReason(uicopy.T("skills.api.dir_refused_reason", nil)).
+		WithNext(envelope.Next{Label: uicopy.T("skills.next.dir_in_terminal", nil), Command: "ovdb skills install <skill> --dir <path>"}))
 }

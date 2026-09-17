@@ -173,6 +173,9 @@ type Document struct {
 	Next   []envelope.Next `json:"next"`
 }
 
+// Harness is the cobracmd harness named by id or one of its aliases.
+func Harness(id string) (cobracmd.Harness, bool) { return harnessByID(id) }
+
 func harnessByID(id string) (cobracmd.Harness, bool) {
 	id = strings.ToLower(strings.TrimSpace(id))
 	for _, h := range cobracmd.DefaultHarnesses {

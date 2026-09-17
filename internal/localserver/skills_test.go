@@ -47,6 +47,13 @@ func TestSkillsEndpoints(t *testing.T) {
 		"targets":           `{"skill":"todo-demo","targets":[{"harness":"claude","skills_dir":"` + filepath.ToSlash(outside) + `"}]}`,
 		"harness not found": `{"skill":"todo-demo","harnesses":["codex"]}`,
 		"unknown skill":     `{"skill":"nope","harnesses":["claude"]}`,
+		// encoding/json matches field names in any case (review F1).
+		"Targets":       `{"skill":"openvaultdb","Targets":[{"harness":"claude","skills_dir":"` + filepath.ToSlash(outside) + `/skills"}]}`,
+		"TARGETS":       `{"skill":"todo-demo","TARGETS":[{"skills_dir":"` + filepath.ToSlash(outside) + `"}]}`,
+		"null targets":  `{"skill":"todo-demo","targets":null,"Targets":[{"skills_dir":"` + filepath.ToSlash(outside) + `"}]}`,
+		"Dir":           `{"skill":"todo-demo","harnesses":["claude"],"Dir":"` + filepath.ToSlash(outside) + `"}`,
+		"skills_dir":    `{"skill":"todo-demo","harnesses":["claude"],"Skills_Dir":"` + filepath.ToSlash(outside) + `"}`,
+		"unknown field": `{"skill":"todo-demo","harnesses":["claude"],"home":"` + filepath.ToSlash(outside) + `"}`,
 	} {
 		response := post(body, session, "")
 		if response.code != http.StatusBadRequest || envelope.Decode(response.body) == nil || envelope.Decode(response.body).Code != envelope.InvalidArgument {
