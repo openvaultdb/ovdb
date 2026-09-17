@@ -436,7 +436,9 @@ func (s *localServer) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	context := s.resolveContext(r, databases).Context
-	envelope.WriteJSON(w, http.StatusOK, setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context, s.installedSkills()))
+	status := setup.NewStatus(s.opts.Record.Version, s.opts.Dirs, s.server(), databases, context, s.installedSkills())
+	status.SetTelemetry(s.opts.Telemetry.Decide(), s.opts.Telemetry.Available())
+	envelope.WriteJSON(w, http.StatusOK, status)
 }
 
 func (s *localServer) home(w http.ResponseWriter, r *http.Request) {

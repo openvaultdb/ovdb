@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
@@ -345,5 +348,48 @@ func TestTelemetryDecisionChannelWithServerRunning(t *testing.T) {
 	}
 	if status := e.telemetryStatus().Telemetry; status.State != telemetry.StateDisabled || status.Channel != "tui" {
 		t.Fatalf("tui decision = %+v", status)
+	}
+}
+
+// Review M2: `ovdb status` carries the telemetry state and reason,
+// evaluated in the process that prints it, and --json still equals the API
+// body when both processes' environments agree.
+func TestStatusIncludesTelemetry(t *testing.T) {
+	e := previewEnv(t)
+	statusOf := func(jsonOut bool) string {
+		var out bytes.Buffer
+		cmd := &cobra.Command{Use: "status"}
+		cmd.SetOut(&out)
+		cmd.SetContext(context.Background())
+		if err := e.app.Status(cmd, jsonOut); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	var document struct {
+		Telemetry struct {
+			State, Reason string
+			ReasonText    string `json:"reason_text"`
+		} `json:"telemetry"`
+	}
+	if err := json.Unmarshal([]byte(statusOf(true)), &document); err != nil || document.Telemetry.State != "not_asked" {
+		t.Fatalf("status --json telemetry = %+v (%v)", document.Telemetry, err)
+	}
+	if human := statusOf(false); !strings.Contains(human, "Usage statistics: Off (you haven't decided yet)") {
+		t.Errorf("human status:\n%s", human)
+	}
+	if r := e.run("server", "start"); r.code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	if got, want := statusOf(true), e.api(http.MethodGet, "/api/local/v1/status"); got != want || !strings.Contains(want, `"telemetry":{"state":"not_asked"`) {
+		t.Errorf("status --json\n got %s\nwant %s", got, want)
+	}
+	e.vars["DO_NOT_TRACK"] = "1"
+	_ = json.Unmarshal([]byte(statusOf(true)), &document)
+	if document.Telemetry.Reason != "DO_NOT_TRACK" || document.Telemetry.ReasonText == "" {
+		t.Errorf("client DO_NOT_TRACK not named: %+v", document.Telemetry)
+	}
+	if human := statusOf(false); !strings.Contains(human, "DO_NOT_TRACK is set") {
+		t.Errorf("human status lacks the reason:\n%s", human)
 	}
 }

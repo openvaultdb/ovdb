@@ -59,6 +59,11 @@ func (a *App) Status(cmd *cobra.Command, jsonOut bool) error {
 				}
 			}
 			say(w, "")
+			say(w, uicopy.T("status.telemetry", map[string]string{"state": telemetryStateLabel(status.Telemetry.State)}))
+			if status.Telemetry.ReasonText != "" {
+				say(w, "  "+status.Telemetry.ReasonText)
+			}
+			say(w, "")
 			say(w, uicopy.T("problem.what_you_can_do", nil))
 			writeNext(w, status.Next)
 		})

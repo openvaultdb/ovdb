@@ -83,6 +83,14 @@ func (l *Local) TelemetryStatus() telemetry.Document {
 	return telemetry.NewDocument(telemetry.Decide(l.Dirs.Home, nil, telemetry.Key()), telemetry.Available())
 }
 
+// telemetryDecision is this process's decision and whether it has a key.
+func (l *Local) telemetryDecision() (telemetry.Decision, bool) {
+	if l.Telemetry != nil {
+		return l.Telemetry.Decide(), l.Telemetry.Available()
+	}
+	return telemetry.Decide(l.Dirs.Home, l.Getenv, telemetry.Key()), telemetry.Available()
+}
+
 // SetTelemetry records a person's decision through the running server, or
 // under the home lock when none runs, as SetConfig does. Turning it on
 // records telemetry_consent_changed in this process. The document returned

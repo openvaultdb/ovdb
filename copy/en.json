@@ -116,6 +116,7 @@
   "telemetry.reason.ci": "Nothing is sent: this process runs in CI.",
   "telemetry.reason.config_unreadable": "Nothing is sent: the telemetry section of config.yaml can't be read.",
   "telemetry.failed": "Couldn't change usage statistics",
+  "status.telemetry": "Usage statistics: {state}",
   "telemetry.invalid_channel": "\"{channel}\" isn't a channel a local process can declare. Use cli, tui or agent.",
   "telemetry.invalid_state": "\"{state}\" isn't a choice. Use enabled or disabled.",
   "telemetry.enable.confirm": "Turn on usage statistics? [y/N] ",

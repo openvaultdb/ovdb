@@ -201,6 +201,8 @@ func (l *Local) Status(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	status.SetSkills(l.installedSkills())
+	// Telemetry, like skills, is this process's own answer.
+	status.SetTelemetry(l.telemetryDecision())
 	return envelope.Marshal(status), nil
 }
 

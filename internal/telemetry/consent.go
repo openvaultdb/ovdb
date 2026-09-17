@@ -115,6 +115,11 @@ var ciFlags = []string{"CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "CIRCLE
 // being set at all counts.
 var ciPresence = []string{"JENKINS_URL", "TEAMCITY_VERSION", "BITBUCKET_BUILD_NUMBER", "CODEBUILD_BUILD_ID"}
 
+// OptOutVariables lists every variable ForcedOff reads.
+func OptOutVariables() []string {
+	return append(append([]string{EnvTelemetry, "DO_NOT_TRACK"}, ciFlags...), ciPresence...)
+}
+
 // truthy is any value but empty, "0" or "false" (any case).
 func truthy(value string) bool {
 	value = strings.TrimSpace(value)
