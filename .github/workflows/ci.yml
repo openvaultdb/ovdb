@@ -143,6 +143,11 @@ jobs:
       # since ingitdb/dalgo2ingitdb v0.6.1 (increment 4).
       - name: go test (runtime, paths, context, demo, cli)
         run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/setup/dbcontext/... ./internal/setup/demo/... ./internal/datapath/... ./internal/cli/...
+      # Connecting existing storage reads Git repositories and SQLite files
+      # through OS paths (a file: URI on Windows) and must leave them as they
+      # are on every OS (increment 5).
+      - name: go test (connect existing storage)
+        run: go test -count=1 -timeout 10m -run 'TestConnect|TestWriteWithoutGitIdentity' ./internal/setup/ ./internal/localserver/
 
   # Fail fast on go.mod/go.sum drift.
   #
