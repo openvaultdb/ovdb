@@ -90,6 +90,13 @@ func TestPreviewOffersNewCommandsAndUsesEnvelope(t *testing.T) {
 		t.Errorf("server status without the gate: exit %d stdout %q", code, stdout)
 	}
 
+	// `ovdb token` uses the local server: without one and with --no-start
+	// it fails as server_not_running, not by calling 127.0.0.1:6832.
+	stdout, _, code = runOVDB(t, preview, "token", "list", "--no-start", "--json")
+	if e := envelope.Decode([]byte(stdout)); code != 1 || e == nil || e.Code != envelope.ServerNotRunning {
+		t.Errorf("preview token list --no-start: exit %d stdout %q", code, stdout)
+	}
+
 	// Preview status is a pure read that starts nothing.
 	stdout, stderr, code := runOVDB(t, preview, "status", "--json")
 	if code != 0 || !strings.HasPrefix(stdout, `{"schema":1,"version":`) || !strings.Contains(stdout, `"state":"not_running"`) {
