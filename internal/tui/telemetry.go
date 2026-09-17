@@ -26,6 +26,8 @@ type usageState struct {
 	message string
 	// status is Settings' telemetry document.
 	status telemetry.Status
+	// settingsOpen is Settings → Usage statistics' own view.
+	settingsOpen bool
 	// step is the onboarding step the current Result completed, recorded
 	// as onboarding_completed when the person chooses Done.
 	step string
@@ -179,23 +181,26 @@ func (m Model) usageKey(key string) (bool, Model, tea.Cmd) {
 			// Enter never answers or dismisses it by accident (review L5).
 			return true, m, nil
 		}
-	case m.screen == ScreenSettings && m.settings.loaded && !m.settings.editing:
+	case m.screen == ScreenSettings && m.settings.loaded && !m.settings.editing && !m.usage.settingsOpen:
+		if key == "u" {
+			m.usage.settingsOpen, m.usage.message = true, ""
+			return true, m, nil
+		}
+	case m.screen == ScreenSettings && m.usage.settingsOpen:
 		switch key {
 		case "t":
 			if m.usage.status.State != telemetry.StateEnabled {
 				return true, m, m.setUsageCmd(telemetry.StateEnabled)
 			}
-			return true, m, nil
 		case "x":
 			if m.usage.status.State != telemetry.StateDisabled {
 				m.local.Telemetry.Discard()
 				return true, m, m.setUsageCmd(telemetry.StateDisabled)
 			}
-			return true, m, nil
-		case "w":
-			m.usage.details = !m.usage.details
-			return true, m, nil
+		case "esc", "backspace":
+			m.usage.settingsOpen = false
 		}
+		return true, m, nil
 	}
 	return false, m, nil
 }
@@ -293,14 +298,22 @@ func usageStateLabel(state string) string {
 	}
 }
 
-// viewUsageSettings is Settings → Usage statistics, with the same state,
-// reason, provider and lists as `ovdb telemetry status` and the web console.
+// viewUsageSettings is Settings' one-line summary of usage statistics.
 func (m Model) viewUsageSettings() string {
+	var b strings.Builder
+	b.WriteString("\n\n")
+	b.WriteString(itemStyle.Render(uicopy.T("status.telemetry", map[string]string{"state": usageStateLabel(m.usage.status.State)})))
+	return b.String()
+}
+
+// viewUsageSettingsOpen is Settings → Usage statistics: the same state,
+// reason, provider, both lists and "change it any time" as `ovdb telemetry
+// status` and the web console (REQ:parity-of-controls, review L4).
+func (m Model) viewUsageSettingsOpen() string {
 	width := m.width
 	status := m.usage.status
 	var b strings.Builder
-	b.WriteString("\n\n")
-	b.WriteString(itemStyle.Render(uicopy.T("telemetry.title", nil)))
+	b.WriteString(titleStyle.Render(uicopy.T("telemetry.title", nil)))
 	b.WriteString("\n")
 	b.WriteString(wordWrap(uicopy.T("telemetry.status_line", map[string]string{"state": usageStateLabel(status.State)}), width))
 	if status.ReasonText != "" {
@@ -309,14 +322,26 @@ func (m Model) viewUsageSettings() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(mutedStyle.Render(wordWrap(uicopy.T("telemetry.intro", nil), width)))
-	if m.usage.details {
-		b.WriteString(m.viewCollected())
-	}
+	b.WriteString(m.viewCollected())
+	b.WriteString("\n")
+	b.WriteString(mutedStyle.Render(wordWrap(uicopy.T("telemetry.change_any_time", nil), width)))
 	if m.usage.message != "" {
 		b.WriteString("\n")
 		b.WriteString(wordWrap(m.usage.message, width))
 	}
 	return b.String()
+}
+
+// usageSettingsFooter offers only the changes that apply now.
+func (m Model) usageSettingsFooter() string {
+	switch m.usage.status.State {
+	case telemetry.StateEnabled:
+		return uicopy.T("telemetry.settings.footer_enabled", nil)
+	case telemetry.StateDisabled:
+		return uicopy.T("telemetry.settings.footer_disabled", nil)
+	default:
+		return uicopy.T("telemetry.settings.footer_not_asked", nil)
+	}
 }
 
 // bullet is "  • text", wrapped under its first word.

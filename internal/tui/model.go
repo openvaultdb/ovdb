@@ -455,7 +455,7 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 			m.settings.loaded = false
 			m.settings.editing = false
 			m.settings.savedMessage = ""
-			m.usage.details, m.usage.message = false, ""
+			m.usage.details, m.usage.message, m.usage.settingsOpen = false, "", false
 			return m, m.loadConfigCmd()
 		}
 	}
@@ -635,6 +635,8 @@ func (m Model) View() tea.View {
 		body = m.viewHome()
 	case m.screen == ScreenServer:
 		body = m.viewServer()
+	case m.screen == ScreenSettings && m.usage.settingsOpen:
+		body = m.viewUsageSettingsOpen()
 	case m.screen == ScreenSettings:
 		body = m.viewSettings()
 	case m.screen == ScreenResult:
@@ -681,6 +683,8 @@ func (m Model) footer() string {
 		return helpStyle.Render(uicopy.T("tui.footer.home", nil))
 	case m.screen == ScreenSettings && m.settings.editing:
 		return helpStyle.Render(uicopy.T("settings.hint.edit", nil))
+	case m.screen == ScreenSettings && m.usage.settingsOpen:
+		return helpStyle.Render(wordWrap(m.usageSettingsFooter(), m.width))
 	case m.screen == ScreenSettings:
 		return helpStyle.Render(wordWrap(uicopy.T("settings.hint.view_usage", nil), m.width))
 	case m.screen == ScreenCreate && m.create.step == createChoose:

@@ -160,21 +160,51 @@ func TestSettingsUsageStatistics(t *testing.T) {
 	t.Parallel()
 	m, rec := withTelemetry(t, testModel(t, 80, 24), "")
 	m = openSettings(t, m)
-	view := flat(m.View().Content)
-	for _, want := range []string{"Usage statistics", "Status: Off (you haven't decided yet)", "unavailable in this build", "PostHog (EU)", "t turn on usage statistics"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("settings lacks %q:\n%s", want, view)
+	if view := flat(m.View().Content); !strings.Contains(view, "Usage statistics: Off (you haven't decided yet)") || !strings.Contains(view, "u usage statistics") {
+		t.Errorf("settings:\n%s", view)
+	}
+	// Review L4: its own view shows everything the CLI and web show, and the
+	// footer offers only what applies, within 80×24.
+	m = send(t, m, key("u"))
+	fits := func(name string, wants, unwanted []string, footer string) {
+		t.Helper()
+		content := stripANSI(m.View().Content)
+		lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+		if len(lines) > 24 {
+			t.Errorf("%s: %d lines:\n%s", name, len(lines), content)
+		}
+		view := flat(content)
+		for _, want := range wants {
+			if !strings.Contains(view, want) {
+				t.Errorf("%s lacks %q:\n%s", name, want, content)
+			}
+		}
+		for _, bad := range unwanted {
+			if strings.Contains(flat(lines[len(lines)-1]), bad) {
+				t.Errorf("%s footer offers %q: %s", name, bad, lines[len(lines)-1])
+			}
+		}
+		if !strings.Contains(flat(lines[len(lines)-1]), footer) {
+			t.Errorf("%s footer = %q, want %q", name, lines[len(lines)-1], footer)
 		}
 	}
+	lists := []string{"Status: Off (you haven't decided yet)", "unavailable in this build", "PostHog (EU)", "What's collected", "Never collected", "Anything you type", "Change it any time"}
+	fits("not asked", lists, nil, "t turn on · x keep off · Esc back")
 	m = send(t, m, key("t"))
 	status := m.local.TelemetryStatus().Telemetry
-	if view := flat(m.View().Content); status.State != telemetry.StateEnabled || status.Channel != "tui" || !strings.Contains(view, "Status: On") {
-		t.Fatalf("turn on: %+v\n%s", status, view)
+	if status.State != telemetry.StateEnabled || status.Channel != "tui" {
+		t.Fatalf("turn on: %+v", status)
 	}
+	fits("on", []string{"Status: On"}, []string{"t turn on"}, "x turn off · Esc back")
 	m = send(t, m, key("x"))
 	status = m.local.TelemetryStatus().Telemetry
-	if view := flat(m.View().Content); status.State != telemetry.StateDisabled || status.HasInstallID || !strings.Contains(view, "Status: Off") {
-		t.Fatalf("turn off: %+v\n%s", status, view)
+	if status.State != telemetry.StateDisabled || status.HasInstallID {
+		t.Fatalf("turn off: %+v", status)
+	}
+	fits("off", []string{"Status: Off"}, []string{"x "}, "t turn on · Esc back")
+	m = send(t, m, key("esc"))
+	if m.screen != ScreenSettings || m.usage.settingsOpen {
+		t.Errorf("esc: screen %s open %v", m.screen, m.usage.settingsOpen)
 	}
 	if got := rec.received(); len(got) != 0 {
 		t.Errorf("key-less build sent %v", got)
