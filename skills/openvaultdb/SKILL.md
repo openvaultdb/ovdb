@@ -91,11 +91,10 @@ If a command fails with `server_start_failed` (common in sandboxed agent environ
 not retry in a loop. Ask the person to run `ovdb open` or `ovdb server start` in their own
 terminal, outside the sandbox, then try again.
 
-## 8. Telemetry is the person's decision
+## 8. Usage statistics are the person's decision
 
-Never turn usage statistics on by yourself. If the person wants to decide, show what is
-collected (`ovdb telemetry status`), and run `ovdb telemetry enable --confirmed-by-user` or
-`ovdb telemetry disable` only with their answer.
+Never turn usage statistics on by yourself or on the person's behalf. If the person asks about
+them, tell them it is their choice and relay what OVDB shows them; don't decide for them.
 
 ## 9. Relay errors as OVDB reports them
 
