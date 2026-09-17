@@ -174,8 +174,9 @@ describe('Browse data', () => {
     expect(record.element.querySelector('script, img')).toBeNull()
     expect(document.querySelector('script, img')).toBeNull()
     expect(wrapper.text()).toContain('ovdb get /items/x --db notes')
-    // Read-only: nothing on the page edits the record.
-    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Use as default', 'Open'])
+    // Read-only: nothing on the page edits the record ("Copy" copies the
+    // shown ovdb command's text, it does not act on the record).
+    expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['Use as default', 'Copy', 'Open'])
   })
 
   it('says Nothing here yet for a missing record and opens a nested collection', async () => {

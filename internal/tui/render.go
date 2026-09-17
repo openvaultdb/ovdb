@@ -57,6 +57,25 @@ func breakLongWords(words []string, width int) []string {
 	return out
 }
 
+// truncateVisual cuts s to at most width runes for display only, marking a
+// cut with a trailing ellipsis. Unlike wordWrap, it never inserts a hard
+// line break inside a command: a break with no shell continuation corrupts
+// it when pasted (review-inc-7.md F4). Callers that show a command this way
+// must offer the untouched text some other way (a copy action, --json).
+func truncateVisual(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	return string(runes[:width-1]) + "…"
+}
+
 // hangingWrap is indentWrap with prefix (a bullet or cursor) on the first
 // line only; later lines are indented to line up under the text.
 func hangingWrap(prefix, text string, width int) string {

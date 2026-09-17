@@ -229,6 +229,14 @@ func ApplyOnPath(document *DataTugCLI, onPath bool) {
 	document.Next = next
 }
 
+// CopyText is what a copy action (TUI "c", web's copy button) puts on the
+// clipboard for document: the environment variables and the query command,
+// in the order they are printed — everything needed once the token
+// placeholder is filled in, byte for byte what is shown (review-inc-7.md F4).
+func CopyText(document DataTugCLI) string {
+	return document.ShellText + "\n" + document.QueryCommand
+}
+
 func shellFamily(goos string) string {
 	if goos == "windows" {
 		return "powershell"

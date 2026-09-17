@@ -542,7 +542,10 @@
   "explore.datatug_app.use_cli_instead": "Use DataTug CLI instead",
   "explore.datatug_app.open": "Open DataTug.app",
   "explore.hint.menu": "↑/↓ choose · Enter select · esc back",
-  "explore.hint.cli": "esc back to Explore data",
+  "explore.hint.cli": "c copies · esc back to Explore data",
+  "explore.datatug_cli.copied": "Copied the environment variables and the query command to your clipboard.",
+  "command.copy": "Copy",
+  "command.copied": "Copied",
   "explore.hint.app": "c DataTug CLI instead · o open DataTug.app · esc back",
   "demo.next.explore": "Explore data"
 }

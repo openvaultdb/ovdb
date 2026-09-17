@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
 )
 
 // TestExploreScreenDataTugCLIAndApp drives Home -> Try a demo -> install ->
@@ -91,5 +94,71 @@ func TestExploreScreenDataTugCLIAndApp(t *testing.T) {
 	m = send(t, m, key("esc"))
 	if m.screen != ScreenHome {
 		t.Fatalf("screen = %q, want home", m.screen)
+	}
+}
+
+// F4 (review-inc-7.md): at the 80x24 floor every rendered line fits the
+// window (lipgloss.JoinVertical pads every line in the joined view to the
+// widest one, so a single overlong line would blow up the whole screen's
+// apparent width, not just its own). A command line that does not fit is
+// truncated for display with a trailing "…", never hard-wrapped with a bare
+// newline that would corrupt it if pasted (seen live splitting the quoted
+// descriptor path mid-string) — "c" copies the untouched, full text.
+func TestExploreCLICommandsAreNeverHardWrapped(t *testing.T) {
+	port := freePort(t)
+	m := realModel(t, port)
+	m = send(t, m, key("enter")) // Home -> Try a demo
+	m = send(t, m, key("enter")) // install
+	m = send(t, m, key("esc"))   // -> Home, reloaded
+	for range 5 {
+		m = send(t, m, key("down"))
+	}
+	m = send(t, m, key("enter")) // Home -> Explore data
+	m = send(t, m, key("enter")) // DataTug CLI
+	if m.screen != ScreenExplore || m.explore.view != exploreCLIView {
+		t.Fatalf("screen=%q view=%v", m.screen, m.explore.view)
+	}
+	cli := m.explore.cli
+	if len(cli.QueryCommand) < 90 {
+		t.Fatalf("test setup: query command too short to exercise truncation (%d chars): %q", len(cli.QueryCommand), cli.QueryCommand)
+	}
+
+	view := m.View().Content // NOT flat(): line breaks matter here
+	lines := strings.Split(stripANSI(view), "\n")
+	for _, ln := range lines {
+		if n := len([]rune(ln)); n > 80 {
+			t.Errorf("a rendered line is %d columns wide at an 80-column width: %q", n, ln)
+		}
+	}
+	// Every raw command line is shown either whole, or as a truncated
+	// prefix ending "…" — never split with a bare newline.
+	for _, want := range append(strings.Split(cli.ShellText, "\n"), strings.Split(cli.QueryCommand, "\n")...) {
+		want = strings.TrimSpace(want)
+		found := false
+		for _, ln := range lines {
+			got := strings.TrimPrefix(strings.TrimRight(ln, " "), "  ")
+			if got == want || (strings.HasSuffix(got, "…") && strings.HasPrefix(want, strings.TrimSuffix(got, "…"))) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("command line %q has no whole-or-truncated-prefix match in the view:\n%s", want, flat(view))
+		}
+	}
+	if !strings.Contains(flat(view), "--no-policies") {
+		t.Errorf("--no-policies is not visible at 80x24:\n%s", flat(view))
+	}
+
+	// The copy action carries the real, untouched text regardless of what
+	// was visually truncated.
+	_, cmd := m.updateExplore("c")
+	if cmd == nil {
+		t.Fatal("\"c\" produced no command")
+	}
+	msg := cmd()
+	want := explore.CopyText(cli)
+	if got := fmt.Sprintf("%v", msg); got != want {
+		t.Errorf("clipboard content = %q, want %q", got, want)
 	}
 }

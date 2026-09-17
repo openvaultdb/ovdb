@@ -155,8 +155,12 @@ func (m Model) updateExplore(key string) (tea.Model, tea.Cmd) {
 		}
 	case exploreCLIView:
 		switch key {
+		case "c":
+			m.noticeLines = []string{uicopy.T("explore.datatug_cli.copied", nil)}
+			return m, tea.SetClipboard(explore.CopyText(m.explore.cli))
 		case "esc", "backspace":
 			m.explore.view = exploreMenuView
+			m.noticeLines = nil
 		}
 	case exploreAppView:
 		switch key {
@@ -203,6 +207,11 @@ func (m Model) viewExplore() string {
 			b.WriteString("\n")
 		}
 	case exploreCLIView:
+		// Prose (the ready/missing message, "saved to …") wraps normally,
+		// but a command line is only ever truncated for display, never
+		// hard-wrapped: a break with no shell continuation corrupts it when
+		// pasted (review-inc-7.md F4, seen live splitting the quoted
+		// descriptor path mid-string). "c" copies the untouched text.
 		cli := m.explore.cli
 		if cli.OnPath {
 			b.WriteString(wordWrap(uicopy.T("explore.datatug_cli.ready", nil), width))
@@ -210,8 +219,7 @@ func (m Model) viewExplore() string {
 			b.WriteString(wordWrap(uicopy.T("explore.datatug_cli.missing", nil), width))
 			b.WriteString("\n")
 			for _, install := range cli.InstallCommands {
-				b.WriteString(indentWrap("  ", install, width))
-				b.WriteString("\n")
+				writeCommandLines(&b, "  ", install, width)
 			}
 		}
 		b.WriteString("\n\n")
@@ -219,16 +227,15 @@ func (m Model) viewExplore() string {
 		b.WriteString("\n\n")
 		b.WriteString(uicopy.T("explore.datatug_cli.env_vars", nil))
 		b.WriteString("\n")
-		b.WriteString(wordWrap(cli.ShellText, width))
-		b.WriteString("\n\n")
+		writeCommandLines(&b, "", cli.ShellText, width)
+		b.WriteString("\n")
 		b.WriteString(uicopy.T("explore.datatug_cli.token_intro", nil))
 		b.WriteString("\n")
-		b.WriteString(indentWrap("  ", cli.TokenCommand, width))
-		b.WriteString("\n\n")
+		writeCommandLines(&b, "  ", cli.TokenCommand, width)
+		b.WriteString("\n")
 		b.WriteString(uicopy.T("explore.datatug_cli.query_intro", nil))
 		b.WriteString("\n")
-		b.WriteString(wordWrap(cli.QueryCommand, width))
-		b.WriteString("\n")
+		writeCommandLines(&b, "", cli.QueryCommand, width)
 	case exploreAppView:
 		b.WriteString(wordWrap(uicopy.T("explore.datatug_app.honesty", nil), width))
 		b.WriteString("\n\n")
@@ -238,4 +245,20 @@ func (m Model) viewExplore() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// writeCommandLines writes each "\n"-separated line of text indented by
+// prefix, truncated for display at width — never hard-wrapped, so what is
+// shown is always an unbroken, correct prefix of the real command
+// (review-inc-7.md F4; see truncateVisual).
+func writeCommandLines(b *strings.Builder, prefix, text string, width int) {
+	inner := width
+	if inner > 0 {
+		inner -= len([]rune(prefix))
+	}
+	for _, line := range strings.Split(text, "\n") {
+		b.WriteString(prefix)
+		b.WriteString(truncateVisual(line, inner))
+		b.WriteString("\n")
+	}
 }
