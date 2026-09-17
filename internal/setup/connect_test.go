@@ -598,6 +598,60 @@ func TestConnectRefusesAFolderThatIsNotInGitDB(t *testing.T) {
 	}
 }
 
+// A database OVDB created but never wrote to (dalgo2ingitdb writes .ingitdb/
+// lazily, on the first write) can still be removed from OVDB and connected
+// again: create writes .ingitdb/ itself, so the folder passes
+// isInGitDBFolder even with no records in it.
+func TestConnectAfterCreateRemoveWithNoWrites(t *testing.T) {
+	t.Parallel()
+	f := newRegistry(t)
+	if _, err := f.create("notes", EngineInGitDB); err != nil {
+		t.Fatal(err)
+	}
+	location := DefaultPath(f.dirs.Data, EngineInGitDB, "notes")
+	if _, err := os.Stat(filepath.Join(location, InGitDBDir)); err != nil {
+		t.Fatalf("create left no %s: %v", InGitDBDir, err)
+	}
+	if _, err := f.registry.Remove(context.Background(), "notes"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.registry.Connect(ConnectRequest{ID: "notes", Engine: EngineInGitDB, Path: location})
+	if err != nil {
+		t.Fatalf("Connect after create/remove with no writes = %v", err)
+	}
+	if result.Database.Location != location || result.Database.State != MountMounted {
+		t.Errorf("result = %+v", result.Database)
+	}
+}
+
+// The same database, once it has taken a write, can also be removed and
+// connected again, and keeps its data.
+func TestConnectAfterCreateWriteRemove(t *testing.T) {
+	withGlobalGitIdentity(t)
+	requireGit(t)
+	f := newRegistry(t)
+	if _, err := f.create("notes", EngineInGitDB); err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.data(t, http.MethodPut, "/v1/databases/notes/records/items/hello", `{"data":{"title":"Hello"}}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("write = %d %s", rec.Code, rec.Body)
+	}
+	location := DefaultPath(f.dirs.Data, EngineInGitDB, "notes")
+	if _, err := f.registry.Remove(context.Background(), "notes"); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.registry.Connect(ConnectRequest{ID: "notes", Engine: EngineInGitDB, Path: location})
+	if err != nil {
+		t.Fatalf("Connect after create/write/remove = %v", err)
+	}
+	if result.Database.Location != location {
+		t.Errorf("result = %+v", result.Database)
+	}
+	if rec := f.data(t, http.MethodGet, "/v1/databases/notes/records/items/hello", ""); rec.Code != http.StatusOK {
+		t.Errorf("read after reconnect = %d %s", rec.Code, rec.Body)
+	}
+}
+
 // F4: YAML merge keys and anchors are resolved before paths are made
 // absolute and checked, so the checked location is the mounted one and a
 // relative path never lands in OVDB home.
