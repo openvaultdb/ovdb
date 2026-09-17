@@ -20,6 +20,11 @@ func (c *captureMounter) UnmountContext(context.Context, string) error { return 
 func TestDiagInGitDBWriteWindows(t *testing.T) {
 	base := t.TempDir()
 	dirs := paths.Dirs{Home: filepath.Join(base, "home"), Runtime: filepath.Join(base, "run"), Data: filepath.Join(base, "data")}
+	for _, dir := range []string{dirs.Home, dirs.Runtime, dirs.Data} {
+		if err := paths.EnsurePrivateDir(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
 	m := &captureMounter{}
 	registry, err := setup.OpenRegistry(dirs, m, t.Logf, setup.RegistryOptions{})
 	if err != nil {
