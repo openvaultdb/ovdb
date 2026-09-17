@@ -97,7 +97,7 @@ func TestJourneyATerminal(t *testing.T) {
 		t.Fatalf("suggested location missing:\n%s", view)
 	}
 	press("enter", "enter")
-	if view := screenText(m); !strings.Contains(view, "Created database notes") || !strings.Contains(view, "u use it in this project") {
+	if view := screenText(m); !strings.Contains(view, "Created database notes") || !strings.Contains(view, "u use in project") {
 		t.Fatalf("Result:\n%s", view)
 	}
 	press("u")
