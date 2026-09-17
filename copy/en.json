@@ -229,5 +229,11 @@
   "create.another": "Create another database",
   "home.what_next": "What next?",
   "server.version_mismatch.message": "Couldn't use the running OVDB server",
-  "database.remove.kept": "Kept {name}. Nothing changed."
+  "database.remove.kept": "Kept {name}. Nothing changed.",
+  "create.creating": "Creating the database…",
+  "databases.removing": "Removing the database…",
+  "create.hint.choose": "Type to filter · ↑/↓ choose · Enter select · Esc back",
+  "create.hint.form": "Type · Tab next field · Enter continue · Esc change storage",
+  "result.hint.databases": "d see your databases · Enter done",
+  "home.menu.server_help_stopped": "Start it so apps, AI assistants and the web console can use your data"
 }

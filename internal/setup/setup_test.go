@@ -171,6 +171,13 @@ func TestHomeDocument(t *testing.T) {
 	if badge := stopped.Options[1].Badge; badge.Tone != "neutral" || stopped.StatusLine[0].Key != "home.status.server_not_running" {
 		t.Errorf("stopped home = %+v", stopped)
 	}
+	if running.Options[1].DescriptionKey != "home.menu.server_help" || stopped.Options[1].DescriptionKey != "home.menu.server_help_stopped" {
+		t.Errorf("server help: running %q, stopped %q", running.Options[1].DescriptionKey, stopped.Options[1].DescriptionKey)
+	}
+	withDatabases := NewHome(StoppedServer(6832, dirs), []Database{{ID: "notes", State: MountUnknown}})
+	if ids := []string{withDatabases.Options[2].ID, withDatabases.StatusLine[1].Key}; ids[0] != "databases" || ids[1] != "home.status.database_one" {
+		t.Errorf("home with a database = %v", ids)
+	}
 	if option := running.Options[1]; option.LabelKey != "home.menu.start_server" || option.WebLabelKey != "home.menu.server" {
 		t.Errorf("server option = %+v", option)
 	}

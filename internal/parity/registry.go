@@ -9,7 +9,7 @@
 // Increment 1a filled the CLI and API cells of rows 2–7, 1b the web routes
 // (web/routes.json), and 1c (this one) adds row 1 and every TUI cell of
 // rows 1–7 — completing parity for rows 1–7. Increment 2 adds rows
-// 8, 9, 11 and 12.
+// 8, 9, 11 and 12 in every interface.
 package parity
 
 // Row is one capability.
@@ -40,14 +40,14 @@ var Rows = []Row{
 		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}, Implemented: true},
 	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"}, TUI: "settings", Web: "/settings",
 		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}, Implemented: true},
-	{ID: "8", Capability: "Storage choices", CLI: []string{"ovdb engines"}, Web: "/databases/new",
-		API: []string{"GET /api/local/v1/engines"}},
-	{ID: "9", Capability: "Create database (inGitDB, SQLite)", CLI: []string{"ovdb databases create"}, Web: "/databases/new",
-		API: []string{"POST /api/local/v1/databases"}},
-	{ID: "11", Capability: "List databases", CLI: []string{"ovdb databases"}, Web: "/databases",
-		API: []string{"GET /api/local/v1/databases"}},
-	{ID: "12", Capability: "Remove database registration", CLI: []string{"ovdb databases remove"}, Web: "/databases",
-		API: []string{"DELETE /api/local/v1/databases/{id}"}},
+	{ID: "8", Capability: "Storage choices", CLI: []string{"ovdb engines"}, TUI: "create", Web: "/databases/new",
+		API: []string{"GET /api/local/v1/engines"}, Implemented: true},
+	{ID: "9", Capability: "Create database (inGitDB, SQLite)", CLI: []string{"ovdb databases create"}, TUI: "create", Web: "/databases/new",
+		API: []string{"POST /api/local/v1/databases"}, Implemented: true},
+	{ID: "11", Capability: "List databases", CLI: []string{"ovdb databases"}, TUI: "databases", Web: "/databases",
+		API: []string{"GET /api/local/v1/databases"}, Implemented: true},
+	{ID: "12", Capability: "Remove database registration", CLI: []string{"ovdb databases remove"}, TUI: "databases", Web: "/databases",
+		API: []string{"DELETE /api/local/v1/databases/{id}"}, Implemented: true},
 	// Tokens and CORS origins are developer settings: CLI only, and a console
 	// session gets 403 on server.cors and /v1/tokens (E7).
 	{ID: "25", Capability: "Access tokens and browser app origins",

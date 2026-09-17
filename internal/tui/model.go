@@ -27,16 +27,18 @@ import (
 // one of these from the registered set fails that package's existence test
 // naming the row and "TUI".
 const (
-	ScreenHome     = "home"
-	ScreenServer   = "server"
-	ScreenSettings = "settings"
-	ScreenResult   = "result"
-	ScreenProblem  = "problem"
+	ScreenHome      = "home"
+	ScreenServer    = "server"
+	ScreenSettings  = "settings"
+	ScreenResult    = "result"
+	ScreenProblem   = "problem"
+	ScreenCreate    = "create"
+	ScreenDatabases = "databases"
 )
 
 // ScreenIDs lists every screen id the TUI registers.
 func ScreenIDs() []string {
-	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem}
+	return []string{ScreenHome, ScreenServer, ScreenSettings, ScreenResult, ScreenProblem, ScreenCreate, ScreenDatabases}
 }
 
 // minWidth and minHeight are first-run-onboarding#REQ:tui-keyboard-and-size's
@@ -60,11 +62,13 @@ type Model struct {
 	showHelp      bool
 	noticeLines   []string
 
-	home     homeScreen
-	server   serverScreen
-	settings settingsScreen
-	result   resultScreen
-	problem  problemScreen
+	home      homeScreen
+	server    serverScreen
+	settings  settingsScreen
+	result    resultScreen
+	problem   problemScreen
+	create    createScreen
+	databases databasesScreen
 
 	busy *busyState
 }
@@ -211,6 +215,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settings.document = msg.document
 		return m, nil
 
+	case enginesLoadedMsg:
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.create.loaded = true
+		m.create.engines = msg.document.Engines
+		return m, nil
+
+	case databasesLoadedMsg:
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		m.databases.loaded = true
+		m.databases.document = msg.document
+		m.databases.cursor = min(m.databases.cursor, len(msg.document.Databases))
+		return m, nil
+
+	case databaseResultMsg:
+		m.busy = nil
+		m.pullNotices()
+		if msg.err != nil {
+			m.problem.setError(asProblem(msg.err))
+			m.screen = ScreenProblem
+			return m, nil
+		}
+		if msg.removed {
+			m.result = newRemovedResult(msg.result)
+		} else {
+			m.result = newCreatedResult(msg.result)
+			m.create = createScreen{step: createChoose}
+		}
+		m.screen = ScreenResult
+		return m, nil
+
 	case configSavedMsg:
 		m.busy = nil
 		m.pullNotices()
@@ -245,7 +289,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if m.busy != nil {
 		return m, nil
 	}
-	if key == "?" {
+	// "?" is text while typing a filter, name or location.
+	typing := m.screen == ScreenCreate && m.create.step != createManifest
+	if key == "?" && !typing {
 		m.showHelp = !m.showHelp
 		return m, nil
 	}
@@ -260,8 +306,20 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m.updateResult(key)
 	case ScreenProblem:
 		return m.updateProblem(key)
+	case ScreenCreate:
+		return m.updateCreate(key)
+	case ScreenDatabases:
+		return m.updateDatabases(key)
 	}
 	return m, nil
+}
+
+// backHome returns to Home and reloads it, since most screens change what
+// it shows.
+func (m Model) backHome() (tea.Model, tea.Cmd) {
+	m.screen = ScreenHome
+	m.home.loaded = false
+	return m, m.loadHomeCmd()
 }
 
 func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
@@ -284,6 +342,10 @@ func (m Model) updateHome(key string) (tea.Model, tea.Cmd) {
 		target := screenFor(options[m.home.cursor].ID)
 		m.screen = target
 		switch target {
+		case ScreenCreate:
+			return m.enterCreate()
+		case ScreenDatabases:
+			return m.enterDatabases()
 		case ScreenServer:
 			m.server.loaded = false
 			m.server.linkShown = false
@@ -380,10 +442,15 @@ func (m Model) updateSettings(key string) (tea.Model, tea.Cmd) {
 
 func (m Model) updateResult(key string) (tea.Model, tea.Cmd) {
 	switch key {
+	case "d":
+		// "See your databases", when the result offers it.
+		for _, n := range m.result.next {
+			if n.Action == setup.ActionDatabases {
+				return m.enterDatabases()
+			}
+		}
 	case "enter", "esc", "backspace":
-		m.screen = ScreenHome
-		m.home.loaded = false
-		return m, m.loadHomeCmd()
+		return m.backHome()
 	}
 	return m, nil
 }
@@ -395,11 +462,18 @@ func (m Model) updateProblem(key string) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.problem.moveCursor(1)
 	case "enter":
-		if n := m.problem.selected(); n != nil && n.Action == "use_port" {
+		n := m.problem.selected()
+		switch {
+		case n == nil:
+		case n.Action == "use_port":
 			if port, ok := parsePort(n.Command); ok {
 				m.busy = &busyState{label: uicopy.T("server.starting", nil)}
 				return m, tea.Batch(m.portRemedyCmd(port), tickCmd())
 			}
+		case (n.Action == setup.ActionEditName || n.Action == setup.ActionEditLocation) && m.create.chosen.ID != "":
+			return m.createRemedy(n.Action), nil
+		case n.Action == setup.ActionDatabases:
+			return m.enterDatabases()
 		}
 	case "esc", "backspace":
 		m.screen = ScreenHome
@@ -430,6 +504,10 @@ func (m Model) View() tea.View {
 		body = m.viewResult()
 	case m.screen == ScreenProblem:
 		body = m.viewProblem()
+	case m.screen == ScreenCreate:
+		body = m.viewCreate()
+	case m.screen == ScreenDatabases:
+		body = m.viewDatabases()
 	}
 	sections := []string{header, body}
 	if len(m.noticeLines) > 0 {
@@ -452,6 +530,17 @@ func (m Model) footer() string {
 		return helpStyle.Render(uicopy.T("settings.hint.edit", nil))
 	case m.screen == ScreenSettings:
 		return helpStyle.Render(uicopy.T("settings.hint.view", nil))
+	case m.screen == ScreenCreate && m.create.step == createChoose:
+		return helpStyle.Render(wordWrap(uicopy.T("create.hint.choose", nil), m.width))
+	case m.screen == ScreenCreate && m.create.step == createForm:
+		return helpStyle.Render(wordWrap(uicopy.T("create.hint.form", nil), m.width))
+	case m.screen == ScreenResult && len(m.result.next) > 0:
+		for _, n := range m.result.next {
+			if n.Action == setup.ActionDatabases {
+				return helpStyle.Render(wordWrap(uicopy.T("result.hint.databases", nil), m.width))
+			}
+		}
+		return helpStyle.Render(uicopy.T("tui.footer.back", nil))
 	default:
 		return helpStyle.Render(uicopy.T("tui.footer.back", nil))
 	}

@@ -142,10 +142,15 @@ func NewHome(server Server, databases []Database) HomeDocument {
 		line = CopyRef{Key: "home.status.server_running", Params: map[string]string{"address": server.Address}}
 	}
 	badge := StateBadge(server.State)
+	// What the server option is for depends on whether it runs.
+	serverHelp := "home.menu.server_help_stopped"
+	if server.State == StateRunning {
+		serverHelp = "home.menu.server_help"
+	}
 	options := []HomeOption{
 		{ID: "create", Group: "primary", LabelKey: "home.menu.create_database", DescriptionKey: "home.menu.create_database_help"},
 		{ID: "server", Group: "primary", LabelKey: "home.menu.start_server", WebLabelKey: "home.menu.server",
-			DescriptionKey: "home.menu.server_help", Badge: &badge},
+			DescriptionKey: serverHelp, Badge: &badge},
 	}
 	if len(databases) > 0 {
 		options = append(options, HomeOption{ID: "databases", Group: "secondary", LabelKey: "home.menu.databases"})

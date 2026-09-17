@@ -21,7 +21,7 @@ func wordWrap(text string, width int) string {
 		if lineIdx > 0 {
 			out.WriteByte('\n')
 		}
-		words := strings.Fields(paragraph)
+		words := breakLongWords(strings.Fields(paragraph), width)
 		lineLen := 0
 		for i, w := range words {
 			wl := len([]rune(w))
@@ -40,6 +40,33 @@ func wordWrap(text string, width int) string {
 		}
 	}
 	return out.String()
+}
+
+// breakLongWords splits any word wider than width (a long path or URL) into
+// pieces that fit, so wrapping never leaves a line wider than the window.
+func breakLongWords(words []string, width int) []string {
+	var out []string
+	for _, word := range words {
+		runes := []rune(word)
+		for len(runes) > width {
+			out = append(out, string(runes[:width]))
+			runes = runes[width:]
+		}
+		out = append(out, string(runes))
+	}
+	return out
+}
+
+// hangingWrap is indentWrap with prefix (a bullet or cursor) on the first
+// line only; later lines are indented to line up under the text.
+func hangingWrap(prefix, text string, width int) string {
+	wrapped := indentWrap(prefix, text, width)
+	indent := strings.Repeat(" ", len([]rune(prefix)))
+	lines := strings.Split(wrapped, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = indent + strings.TrimPrefix(lines[i], prefix)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // indentWrap wraps text to width, prefixing every resulting line with
@@ -77,7 +104,7 @@ func nextLines(width int, next []envelope.Next, actionable []int, cursorAt int) 
 			}
 		}
 		if n.Command == "" {
-			lines = append(lines, indentWrap(prefix, n.Label, width))
+			lines = append(lines, hangingWrap(prefix, n.Label, width))
 			continue
 		}
 		combined := prefix + n.Label + "   " + n.Command
@@ -85,7 +112,7 @@ func nextLines(width int, next []envelope.Next, actionable []int, cursorAt int) 
 			lines = append(lines, combined)
 			continue
 		}
-		lines = append(lines, indentWrap(prefix, n.Label, width), indentWrap("      ", n.Command, width))
+		lines = append(lines, hangingWrap(prefix, n.Label, width), indentWrap("      ", n.Command, width))
 	}
 	return lines
 }
