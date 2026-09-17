@@ -1,0 +1,40 @@
+// Package parity is the capability registry: per row of the capability
+// matrix in spec/features/configuration-parity, the CLI command, TUI screen,
+// web route and local API endpoints that implement it, and the documented
+// exceptions for the cells that are missing on purpose. Its test fails when
+// a named command or endpoint does not exist.
+//
+// A row stays Implemented=false — and its surface stays behind the preview
+// gate — until every non-exception cell exists (REQ:increments-keep-parity).
+// Increment 1a fills the CLI and API cells of rows 2–7; 1b and 1c add the
+// web routes and TUI screens.
+package parity
+
+// Row is one capability.
+type Row struct {
+	ID         string
+	Capability string
+	CLI        []string // command paths, e.g. "ovdb server start"
+	TUI        string   // screen id; "" while pending
+	Web        string   // route; "" while pending
+	API        []string // "METHOD path"
+	Exceptions []string // E1…E7 for intentionally missing cells
+	// Implemented is true once every non-exception cell exists and is tested.
+	Implemented bool
+}
+
+// Rows is the registry, in matrix order.
+var Rows = []Row{
+	{ID: "2", Capability: "Whole-setup status", CLI: []string{"ovdb status"},
+		API: []string{"GET /api/local/v1/status"}},
+	{ID: "3", Capability: "Start server", CLI: []string{"ovdb server start"},
+		Exceptions: []string{"E1"}},
+	{ID: "4", Capability: "Server status", CLI: []string{"ovdb server status"},
+		API: []string{"GET /api/local/v1/server"}},
+	{ID: "5", Capability: "Stop or restart server", CLI: []string{"ovdb server stop", "ovdb server restart"},
+		API: []string{"POST /api/local/v1/server/shutdown"}, Exceptions: []string{"E2"}},
+	{ID: "6", Capability: "Open web console (login link)", CLI: []string{"ovdb open"},
+		API: []string{"POST /api/local/v1/login-links"}, Exceptions: []string{"E1"}},
+	{ID: "7", Capability: "Change server port", CLI: []string{"ovdb config set", "ovdb config get"},
+		API: []string{"GET /api/local/v1/config", "PUT /api/local/v1/config"}},
+}

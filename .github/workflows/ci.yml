@@ -92,6 +92,26 @@ jobs:
           version: '~> v2'
           args: build --snapshot --clean --single-target
 
+  # spec/features/configuration-parity#REQ:ci-matrix: lifecycle and path
+  # tests on every OS the local server supports. They start real detached
+  # servers, bind loopback ports and check owner-only files, so a green Linux
+  # run proves nothing about Windows job objects, ACLs or macOS SO_REUSEADDR.
+  go-os-matrix:
+    name: Lifecycle and paths (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.1'
+          cache: true
+      - name: go test (runtime, paths, cli)
+        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/cli/...
+
   # Fail fast on go.mod/go.sum drift.
   #
   # This is the signal that would have caught datatug-cli's v0.13.2 before it
