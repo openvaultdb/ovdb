@@ -67,6 +67,9 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
             item.label
           }}</a>
           <a v-else-if="item.action === 'databases'" href="/databases" :class="link" @click="go($event, '/databases')">{{ item.label }}</a>
+          <a v-else-if="item.action === 'skills'" href="/skills" :class="link" data-testid="connect-agent" @click="go($event, '/skills')">{{
+            item.label
+          }}</a>
           <OvButton
             v-else-if="item.action === 'use' && !usedDefault"
             variant="secondary"

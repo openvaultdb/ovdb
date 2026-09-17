@@ -2,7 +2,8 @@
 // Try a demo (capabilities 18 and 19, spec/features/todo-demo). The page says
 // where the TODO demo's lists will be stored before anything is written,
 // installs through the same endpoint as `ovdb demo install`, and then offers
-// what the server says comes next: Open TODO app and Done. The console is
+// what the server says comes next: Open TODO app, Install TODO AI skill (the
+// skill consent step) and Done. The console is
 // already signed in, so Open TODO app is a plain link to /apps/todo/.
 import { computed, nextTick, onMounted, ref } from 'vue'
 
@@ -47,6 +48,18 @@ async function install() {
 
 const commands = computed(() => result.value?.next.filter((item: Next) => item.command) ?? [])
 
+// Install TODO AI skill opens the skill consent step, which returns here on Not now.
+function skillOffer(item: Next): string {
+  const id = item.command?.split(' ').pop() ?? ''
+  return `/skills?skill=${encodeURIComponent(id)}&from=/demo`
+}
+
+function go(event: MouseEvent, path: string) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+  event.preventDefault()
+  navigate(path)
+}
+
 function home(event: MouseEvent) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
@@ -83,6 +96,14 @@ function explore(event: MouseEvent) {
               :href="result.app_path"
               data-testid="open-todo-app"
               class="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-hover"
+              >{{ item.label }}</a
+            >
+            <a
+              v-else-if="item.action === 'install_skill'"
+              :href="skillOffer(item)"
+              data-testid="demo-install-skill"
+              class="inline-flex min-h-11 items-center rounded-lg border border-line bg-surface px-5 font-semibold text-ink hover:bg-surface-2"
+              @click="go($event, skillOffer(item))"
               >{{ item.label }}</a
             >
             <a

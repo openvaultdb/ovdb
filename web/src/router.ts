@@ -5,7 +5,7 @@ import { computed, ref } from 'vue'
 
 import routes from '../routes.json'
 
-export type Screen = 'home' | 'demo' | 'server' | 'settings' | 'databases' | 'create' | 'connect' | 'browse' | 'explore' | 'not-found'
+export type Screen = 'home' | 'demo' | 'server' | 'settings' | 'databases' | 'create' | 'connect' | 'browse' | 'explore' | 'skills' | 'not-found'
 
 export const currentPath = ref(typeof window === 'undefined' ? '/' : window.location.pathname)
 
