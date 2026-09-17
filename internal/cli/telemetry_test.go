@@ -293,3 +293,31 @@ func TestTelemetryDisableWithUnreadableConfig(t *testing.T) {
 		})
 	}
 }
+
+// skill_installed carries the skill and the harness id, never the
+// directory.
+func TestTelemetrySkillInstalled(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	if err := os.MkdirAll(filepath.Join(e.userHome(), ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.runCommand("telemetry", "enable", "--confirmed-by-user"); r.code != 0 {
+		t.Fatalf("enable: %+v", r)
+	}
+	if r := e.runCommand("skills", "install", "todo-demo", "--harness", "claude", "--yes"); r.code != 0 {
+		t.Fatalf("install: %+v", r)
+	}
+	var skill map[string]any
+	for _, event := range recorder.received() {
+		if event["event"] == "skill_installed" {
+			skill = event
+		}
+		if data, _ := json.Marshal(event); strings.Contains(string(data), e.userHome()) || strings.Contains(string(data), ".claude") {
+			t.Errorf("event carries a directory: %s", data)
+		}
+	}
+	if skill == nil || skill["skill"] != "todo-demo" || skill["harness"] != "claude" || skill["success"] != true {
+		t.Fatalf("skill_installed = %v (all %v)", skill, recorder.received())
+	}
+}

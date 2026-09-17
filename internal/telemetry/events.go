@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/strongo/cli-helpers/skillsync/cobracmd"
+
 	"github.com/openvaultdb/ovdb/internal/envelope"
 )
 
@@ -60,8 +62,16 @@ var Engines = []string{"ingitdb", "sqlite", "firestore", "mysql", "postgres"}
 // Skills are the skills ovdb installs.
 var Skills = []string{"openvaultdb", "todo-demo"}
 
-// Harnesses are agent harness names skill installs target.
-var Harnesses = []string{"claude", "codex", "cursor", "copilot", "gemini", "windsurf", "opencode", "amp", "cline"}
+// Harnesses are the skillsync harness ids skill installs target
+// (cobracmd.DefaultHarnesses, the list `ovdb skills install --harness`
+// accepts); a custom --dir is "other".
+var Harnesses = func() []string {
+	ids := make([]string, 0, len(cobracmd.DefaultHarnesses))
+	for _, h := range cobracmd.DefaultHarnesses {
+		ids = append(ids, h.ID)
+	}
+	return ids
+}()
 
 // Targets are the Explore data choices.
 var Targets = []string{"datatug_cli", "datatug_web"}

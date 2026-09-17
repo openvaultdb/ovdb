@@ -11,6 +11,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/demo"
 	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
 
@@ -137,6 +138,7 @@ var observed = map[string]string{
 	http.MethodPost + " /api/local/v1/databases/connect": "connect",
 	http.MethodPost + " /api/local/v1/demo/install":      "demo",
 	http.MethodPost + " /api/local/v1/explore/datatug":   "explore",
+	http.MethodPost + " /api/local/v1/skills/install":    "skills",
 }
 
 // observe runs e's handler and, for a console session's onboarding action,
@@ -156,6 +158,16 @@ func (s *localServer) observe(e endpoint, w http.ResponseWriter, r *http.Request
 	e.handle(s, c, r)
 	success := c.status > 0 && c.status < 400
 	elapsed := s.opts.Now().Sub(start)
+	if step == "skills" {
+		var body skills.InstallRequest
+		_ = json.Unmarshal(request, &body)
+		var failure error
+		if !success {
+			failure = envelope.Decode(c.body.Bytes())
+		}
+		s.sendAfterResponse(c, r, skills.TelemetryEvents(body, c.body.Bytes(), failure)...)
+		return
+	}
 	events := []telemetry.Event{consoleEvent(step, request, c.body.Bytes(), success, elapsed)}
 	if !success {
 		events = append(events, telemetry.NewOnboardingError(step, envelope.Decode(c.body.Bytes())))
