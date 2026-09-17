@@ -191,6 +191,11 @@ func TestPrepareOnPathTrue(t *testing.T) {
 	if _, err := os.Stat(result.DescriptorPath); err != nil {
 		t.Errorf("descriptor not written: %v", err)
 	}
+	// F10 (review-inc-7.md): every schema-1 document carries "schema" —
+	// Menu and DataTugApp already do; DataTugCLI did not.
+	if result.Schema != envelope.Schema {
+		t.Errorf("schema = %d, want %d", result.Schema, envelope.Schema)
+	}
 }
 
 // TestPrepareDataTugMissingShowsInstallCommands is

@@ -240,6 +240,7 @@ func quoteAlways(goos, s string) string {
 // the environment-variable lines, the token command and the exact query
 // command, plus install guidance when datatug is not found.
 type DataTugCLI struct {
+	Schema          int             `json:"schema"`
 	OnPath          bool            `json:"on_path"`
 	Collection      string          `json:"collection"`
 	DescriptorPath  string          `json:"descriptor_path"`
@@ -274,7 +275,7 @@ func Prepare(lookPath LookPath, home, baseURL, db, collection string) (DataTugCL
 	tokenCommand := TokenCommand(goruntime.GOOS, db)
 	lines := EnvLines(descriptor, tokenCommand)
 	result := DataTugCLI{
-		Collection: collection, DescriptorPath: path, Descriptor: descriptor, EnvLines: lines,
+		Schema: envelope.Schema, Collection: collection, DescriptorPath: path, Descriptor: descriptor, EnvLines: lines,
 		Shell: shellFamily(goruntime.GOOS), ShellText: ShellText(goruntime.GOOS, lines),
 		TokenCommand: tokenCommand, QueryCommand: QueryCommand(goruntime.GOOS, path, collection),
 	}

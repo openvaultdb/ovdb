@@ -23,6 +23,7 @@ const notesDemo = { schema: 1, app: 'todo', installed: false, location: '/x', ap
 const todoDemo = { ...notesDemo, installed: true, database: 'todo' }
 
 const cliReady = {
+  schema: 1,
   on_path: true,
   collection: 'lists',
   descriptor_path: '/home/a/.config/ovdb/explore/datatug/notes.json',

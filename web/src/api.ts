@@ -178,6 +178,7 @@ export interface EnvLine {
 
 /** GET /api/local/v1/explore/datatug?db=…: choosing DataTug CLI. */
 export interface DataTugCLIDocument {
+  schema: number
   on_path: boolean
   collection: string
   descriptor_path: string
