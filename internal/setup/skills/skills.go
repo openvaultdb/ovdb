@@ -251,7 +251,6 @@ func stateOf(skillsDir string, d Definition) string {
 // files changed since it installed them.
 const modifiedTarget = "modified target"
 
-
 // Targets are the harnesses shown for d: every one found, plus Claude Code and
 // Codex, in cobracmd.DefaultHarnesses order.
 func (e Env) Targets(d Definition) []Target {
