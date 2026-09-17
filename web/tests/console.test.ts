@@ -27,10 +27,11 @@ describe('Home', () => {
     const wrapper = mount(HomeScreen)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="status-line"]').text()).toBe('OVDB server running at http://ovdb.localhost:6832')
+    expect(wrapper.get('[data-testid="status-line"]').text()).toBe('OVDB server running at http://ovdb.localhost:6832 · Databases: none')
     expect(wrapper.get('h1').text()).toBe('What would you like to do?')
     const options = wrapper.findAll('[data-option]').map((option) => option.attributes('data-option'))
-    expect(options).toEqual(['server', 'settings'])
+    expect(options).toEqual(['create', 'server', 'settings'])
+    expect(wrapper.get('[data-option="create"]').attributes('href')).toBe('/databases/new')
     const serverOption = wrapper.get('[data-option="server"]')
     expect(serverOption.text()).toContain('OVDB server')
     expect(serverOption.text()).toContain('Running')
@@ -46,7 +47,7 @@ describe('Home', () => {
         json(200, {
           ...home,
           status_line: [{ key: 'home.status.server_not_running' }],
-          options: [{ ...home.options[0], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
+          options: [{ ...home.options[1], badge: { tone: 'neutral', label_key: 'server.badge.not_running' } }],
         }),
     })
     const wrapper = mount(HomeScreen)
@@ -61,13 +62,14 @@ describe('Home', () => {
     const wrapper = mount(HomeScreen, { attachTo: document.body })
     await flushPromises()
     const link = wrapper.get('[data-option="server"]')
+    const create = wrapper.get('[data-option="create"]')
     await link.trigger('click', { button: 0 })
     expect(currentPath.value).toBe('/server')
     expect(window.location.pathname).toBe('/server')
 
     ;(link.element as HTMLElement).focus()
     await link.trigger('keydown', { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(link.element) // the only primary option wraps to itself
+    expect(document.activeElement).toBe(create.element) // the last primary option wraps to the first
     wrapper.unmount()
   })
 })

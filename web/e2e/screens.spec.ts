@@ -1,4 +1,4 @@
-// Screenshots of every 1b screen for visual review, in light and dark at
+// Screenshots of every console screen for visual review, in light and dark at
 // three sizes. Written to e2e/screenshots/ (git-ignored); they assert only
 // that each screen rendered.
 import { join } from 'node:path'
@@ -17,6 +17,8 @@ const screens = [
   { name: 'home', path: '/', ready: 'What would you like to do?' },
   { name: 'server', path: '/server', ready: 'Log file' },
   { name: 'settings', path: '/settings', ready: 'Save port' },
+  { name: 'create', path: '/databases/new', ready: 'Where should OVDB keep your data?' },
+  { name: 'databases', path: '/databases', ready: 'Databases' },
 ]
 const out = (name: string) => join(import.meta.dirname, 'screenshots', name + '.png')
 
@@ -32,6 +34,34 @@ for (const size of sizes) {
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
         await page.screenshot({ path: out(`${screen.name}-${suffix}`), fullPage: true })
       }
+
+      // Create: the filtered picker, PostgreSQL's manifest steps, the form,
+      // a SQLite Result, a refusal, and Databases with a confirmation.
+      const name = `shot-${size.width}-${colorScheme}`
+      await page.goto(primary() + '/databases/new')
+      await page.getByLabel('Filter').fill('sql')
+      await page.screenshot({ path: out(`create-filter-${suffix}`), fullPage: true })
+      await page.locator('[data-engine="postgres"]').click()
+      await page.getByTestId('manifest-steps').waitFor()
+      await page.screenshot({ path: out(`create-postgres-${suffix}`), fullPage: true })
+      await page.getByRole('button', { name: 'Change storage' }).click()
+      await page.locator('[data-engine="sqlite"]').click()
+      await page.getByLabel('Name').fill(name)
+      await page.screenshot({ path: out(`create-form-${suffix}`), fullPage: true })
+      await page.getByRole('button', { name: 'Create database' }).click()
+      await page.getByTestId('create-result').waitFor()
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+      await page.screenshot({ path: out(`create-result-${suffix}`), fullPage: true })
+      await page.goto(primary() + '/databases/new')
+      await page.locator('[data-engine="sqlite"]').click()
+      await page.getByLabel('Name').fill(name)
+      await page.getByRole('button', { name: 'Create database' }).click()
+      await page.getByRole('alert').waitFor()
+      await page.screenshot({ path: out(`create-refused-${suffix}`), fullPage: true })
+      await page.goto(primary() + '/databases')
+      await page.locator(`[data-remove="${name}"]`).click()
+      await page.screenshot({ path: out(`databases-confirm-${suffix}`), fullPage: true })
+      ovdb('databases', 'remove', name, '--yes')
 
       // Settings after saving a new port, then after an invalid one.
       await page.goto(primary() + '/settings')

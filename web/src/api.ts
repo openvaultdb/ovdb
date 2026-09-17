@@ -65,7 +65,47 @@ export interface HomeDocument {
 export interface StatusDocument {
   schema: number
   version: string
+  locations: { home: string; runtime: string; data: string }
   server: Server
+  databases: Database[]
+  next: Next[]
+}
+
+export interface Engine {
+  id: string
+  name: string
+  description: string
+  schema_modes: string[]
+  pinned: boolean
+  setup: 'guided' | 'manifest'
+  note?: string
+  manifest_steps?: Next[]
+}
+
+export interface EnginesDocument {
+  schema: number
+  engines: Engine[]
+  next: Next[]
+}
+
+export interface Database {
+  id: string
+  engine?: string
+  location?: string
+  state?: 'mounted' | 'needs_attention' | 'unknown'
+  reason?: string
+  manifest: string
+}
+
+export interface DatabasesDocument {
+  schema: number
+  databases: Database[]
+  next: Next[]
+}
+
+export interface DatabaseResult {
+  schema: number
+  database: Database
   next: Next[]
 }
 
@@ -102,7 +142,7 @@ export function resetConnection() {
   serverMoving = false
 }
 
-export async function api<T>(method: 'GET' | 'PUT', path: string, body?: unknown): Promise<Result<T>> {
+export async function api<T>(method: 'GET' | 'PUT' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<Result<T>> {
   let response: Response
   try {
     response = await fetch(path, {

@@ -11,6 +11,8 @@ import { navigate, screen } from './router'
 import HomeScreen from './screens/HomeScreen.vue'
 import ServerScreen from './screens/ServerScreen.vue'
 import SettingsScreen from './screens/SettingsScreen.vue'
+import DatabasesScreen from './screens/DatabasesScreen.vue'
+import CreateScreen from './screens/CreateScreen.vue'
 import { useServer } from './useServer'
 
 // The shell keeps the server poll running on every screen.
@@ -20,6 +22,8 @@ const titles = {
   home: () => t('app.name'),
   server: () => t('console.title', { screen: t('server.title') }),
   settings: () => t('console.title', { screen: t('settings.title') }),
+  databases: () => t('console.title', { screen: t('databases.title') }),
+  create: () => t('console.title', { screen: t('create.title') }),
   'not-found': () => t('app.name'),
 }
 
@@ -70,6 +74,8 @@ function home(event: MouseEvent) {
       <HomeScreen v-else-if="screen === 'home'" />
       <ServerScreen v-else-if="screen === 'server'" />
       <SettingsScreen v-else-if="screen === 'settings'" />
+      <DatabasesScreen v-else-if="screen === 'databases'" />
+      <CreateScreen v-else-if="screen === 'create'" />
       <div v-else class="flex flex-col gap-4">
         <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight">{{ t('api.not_found') }}</h1>
         <p>

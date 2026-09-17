@@ -39,6 +39,8 @@ export default async function globalSetup() {
     OVDB_DATA_HOME: join(base, 'data'),
     OVDB_PORT: String(port),
     OVDB_NON_INTERACTIVE: '1',
+    // `ovdb databases` keeps its legacy behaviour without the gate.
+    OVDB_PREVIEW: '1',
   })
   execFileSync(binary, ['server', 'start', '--json'], { env: process.env, stdio: 'pipe' })
 
