@@ -65,7 +65,6 @@ func TestDemoInstallNeedsYesWithoutATerminal(t *testing.T) {
 // todo-demo AC:fresh-install-creates-data, AC:reinstall-keeps-changes and
 // the status command, through the CLI and the server it starts.
 func TestDemoInstallThroughTheServer(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	e.in(t.TempDir())
 	location := filepath.Join(e.dirs.Data, "demos", "todo")
@@ -143,7 +142,6 @@ func maps(got, want map[string]bool) bool {
 
 // todo-demo AC:conflicting-todo-refused.
 func TestDemoInstallRefusesAnotherTodo(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	e.ok("databases", "create", "todo")
 	before := e.ok("databases", "--json").stdout
@@ -164,7 +162,6 @@ func TestDemoInstallRefusesAnotherTodo(t *testing.T) {
 // todo-demo AC:open-starts-server-and-app (the CLI half; the browser half is
 // web/e2e/todo.spec.ts) and local-server-and-web-console AC:not-built-fallback.
 func TestDemoOpen(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	built := false
 	e.app.ConsoleBuilt = func() bool { return built }

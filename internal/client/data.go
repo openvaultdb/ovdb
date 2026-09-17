@@ -124,14 +124,23 @@ type Record struct {
 }
 
 // KeyID is the record id, unescaped, at the end of a key the server
-// returned. A query in a nested collection returns keys without their parent
-// ("items/k3f9x2"), so presentations build the full path from the collection
-// they asked for and this id.
+// returned.
 func KeyID(key string) string {
 	if path, err := datapath.FromKey(key); err == nil {
 		return path.Name()
 	}
 	return key[strings.LastIndex(key, "/")+1:]
+}
+
+// RecordPath is the absolute path of a record a query of collection
+// returned: the server's full key (openvaultdb-go v0.6.2+), or, from an older
+// server that returns nested keys without their parent ("items/k3f9x2"),
+// collection and the key's last segment.
+func RecordPath(collection datapath.Path, key string) datapath.Path {
+	if path, err := datapath.FromKey(key); err == nil && path.Kind() == datapath.Record && path.Parent().String() == collection.String() {
+		return path
+	}
+	return collection.Child(KeyID(key))
 }
 
 // DatabaseInfo is the body of GET /v1/databases/{db}.
@@ -211,6 +220,7 @@ type v1ErrorBody struct {
 var v1Codes = map[string]envelope.Code{
 	"bad_request":               envelope.InvalidArgument,
 	"invalid_dtql":              envelope.InvalidArgument,
+	"invalid_key":               envelope.InvalidArgument,
 	"invalid_grant":             envelope.Unauthorized,
 	"forbidden":                 envelope.Forbidden,
 	"access_denied":             envelope.Forbidden,
@@ -272,6 +282,9 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 		e = e.WithReason(uicopy.T("context.unknown_database", map[string]string{"name": op.Database})).
 			WithNext(envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases"},
 				envelope.Next{Label: uicopy.T("next.use_database", nil), Command: "ovdb use <database>"})
+	case v1Code == "invalid_key":
+		e = e.WithNext(envelope.Next{Label: uicopy.T("next.path_escapes", nil)},
+			envelope.Next{Label: uicopy.T("next.list_records", nil), Command: "ovdb list " + collection.Arg() + op.Suffix})
 	case code == envelope.NotFound:
 		e = e.WithNext(envelope.Next{Label: uicopy.T("next.list_records", nil), Command: "ovdb list " + collection.Arg() + op.Suffix})
 	case code == envelope.AlreadyExists:

@@ -67,6 +67,18 @@ export function keyId(key: string): string {
   return unescapeSegment(last) ?? last
 }
 
+/**
+ * The unescaped segments of a record that a query of the collection at
+ * `collection` returned: the server's full key (openvaultdb-go v0.6.2+), or,
+ * from an older server whose nested keys lack their parent, the collection
+ * and the key's last segment.
+ */
+export function recordSegments(collection: string[], key: string): string[] {
+  const parts = key.split('/').map(unescapeSegment)
+  const full = parts.length === collection.length + 1 && collection.every((segment, i) => parts[i] === segment) && parts.at(-1) !== null
+  return full ? (parts as string[]) : [...collection, keyId(key)]
+}
+
 /** The data API URL path of the record at segments. */
 export function recordURL(db: string, segments: string[]): string {
   return `/v1/databases/${encodeURIComponent(db)}/records/` + segments.map((s) => urlSegment(escapeId(s))).join('/')

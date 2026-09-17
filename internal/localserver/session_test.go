@@ -379,10 +379,6 @@ func TestCrossOriginProtection(t *testing.T) {
 // (local-server-and-web-console#AC:cross-site-cookie-post-blocked, the
 // cookie half).
 func TestDemoEndpoints(t *testing.T) {
-	// TODO(ingitdb/dalgo2ingitdb#13): runs on Windows once inGitDB writes work there.
-	if goruntime.GOOS == "windows" {
-		t.Skip("inGitDB writes fail on Windows: ingitdb/dalgo2ingitdb#13")
-	}
 	t.Parallel()
 	f := newFixture(t)
 	session := f.signIn(t)

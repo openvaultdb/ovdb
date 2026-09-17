@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	goruntime "runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -24,14 +23,6 @@ import (
 )
 
 const owner = "owner"
-
-// TODO(ingitdb/dalgo2ingitdb#13): unskip once inGitDB writes work on Windows.
-func skipInGitDBWritesOnWindows(t *testing.T) {
-	t.Helper()
-	if goruntime.GOOS == "windows" {
-		t.Skip("inGitDB writes fail on Windows: ingitdb/dalgo2ingitdb#13")
-	}
-}
 
 type fixture struct {
 	dirs     paths.Dirs
@@ -148,7 +139,6 @@ func TestInspectBeforeAndAfterInstall(t *testing.T) {
 
 // todo-demo AC:fresh-install-creates-data and AC:reinstall-keeps-changes.
 func TestInstallIsIdempotentAndKeepsChanges(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	t.Parallel()
 	f := newFixture(t)
 	doc, err := f.service.Install(context.Background(), InstallRequest{})
@@ -198,7 +188,6 @@ func TestInstallIsIdempotentAndKeepsChanges(t *testing.T) {
 
 // todo-demo AC:conflicting-todo-refused, and a demo folder with other files.
 func TestInstallRefusesConflicts(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	t.Parallel()
 	f := newFixture(t)
 	if _, err := f.registry.Create(setup.CreateRequest{ID: "todo", Engine: setup.EngineInGitDB, Path: filepath.Join(f.dirs.Data, "todo")}); err != nil {
@@ -246,7 +235,6 @@ func TestInstallRefusesConflicts(t *testing.T) {
 }
 
 func TestInstallUndoesAFailedSeed(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	t.Parallel()
 	f := newFixture(t)
 	f.seedErr = errors.New("disk full")

@@ -3,7 +3,6 @@ package tui
 import (
 	"net/url"
 	"path/filepath"
-	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -15,10 +14,6 @@ import (
 // Open TODO app and Done; o signs the browser in to /apps/todo/
 // (todo-demo#REQ:demo-next-actions, first-run-onboarding#REQ:home-menu-options).
 func TestTryADemoInstallsAndOpensTheApp(t *testing.T) {
-	// TODO(ingitdb/dalgo2ingitdb#13): runs on Windows once inGitDB writes work there.
-	if goruntime.GOOS == "windows" {
-		t.Skip("inGitDB writes fail on Windows: ingitdb/dalgo2ingitdb#13")
-	}
 	m := realModel(t, freePort(t))
 	var opened []string
 	m.openBrowser = func(link string) error { opened = append(opened, link); return nil }

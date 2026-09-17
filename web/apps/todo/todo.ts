@@ -1,13 +1,13 @@
 // The TODO app's data (spec/features/todo-demo#REQ:todo-app-behaviour): the
 // demo database from GET /api/local/v1/demo, its lists and their items
 // through the same /v1 data API the CLI and AI agents use, on the same origin
-// with the console session. Paths are built from the collection asked for and
-// each key's last segment, so they are right whether the server returns full
-// nested keys or keys without their parent.
+// with the console session. Paths come from the server's full keys, or from
+// the collection asked for and each key's last segment on an older server
+// whose nested keys lack their parent.
 import { ref } from 'vue'
 
 import { api, connection, type ApiError, type DataRecord, type DemoDocument } from '../../src/api'
-import { display, keyId, keyOf, recordURL } from '../../src/datapath'
+import { display, keyOf, recordSegments, recordURL } from '../../src/datapath'
 
 /** Changes by other clients show within 3 s while the page is visible. */
 export const pollInterval = 2500
@@ -97,7 +97,7 @@ export function useTodo() {
     const order = demo.value.lists
     const found = await Promise.all(
       listRecords.data.records.map(async (record): Promise<List | ApiError> => {
-        const id = keyId(record.key)
+        const [, id] = recordSegments(['lists'], record.key)
         const items = await api<{ records: DataRecord[] }>('POST', base() + '/query', { collection: 'items', parent: keyOf(['lists', id]) })
         if (!items.ok) return items.error
         return {
@@ -106,10 +106,10 @@ export function useTodo() {
           title: text(record.data?.title) || id,
           items: items.data.records
             .map((item) => {
-              const itemId = keyId(item.key)
+              const segments = recordSegments(['lists', id, 'items'], item.key)
               return {
-                id: itemId,
-                path: display(['lists', id, 'items', itemId]),
+                id: segments[3],
+                path: display(segments),
                 title: text(item.data?.title),
                 done: item.data?.done === true,
                 addedAt: text(item.data?.added_at),

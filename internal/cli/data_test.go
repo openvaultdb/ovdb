@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -18,16 +17,6 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/dbcontext"
 )
-
-// skipInGitDBWritesOnWindows skips tests that write inGitDB records on
-// Windows: dalgo2ingitdb v0.5.0 locks definition.yaml and then writes it, and
-// Windows locks are mandatory (ingitdb/dalgo2ingitdb#13).
-func skipInGitDBWritesOnWindows(t *testing.T) {
-	t.Helper()
-	if goruntime.GOOS == "windows" {
-		t.Skip("inGitDB writes fail on Windows: ingitdb/dalgo2ingitdb#13")
-	}
-}
 
 // in makes dir (created, canonical) the working directory of later commands.
 func (e *env) in(dir string) string {
@@ -160,7 +149,6 @@ func TestUseAndPwdThroughTheServer(t *testing.T) {
 // AC:cd-examples through the CLI, and cd on the only-database rung saying
 // it saved a project context (review F5).
 func TestCdThroughTheServer(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e, a, _ := dataEnv(t)
 	e.in(a)
 	e.ok("use", "todo")
@@ -210,7 +198,6 @@ func TestCdThroughTheServer(t *testing.T) {
 // AC:escaped-ids-round-trip: stdout carries only results, notices go to
 // stderr, and --json bodies are /v1's.
 func TestDataCommandsThroughTheServer(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e, a, _ := dataEnv(t)
 	e.in(a)
 
@@ -287,7 +274,7 @@ func TestDataCommandsThroughTheServer(t *testing.T) {
 		}
 	}
 	items := e.ok("list", "/lists/to-buy/items", "--db", "todo", "--json")
-	if !strings.HasPrefix(items.stdout, `{"records":[`) || strings.Count(items.stdout, `"key":"items/`) != 2 ||
+	if !strings.HasPrefix(items.stdout, `{"records":[`) || strings.Count(items.stdout, `"key":"lists/to-buy/items/`) != 2 ||
 		!strings.Contains(items.stdout, `"path":"/lists/to-buy/items/bread"`) {
 		t.Errorf("list --json = %s", items.stdout)
 	}
@@ -335,7 +322,6 @@ func TestStrictModeError(t *testing.T) {
 // list` starts the server with the notice on stderr, and a start that dies
 // fails with server_start_failed and the sandbox guidance.
 func TestListAutoStarts(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	e.in(t.TempDir())
 	e.ok("databases", "create", "todo")

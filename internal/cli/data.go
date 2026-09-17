@@ -183,9 +183,9 @@ type rawRecord struct {
 
 // withPaths adds to a /v1 read body (a record, or {"records":[…]}) each
 // record's absolute escaped `path` next to the untouched server `key`. The
-// server's keys have no leading slash and, in nested collections, no
-// parent; `path` is what `ovdb get` and `ovdb set` take, the same form writes
-// print as {"key"} (review F4).
+// server's keys have no leading slash (and, before openvaultdb-go v0.6.2, no
+// parent in nested collections); `path` is what `ovdb get` and `ovdb set`
+// take, the same form writes print as {"key"} (review F4).
 func withPaths(body []byte, collection datapath.Path, single bool) ([]byte, error) {
 	if single {
 		var rec rawRecord
@@ -205,7 +205,7 @@ func withPaths(body []byte, collection datapath.Path, single bool) ([]byte, erro
 		list.Records = []rawRecord{}
 	}
 	for i := range list.Records {
-		list.Records[i].Path = collection.Child(client.KeyID(list.Records[i].Key)).String()
+		list.Records[i].Path = client.RecordPath(collection, list.Records[i].Key).String()
 	}
 	return envelope.Marshal(list), nil
 }
@@ -283,7 +283,7 @@ func (a *App) listCmd() *cobra.Command {
 							say(w, "  "+uicopy.T("data.more", map[string]string{"limit": strconv.Itoa(limit * 2)}))
 							break
 						}
-						say(w, "  "+d.path.Child(client.KeyID(rec.Key)).Display()+"  "+compactJSON(rec.Data))
+						say(w, "  "+client.RecordPath(d.path, rec.Key).Display()+"  "+compactJSON(rec.Data))
 					}
 				})
 			default:

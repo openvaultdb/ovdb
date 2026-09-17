@@ -64,7 +64,6 @@ func screenText(m tea.Model) string {
 // location, name notes → Use in this project → quit; then `ovdb add` and
 // `ovdb list` work in that project without --db (AC:journey-a-passes).
 func TestJourneyATerminal(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	project := e.in(filepath.Join(t.TempDir(), "shop"))
 	if err := os.Mkdir(filepath.Join(project, ".git"), 0o755); err != nil {
@@ -124,7 +123,6 @@ func TestJourneyATerminal(t *testing.T) {
 // project and round-trips a record with absolute paths; no command waits
 // for input (AC:journey-c-passes).
 func TestJourneyCAgent(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	e.vars["CLAUDECODE"] = "1"
 	e.vars[cli.EnvNonInteractive] = "1"
@@ -172,7 +170,6 @@ func TestJourneyCAgent(t *testing.T) {
 // the browser in to /apps/todo/; an agent (no terminal) then changes the
 // same lists with data commands and reads them back (AC:journey-d-passes).
 func TestJourneyDTodoDemo(t *testing.T) {
-	skipInGitDBWritesOnWindows(t)
 	e := previewEnv(t)
 	e.in(t.TempDir())
 	var opened []string
