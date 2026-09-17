@@ -5,3 +5,8 @@ node_modules/
 # where `pnpm build` has never run — see embed.go's doc comment.
 dist/*
 !dist/.gitkeep
+
+# Playwright output: screenshots for review, traces and reports.
+e2e/screenshots/
+test-results/
+playwright-report/

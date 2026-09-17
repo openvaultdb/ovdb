@@ -13,20 +13,20 @@ func TestTRendersAKnownKey(t *testing.T) {
 }
 
 func TestTSubstitutesPlaceholders(t *testing.T) {
-	got := T("console.placeholder.body", map[string]string{"name": "ovdb"})
+	got := T("server.also_at", map[string]string{"address": "ovdb"})
 	if !strings.Contains(got, "ovdb") {
 		t.Fatalf("T(...) = %q, want it to contain the substituted param", got)
 	}
-	if strings.Contains(got, "{name}") {
+	if strings.Contains(got, "{address}") {
 		t.Fatalf("T(...) = %q, still contains an unsubstituted placeholder", got)
 	}
 }
 
 func TestTLeavesUnknownPlaceholdersInPlace(t *testing.T) {
-	// console.placeholder.body has one placeholder, {name}; passing no
+	// server.also_at has one placeholder, {address}; passing no
 	// params must leave it verbatim rather than blanking it out.
-	got := T("console.placeholder.body", nil)
-	if !strings.Contains(got, "{name}") {
+	got := T("server.also_at", nil)
+	if !strings.Contains(got, "{address}") {
 		t.Fatalf("T(...) = %q, want the unsubstituted placeholder preserved", got)
 	}
 }
