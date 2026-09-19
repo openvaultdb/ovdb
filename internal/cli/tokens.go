@@ -12,21 +12,13 @@ import (
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
-	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
-// TokensPreview adds the preview behaviour to the legacy `ovdb token create`,
-// `list` and `revoke`: with OVDB_PREVIEW=1 they manage the tokens in
-// <OVDB home>/auth.json through the local OVDB server with the instance
-// secret, starting it when needed, unless --addr or --owner-token asks for
-// today's remote-server behaviour
-// (local-server-and-web-console#REQ:tokens-against-local-server). Without
-// the gate nothing changes, not even the flags help shows.
-func (a *App) TokensPreview(token *cobra.Command) {
-	if !preview.On() {
-		return
-	}
+// TokensLocal makes `ovdb token create|list|revoke` manage tokens in
+// <OVDB home>/auth.json through the local OVDB server by default. --addr or
+// --owner-token explicitly selects the remote-server compatibility path.
+func (a *App) TokensLocal(token *cobra.Command) {
 	token.Short = "Manage scoped access tokens for apps and tools"
 	token.Long = `Manage revocable scoped access tokens.
 

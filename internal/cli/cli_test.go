@@ -21,7 +21,6 @@ import (
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
-	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
@@ -64,7 +63,7 @@ func newRoot(app *cli.App) *cobra.Command {
 	create.Flags().Bool("json", false, "")
 	databases.AddCommand(create)
 	root.AddCommand(databases)
-	app.DatabasesPreview(databases, create)
+	app.DatabasesLocal(databases, create)
 	// Stand-ins for the legacy `ovdb token create|list|revoke`, with their
 	// flags.
 	token := &cobra.Command{Use: "token"}
@@ -81,7 +80,7 @@ func newRoot(app *cli.App) *cobra.Command {
 	tokenRevoke := &cobra.Command{Use: "revoke <token-id>", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error { return errors.New("legacy token revoke") }}
 	token.AddCommand(tokenCreate, tokenList, tokenRevoke)
 	root.AddCommand(token)
-	app.TokensPreview(token)
+	app.TokensLocal(token)
 	app.AddCommands(root)
 	return root
 }
@@ -406,19 +405,13 @@ func TestHomeMismatch(t *testing.T) {
 	}
 }
 
-func TestCommandsHiddenWithoutPreview(t *testing.T) {
-	t.Setenv(preview.EnvVar, "")
+func TestUserFacingCommandsAreVisible(t *testing.T) {
 	root := newRoot(&cli.App{})
-	for _, name := range []string{"server", "open", "config"} {
+	for _, name := range []string{"server", "open", "config", "engines", "use", "cd", "pwd", "list", "get", "set", "add", "delete", "demo", "explore", "skills", "telemetry"} {
 		found, _, err := root.Find([]string{name})
-		if err != nil || !found.Hidden {
+		if err != nil || found.Hidden {
 			t.Errorf("%s: hidden = %v, %v", name, found.Hidden, err)
 		}
-	}
-	t.Setenv(preview.EnvVar, "1")
-	root = newRoot(&cli.App{})
-	if found, _, _ := root.Find([]string{"server"}); found.Hidden {
-		t.Error("server hidden with the preview on")
 	}
 	if found, _, _ := root.Find([]string{"server", "run"}); !found.Hidden {
 		t.Error("server run is offered")

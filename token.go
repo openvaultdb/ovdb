@@ -48,9 +48,9 @@ Revoking a token takes effect immediately on the running server.`,
 		newTokenListCmd(&tf),
 		newTokenRevokeCmd(&tf),
 	)
-	// With OVDB_PREVIEW=1 they manage the local OVDB server's tokens unless
-	// --addr or --owner-token asks for today's behaviour.
-	app.TokensPreview(cmd)
+	// They manage the local OVDB server's tokens unless --addr or
+	// --owner-token asks for the explicit remote-server compatibility path.
+	app.TokensLocal(cmd)
 	return cmd
 }
 

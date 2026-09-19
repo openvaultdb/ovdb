@@ -1,12 +1,13 @@
 
-  Show status of a running OpenVaultDB server                                                                           
-         
-  USAGE  
-         
-    ovdb status [--flags]  
-         
-  FLAGS  
-         
+  Show the local OVDB setup: server, databases, demo, skills and usage statistics (starts nothing)
+
+  USAGE
+
+    ovdb status [--flags]
+
+  FLAGS
+
     -h --help  Help for status
-    --url      Server base URL (http://127.0.0.1:6832)
+    --json     Print the local setup status as JSON
+    --url      Query this running server's legacy /v1/status instead (http://127.0.0.1:6832)
 

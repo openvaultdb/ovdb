@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/openvaultdb/ovdb/internal/preview"
 	embedded "github.com/openvaultdb/ovdb/skills"
 )
 
@@ -16,7 +15,6 @@ import (
 // exists in this build's command tree (review F2): skills are copied into
 // the person's agent folders, so a command they name must work.
 func TestSkillCommandsExist(t *testing.T) {
-	t.Setenv(preview.EnvVar, "1") // the skills describe the preview commands
 	root := &cobra.Command{Use: "ovdb"}
 	addRootCommands(root, "1.0.0")
 	command := regexp.MustCompile(`\bovdb( [a-z][^` + "`" + `\n|]*)`)

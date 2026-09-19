@@ -4,13 +4,12 @@ package main
 // openvaultdb-go bump"): it exercises the built `ovdb` binary over loopback
 // HTTP exactly the way a real caller would, so that bumping the
 // openvaultdb-go dependency (a separate commit) cannot silently change
-// today's observable behavior for legacy manifests (no access policies, no
-// OVDB_PREVIEW gate).
+// observable remote-flag behavior for legacy manifests (no access policies).
 //
 // It verifies:
 //   - local-server-and-web-console#ac:legacy-serve-unchanged
 //   - database-setup-and-providers#ac:legacy-create-still-works
-//   - first-run-onboarding#ac:status-unchanged-without-gate
+//   - first-run-onboarding#ac:named-commands-public-without-gate
 //
 // All tests build the binary once (TestMain) and run every server under a
 // random loopback port, polling /v1/status for readiness and always killing
@@ -488,9 +487,9 @@ func TestLegacyDatabasesCreateAgainstRunningServer(t *testing.T) {
 	}
 }
 
-// TestLegacyStatusCommand is AC:status-unchanged-without-gate's `ovdb
-// status` clause: without OVDB_PREVIEW, `ovdb status --url` calls the
-// server exactly as today and prints its JSON status.
+// TestLegacyStatusCommand is AC:named-commands-public-without-gate's explicit
+// remote-path clause: `ovdb status --url` calls the server as before and
+// prints its JSON status.
 func TestLegacyStatusCommand(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir)

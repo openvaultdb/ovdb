@@ -1,27 +1,43 @@
 
-  OpenVaultDB — user-owned, portable databases with pluggable engines                                                   
-         
-  USAGE  
-         
-    ovdb [command] [--flags]  
-            
-  COMMANDS  
-            
-    cloud [command] [--flags]      Authenticate and manage OpenVaultDB Cloud access
-    completion [command]           Generate the autocompletion script for the specified shell
-    databases [command] [--flags]  List databases mounted on a running OpenVaultDB server
-    help [command]                 Help about any command
-    init [--flags]                 Create a database manifest
-    install [name...] [--flags]    List and install fleet CLIs relevant to ovdb
-    self-update [--flags]          Update the installed ovdb binary to the latest release
-    serve [--flags]                Run the OpenVaultDB API server
-    status [--flags]               Show status of a running OpenVaultDB server
-    token [command] [--flags]      Manage scoped API tokens (talks to a running ovdb server)
-    upgrade [name...] [--flags]    Upgrade installed fleet CLIs, including ovdb itself
-    version [--flags]              Print version, commit and build date
-         
-  FLAGS  
-         
-    -h --help                      Help for ovdb
-    -v --version                   Version for ovdb
+  OpenVaultDB — user-owned, portable databases with pluggable engines
+
+  USAGE
+
+    ovdb [command] [--flags]
+
+  COMMANDS
+
+    add <collection path> <json | -> [--flags]  Add a record with a new id to a collection
+    cd [path] [--flags]                         Move to a path inside the current database
+    cloud [command] [--flags]                   Authenticate and manage OpenVaultDB Cloud access
+    completion [command]                        Generate the autocompletion script for the specified shell
+    config [command]                            Show or change OVDB settings
+    databases [command] [--flags]               List databases mounted on a running OpenVaultDB server
+    delete <path> [--flags]                     Delete one record
+    demo [command]                              Try the built-in TODO demo: two lists your apps and AI agents share
+    engines [--flags]                           List where OVDB can keep your data
+    explore [command] [--flags]                 Choose where to explore your data: DataTug CLI or DataTug.app
+    get <path> [--flags]                        Print one record
+    help [command]                              Help about any command
+    init [--flags]                              Create a database manifest
+    install [name...] [--flags]                 List and install fleet CLIs relevant to ovdb
+    list [path] [--flags]                       List collections, a collection's records, or show a record
+    open [--flags]                              Sign in to the OVDB web console
+    pwd [--flags]                               Print the current database, path and where they came from
+    self-update [--flags]                       Update the installed ovdb binary to the latest release
+    serve [--flags]                             Run the OpenVaultDB API server
+    server [command]                            Start, stop and check the local OVDB server
+    set <path> [<json> | -] [--flags]           Create or replace a record, or change named fields with --field
+    skills [command]                            See and install the AI agent skills for OpenVaultDB
+    status [--flags]                            Show the local OVDB setup: server, databases, demo, skills and usage statistics (starts nothing)
+    telemetry [command]                         Show or change usage statistics (off unless you turn them on)
+    token [command] [--flags]                   Manage scoped access tokens for apps and tools
+    upgrade [name...] [--flags]                 Upgrade installed fleet CLIs, including ovdb itself
+    use [database] [--flags]                    Choose the database this project works with (or show it)
+    version [--flags]                           Print version, commit and build date
+
+  FLAGS
+
+    -h --help                                   Help for ovdb
+    -v --version                                Version for ovdb
 

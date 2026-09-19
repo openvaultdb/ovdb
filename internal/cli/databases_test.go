@@ -11,16 +11,13 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
-	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
-// previewEnv is newEnv with OVDB_PREVIEW=1 for this process and the server.
+// previewEnv is retained as a shared test-helper name for the onboarding
+// suites. It deliberately does not set OVDB_PREVIEW: named commands are public.
 func previewEnv(t *testing.T) *env {
-	t.Setenv(preview.EnvVar, "1")
-	e := newEnv(t)
-	e.app.ChildEnv = append(e.app.ChildEnv, preview.EnvVar+"=1")
-	return e
+	return newEnv(t)
 }
 
 // waitMounted waits until the server has settled every database: mounting
@@ -41,7 +38,7 @@ func (e *env) waitMounted() {
 // commands, AC:create-refuses-overwrite, AC:sqlite-points-to-schema and
 // AC:result-lists-next-actions (CLI), through a real detached server.
 func TestDatabasesThroughTheServer(t *testing.T) {
-	e := previewEnv(t)
+	e := newEnv(t)
 
 	// Pure reads start nothing.
 	engines := e.run("engines", "--json")
@@ -183,7 +180,7 @@ func TestDatabasesThroughTheServer(t *testing.T) {
 // or server.log.
 func TestConnectionStringNeverLeaks(t *testing.T) {
 	const dsn = "postgres://u:s3cret@nohost.invalid/db"
-	e := previewEnv(t)
+	e := newEnv(t)
 	e.app.ChildEnv = append(e.app.ChildEnv, "CRM_DSN="+dsn)
 	if r := e.run("databases", "create", "todo"); r.code != 0 {
 		t.Fatalf("create = %+v", r)
@@ -252,7 +249,7 @@ func TestConnectionStringNeverLeaks(t *testing.T) {
 // AC:version-mismatch-line and AC:home-or-port-mismatch for the databases
 // commands.
 func TestDatabasesVersionAndHomeMismatch(t *testing.T) {
-	e := previewEnv(t)
+	e := newEnv(t)
 	e.app.ChildEnv = append(e.app.ChildEnv, childVersionEnv+"=0.9.0-old")
 	if r := e.run("databases", "create", "notes"); r.code != 0 {
 		t.Fatalf("create = %+v", r)
@@ -276,7 +273,7 @@ func TestDatabasesVersionAndHomeMismatch(t *testing.T) {
 // with it, it does (REQ:legacy-create-compatible). Without the gate nothing
 // changes.
 func TestLegacyDatabasesPaths(t *testing.T) {
-	e := previewEnv(t)
+	e := newEnv(t)
 	root := newRoot(e.app)
 	root.SetArgs([]string{"databases", "create", "crm", "--addr", "http://127.0.0.1:1"})
 	if err := root.Execute(); err == nil || err.Error() != "legacy create" {
@@ -298,17 +295,16 @@ func TestLegacyDatabasesPaths(t *testing.T) {
 		}
 	}
 
-	t.Setenv(preview.EnvVar, "")
 	root = newRoot(e.app)
 	create, _, _ := root.Find([]string{"databases", "create"})
-	if create.Flags().Lookup("engine") != nil {
-		t.Error("create offers --engine without the gate")
+	if create.Flags().Lookup("engine") == nil {
+		t.Error("create does not offer --engine")
 	}
-	if remove, _, _ := root.Find([]string{"databases", "remove"}); remove == nil || !remove.Hidden {
-		t.Error("remove is offered without the gate")
+	if remove, _, _ := root.Find([]string{"databases", "remove"}); remove == nil || remove.Hidden {
+		t.Error("remove is hidden")
 	}
-	if engines, _, _ := root.Find([]string{"engines"}); !engines.Hidden {
-		t.Error("engines is offered without the gate")
+	if engines, _, _ := root.Find([]string{"engines"}); engines.Hidden {
+		t.Error("engines is hidden")
 	}
 }
 
@@ -316,7 +312,7 @@ func TestLegacyDatabasesPaths(t *testing.T) {
 // missing-variable half) and AC:dsn-never-leaks for `ovdb databases
 // connect`, through a real detached server.
 func TestDatabasesConnectThroughTheServer(t *testing.T) {
-	e := previewEnv(t)
+	e := newEnv(t)
 
 	// Checks that need no server fail before starting one.
 	_ = decodeError(t, e.run("databases", "connect", "notes", "--json"), envelope.InvalidArgument)
@@ -415,7 +411,7 @@ func tree(t *testing.T, root string) string {
 // never shows that value in connect --json, databases --json or server.log.
 func TestConnectNeverShowsANamedVariablesValue(t *testing.T) {
 	const secret = "s3cretjunk-Tok"
-	e := previewEnv(t)
+	e := newEnv(t)
 	e.app.ChildEnv = append(e.app.ChildEnv, "OVDB_TEST_JUNK_DSN="+secret)
 	manifestPath := filepath.Join(t.TempDir(), "junk.yaml")
 	if err := os.WriteFile(manifestPath, []byte("database:\n  id: junk\n  schema_mode: strict\nstorage:\n  engine: postgres\n"+

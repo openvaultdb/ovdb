@@ -1,11 +1,11 @@
 // Package cli is ovdb's command-line presentation of the onboarding and
 // configuration capabilities: `ovdb server …`, `ovdb open`, `ovdb config …`
-// and the preview `ovdb status`. Commands resolve environment-dependent
+// and `ovdb status`. Commands resolve environment-dependent
 // inputs, call the local server (or the pure reads in internal/setup) and
 // render the resulting documents; --json prints those documents unchanged.
 //
-// Every new command is hidden unless OVDB_PREVIEW=1, exits 0 on success and
-// 1 on any failure, and reports failures in the shared error envelope.
+// Every user-facing command is visible, exits 0 on success and 1 on any
+// failure, and reports failures in the shared error envelope.
 package cli
 
 import (
@@ -20,7 +20,6 @@ import (
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
-	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
@@ -67,19 +66,17 @@ func (a *App) getenv(key string) string {
 	return a.Getenv(key)
 }
 
-// AddCommands registers the new commands on root, hidden without the gate.
+// AddCommands registers every user-facing command on root. Internal plumbing
+// such as `server run` hides itself in its own command group.
 func (a *App) AddCommands(root *cobra.Command) {
-	hidden := !preview.On()
 	for _, command := range []*cobra.Command{a.serverCmd(), a.openCmd(), a.configCmd(), a.enginesCmd(),
 		a.useCmd(), a.cdCmd(), a.pwdCmd(), a.listCmd(), a.getCmd(), a.setCmd(), a.addCmd(), a.deleteCmd(), a.demoCmd(), a.exploreCmd(), a.skillsCmd(), a.telemetryCmd()} {
-		command.Hidden = hidden
 		command.SetFlagErrorFunc(flagError)
 		root.AddCommand(command)
 	}
-	// `ovdb databases connect`, `remove` and `reload` join the legacy `ovdb databases`.
+	// `ovdb databases connect`, `remove` and `reload` join `ovdb databases`.
 	if databases, _, err := root.Find([]string{"databases"}); err == nil && databases != root {
 		for _, command := range []*cobra.Command{a.databasesConnectCmd(), a.databasesRemoveCmd(), a.databasesReloadCmd()} {
-			command.Hidden = hidden
 			command.SetFlagErrorFunc(flagError)
 			databases.AddCommand(command)
 		}

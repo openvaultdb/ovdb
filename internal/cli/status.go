@@ -11,7 +11,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
-// Status is the preview `ovdb status`: a pure read that never starts a
+// Status implements `ovdb status`: a pure read that never starts a
 // server (first-run-onboarding#REQ:status-command).
 func (a *App) Status(cmd *cobra.Command, jsonOut bool) error {
 	return run(func(cmd *cobra.Command, _ []string) error {

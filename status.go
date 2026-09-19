@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openvaultdb/ovdb/internal/cli"
-	"github.com/openvaultdb/ovdb/internal/preview"
 )
 
 func fetchJSON(url string) (map[string]any, error) {
@@ -39,11 +38,11 @@ func newStatusCmd(app *cli.App) *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show status of a running OpenVaultDB server",
+		Short: "Show the local OVDB setup: server, databases, demo, skills and usage statistics (starts nothing)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// With the preview gate, status reports the whole local setup;
-			// --url keeps today's behaviour (first-run-onboarding#REQ:status-command).
-			if preview.On() && !cmd.Flags().Changed("url") {
+			// --url keeps the explicit remote-server behaviour; without it,
+			// status reports the whole local setup and starts nothing.
+			if !cmd.Flags().Changed("url") {
 				return app.Status(cmd, jsonOut)
 			}
 			status, err := fetchJSON(url + "/v1/status")
@@ -55,13 +54,7 @@ func newStatusCmd(app *cli.App) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "http://"+DefaultAddr, "server base URL")
-	if preview.On() {
-		// Registered only behind the gate, so `ovdb status --help` and a
-		// stray --json behave exactly as before without it.
-		cmd.Flags().BoolVar(&jsonOut, "json", false, "print the local setup status as JSON")
-		cmd.Short = "Show the local OVDB setup: server, databases, demo, skills and usage statistics (starts nothing)"
-		cmd.Flags().Lookup("url").Usage = "query this running server's legacy /v1/status instead"
-	}
+	cmd.Flags().StringVar(&url, "url", "http://"+DefaultAddr, "query this running server's legacy /v1/status instead")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "print the local setup status as JSON")
 	return cmd
 }

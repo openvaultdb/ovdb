@@ -14,7 +14,6 @@ import (
 
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
-	"github.com/openvaultdb/ovdb/internal/preview"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
 
@@ -87,16 +86,10 @@ func writeEngines(w io.Writer, engines []setup.Engine) {
 	writeNext(w, generic)
 }
 
-// DatabasesPreview adds the preview behaviour to the legacy `ovdb
-// databases` and `ovdb databases create` commands: with OVDB_PREVIEW=1 they
-// use the local OVDB server, unless --url (list) or --addr (create) asks
-// for today's behaviour (database-setup-and-providers#REQ:list-and-remove,
-// REQ:legacy-create-compatible). Without the gate nothing changes, not even
-// the flags help shows.
-func (a *App) DatabasesPreview(list, create *cobra.Command) {
-	if !preview.On() {
-		return
-	}
+// DatabasesLocal makes `ovdb databases` and `ovdb databases create` use the
+// local OVDB setup, unless --url (list) or --addr (create) explicitly asks
+// for the remote-server compatibility path.
+func (a *App) DatabasesLocal(list, create *cobra.Command) {
 	var listJSON bool
 	legacyList := list.RunE
 	list.Flags().BoolVar(&listJSON, "json", false, "print the databases as JSON")

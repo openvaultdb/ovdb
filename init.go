@@ -7,8 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
-
-	"github.com/openvaultdb/ovdb/internal/preview"
 )
 
 func newInitCmd() *cobra.Command {
@@ -87,8 +85,6 @@ schemas:
 	cmd.Flags().StringVar(&storagePath, "path", "", "storage path (default derived from id)")
 	cmd.Flags().StringVar(&out, "out", "", "output manifest file (default <id>.yaml)")
 	_ = cmd.MarkFlagRequired("id")
-	if preview.On() {
-		cmd.Long += "\n\nEdit the file, then connect it to OVDB:\n  ovdb databases connect --manifest <absolute path>"
-	}
+	cmd.Long += "\n\nEdit the file, then connect it to OVDB:\n  ovdb databases connect --manifest <absolute path>"
 	return cmd
 }

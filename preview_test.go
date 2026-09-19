@@ -1,11 +1,9 @@
 package main
 
-// preview_test.go checks the preview gate on the built binary (see
-// legacy_test.go's TestMain): without OVDB_PREVIEW=1 the help ovdb prints is
-// byte-for-byte what it printed before the new commands existed
-// (configuration-parity#AC:gate-hides-incomplete,
-// first-run-onboarding#AC:tty-launches-tui second half), and with it the new
-// commands are offered and fail through the shared envelope with exit 1.
+// preview_test.go checks the public command surface on the built binary (see
+// legacy_test.go's TestMain). Every user-facing command is visible without an
+// environment gate and fails through the shared envelope with exit 1. The
+// preview gate remains only for the unfinished bare-command TUI.
 
 import (
 	"bytes"
@@ -48,7 +46,15 @@ func runOVDB(t *testing.T, env []string, args ...string) (string, string, int) {
 	return stdout.String(), stderr.String(), code
 }
 
-func TestHelpUnchangedWithoutPreview(t *testing.T) {
+func normalizeHelp(value string) string {
+	lines := strings.Split(value, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func TestPublicHelpWithoutPreview(t *testing.T) {
 	for _, tc := range []struct {
 		golden string
 		args   []string
@@ -62,39 +68,40 @@ func TestHelpUnchangedWithoutPreview(t *testing.T) {
 			t.Fatal(err)
 		}
 		stdout, stderr, code := runOVDB(t, nil, tc.args...)
-		if code != 0 || stdout != string(want) {
+		if code != 0 || normalizeHelp(stdout) != normalizeHelp(string(want)) {
 			t.Errorf("ovdb %v (exit %d, stderr %q) differs from %s:\n%s", tc.args, code, stderr, tc.golden, stdout)
 		}
 	}
 }
 
-// Review L9: under the gate, `ovdb status --help` describes the local
-// setup report, not a running server; without it the golden help stays.
-func TestPreviewStatusHelpDescribesTheSetup(t *testing.T) {
-	stdout, _, code := runOVDB(t, []string{"OVDB_PREVIEW=1"}, "status", "--help")
+func TestStatusHelpDescribesTheSetup(t *testing.T) {
+	stdout, _, code := runOVDB(t, nil, "status", "--help")
 	if code != 0 || !strings.Contains(stdout, "Show the local OVDB setup") || strings.Contains(stdout, "of a running OpenVaultDB server") {
-		t.Errorf("preview status --help:\n%s", stdout)
+		t.Errorf("status --help:\n%s", stdout)
 	}
 }
 
-func TestPreviewOffersNewCommandsAndUsesEnvelope(t *testing.T) {
-	preview := []string{"OVDB_PREVIEW=1"}
-	help, _, _ := runOVDB(t, preview, "--help")
-	for _, command := range []string{"server [command]", "open [--flags]", "config [command]"} {
+func TestPublicCommandsUseEnvelopeAndInternalRunStaysHidden(t *testing.T) {
+	help, _, _ := runOVDB(t, nil, "--help")
+	for _, command := range []string{
+		"server [command]", "open [--flags]", "config [command]", "engines [--flags]",
+		"demo [command]", "skills [command]", "telemetry [command]", "add <collection path>",
+	} {
 		if !strings.Contains(help, command) {
-			t.Errorf("preview help lacks %q:\n%s", command, help)
+			t.Errorf("public help lacks %q:\n%s", command, help)
 		}
 	}
-	if strings.Contains(help, " run ") {
-		t.Error("preview help offers the internal server run command")
+	serverHelp, _, _ := runOVDB(t, nil, "server", "--help")
+	if strings.Contains(serverHelp, "run [--flags]") {
+		t.Error("server help offers the internal server run command")
 	}
 
-	stdout, _, code := runOVDB(t, preview, "server", "start", "--bogus", "--json")
+	stdout, _, code := runOVDB(t, nil, "server", "start", "--bogus", "--json")
 	if e := envelope.Decode([]byte(stdout)); code != 1 || e == nil || e.Code != envelope.InvalidArgument {
 		t.Errorf("unknown flag: exit %d stdout %q", code, stdout)
 	}
 
-	// Hidden commands stay callable without the gate.
+	// Public commands are callable without the gate.
 	stdout, _, code = runOVDB(t, nil, "server", "status", "--json")
 	if code != 0 || !strings.Contains(stdout, `"state":"not_running"`) {
 		t.Errorf("server status without the gate: exit %d stdout %q", code, stdout)
@@ -102,15 +109,15 @@ func TestPreviewOffersNewCommandsAndUsesEnvelope(t *testing.T) {
 
 	// `ovdb token` uses the local server: without one and with --no-start
 	// it fails as server_not_running, not by calling 127.0.0.1:6832.
-	stdout, _, code = runOVDB(t, preview, "token", "list", "--no-start", "--json")
+	stdout, _, code = runOVDB(t, nil, "token", "list", "--no-start", "--json")
 	if e := envelope.Decode([]byte(stdout)); code != 1 || e == nil || e.Code != envelope.ServerNotRunning {
-		t.Errorf("preview token list --no-start: exit %d stdout %q", code, stdout)
+		t.Errorf("token list --no-start: exit %d stdout %q", code, stdout)
 	}
 
-	// Preview status is a pure read that starts nothing.
-	stdout, stderr, code := runOVDB(t, preview, "status", "--json")
+	// Status is a pure read that starts nothing.
+	stdout, stderr, code := runOVDB(t, nil, "status", "--json")
 	if code != 0 || !strings.HasPrefix(stdout, `{"schema":1,"version":`) || !strings.Contains(stdout, `"state":"not_running"`) {
-		t.Errorf("preview status: exit %d stdout %q stderr %q", code, stdout, stderr)
+		t.Errorf("status: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 }
 

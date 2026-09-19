@@ -27,8 +27,8 @@ func newDatabasesCmd(app *cli.App) *cobra.Command {
 	cmd.Flags().StringVar(&url, "url", "http://"+DefaultAddr, "server base URL")
 	create := newDatabasesCreateCmd()
 	cmd.AddCommand(create)
-	// With OVDB_PREVIEW=1 both use the local OVDB server unless --url or
-	// --addr asks for today's behaviour.
-	app.DatabasesPreview(cmd, create)
+	// Both use the local OVDB server unless --url or --addr asks for the
+	// explicit remote-server compatibility path.
+	app.DatabasesLocal(cmd, create)
 	return cmd
 }

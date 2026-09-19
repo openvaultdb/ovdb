@@ -51,7 +51,7 @@ func main() {
 
 	app := addRootCommands(root, info.Version)
 
-	// New (preview) commands fail with the shared error envelope, printed by
+	// Agent-facing commands fail with the shared error envelope, printed by
 	// cli.Render; every other error keeps fang's output.
 	fangOpts = append(fangOpts, fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
 		if !cli.Render(err, os.Args[1:], os.Stdout, w) {
@@ -97,9 +97,8 @@ func addRootCommands(root *cobra.Command, currentVersion string) *cli.App {
 		newUpgradeCmd(currentVersion),
 	)
 	app.AddCommands(root)
-	// Registered only behind the gate, so bare `ovdb` keeps printing today's
-	// help without it (first-run-onboarding#REQ:preview-gate,
-	// AC:tty-launches-tui's second half; testdata/help.golden is unchanged).
+	// Only the unfinished bare-command TUI remains behind the preview gate.
+	// Named user-facing commands and their help are always public.
 	if preview.On() {
 		root.RunE = app.RootRunE
 	}
