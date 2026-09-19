@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,7 +38,14 @@ func TestSkillsEndpoints(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("GET skills = %d %s", rec.Code, rec.Body)
 	}
-	if got := document.Skills[1].Targets; len(got) != 2 || !got[0].Detected || got[0].Dir != filepath.Join(f.userHome, ".claude", "skills", "openvaultdb-todo-demo") || got[1].Harness != "codex" || got[1].Detected {
+	canonicalHome := skills.Canonical(f.userHome)
+	claudeSkills := filepath.Join(canonicalHome, ".claude", "skills")
+	codexSkills := filepath.Join(canonicalHome, ".codex", "skills")
+	wantTargets := []skills.Target{
+		{Harness: "claude", Name: "Claude Code", SkillsDir: claudeSkills, Dir: filepath.Join(claudeSkills, "openvaultdb-todo-demo"), Detected: true, State: skills.StateNotInstalled},
+		{Harness: "codex", Name: "Codex", SkillsDir: codexSkills, Dir: filepath.Join(codexSkills, "openvaultdb-todo-demo"), State: skills.StateNotInstalled},
+	}
+	if got := document.Skills[1].Targets; !slices.Equal(got, wantTargets) {
 		t.Errorf("targets = %+v", got)
 	}
 

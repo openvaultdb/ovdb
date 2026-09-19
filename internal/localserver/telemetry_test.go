@@ -22,6 +22,10 @@ type posthogStub struct {
 	events []map[string]any
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
 func (p *posthogStub) received() []map[string]any {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -177,34 +181,79 @@ func TestServerEnvironmentForcesConsoleTelemetryOff(t *testing.T) {
 // for PostHog; the batch still arrives, sent in the background.
 func TestConsoleActionsDoNotWaitForTheSend(t *testing.T) {
 	t.Parallel()
-	arrived := make(chan struct{}, 8)
-	release := make(chan struct{})
-	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		arrived <- struct{}{}
-		<-release
-	}))
-	t.Cleanup(func() { close(release); slow.Close() })
-	f := newFixture(t, func(o *Options) {
-		o.Telemetry = &telemetry.Recorder{Channel: telemetry.ChannelWeb, Home: o.Dirs.Home, Version: o.Record.Version,
-			Getenv: func(string) string { return "" }, Key: "phc_test", Endpoint: slow.URL}
-	})
-	session := f.signIn(t)
-	same := sameOrigin(testHost)
-	_ = f.do(t, request{method: http.MethodPut, path: "/api/local/v1/telemetry", body: `{"state":"enabled","confirmed_by_user":true}`, cookie: session, header: same})
-	for _, action := range []request{
-		{method: http.MethodPost, path: "/api/local/v1/telemetry/events", body: `{"events":[{"event":"onboarding_started"}]}`, cookie: session, header: same},
-		{method: http.MethodPost, path: "/api/local/v1/demo/install", body: `{}`, cookie: session, header: same},
+	for _, tc := range []struct {
+		name   string
+		action request
+	}{
+		{"posted events", request{method: http.MethodPost, path: "/api/local/v1/telemetry/events", body: `{"events":[{"event":"onboarding_started"}]}`}},
+		{"observed action", request{method: http.MethodPost, path: "/api/local/v1/demo/install", body: `{}`}},
 	} {
-		start := time.Now()
-		rec := f.do(t, action)
-		if elapsed := time.Since(start); rec.Code >= 400 || elapsed > 500*time.Millisecond {
-			t.Errorf("%s = %d after %s", action.path, rec.Code, elapsed)
-		}
-	}
-	select {
-	case <-arrived:
-	case <-time.After(3 * time.Second):
-		t.Fatal("no batch reached the endpoint")
+		t.Run(tc.name, func(t *testing.T) {
+			arrived := make(chan struct{}, 1)
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				arrived <- struct{}{}
+				<-release
+				return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: http.NoBody}, nil
+			})}
+			t.Cleanup(unblock)
+
+			f := newFixture(t, func(o *Options) {
+				o.Telemetry = &telemetry.Recorder{Channel: telemetry.ChannelWeb, Home: o.Dirs.Home, Version: o.Record.Version,
+					Getenv: func(string) string { return "" }, Key: "phc_test", Endpoint: "http://telemetry.invalid", Client: client}
+			})
+			if _, err := setup.ChangeTelemetry(f.dirs, telemetry.Change{State: telemetry.StateEnabled, ConfirmedByUser: true}, telemetry.ChannelWeb, f.now); err != nil {
+				t.Fatal(err)
+			}
+			if decision := f.handler.server.opts.Telemetry.Decide(); !decision.Sending {
+				t.Fatalf("telemetry decision = %+v, want sending", decision)
+			}
+			action := tc.action
+			action.cookie = f.signIn(t)
+			action.header = sameOrigin(testHost)
+			if !json.Valid([]byte(action.body)) {
+				t.Fatalf("invalid test request body: %q", action.body)
+			}
+
+			returned := make(chan *httptest.ResponseRecorder, 1)
+			req := httptest.NewRequest(action.method, action.path, strings.NewReader(action.body))
+			req.Host = testHost
+			req.AddCookie(&http.Cookie{Name: SessionCookieName(testPort), Value: action.cookie})
+			for name, value := range action.header {
+				req.Header.Set(name, value)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			go func() {
+				rec := httptest.NewRecorder()
+				f.handler.ServeHTTP(rec, req)
+				returned <- rec
+			}()
+			deadline := time.NewTimer(5 * time.Second)
+			defer deadline.Stop()
+			responseC, arrivedC := returned, arrived
+			var response *httptest.ResponseRecorder
+			for responseC != nil || arrivedC != nil {
+				select {
+				case response = <-responseC:
+					responseC = nil
+				case <-arrivedC:
+					arrivedC = nil
+				case <-deadline.C:
+					if response == nil {
+						t.Fatalf("response returned=false, telemetry endpoint entered=%v", arrivedC == nil)
+					}
+					t.Fatalf("response returned=true (%d %s), telemetry endpoint entered=%v", response.Code, response.Body, arrivedC == nil)
+				}
+			}
+			if response.Code >= 400 {
+				t.Errorf("%s = %d: %s", action.path, response.Code, response.Body)
+			}
+			// The response and endpoint arrival were both observed while the
+			// endpoint remained blocked. A synchronous send would deadlock above.
+			unblock()
+		})
 	}
 }
 
