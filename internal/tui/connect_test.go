@@ -156,10 +156,13 @@ func TestConnectThroughTheServer(t *testing.T) {
 		t.Fatalf("screen = %s, problem %+v", m.screen, m.problem.err)
 	}
 	view := flat(m.View().Content)
-	for _, want := range []string{"Connected database journal", "Your data stays where it is: " + folder, "What next?", "Browse data", "ovdb list / --db journal", "b browse"} {
+	for _, want := range []string{"Connected database journal", "What next?", "Browse data", "ovdb list / --db journal", "b browse"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("result lacks %q:\n%s", want, view)
 		}
+	}
+	if want := "Your data stays where it is: " + folder; !containsAcrossVisualWraps(m.View().Content, want) {
+		t.Errorf("result lacks %q across visual wraps:\n%s", want, view)
 	}
 	entries, _ := os.ReadDir(folder)
 	var names []string

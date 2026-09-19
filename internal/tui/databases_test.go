@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
@@ -25,6 +26,21 @@ func typeText(t *testing.T, m Model, text string) Model {
 
 // flat collapses whitespace, so wrapped screen text compares as one line.
 func flat(s string) string { return strings.Join(strings.Fields(stripANSI(s)), " ") }
+
+// containsAcrossVisualWraps compares rendered text while ignoring whitespace
+// inserted by the terminal renderer. It keeps every non-whitespace character,
+// so long paths and their surrounding copy must still be complete and ordered.
+func containsAcrossVisualWraps(rendered, want string) bool {
+	compact := func(s string) string {
+		return strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, stripANSI(s))
+	}
+	return strings.Contains(compact(rendered), compact(want))
+}
 
 func visibleIDs(m Model) []string {
 	var ids []string
@@ -146,11 +162,13 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 		t.Fatalf("screen = %s, problem %+v", m.screen, m.problem.err)
 	}
 	view := flat(m.View().Content)
-	for _, want := range []string{"Created database notes", "Stored in " + folder + "/ as readable files with Git history.",
-		"What next?", "See your databases", "ovdb databases", "Started the OVDB server at"} {
+	for _, want := range []string{"Created database notes", "What next?", "See your databases", "ovdb databases", "Started the OVDB server at"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("result lacks %q:\n%s", want, view)
 		}
+	}
+	if want := "Stored in " + folder + "/ as readable files with Git history."; !containsAcrossVisualWraps(m.View().Content, want) {
+		t.Errorf("result lacks %q across visual wraps:\n%s", want, view)
 	}
 	manifest, err := os.ReadFile(setup.ManifestPath(m.local.Dirs.Home, "notes"))
 	if err != nil || !strings.Contains(string(manifest), "schema_mode: schemaless") {
@@ -186,7 +204,11 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	if m.screen != ScreenDatabases || len(m.databases.document.Databases) != 1 {
 		t.Fatalf("databases: screen %s %+v", m.screen, m.databases.document)
 	}
-	if view := flat(m.viewDatabases()); !strings.Contains(view, "notes [Ready]") || !strings.Contains(view, folder) {
+	if got := m.databases.document.Databases[0].Location; got != folder {
+		t.Errorf("listed database location = %q, want %q", got, folder)
+	}
+	if view := flat(m.viewDatabases()); !strings.Contains(view, "notes [Ready]") ||
+		!containsAcrossVisualWraps(view, filepath.Join("data", "notes")) {
 		t.Errorf("list:\n%s", view)
 	}
 	m = send(t, m, key("enter")) // details, not straight to Remove
@@ -209,7 +231,8 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	if m.databases.view != databasesConfirm || !m.databases.keep {
 		t.Fatalf("confirm = %s keep %v", m.databases.view, m.databases.keep)
 	}
-	if view := flat(m.viewDatabases()); !strings.Contains(view, "Remove notes from OVDB?") || !strings.Contains(view, "Its data stays where it is: "+folder) {
+	if view := flat(m.viewDatabases()); !strings.Contains(view, "Remove notes from OVDB?") ||
+		!containsAcrossVisualWraps(view, "Its data stays where it is: "+folder) {
 		t.Errorf("confirm view:\n%s", view)
 	}
 	m = send(t, m, key("down"))
@@ -217,7 +240,7 @@ func TestCreateThenRemoveThroughTheServer(t *testing.T) {
 	if m.screen != ScreenResult || !strings.Contains(m.result.title, "Removed database notes from OVDB") {
 		t.Fatalf("remove: screen %s result %+v problem %+v", m.screen, m.result, m.problem.err)
 	}
-	if !strings.Contains(flat(m.viewResult()), "Your data is still in "+folder) {
+	if !containsAcrossVisualWraps(m.viewResult(), "Your data is still in "+folder) {
 		t.Errorf("removed view:\n%s", m.viewResult())
 	}
 	if _, err := os.Stat(folder); err != nil {
