@@ -81,6 +81,17 @@ func TestConfigRoundTrip(t *testing.T) {
 	if config, _ := LoadConfig(dirs.Home); config.Server.Port != 7001 {
 		t.Errorf("reloaded port = %d", config.Server.Port)
 	}
+	document, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerReadOnly, Value: "true"}, true)
+	if err != nil || !document.Config.Server.ReadOnly || len(document.Next) != 1 || document.Next[0].Command != "ovdb server restart" {
+		t.Fatalf("server.read_only = %+v, %v", document, err)
+	}
+	if _, err := ApplyConfigChange(dirs, ConfigChange{Key: KeyServerReadOnly, Value: "sometimes"}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
+		t.Errorf("invalid server.read_only accepted: %v", err)
+	}
+	document, err = ApplyConfigChange(dirs, ConfigChange{Key: KeyServerReadOnly, Value: "false"}, false)
+	if err != nil || document.Config.Server.ReadOnly {
+		t.Fatalf("clearing server.read_only = %+v, %v", document, err)
+	}
 	if _, err := ApplyConfigChange(dirs, ConfigChange{Key: "server.bogus", Value: "x"}, true); envelope.As(err) == nil || envelope.As(err).Code != envelope.InvalidArgument {
 		t.Errorf("unknown key: %v", err)
 	}

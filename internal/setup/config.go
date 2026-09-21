@@ -32,10 +32,14 @@ const (
 	// KeyServerCORS lists the browser app origins allowed to call /v1/… and
 	// /token with bearer tokens (capability 25, CLI only: exception E7).
 	KeyServerCORS = "server.cors"
+	// KeyServerReadOnly rejects database mutations for this server, including
+	// requests authenticated with the owner token. It applies on the next
+	// server start.
+	KeyServerReadOnly = "server.read_only"
 )
 
 // Keys lists the supported keys, for usage errors.
-var Keys = []string{KeyServerPort, KeyServerCORS}
+var Keys = []string{KeyServerPort, KeyServerCORS, KeyServerReadOnly}
 
 // Config is config.yaml. Unset values are omitted and mean "default".
 type Config struct {
@@ -48,8 +52,9 @@ type Config struct {
 
 // ServerConfig is the server section of config.yaml.
 type ServerConfig struct {
-	Port int      `yaml:"port,omitempty" json:"port,omitempty"`
-	CORS []string `yaml:"cors,omitempty" json:"cors,omitempty"`
+	Port     int      `yaml:"port,omitempty" json:"port,omitempty"`
+	CORS     []string `yaml:"cors,omitempty" json:"cors,omitempty"`
+	ReadOnly bool     `yaml:"read_only,omitempty" json:"read_only,omitempty"`
 }
 
 // ConfigDocument is the body of GET/PUT /api/local/v1/config and the --json
@@ -121,6 +126,14 @@ func ApplyConfigChange(dirs paths.Dirs, change ConfigChange, serverRunning bool)
 			return ConfigDocument{}, corsErr
 		}
 		config.Server.CORS = origins
+	case KeyServerReadOnly:
+		readOnly, parseErr := strconv.ParseBool(strings.TrimSpace(change.Value))
+		if parseErr != nil {
+			return ConfigDocument{}, envelope.New(envelope.InvalidArgument, uicopy.T("config.failed", nil)).
+				WithReason("server.read_only must be true or false").
+				WithNext(envelope.Next{Label: uicopy.T("next.config_get", nil), Command: "ovdb config get " + KeyServerReadOnly})
+		}
+		config.Server.ReadOnly = readOnly
 	default:
 		return ConfigDocument{}, UnknownConfigKey(change.Key)
 	}

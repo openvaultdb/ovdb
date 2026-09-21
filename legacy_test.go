@@ -293,6 +293,24 @@ func TestLegacyServeIngitdbCRUD(t *testing.T) {
 	}
 }
 
+func TestLegacyServeReadOnlyRejectsOwnerWrites(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	writeManifest(t, dir, "todo.yaml", ingitdbManifest)
+
+	addr := freeLoopbackAddr(t)
+	const ownerToken = "owner-token"
+	srv := startServer(t, dir, addr, []string{
+		"serve", "--manifest", "todo.yaml", "--addr", addr,
+		"--auth", "--owner-token", ownerToken, "--read-only",
+	}, nil, ownerToken)
+	status, body := doJSON(t, http.MethodPut, srv.baseURL+"/v1/databases/todo/records/items/blocked", ownerToken,
+		map[string]any{"data": map[string]any{"title": "blocked"}})
+	if status != http.StatusForbidden || !strings.Contains(string(body), `"code":"read_only"`) {
+		t.Fatalf("owner write in read-only mode: status=%d body=%s", status, body)
+	}
+}
+
 // TestLegacyServeSQLiteCRUD is the AC:legacy-serve-unchanged happy path
 // against a strict SQLite-backed database with a declared collection schema.
 func TestLegacyServeSQLiteCRUD(t *testing.T) {

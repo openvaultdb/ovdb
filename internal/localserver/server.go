@@ -76,6 +76,7 @@ type Options struct {
 
 type localServer struct {
 	opts     Options
+	readOnly bool
 	data     http.Handler
 	console  http.Handler
 	logins   *loginLinks
@@ -144,13 +145,14 @@ func New(opts Options) (*Handler, error) {
 	}
 	dataServer := server.New(opts.Record.Version, opts.Databases,
 		server.WithAuth(&auth.Config{OwnerToken: opts.Secret, Store: store}),
+		server.WithReadOnly(config.Server.ReadOnly),
 		server.WithLogger(slog.New(captureErrors(slog.Default().Handler()))))
 	registry, err := setup.OpenRegistry(opts.Dirs, dataServer, logf(opts.ErrorLog, opts.Now), setup.RegistryOptions{MountTimeout: opts.MountTimeout})
 	if err != nil {
 		return nil, err
 	}
 	s := &localServer{
-		opts: opts, data: dataServer.Handler(), console: opts.Console,
+		opts: opts, readOnly: config.Server.ReadOnly, data: dataServer.Handler(), console: opts.Console,
 		logins: newLoginLinks(opts.Now), sessions: newSessions(opts.Dirs.Runtime, opts.Now),
 		registry: registry,
 	}
@@ -206,6 +208,20 @@ var endpoints = []endpoint{
 	{http.MethodGet, "/api/local/v1/skills", accessOwner, (*localServer).getSkills},
 	{http.MethodPost, "/api/local/v1/skills/install", accessOwner, (*localServer).installSkill},
 	{http.MethodPost, "/api/local/v1/explore/datatug", accessOwner, (*localServer).exploreDataTug},
+}
+
+var readOnlyDataEndpoints = map[string]struct{}{
+	http.MethodPost + " /api/local/v1/databases":             {},
+	http.MethodPost + " /api/local/v1/databases/connect":     {},
+	http.MethodPost + " /api/local/v1/databases/{id}/reload": {},
+	http.MethodPost + " /api/local/v1/databases/reload":      {},
+	http.MethodDelete + " /api/local/v1/databases/{id}":      {},
+	http.MethodPost + " /api/local/v1/demo/install":          {},
+}
+
+func isReadOnlyDataEndpoint(e endpoint) bool {
+	_, ok := readOnlyDataEndpoints[e.method+" "+e.path]
+	return ok
 }
 
 // matchPath reports whether path matches pattern, where a "{name}" segment
@@ -381,6 +397,10 @@ func (s *localServer) localAPI(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if !allow(w, credential, e.access) {
+			return
+		}
+		if s.readOnly && isReadOnlyDataEndpoint(e) {
+			envelope.Write(w, envelope.New(envelope.Forbidden, "server is read-only"))
 			return
 		}
 		// DELETE carries no body; a plain HTML form cannot send it.
