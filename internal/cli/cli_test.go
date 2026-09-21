@@ -284,6 +284,10 @@ func TestJSONEqualsAPIThroughLifecycle(t *testing.T) {
 	if set.code != 0 || !strings.Contains(set.stdout, "Saved server.port = 7777.") || !strings.Contains(set.stdout, "ovdb server restart") {
 		t.Errorf("config set = %+v", set)
 	}
+	readOnly := e.run("config", "set", "server.read_only", "true")
+	if readOnly.code != 0 || !strings.Contains(readOnly.stdout, "Saved server.read_only = true.") || !strings.Contains(readOnly.stdout, "ovdb server restart") {
+		t.Errorf("config set read-only = %+v", readOnly)
+	}
 
 	stop := e.run("server", "stop")
 	if stop.code != 0 || !strings.Contains(stop.stdout, "Ask your AI assistant to start OVDB again, or run `ovdb open`.") {
@@ -296,6 +300,10 @@ func TestJSONEqualsAPIThroughLifecycle(t *testing.T) {
 	get := e.run("config", "get", "server.port")
 	if get.code != 0 || get.stdout != "server.port = 7777\n" {
 		t.Errorf("config get while stopped = %+v", get)
+	}
+	get = e.run("config", "get", "server.read_only")
+	if get.code != 0 || get.stdout != "server.read_only = true\n" {
+		t.Errorf("config get read-only while stopped = %+v", get)
 	}
 }
 

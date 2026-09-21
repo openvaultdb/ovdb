@@ -177,6 +177,30 @@ func assertEnvelope(t *testing.T, rec *httptest.ResponseRecorder, status int, co
 	}
 }
 
+func TestReadOnlyBlocksLocalDatabaseMutations(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if _, err := setup.ApplyConfigChange(f.dirs, setup.ConfigChange{Key: setup.KeyServerReadOnly, Value: "true"}, false); err != nil {
+		t.Fatal(err)
+	}
+	f.restart(t)
+	for _, tc := range []request{
+		{method: http.MethodPost, path: "/api/local/v1/databases", bearer: testSecret, body: `{"id":"blocked"}`},
+		{method: http.MethodPost, path: "/api/local/v1/databases/connect", bearer: testSecret, body: `{}`},
+		{method: http.MethodPost, path: "/api/local/v1/databases/blocked/reload", bearer: testSecret, body: `{}`},
+		{method: http.MethodPost, path: "/api/local/v1/databases/reload", bearer: testSecret, body: `{}`},
+		{method: http.MethodDelete, path: "/api/local/v1/databases/blocked", bearer: testSecret},
+		{method: http.MethodPost, path: "/api/local/v1/demo/install", bearer: testSecret, body: `{}`},
+	} {
+		assertEnvelope(t, f.do(t, tc), http.StatusForbidden, envelope.Forbidden)
+	}
+	// Configuration stays operable so the owner can turn the mode off and
+	// restart; it does not mutate database data.
+	if rec := f.do(t, request{method: http.MethodPut, path: "/api/local/v1/config", bearer: testSecret, body: `{"key":"server.read_only","value":"false"}`}); rec.Code != http.StatusOK {
+		t.Errorf("config remains operable: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // The credential table of REQ:credentials, for the 1a routes, and
 // AC:endpoints-authenticated.
 func TestCredentialTable(t *testing.T) {

@@ -32,7 +32,8 @@ ovdb --help
   `--schema-mode`, `--path`, `--out`).
 - **`ovdb serve`** — run the OpenVaultDB HTTP API server over the manifests
   in `--dir` and/or listed with `--manifest`. With `--data-dir`, new
-  databases can also be created at runtime.
+  databases can also be created at runtime. Add `--read-only` to reject all
+  data and token mutations, including owner-token requests.
 - **`ovdb status`** — show the status of a running `ovdb serve` instance.
 - **`ovdb databases`** — list, and (`databases create`) create, databases on
   a running server.
@@ -118,6 +119,27 @@ ovdb upgrade --all --check --format json
 ovdb upgrade --all --dry-run
 ovdb upgrade ovdb --check   # identical outcome to `ovdb self-update --check`
 ```
+
+### Read-only servers
+
+For a public, query-only deployment, start the legacy server with
+`ovdb serve --read-only`. It rejects every mutating `/v1` request before
+authentication or route side effects, including database creation, token
+creation/revocation, OAuth authorization/token exchanges, and owner-token
+writes. Successful reads continue normally.
+
+The local OVDB server persists the same mode in its owner-only configuration:
+
+```sh
+ovdb config set server.read_only true
+ovdb server restart
+```
+
+This also refuses local database registry mutations (create, connect, reload,
+remove) and demo installation. Server lifecycle, configuration, telemetry,
+skills, and project-context operations remain available because they do not
+mutate database data; use `ovdb config set server.read_only false` followed by
+a restart to leave read-only mode.
 
 ### Owner token and access policies
 

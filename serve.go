@@ -22,7 +22,7 @@ import (
 func newServeCmd() *cobra.Command {
 	var addr, dir, dataDir string
 	var manifests []string
-	var authEnabled bool
+	var authEnabled, readOnly bool
 	var ownerToken, authStorePath string
 	var corsOrigins []string
 	cmd := &cobra.Command{
@@ -108,6 +108,9 @@ created databases persist as manifests in the data-dir and are remounted on rest
 			if dataDir != "" {
 				opts = append(opts, server.WithDataDir(dataDir))
 			}
+			if readOnly {
+				opts = append(opts, server.WithReadOnly(true))
+			}
 			if len(corsOrigins) > 0 {
 				corsCfg := server.ParseCORSOrigins(corsOrigins)
 				if corsCfg != nil {
@@ -156,6 +159,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 		"allowed CORS origin (repeatable; comma-separated values accepted).\n"+
 			"Examples: --cors https://sneat.app --cors http://localhost:4200\n"+
 			"Use --cors '*' to allow any origin (development only — use with caution on public addresses)")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "reject all database and token mutations, including owner-token writes")
 	return cmd
 }
 

@@ -37,7 +37,7 @@ func (a *App) configGetCmd() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "get <key>",
-		Short: "Show a setting (server.port, server.cors)",
+		Short: "Show a setting (server.port, server.cors, server.read_only)",
 		Args:  exactArgs(1),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			if !slices.Contains(setup.Keys, args[0]) {
@@ -79,6 +79,9 @@ func configValue(config setup.Config, key string) (value string, isDefault bool)
 		}
 		return strings.Join(config.Server.CORS, ","), false
 	}
+	if key == setup.KeyServerReadOnly {
+		return strconv.FormatBool(config.Server.ReadOnly), !config.Server.ReadOnly
+	}
 	if config.Server.Port == 0 {
 		return strconv.Itoa(runtime.DefaultPort), true
 	}
@@ -89,7 +92,7 @@ func (a *App) configSetCmd() *cobra.Command {
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Change a setting (server.port, server.cors)",
+		Short: "Change a setting (server.port, server.cors, server.read_only)",
 		Args:  exactArgs(2),
 		RunE: run(func(cmd *cobra.Command, args []string) error {
 			t, err := a.resolve(0)
