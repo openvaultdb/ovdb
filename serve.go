@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -20,7 +21,7 @@ import (
 )
 
 func newServeCmd() *cobra.Command {
-	var addr, dir, dataDir string
+	var addr, dir, dataDir, publicURL string
 	var manifests []string
 	var authEnabled, readOnly bool
 	var ownerToken, authStorePath string
@@ -34,6 +35,13 @@ Databases are mounted from --manifest files and/or every *.yaml manifest in --di
 With --data-dir, databases can also be created at runtime (POST /v1/databases);
 created databases persist as manifests in the data-dir and are remounted on restart.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if publicURL != "" {
+				parsed, err := url.Parse(publicURL)
+				if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+					return fmt.Errorf("--public-url must be an HTTP(S) origin without credentials, path, query, or fragment")
+				}
+				publicURL = strings.TrimRight(publicURL, "/")
+			}
 			dbs := map[string]*core.Database{}
 			if dir != "" {
 				mounted, err := mount.Dir(dir)
@@ -84,6 +92,9 @@ created databases persist as manifests in the data-dir and are remounted on rest
 			}
 
 			var opts []server.Option
+			if publicURL != "" {
+				opts = append(opts, server.WithPublicOrigin(publicURL))
+			}
 			if authEnabled {
 				if ownerToken == "" {
 					ownerToken = os.Getenv("OVDB_OWNER_TOKEN")
@@ -149,6 +160,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", DefaultAddr, "listen address")
+	cmd.Flags().StringVar(&publicURL, "public-url", "", "externally reachable HTTP(S) origin for database connection URLs (set behind a reverse proxy)")
 	cmd.Flags().StringVar(&dir, "dir", "", "directory with database manifest *.yaml files")
 	cmd.Flags().StringArrayVar(&manifests, "manifest", nil, "database manifest file (repeatable)")
 	cmd.Flags().StringVar(&dataDir, "data-dir", "", "directory for runtime-created databases (enables POST /v1/databases)")

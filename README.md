@@ -33,7 +33,10 @@ ovdb --help
 - **`ovdb serve`** — run the OpenVaultDB HTTP API server over the manifests
   in `--dir` and/or listed with `--manifest`. With `--data-dir`, new
   databases can also be created at runtime. Add `--read-only` to reject all
-  data and token mutations, including owner-token requests.
+  data and token mutations, including owner-token requests. Open `/ovdb/` in
+  a browser for the generic server page, then browse `/ovdb/dbs/` and each
+  database profile. Use `--public-url https://your.example` when a reverse
+  proxy provides the externally reachable origin for connection URLs.
 - **`ovdb status`** — show the status of a running `ovdb serve` instance.
 - **`ovdb databases`** — list, and (`databases create`) create, databases on
   a running server.

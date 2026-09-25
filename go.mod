@@ -19,7 +19,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dal-go/record v0.1.3
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.0
-	github.com/openvaultdb/openvaultdb-go v0.7.0
+	github.com/openvaultdb/openvaultdb-go v0.9.0
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.3.0
 	github.com/strongo/cli-helpers v0.21.0
