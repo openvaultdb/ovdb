@@ -560,6 +560,11 @@ func TestFindingLines(t *testing.T) {
 		{"recordsets twice", edit(t, ownManifest, "  - Artist\n", "  - Album\n"), "manifest-recordsets", 31},
 		{"model name", edit(t, ownManifest, "model:\n", "model:\n  name: 5\n"), "manifest-model", 13},
 		{"anchor", edit(t, ownManifest, "id: chinook", "id: &a chinook"), "yaml-anchor", 2},
+		{"own address with a pin", edit(t, ownManifest, "datatug/chinookdb/chinook\n", "datatug/chinookdb/chinook?ref="+pin+"\n"), "manifest-model", 13},
+		{"own address on another host", edit(t, ownManifest, "modelspec://github.com/", "modelspec://gitlab.com/"), "manifest-model", 13},
+		{"own address in upper case", edit(t, ownManifest, "datatug/chinookdb/chinook\n", "DataTug/chinookdb/chinook\n"), "manifest-model", 13},
+		{"shared model address on another host", edit(t, sharedManifest, "modelspec://github.com/", "modelspec://gitlab.com/"), "manifest-model", 11},
+		{"shared meaning address on another host", edit(t, sharedManifest, "meaning://github.com/", "meaning://gitlab.com/"), "manifest-meaning", 13},
 		{"shared model", edit(t, sharedManifest, "chinook?ref="+pin, "chinook"), "manifest-model", 11},
 		{"shared meaning", edit(t, sharedManifest, "chinookdb?ref="+pin+"\n  file", "chinookdb\n  file"), "manifest-meaning", 13},
 		{"shared spelling", edit(t, sharedManifest, "meaning://github.com/datatug/chinookdb?ref="+pin, "meaning://github.com/DataTug/chinookdb?ref="+pin), "manifest-meaning", 13},
@@ -661,5 +666,49 @@ func TestPublishIsASet(t *testing.T) {
 	md, _ = CheckOVDBMd([]byte("---\novdb: 1\npublish: [./a.yaml]\n---\n"), Directory)
 	if md.Repeated != nil {
 		t.Errorf("%+v", md)
+	}
+}
+
+// The lines and the order of the findings of a call that has both documents.
+func TestLinesOfOVDBMdFindingsAndTheNoticePosition(t *testing.T) {
+	r := Check([]byte(goodMD), "other.yaml", []byte(ownManifest), Directory)
+	if len(r.Findings) != 1 || r.Findings[0].Rule != "ovdbmd-unlisted" || r.Findings[0].Line != 3 || r.Findings[0].Document != "OVDB.md" {
+		t.Errorf("unlisted: %v", r.Findings)
+	}
+	multi := "---\novdb: 1\npublish:\n  - ./a.yaml\n  - ./b.yaml\n---\n"
+	if r := Check([]byte(multi), "c.yaml", []byte(ownManifest), Directory); len(r.Findings) != 1 || r.Findings[0].Line != 4 {
+		t.Errorf("unlisted, block list: %v", r.Findings)
+	}
+	for doc, want := range map[string]int{
+		"---\novdb: 1\npublish: []\n---\n":       3,
+		"---\novdb: 1\npublish: x\n---\n":        3,
+		"---\novdb: 1\n---\n":                    2,
+		"---\novdb: 1\npublish:\n---\n":          3,
+		"---\nextra: 1\novdb: 1\n---\n":          2,
+		"---\novdb: 1\npublish: [./a, x]\n---\n": 3,
+	} {
+		_, findings := CheckOVDBMd([]byte(doc), Directory)
+		ok := false
+		for _, f := range findings {
+			ok = ok || f.Line == want
+		}
+		if !ok {
+			t.Errorf("%q: want a finding at line %d, got %v", doc, want, findings)
+		}
+	}
+	// 95 findings of OVDB.md and a manifest with many: the manifest's findings fill the budget,
+	// and the notice is the last of all, after them.
+	md := "---\novdb: 1\npublish:\n" + strings.Repeat("  - x\n", 95) + "---\n"
+	r = Check([]byte(md), "ovdb.yaml", []byte("format: 1\n"), Directory)
+	if len(r.Findings) != MaxFindings+1 || r.Findings[MaxFindings].Rule != RuleCapped {
+		t.Fatalf("%d findings, last %+v", len(r.Findings), r.Findings[len(r.Findings)-1])
+	}
+	for i, f := range r.Findings[:MaxFindings] {
+		if (i < 95) != (f.Document == "OVDB.md") || f.Rule == RuleCapped {
+			t.Fatalf("finding %d is %+v: OVDB.md's 95 come first, then the manifest's, then the notice", i, f)
+		}
+	}
+	if r.Findings[MaxFindings].Document != "ovdb.yaml" {
+		t.Errorf("the notice is about the call: %+v", r.Findings[MaxFindings])
 	}
 }
