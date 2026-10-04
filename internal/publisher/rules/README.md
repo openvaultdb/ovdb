@@ -136,7 +136,7 @@ node internal/publisher/rules/testdata/reference/generate.mjs --check   # fail i
 ```
 
 Needs Node 24 or later, git, npm and network access. The two commits are pinned
-at the top of the script (and in `reference_test.go`, which fails if the golden
+in `internal/publisher/references.mjs` (which `reference_test.go` reads, and fails if the golden
 was made from other ones); to use clones you already have, pass `--directory
 <dir>` and `--chinookdb <dir>`, which must be at those commits. The golden is
 kept small by storing, for the exhaustive families, only the accepted
