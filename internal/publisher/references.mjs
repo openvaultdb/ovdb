@@ -28,7 +28,7 @@ const runRaw = (cwd, args, input) => execFileSync('git', args, { cwd, env: gitEn
 
 // The keys of the local config of a checkout that `git init` and `git fetch` make: nothing else is allowed. A key such as filter.*.clean, core.fsmonitor,
 // core.sparseCheckout or core.worktree changes what git reports about the files, and a checkout that has one is not one that this run made.
-const freshConfigKeys = /^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)|extensions\.[a-z]+)$/;
+const freshConfigKeys = /^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)|extensions\.(objectformat|compatobjectformat|refstorage))$/;
 
 // What a checkout must be before a generator imports code from it: at the pinned commit, every tracked file the bytes that the commit has, no file of
 // its own, and no node_modules but the root one, which the generators install or link themselves. The generators run what they import, and the goldens
@@ -66,6 +66,10 @@ export function assertAsCommitted(dir, repository, commit) {
   const config = runRaw(dir, ['config', '--local', '--list', '-z']).split('\0').filter(Boolean).map((entry) => entry.split('\n')[0]);
   const foreign = config.filter((name) => !freshConfigKeys.test(name));
   if (foreign.length > 0) throw new Error(`${dir} has local git config that a fresh clone does not have (${foreign.slice(0, 3).join(', ')}); the references are read as committed`);
+  // extensions.worktreeConfig is refused above (it is not a key of a fresh clone), and so is the file it makes git read: a config.worktree can
+  // set core.worktree to another directory, and `git config --local --list` does not show it.
+  const gitDir = runRaw(dir, ['rev-parse', '--absolute-git-dir']).trim();
+  if (existsSync(join(gitDir, 'config.worktree'))) throw new Error(`${dir} has a config.worktree, which a fresh clone does not have; the references are read as committed`);
 }
 
 let privateRoot; // one directory for the run, made when the first reference is fetched

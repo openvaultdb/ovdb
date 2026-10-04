@@ -130,6 +130,21 @@ test('a clean filter in .git/config and .git/info/attributes that hides an edit 
   refused(clean, /local git config that a fresh clone does not have \(core.fsmonitor\)/);
 });
 
+test('extensions.worktreeConfig and a config.worktree that sets core.worktree are refused', () => {
+  const dir = fresh();
+  const clean = join(scratch, 'clean-copy');
+  mkdirSync(join(clean, 'scripts'), { recursive: true });
+  writeFileSync(join(clean, 'scripts', 'check.mjs'), "export const licenceIds = ['MIT'];\n");
+  mkdirSync(join(dir, 'scripts', 'node_modules', 'yaml'), { recursive: true }); // what Node would resolve first, and what git is made not to see
+  writeFileSync(join(dir, 'scripts', 'node_modules', 'yaml', 'index.js'), 'export {};\n');
+  git(dir, 'config', 'extensions.worktreeConfig', 'true');
+  writeFileSync(join(dir, '.git', 'config.worktree'), `[core]\n\tworktree = ${clean}\n`);
+  refused(dir, /local git config that a fresh clone does not have \(extensions\.worktreeconfig/);
+  git(dir, 'config', '--unset', 'extensions.worktreeConfig');
+  rmSync(join(dir, 'scripts', 'node_modules'), { recursive: true }); // without the extension git ignores the file, and the planted directory shows
+  refused(dir, /has a config\.worktree/);
+});
+
 test('the environment of the caller does not point git elsewhere', () => {
   const dir = fresh();
   writeFileSync(join(dir, 'scripts', 'check.mjs'), edited);
