@@ -521,10 +521,14 @@ func packageDir(arg, module string) (string, error) {
 // Run is the gate command: Run([]string{"cover.out", "./internal/a", ...}, ...)
 // prints the totals and returns 0 when every statement of the packages is
 // covered and nothing hides a package from the profile, 1 when anything is
-// wrong, and 2 for a usage or read error. root is the module's file tree.
-func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), root fs.FS) int {
+// wrong, and 2 for a usage or read error. root is the module's file tree, and goflags the value of GOFLAGS the profile was made under.
+func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), root fs.FS, goflags string) int {
 	if len(args) < 2 {
 		_, _ = fmt.Fprintln(stderr, "usage: covergate <cover profile> <package>...")
+		return 2
+	}
+	if problem := hiddenBuild(root, goflags); problem != "" {
+		_, _ = fmt.Fprintf(stderr, "covergate: %s\n", problem)
 		return 2
 	}
 	file, err := open(args[0])
@@ -572,4 +576,22 @@ func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadClos
 	}
 	_, _ = fmt.Fprintf(stderr, "covergate: %d problem(s); every statement of the given packages must be covered\n", len(result.Problems))
 	return 1
+}
+
+// hiddenBuild says why the profile cannot be trusted to be of the sources the gate reads, or "": a build that is not of the module's own files at the
+// module's own versions makes a profile of other code. GOFLAGS can name another go.mod (-modfile), replace files (-overlay), use another go.work
+// (-workfile), and choose vendored (-mod=vendor) or freshly resolved (-mod=mod) dependencies, and a vendor directory is used by the go command of its
+// own accord when go.mod says go 1.14 or later. Every one of them hides a function from the gate or puts another in its place.
+func hiddenBuild(root fs.FS, goflags string) string {
+	for _, flag := range strings.Fields(goflags) {
+		name, value, _ := strings.Cut(strings.TrimLeft(flag, "-"), "=")
+		switch {
+		case name == "modfile", name == "overlay", name == "workfile", name == "mod" && (value == "vendor" || value == "mod"):
+			return fmt.Sprintf("GOFLAGS has %s: the profile would be of another build than the module's own files, so the gate cannot tell what it measured; unset it", flag)
+		}
+	}
+	if info, err := fs.Stat(root, "vendor"); err == nil && info.IsDir() {
+		return "the module has a vendor directory: the go command builds from it, not from the module's dependencies, so the profile may be of other code than the gate reads; remove it"
+	}
+	return ""
 }

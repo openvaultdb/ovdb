@@ -22,8 +22,10 @@ var (
 	open = func(name string) (io.ReadCloser, error) { return os.Open(name) }
 	// root is the module's file tree, read for the packages to gate.
 	root = func() fs.FS { return os.DirFS(".") }
+	// goflags is the GOFLAGS the profile was made under: the gate refuses the ones that change what is built.
+	goflags = func() string { return os.Getenv("GOFLAGS") }
 )
 
 func main() {
-	exit(covergate.Run(args(), os.Stdout, os.Stderr, open, root()))
+	exit(covergate.Run(args(), os.Stdout, os.Stderr, open, root(), goflags()))
 }

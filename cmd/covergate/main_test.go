@@ -13,8 +13,9 @@ import (
 // runMain calls main with the seams replaced and returns the exit code it asked for.
 func runMain(t *testing.T, argv []string, profile string, tree fs.FS) int {
 	t.Helper()
-	oldExit, oldArgs, oldOpen, oldRoot := exit, args, open, root
-	t.Cleanup(func() { exit, args, open, root = oldExit, oldArgs, oldOpen, oldRoot })
+	oldExit, oldArgs, oldOpen, oldRoot, oldFlags := exit, args, open, root, goflags
+	t.Cleanup(func() { exit, args, open, root, goflags = oldExit, oldArgs, oldOpen, oldRoot, oldFlags })
+	goflags = func() string { return "" }
 	code := -1
 	exit = func(c int) { code = c }
 	args = func() []string { return argv }
@@ -42,6 +43,10 @@ func TestMainExitCodes(t *testing.T) {
 
 // The defaults read the real process: its arguments, files and working directory.
 func TestDefaultSeams(t *testing.T) {
+	t.Setenv("GOFLAGS", "-count=1")
+	if got := goflags(); got != "-count=1" {
+		t.Errorf("goflags() = %q", got)
+	}
 	if got := args(); len(got) != len(os.Args)-1 {
 		t.Errorf("args() = %v", got)
 	}
