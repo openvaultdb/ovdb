@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/paths"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
 )
 
 func testLocal(t *testing.T) (*Local, *bytes.Buffer) {
@@ -115,6 +117,39 @@ func TestUnknownEndpointOnOtherVersionIsVersionMismatch(t *testing.T) {
 				t.Errorf("mismatch = %+v body %s", e, response.Body)
 			}
 		}
+	}
+}
+
+// A running server from before adoption existed refuses the install request's
+// "adopt" field as unknown; the person is told to restart it, the same
+// server_version_mismatch as for a missing endpoint, and a request that does not
+// ask for adoption is not sent the field at all.
+func TestAdoptOnAnOlderServerIsVersionMismatch(t *testing.T) {
+	t.Parallel()
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(data))
+		if strings.Contains(string(data), `"adopt"`) {
+			envelope.Write(w, envelope.New(envelope.InvalidArgument, "Bad request").WithReason(`json: unknown field "adopt"`))
+			return
+		}
+		envelope.WriteJSON(w, http.StatusOK, map[string]any{"schema": 1})
+	}))
+	defer server.Close()
+	port, _ := strconv.Atoi(server.URL[strings.LastIndex(server.URL, ":")+1:])
+	l, _ := testLocal(t)
+	c := l.newClient(runtime.State{Running: true, Record: &runtime.Record{Port: port}, Secret: "s", Whoami: &runtime.Whoami{Version: "0.21.0"}})
+
+	_, err := l.postInstall(context.Background(), c, skills.InstallRequest{Skill: skills.Storage, Adopt: true})
+	if e := envelope.As(err); e == nil || e.Code != envelope.ServerVersionMismatch || e.Next[0].Command != "ovdb server restart" {
+		t.Errorf("adopt on an older server = %v", err)
+	}
+	if _, err := l.postInstall(context.Background(), c, skills.InstallRequest{Skill: skills.Storage}); err != nil {
+		t.Errorf("a request without adopt = %v", err)
+	}
+	if len(bodies) != 2 || strings.Contains(bodies[1], "adopt") {
+		t.Errorf("bodies = %q", bodies)
 	}
 }
 
