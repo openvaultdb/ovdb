@@ -210,32 +210,62 @@ func ignoreFile(m *model) map[string]string {
 	return nil
 }
 
-// realGitRan are the real-git tests that ran to the end without failing or skipping, which TestRealGitEveryTestRan holds to the set of them.
+// realGitTests are the real-git tests of this file, written here and nowhere else: TestRealGitEveryTestRan fails for a test function in the file that is
+// not in the list (a test renamed away from its prefix, or added without being listed), and for a listed test that did not reach the line of its
+// last statement, finished(t) (a skip, an early return, a failure). A subtest that skips fails (see subtest).
+var realGitTests = []string{
+	"TestRealGitReadsEveryCaseAsTheMemoryReaderDoes",
+	"TestRealGitFindsAnOversizeBlob",
+	"TestRealGitDoesNotRunTheFsmonitorOfTheRepository",
+	"TestRealGitDoesNotRunThePromisorRemoteOfTheRepository",
+	"TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled",
+}
+
+const lastRealGitTest = "TestRealGitEveryTestRan"
+
 var (
-	realGitRan   = map[string]bool{}
-	realGitRanMu sync.Mutex
+	realGitFinished   = map[string]bool{}
+	realGitFinishedMu sync.Mutex
 )
 
-// realGit skips the test unless OVDB_REAL_GIT is set, and records that it ran.
+// realGit skips the test unless OVDB_REAL_GIT is set.
 func realGit(t *testing.T) {
 	t.Helper()
 	if os.Getenv("OVDB_REAL_GIT") == "" {
 		t.Skip("set OVDB_REAL_GIT=1 to read real repositories with git")
 	}
-	t.Cleanup(func() {
-		if !t.Failed() && !t.Skipped() {
-			realGitRanMu.Lock()
-			defer realGitRanMu.Unlock()
-			realGitRan[t.Name()] = true
-		}
+}
+
+// finished records that the test ran to its last statement. It is that statement: a test that returns early, skips or fails never records.
+func finished(t *testing.T) {
+	t.Helper()
+	if t.Failed() || t.Skipped() {
+		return
+	}
+	realGitFinishedMu.Lock()
+	defer realGitFinishedMu.Unlock()
+	realGitFinished[t.Name()] = true
+}
+
+// subtest runs body as a subtest, and fails it if it skips: with OVDB_REAL_GIT set nothing may be skipped.
+func subtest(t *testing.T, name string, body func(t *testing.T)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		t.Cleanup(func() {
+			if t.Skipped() {
+				t.Error("a subtest of a real-git test skipped: with OVDB_REAL_GIT set nothing is skipped")
+			}
+		})
+		body(t)
 	})
 }
 
 func TestRealGitReadsEveryCaseAsTheMemoryReaderDoes(t *testing.T) {
 	realGit(t)
 	g := readGolden(t)
+	checked := 0
 	for _, c := range g.Cases {
-		t.Run(c.Group+"/"+c.Name, func(t *testing.T) {
+		subtest(t, c.Group+"/"+c.Name, func(t *testing.T) {
 			m := build(t, g, c.Ops)
 			dir := buildReal(t, m)
 			real := NewGit(ExecRunner{Dir: dir})
@@ -256,14 +286,20 @@ func TestRealGitReadsEveryCaseAsTheMemoryReaderDoes(t *testing.T) {
 					t.Errorf("accepted, and the checker refuses")
 				}
 			}
+			checked++
 		})
 	}
+	if checked != len(g.Cases) {
+		t.Fatalf("%d of the %d cases of the golden were read to the end", checked, len(g.Cases))
+	}
+	finished(t)
 }
 
 func TestRealGitFindsAnOversizeBlob(t *testing.T) {
 	realGit(t)
 	dir := buildReal(t, &model{tracked: map[string]Node{"OVDB.md": {Kind: File, Content: bytes.Repeat([]byte("x"), manifest.MaxDocumentBytes+100)}}, location: "normal"})
 	only(t, Check(NewGit(ExecRunner{Dir: dir}), publisher()), "document-size", "OVDB.md", 0, "is more than 262144 bytes")
+	finished(t)
 }
 
 // A repository's own configuration can name a program that git runs: core.fsmonitor, which `ls-files` runs when the untracked cache
@@ -294,6 +330,7 @@ func TestRealGitDoesNotRunTheFsmonitorOfTheRepository(t *testing.T) {
 		t.Error("the reader ran the repository's core.fsmonitor")
 	}
 	only(t, r, RuleManifest, "OVDB.md", 3, "it is in the working tree or the index but not committed")
+	finished(t)
 }
 
 // The mechanism behind MinGit, not the number: a repository whose promisor remote is a command (ext::), with an object missing, makes
@@ -326,6 +363,7 @@ func TestRealGitDoesNotRunThePromisorRemoteOfTheRepository(t *testing.T) {
 		t.Error("the reader ran the command of the repository's promisor remote")
 	}
 	only(t, r, RulePartial, "ovdb.yaml", 14, "cannot be read at the commit")
+	finished(t)
 }
 
 // The reason of an unreadable object is told from what git prints, not from the file names of the repository, and a truncated blob and a
@@ -354,7 +392,7 @@ func TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled(t *testing
 		"a truncated blob": {[3]string{"break", "model/alternate.modelspec.json", "truncate"}, RuleObjectBad, "ovdb.yaml"},
 		"a garbage commit": {[3]string{"break-commit", "", "corrupt"}, RuleObjectBad, "repository"},
 	} {
-		t.Run(name, func(t *testing.T) {
+		subtest(t, name, func(t *testing.T) {
 			dir := buildReal(t, repository())
 			breakObject(t, dir, c.spec)
 			r := Check(NewGit(ExecRunner{Dir: dir}), publisher())
@@ -363,36 +401,28 @@ func TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled(t *testing
 			}
 		})
 	}
+	finished(t)
 }
 
-// Every real-git test of the package ran, and none skipped or was left out: a skip would be a test that guards nothing and a log that says "ok". It is
-// the last test of the last file of its kind, and runs only with OVDB_REAL_GIT set and the others selected (-run RealGit, as the goldens job does).
+// Every real-git test of this file is listed and ran to its end: a skip would be a test that guards nothing and a log that says "ok". It is the last
+// test of the file, and runs only with OVDB_REAL_GIT set and the others selected (-run RealGit, as the goldens job does).
 func TestRealGitEveryTestRan(t *testing.T) {
 	realGit(t)
-	files, err := filepath.Glob("*_test.go")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("test files: %v, %v", files, err)
+	parsed, err := parser.ParseFile(token.NewFileSet(), "realgit_test.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var want []string
-	for _, file := range files {
-		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, decl := range parsed.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "TestRealGit") && fn.Name.Name != "TestRealGitEveryTestRan" {
-				want = append(want, fn.Name.Name)
-			}
+	for _, decl := range parsed.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") && fn.Name.Name != lastRealGitTest && !slices.Contains(realGitTests, fn.Name.Name) {
+			t.Errorf("%s is a test of the real-git file that realGitTests does not list: list it, or move it to another file", fn.Name.Name)
 		}
 	}
-	if len(want) < 4 {
-		t.Fatalf("only %d real-git tests: %v", len(want), want)
-	}
-	realGitRanMu.Lock()
-	defer realGitRanMu.Unlock()
-	for _, name := range want {
-		if !realGitRan[name] {
-			t.Errorf("%s did not run to the end: it failed, skipped, or was not selected", name)
+	realGitFinishedMu.Lock()
+	defer realGitFinishedMu.Unlock()
+	for _, name := range realGitTests {
+		if !realGitFinished[name] {
+			t.Errorf("%s did not run to its last statement: it failed, skipped, returned early, or was not selected", name)
 		}
 	}
+	t.Logf("%d real-git tests ran to their end", len(realGitTests))
 }
