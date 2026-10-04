@@ -1,8 +1,9 @@
 {
- "manifest/testdata/reference/corpus.json": "7c013b7f8382b76d6122280c8041e0c653fd073adf99a8539908043ec4c80ef4",
- "manifest/testdata/reference/directory.verdicts.json": "b013f494b8783342242c7ebde13d3a496d483fc7827e0c83817a4472ac433da9",
- "manifest/testdata/reference/directory.facts.json": "0457370303909be3144c2e605ab860dd409c8399ee218f025608e14968d08c44",
- "manifest/testdata/reference/publisher.verdicts.json": "ce128b4634de97a8640dbe874dd2d52037f397e032acf498d1a793c9edb0b939",
- "manifest/testdata/reference/publisher.facts.json": "35964e330d7c62c27071909dd743f773c983b29cebe012212dd84a4012bcf4ca",
+ "manifest/testdata/reference/corpus.json": "07fbc4af751d01b54a986470579d19427a2fd820d4f974da168bb391d368f14c",
+ "manifest/testdata/reference/directory.verdicts.json": "65f9d8b8c058c56652e3700203767cbd54e30cbf1c9cd61efaf3802a08b99fe2",
+ "manifest/testdata/reference/directory.facts.json": "6b724524b0e2a2de9586df494a91134615f223b45c699ea03b8c651557cb67b4",
+ "manifest/testdata/reference/publisher.verdicts.json": "262ffc6ca6cf0c522260048f2d1b80a1548256b67332cb5d99bbb886775fedc6",
+ "manifest/testdata/reference/publisher.facts.json": "7867bfb0852ce28ddc3a6fe4944908535ecc7c56238c0bb67089ec821e6cb34f",
+ "manifest/testdata/reference/values.json": "d4905d43d3065cdbc93eaabdea68ea74c0a2b29463909e6aee60750ed31d3570",
  "rules/testdata/reference/matrix.golden.json": "0d2c21ed457c4701d3311c3b8ffe3afa2e7ba046bcf540792f2aa3fb669bb07a"
 }
