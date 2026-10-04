@@ -82,7 +82,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.0'
           cache: true
 
       # single-target keeps this to one build (the runner's own OS/arch)
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.0'
           cache: true
       # Project contexts (symlinks, Windows drive letters and case, Git
       # worktrees) and data paths join the matrix in increment 3.
@@ -176,7 +176,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # Must be >= this repo's go.mod `go` directive.
-          go-version: '1.26.1'
+          go-version: '1.27.0'
           cache: true
       - name: go mod tidy -diff
         run: go mod tidy -diff
