@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
 	embedded "github.com/openvaultdb/ovdb/skills"
 )
@@ -155,7 +156,7 @@ func TestConsentForChangedSkill(t *testing.T) {
 	if err := os.RemoveAll(claude); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (skills.Build{}).Install(t.Context(), env, d, []skills.RequestTarget{{Harness: "claude", SkillsDir: filepath.Dir(claude)}}, false, false); err != nil {
+	if _, err := (skills.Build{}).Install(t.Context(), env, d, []skills.RequestTarget{{Harness: "claude", SkillsDir: filepath.Dir(claude)}}, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(claude, "SKILL.md"), []byte("edited"), 0o600); err != nil {
@@ -229,5 +230,19 @@ func TestConsentForAnAdoptableSkill(t *testing.T) {
 	}
 	if !strings.Contains(strings.ReplaceAll(view, " ", ""), filepath.Join(home, ".claude", "skills", ".cli-helpers-skills-adopted-backup")) {
 		t.Errorf("the Result doesn't name the backup folder:\n%s", view)
+	}
+}
+
+// A failed install that changed some agents says so on the problem screen: the
+// reason carries it (the TUI shows the envelope's message and reason).
+func TestFailedSkillInstallShowsWhatChanged(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 30)
+	failure := envelope.New(envelope.AlreadyExists, "Couldn't install the OpenVaultDB skill").
+		WithReason("/h/.cursor/skills/openvaultdb already exists and wasn't installed by OVDB, so it was left as it is. Before it stopped, Kiro changed: /h/.kiro/skills/openvaultdb (already there, now managed by OVDB). Your copy is kept at /h/.kiro/skills/.cli-helpers-skills-adopted-backup/x/openvaultdb")
+	next, _ := m.updateSkillsMsg(skillInstalledMsg{err: failure})
+	view := strings.ReplaceAll(flat(next.View().Content), " ", "")
+	if next.screen != ScreenProblem || !strings.Contains(view, "Beforeitstopped,Kiro") || !strings.Contains(view, "Yourcopyiskeptat/h/.kiro/skills/.cli-helpers-skills-adopted-backup/x/openvaultdb") {
+		t.Errorf("problem screen:\n%s", flat(next.View().Content))
 	}
 }

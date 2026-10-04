@@ -86,7 +86,7 @@ describe('AI agent skills', () => {
     let installed = false
     const calls = installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills': () => json(200, document(installed)),
+      'GET /api/local/v1/skills?adoptable=1': () => json(200, document(installed)),
       'POST /api/local/v1/skills/install': () => {
         installed = true
         return json(201, installedDocument)
@@ -126,7 +126,7 @@ describe('AI agent skills', () => {
 
   it('Not now writes nothing and returns to where the offer came from', async () => {
     window.history.replaceState({}, '', '/skills?skill=todo-demo&from=/demo')
-    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills': () => json(200, document()) })
+    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1': () => json(200, document()) })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
     await flushPromises()
     await wrapper.get('[data-testid="not-now"]').trigger('click')
@@ -137,7 +137,7 @@ describe('AI agent skills', () => {
 
   it('an unticked agent is not sent, and nothing is sent with no agent chosen', async () => {
     window.history.replaceState({}, '', '/skills')
-    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills': () => json(200, document()) })
+    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1': () => json(200, document()) })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
     await flushPromises()
     expect(wrapper.get('h1').text()).toBe('AI agent skills')
@@ -160,7 +160,7 @@ describe('AI agent skills', () => {
     changed.skills[1].targets[1] = { ...changed.skills[1].targets[1], detected: true, state: 'not_ovdb' }
     const calls = installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills': () => json(200, changed),
+      'GET /api/local/v1/skills?adoptable=1': () => json(200, changed),
       'POST /api/local/v1/skills/install': () => json(200, installedDocument),
     })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
@@ -185,7 +185,7 @@ describe('AI agent skills', () => {
     let adopted = false
     const calls = installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills': () => json(200, adoptable),
+      'GET /api/local/v1/skills?adoptable=1': () => json(200, adoptable),
       'POST /api/local/v1/skills/install': () => {
         adopted = true
         return json(201, {
@@ -212,7 +212,7 @@ describe('AI agent skills', () => {
     await claude.get('input').setValue(true)
     await wrapper.get('[data-testid="install-skill"]').trigger('click')
     await flushPromises()
-    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: false })
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: false, adopt: true })
     expect(wrapper.get('[data-testid="skill-result"]').text()).toContain(
       'Claude Code: /home/a/.claude/skills/openvaultdb-todo-demo (already there, now managed by OVDB; your copy is kept at ' +
         '/home/a/.claude/skills/.cli-helpers-skills-adopted-backup/20261004T120000.000000000Z/openvaultdb-todo-demo)',
@@ -223,17 +223,48 @@ describe('AI agent skills', () => {
     window.history.replaceState({}, '', '/skills')
     const newer = document(true)
     newer.skills[1].targets[0] = { ...newer.skills[1].targets[0], installed: true, state: 'from_a_newer_ovdb' as never }
-    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills': () => json(200, newer) })
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1': () => json(200, newer) })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
     await flushPromises()
     expect(wrapper.get('[data-skill="todo-demo"] [data-testid="installed-for"]').text()).toBe('Installed for Claude Code (from_a_newer_ovdb)')
+  })
+
+  it('a failed install says which agents it did change, and the list is read again', async () => {
+    window.history.replaceState({}, '', '/skills?skill=openvaultdb')
+    let reads = 0
+    installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/skills?adoptable=1': () => {
+        reads++
+        return json(200, document())
+      },
+      'POST /api/local/v1/skills/install': () =>
+        json(409, {
+          schema: 1,
+          error: {
+            code: 'already_exists',
+            message: "Couldn't install the OpenVaultDB skill",
+            reason:
+              '/home/a/.codex/skills/openvaultdb already exists and wasn\'t installed by OVDB, so it was left as it is. ' +
+              'Before it stopped, Claude Code changed: /home/a/.claude/skills/openvaultdb (already there, now managed by OVDB). Your copy is kept at /home/a/.claude/skills/.cli-helpers-skills-adopted-backup/x/openvaultdb',
+            next: [],
+          },
+        }),
+    })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    await wrapper.get('[data-testid="install-skill"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Before it stopped, Claude Code changed: /home/a/.claude/skills/openvaultdb')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Your copy is kept at /home/a/.claude/skills/.cli-helpers-skills-adopted-backup/x/openvaultdb')
+    expect(reads).toBe(2)
   })
 
   it('shows a refusal with what to do', async () => {
     window.history.replaceState({}, '', '/skills?skill=openvaultdb')
     installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills': () => json(200, document()),
+      'GET /api/local/v1/skills?adoptable=1': () => json(200, document()),
       'POST /api/local/v1/skills/install': () =>
         json(400, {
           schema: 1,

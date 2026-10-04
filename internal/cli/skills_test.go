@@ -298,7 +298,7 @@ func TestSkillAdoptsAnExistingCopy(t *testing.T) {
 
 	// Dry run, human and JSON: no crash, nothing written, no server started.
 	dry := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--dry-run")
-	for _, want := range []string{"Installing the OpenVaultDB skill would change:", claudeDir + "  (already there, now managed by OVDB)", "    A backup of your copy would be kept."} {
+	for _, want := range []string{"Installing the OpenVaultDB skill would change:", claudeDir + "  (already there; OVDB would take it over)", "    A backup of your copy would be kept."} {
 		if dry.code != 0 || !strings.Contains(dry.stdout, want) {
 			t.Errorf("dry run lacks %q: %+v", want, dry)
 		}
@@ -355,5 +355,81 @@ func TestSkillAdoptsAnExistingCopy(t *testing.T) {
 	}
 	if again := e.ok("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); !strings.Contains(again.stdout, "already up to date") {
 		t.Errorf("second install = %s", again.stdout)
+	}
+}
+
+// An install that fails for one AI agent says what it did to the others. The
+// review's repro: Kiro holds a SKILL.md of the person's own named openvaultdb
+// (taken over, with a backup), Cursor's folder is a symbolic link (a conflict).
+// The command still fails, with exit 1 and the conflict's reason; it also says
+// that Kiro changed and where the person's file is kept, in text, in --json (the
+// error's targets), and in a dry run as a plan. A folder that was merely added
+// is named the same way (it was not before adoption either).
+func TestSkillInstallThatPartlyFailsSaysWhatChanged(t *testing.T) {
+	e := previewEnv(t)
+	e.vars[cli.EnvNonInteractive] = "1"
+	kiro := filepath.Join(e.userHome(), ".kiro", "skills", "openvaultdb")
+	cursorSkills := filepath.Join(e.userHome(), ".cursor", "skills")
+	mine := "---\nname: openvaultdb\n---\nmy own\n"
+	for dir, text := range map[string]string{kiro: mine} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(cursorSkills, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(cursorSkills, "openvaultdb")); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	args := []string{"skills", "install", "openvaultdb", "--harness", "kiro", "--harness", "cursor"}
+
+	dry := e.run(append(args, "--dry-run")...)
+	for _, want := range []string{"Why: ", filepath.Join(cursorSkills, "openvaultdb") + " already exists and wasn't installed by OVDB", "Kiro would change: " + kiro + " (already there; OVDB would take it over). A backup of your copy would be kept."} {
+		if dry.code != 1 || !strings.Contains(dry.stdout+dry.stderr, want) {
+			t.Errorf("dry run lacks %q: %+v", want, dry)
+		}
+	}
+	if data, _ := os.ReadFile(filepath.Join(kiro, "SKILL.md")); string(data) != mine {
+		t.Fatal("a dry run changed the folder")
+	}
+
+	human := e.run(append(args, "--yes")...)
+	text := human.stdout + human.stderr
+	if human.code != 1 || !strings.Contains(text, filepath.Join(cursorSkills, "openvaultdb")+" already exists and wasn't installed by OVDB") ||
+		!strings.Contains(text, "Before it stopped, Kiro changed: "+kiro+" (already there, now managed by OVDB). Your copy is kept at ") {
+		t.Fatalf("install = %+v", human)
+	}
+	_, rest, _ := strings.Cut(text, "Your copy is kept at ")
+	backup := strings.Trim(strings.Fields(rest)[0], ".")
+	if kept, err := os.ReadFile(filepath.Join(backup, "SKILL.md")); err != nil || string(kept) != mine {
+		t.Errorf("backup %q = %q, %v", backup, kept, err)
+	}
+
+	// The same through --json: the failure, plus the outcomes of the targets.
+	e2 := previewEnv(t)
+	e2.vars[cli.EnvNonInteractive] = "1"
+	if err := os.MkdirAll(filepath.Join(e2.userHome(), ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(e2.userHome(), ".cursor", "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), filepath.Join(e2.userHome(), ".cursor", "skills", "openvaultdb")); err != nil {
+		t.Skipf("no symbolic links here: %v", err)
+	}
+	failure := decodeError(t, e2.run("skills", "install", "openvaultdb", "--harness", "claude", "--harness", "cursor", "--yes", "--json"), envelope.AlreadyExists)
+	var outcomes []skills.Outcome
+	if err := json.Unmarshal(failure.Targets, &outcomes); err != nil || len(outcomes) != 2 || outcomes[0].Harness != "claude" || outcomes[0].Result != "added" || outcomes[1].Result != "conflict" {
+		t.Errorf("targets = %s, %v", failure.Targets, err)
+	}
+	if !strings.Contains(failure.Reason, "Before it stopped, Claude Code changed: ") {
+		t.Errorf("reason = %q", failure.Reason)
+	}
+	if _, err := os.Stat(filepath.Join(e2.userHome(), ".claude", "skills", "openvaultdb", "SKILL.md")); err != nil {
+		t.Errorf("the added folder is missing: %v", err)
 	}
 }

@@ -127,6 +127,20 @@ func TestEveryStateAndResultHasText(t *testing.T) {
 	if got := ConsentText("not-a-state"); got != "" {
 		t.Errorf("ConsentText(unknown) = %q", got)
 	}
+	// A value that spells another entry of the same prefix is still shown as
+	// it came: an entry that needs parameters would print its {placeholders},
+	// and consent texts are for the states only.
+	for _, value := range []string{"line", "question", "install_for"} {
+		if got := ResultText(value); got != value {
+			t.Errorf("ResultText(%q) = %q, want the value as it came", value, got)
+		}
+		if got := ConsentText(value); got != "" {
+			t.Errorf("ConsentText(%q) = %q", value, got)
+		}
+	}
+	if got := ResultTextFor("adopted", true); got != uicopy.T("skills.adopted.planned", nil) || got == ResultText("adopted") {
+		t.Errorf("a dry run says %q for an adopted folder", got)
+	}
 	if got, want := ResultText(string(skillsync.Adopted)), uicopy.T("skills.result.adopted", nil); got != want {
 		t.Errorf("ResultText(adopted) = %q, want %q", got, want)
 	}

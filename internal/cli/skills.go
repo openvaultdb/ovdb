@@ -68,15 +68,6 @@ func (a *App) skillsListCmd() *cobra.Command {
 	return cmd
 }
 
-// adoptedBackupLine says where the copy that was already there is kept, or
-// in a dry run that one would be.
-func adoptedBackupLine(dryRun bool, outcome skills.Outcome) string {
-	if dryRun || outcome.BackupPath == "" {
-		return uicopy.T("skills.result.backup_planned", nil)
-	}
-	return uicopy.T("skills.result.backup", map[string]string{"path": outcome.BackupPath})
-}
-
 // targetLine is "Claude Code  installed  /h/.claude/skills/openvaultdb".
 func targetLine(target skills.Target, withState bool) string {
 	name := target.Name
@@ -163,9 +154,9 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 				say(w, uicopy.T(title, map[string]string{"name": document.Name}))
 				say(w, "")
 				for _, outcome := range document.Outcomes {
-					say(w, "  "+targetLine(outcome.Target, false)+"  ("+skills.ResultText(outcome.Result)+")")
+					say(w, "  "+targetLine(outcome.Target, false)+"  ("+skills.ResultTextFor(outcome.Result, document.DryRun)+")")
 					if outcome.Result == "adopted" {
-						say(w, "    "+adoptedBackupLine(document.DryRun, outcome))
+						say(w, "    "+skills.AdoptedBackupText(document.DryRun, outcome))
 					}
 				}
 				if len(document.Next) > 0 {

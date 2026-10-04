@@ -71,9 +71,10 @@ ovdb --help
   them (`skills list`), and install one for the agents found on this computer
   (`skills install <openvaultdb|todo-demo>`, which asks first). A folder of
   that name that is already there and already is the skill (its `SKILL.md`
-  names it and it holds no file the skill doesn't ship) is adopted: `ovdb` takes it over after
-  keeping a backup of your copy, and says where (`backup_path` in `--json`).
-  A folder that is anything else is left as it is.
+  names it and it holds no file the skill doesn't ship) is adopted: `ovdb`
+  takes it over after keeping a backup of your copy, and says where. A folder
+  that is anything else is left as it is. See
+  [AI agent skills](#ai-agent-skills) below.
 - **`ovdb install`** — list, show details for, and install fleet CLIs
   relevant to ovdb (`ingitdb`, `datatug`); see
   [Installing related CLIs](#installing-related-clis) below.
@@ -142,6 +143,37 @@ ovdb upgrade --all --check --format json
 ovdb upgrade --all --dry-run
 ovdb upgrade ovdb --check   # identical outcome to `ovdb self-update --check`
 ```
+
+### AI agent skills
+
+`ovdb skills install <skill>` installs into each AI agent found (or the ones
+named with `--harness`, or one folder with `--dir`). A skill folder that is
+already there, was not installed by `ovdb` and already is the skill (its
+`SKILL.md` names it and it holds no file the skill does not ship; its other
+bytes may differ) is **adopted**: `ovdb` keeps a backup of it in
+`.cli-helpers-skills-adopted-backup` inside that agent's skills folder, puts
+the skill there, and manages it from then on. The question before an install
+says which folders are taken over. The terminal UI and the web console offer
+such a folder unticked.
+
+For scripts and API clients (`--json` is the body of the local API):
+
+- `skills list --json` and `GET /api/local/v1/skills?adoptable=1` report such
+  a target as `"state":"adoptable"` (not installed). Without
+  `?adoptable=1` the API reports `"state":"not_ovdb"`, the state every version
+  before adoption knows for a folder `ovdb` did not install.
+- `skills install` and `POST /api/local/v1/skills/install` adopt only when the
+  request says `"adopt":true` (the CLI sends it when its plan has a folder to
+  take over, after you agreed; the console when you ticked such an agent). A
+  request without it is answered as it was before adoption: `already_exists`
+  (exit 1, HTTP 409), nothing touched.
+- An adoption is a success: exit 0, HTTP 201, `"result":"adopted"`, and
+  `"backup_path"` on that target (absent in a dry run, which reports the
+  plan).
+- An install that fails for some targets still reports the ones that did
+  change: the failure's `reason` says which and where a backup is, and the
+  error carries them as `targets`, the same list a success has. The code and
+  exit status are the failure's.
 
 ### Read-only servers
 

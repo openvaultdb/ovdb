@@ -18,7 +18,7 @@ import OvCommand from '../components/OvCommand.vue'
 import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
 import OvUsagePrompt from '../components/OvUsagePrompt.vue'
-import { hasCopy, t } from '../copy'
+import { hasPlainCopy, t } from '../copy'
 import { navigate } from '../router'
 import { offerUsagePrompt, recordUsage } from '../usage'
 
@@ -37,7 +37,7 @@ const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSea
 const from = /^\/[a-z]/.test(query.get('from') ?? '') ? query.get('from')! : null
 
 async function load() {
-  const response = await api<SkillsDocument>('GET', '/api/local/v1/skills')
+  const response = await api<SkillsDocument>('GET', '/api/local/v1/skills?adoptable=1')
   if (!response.ok) {
     loadProblem.value = response.error
     return
@@ -56,14 +56,14 @@ onMounted(async () => {
 // as it came rather than blanking the screen.
 function stateText(state: string): string {
   const key = `skills.state.${state}`
-  return hasCopy(key) ? t(key) : state
+  return hasPlainCopy(key) ? t(key) : state
 }
 
 // One target of an install result; an adopted folder says where the copy that
 // was there is kept.
 function resultLine(target: SkillInstallDocument['targets'][number]): string {
   if (target.result === 'adopted' && target.backup_path) {
-    return t('skills.result.adopted_line', { name: target.name, path: target.dir, backup: target.backup_path })
+    return t('skills.adopted.line', { name: target.name, path: target.dir, backup: target.backup_path })
   }
   return t('skills.result.line', { name: target.name, path: target.dir })
 }
@@ -102,6 +102,9 @@ async function install() {
     skill: offered.value.id,
     harnesses: chosen.value,
     replace_changed: offered.value.targets.some((target) => target.state === 'changed' && chosen.value.includes(target.harness!)),
+    // Sent only when a ticked agent has a copy to take over: a server before
+    // adoption existed refuses the field, and this is the person's yes to it.
+    ...(offered.value.targets.some((target) => target.state === 'adoptable' && chosen.value.includes(target.harness!)) ? { adopt: true } : {}),
   })
   installing.value = false
   if (response.ok) {
@@ -114,6 +117,8 @@ async function install() {
     await load()
   } else {
     problem.value = response.error
+    // A failure can follow changes to other agents; the list says what is installed.
+    await load()
   }
   await nextTick()
   outcome.value?.focus()

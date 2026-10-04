@@ -194,6 +194,26 @@ type Document struct {
 	Next   []envelope.Next `json:"next"`
 }
 
+// AdoptableParam is the query parameter of GET /api/local/v1/skills with which
+// a client says it understands the state "adoptable". Without it the server
+// reports such a target as not_ovdb, the state every version before adoption
+// knows for a folder OVDB did not install: a client built before adoption
+// existed has no text for the new state.
+const AdoptableParam = "adoptable"
+
+// WithoutAdoptable is d as a client that does not know the state "adoptable"
+// is told it: an adoptable target is another's folder.
+func (d Document) WithoutAdoptable() Document {
+	for i := range d.Skills {
+		for j := range d.Skills[i].Targets {
+			if d.Skills[i].Targets[j].State == StateAdoptable {
+				d.Skills[i].Targets[j].State = StateNotOVDB
+			}
+		}
+	}
+	return d
+}
+
 // Harness is the cobracmd harness named by id or one of its aliases.
 func Harness(id string) (cobracmd.Harness, bool) { return harnessByID(id) }
 
@@ -270,6 +290,10 @@ func stateFor(change skillsync.Change) string {
 // modifiedTarget is skillsync's conflict reason for an owned skill whose
 // files changed since it installed them.
 const modifiedTarget = "modified target"
+
+// unmanagedTarget is skillsync's conflict reason (until v0.21.0, its whole
+// reason; later versions append what was found) for a folder it does not own.
+const unmanagedTarget = "unmanaged target"
 
 // Targets are the harnesses shown for d: every one found, plus Claude Code and
 // Codex, in cobracmd.DefaultHarnesses order.
@@ -376,6 +400,12 @@ type InstallRequest struct {
 	// ReplaceChanged replaces a copy the person edited since OVDB installed
 	// it; only after they agreed to lose those edits.
 	ReplaceChanged bool `json:"replace_changed,omitempty"`
+	// Adopt takes over a folder that was already there and already is this
+	// skill, keeping a backup of it; only after the person agreed to that.
+	// Without it such a folder is refused and left untouched, which is what
+	// every client built before adoption existed (v0.21.0) expects: the server
+	// never sends one a state or result it did not ask for.
+	Adopt bool `json:"adopt,omitempty"`
 }
 
 // Outcome is what installing did in one target.
@@ -638,7 +668,7 @@ func (b Build) config(d Definition) (skillsync.Config, error) {
 // target and only d's bundle (capability 21). Targets must already be checked.
 // Every target is attempted; a failure in any makes the whole install fail,
 // naming each outcome.
-func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged bool) (InstallDocument, error) {
+func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged, adopt bool) (InstallDocument, error) {
 	doc := InstallDocument{Schema: envelope.Schema, Skill: d.ID, Dir: d.Dir, Name: uicopy.T(d.nameKey, nil), DryRun: dryRun, AlreadyUpToDate: true}
 	cfg, err := b.config(d)
 	if err != nil {
@@ -652,9 +682,22 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			// Owned by this skill's plugin and edited since: the person agreed
 			// to replace it, so it goes and a fresh copy is installed.
 			if err := os.RemoveAll(outcome.Dir); err != nil {
-				return doc, envelope.New(envelope.StorageUnavailable, installFailed(d)).
+				failure := envelope.New(envelope.StorageUnavailable, installFailed(d)).
 					WithReason(uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": redact.String(err.Error())}))
+				return withOutcomes(doc, failure, nil, dryRun, adopt)
 			}
+		}
+		if outcome.State == StateAdoptable && !adopt {
+			// Nobody asked for adoption: this is the refusal every version
+			// before adoption answers for such a folder, and nothing is touched.
+			// skillsync has no option to turn adoption off, so this reads the
+			// state a moment before Sync does.
+			outcome.State = StateNotOVDB
+			outcome.Result, outcome.Reason = string(skillsync.Conflict), unmanagedTarget
+			failures = append(failures, uicopy.T("skills.install.target_conflict", map[string]string{"path": outcome.Dir}))
+			doc.AlreadyUpToDate = false
+			doc.Outcomes = append(doc.Outcomes, outcome)
+			continue
 		}
 		report, err := skillsync.Sync(ctx, cfg, skillsync.Options{Dir: t.SkillsDir, DryRun: dryRun})
 		switch {
@@ -695,7 +738,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			next = append(next, envelope.Next{Label: uicopy.T("skills.next.replace_changed", nil), Command: "ovdb skills install " + d.ID + " --replace-changed"})
 		}
 		next = append(next, envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
-		return doc, envelope.New(code, installFailed(d)).WithReason(strings.Join(failures, " ")).WithNext(next...)
+		return withOutcomes(doc, envelope.New(code, installFailed(d)).WithNext(next...), failures, dryRun, adopt)
 	}
 	if dryRun {
 		// Nothing was installed: the next step is the install it previewed.
@@ -711,10 +754,62 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			command += " --replace-changed"
 		}
 		doc.Next = []envelope.Next{{Label: uicopy.T("skills.next.install_previewed", nil), Command: command}}
-		return doc, nil
+		return withOutcomes(doc, nil, nil, dryRun, adopt)
 	}
 	doc.Next = installedNext(d)
-	return doc, nil
+	return withOutcomes(doc, nil, nil, dryRun, adopt)
+}
+
+// withOutcomes finishes an install: a client that did not ask for adoption is
+// never shown the state "adoptable"; and a failure that left some targets
+// changed (or, in a dry run, would) says which, in its reason and in its
+// targets, since the person is otherwise told only that the install failed.
+// failure is nil for a success, which is returned with doc unchanged but for
+// that state.
+func withOutcomes(doc InstallDocument, failure *envelope.Error, failures []string, dryRun, adopt bool) (InstallDocument, error) {
+	if !adopt {
+		for i := range doc.Outcomes {
+			if doc.Outcomes[i].State == StateAdoptable {
+				doc.Outcomes[i].State = StateNotOVDB
+			}
+		}
+	}
+	if failure == nil {
+		return doc, nil
+	}
+	notes := changeNotes(doc.Outcomes, dryRun)
+	if failure.Reason != "" {
+		failures = append([]string{failure.Reason}, failures...)
+	}
+	failure.Reason = strings.Join(append(failures, notes...), " ")
+	if len(notes) > 0 {
+		_ = failure.WithTargets(doc.Outcomes)
+	}
+	return doc, failure
+}
+
+// changeNotes says, for each target a failed install did change (or would,
+// in a dry run), what happened to it and, for an adopted folder, where the
+// copy that was there is kept.
+func changeNotes(outcomes []Outcome, dryRun bool) []string {
+	var notes []string
+	for _, o := range outcomes {
+		switch o.Result {
+		case string(skillsync.Added), string(skillsync.Updated), string(skillsync.Removed), string(skillsync.Adopted):
+		default:
+			continue
+		}
+		key := "skills.install.partial_done"
+		if dryRun {
+			key = "skills.install.partial_planned"
+		}
+		note := uicopy.T(key, map[string]string{"name": o.Name, "path": o.Dir, "result": ResultTextFor(o.Result, dryRun)})
+		if o.Result == string(skillsync.Adopted) {
+			note += " " + AdoptedBackupText(dryRun, o)
+		}
+		notes = append(notes, note)
+	}
+	return notes
 }
 
 func installedNext(d Definition) []envelope.Next {

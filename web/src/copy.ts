@@ -20,6 +20,15 @@ export function hasCopy(key: string): boolean {
 }
 
 /**
+ * hasCopy for a key built from a value this build does not own, that also
+ * needs no parameters: a value spelling the name of another entry cannot show
+ * that entry with its {placeholders} in the open.
+ */
+export function hasPlainCopy(key: string): boolean {
+  return hasCopy(key) && !catalogue[key].includes('{')
+}
+
+/**
  * Renders the copy catalogue entry named by key, replacing each "{name}"
  * placeholder in the template with params[name]. A placeholder with no
  * matching entry in params is left in place, matching copy/copy.go's T.

@@ -17,6 +17,8 @@ export interface ApiError {
   message: string
   reason?: string
   next: Next[]
+  /** What a failed skills install did to the agents it did change (as the success document lists them). */
+  targets?: SkillInstallDocument['targets']
 }
 
 export interface Server {
@@ -178,7 +180,11 @@ export interface Skill {
   installed_for: string[]
 }
 
-/** GET /api/local/v1/skills: the harnesses are the ones the server found. */
+/**
+ * GET /api/local/v1/skills: the harnesses are the ones the server found. The
+ * console asks with ?adoptable=1, saying it knows that state; without it the
+ * server reports such a target as not_ovdb.
+ */
 export interface SkillsDocument {
   schema: number
   skills: Skill[]

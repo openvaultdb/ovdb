@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,7 +48,7 @@ func TestAdoptsAnUnmanagedCopyOfTheSkill(t *testing.T) {
 	}
 
 	before := tree(t, skillsDir)
-	dry := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}, DryRun: true})
+	dry := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}, DryRun: true, Adopt: true})
 	if o := dry.Outcomes[0]; o.Result != "adopted" || o.BackupPath != "" || o.Reason != "" || dry.AlreadyUpToDate || !dry.DryRun {
 		t.Fatalf("dry run = %+v", dry)
 	}
@@ -55,7 +56,7 @@ func TestAdoptsAnUnmanagedCopyOfTheSkill(t *testing.T) {
 		t.Errorf("the dry run wrote: %v", after)
 	}
 
-	doc := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
+	doc := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}, Adopt: true})
 	outcome := doc.Outcomes[0]
 	if outcome.Result != "adopted" || doc.AlreadyUpToDate || outcome.State != StateInstalled || !outcome.Installed {
 		t.Fatalf("install = %+v", doc)
@@ -73,7 +74,7 @@ func TestAdoptsAnUnmanagedCopyOfTheSkill(t *testing.T) {
 		t.Error("an adoption has no next steps")
 	}
 
-	again := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
+	again := mustInstall(t, e, InstallRequest{Skill: Storage, Harnesses: []string{"claude"}, Adopt: true})
 	if !again.AlreadyUpToDate || again.Outcomes[0].Result != "unchanged" || again.Outcomes[0].BackupPath != "" {
 		t.Errorf("second install = %+v", again)
 	}
@@ -88,7 +89,7 @@ func TestAdoptsAnUnmanagedCopyOfTheSkill(t *testing.T) {
 func TestAdoptedOutcomeJSONNamesTheBackup(t *testing.T) {
 	e := testEnv(t)
 	putCopy(t, filepath.Join(e.Home, ".claude", "skills", "openvaultdb-todo-demo"), map[string]string{"SKILL.md": skillText(t, "openvaultdb-todo-demo")})
-	doc := mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
+	doc := mustInstall(t, e, InstallRequest{Skill: Todo, Harnesses: []string{"claude"}, Adopt: true})
 	body := string(envelope.Marshal(doc))
 	if !strings.Contains(body, `"result":"adopted"`) || !strings.Contains(body, `"backup_path":"`) {
 		t.Errorf("adopted outcome JSON = %s", body)
@@ -119,8 +120,8 @@ func TestDoesNotAdoptWhatIsNotTheSkill(t *testing.T) {
 			if state := Inspect(e).Skills[0].Targets[0].State; state != StateNotOVDB {
 				t.Errorf("state = %s, want %s", state, StateNotOVDB)
 			}
-			d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
-			doc, err := Build{}.Install(context.Background(), e, d, targets, false, false)
+			d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}, Adopt: true})
+			doc, err := Build{}.Install(context.Background(), e, d, targets, false, false, true)
 			problem := envelope.As(err)
 			if problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "wasn't installed by OVDB") {
 				t.Fatalf("install = %v", err)
@@ -138,5 +139,79 @@ func TestDoesNotAdoptWhatIsNotTheSkill(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A request that does not ask for adoption (every client built before it
+// existed) gets what v0.21.0 answered for such a folder: refused as
+// already_exists, outcome conflict with skillsync's old reason, state not_ovdb
+// (never "adoptable"), nothing written, no backup. Dry run and real alike.
+func TestWithoutAdoptTheFolderIsRefusedAsBefore(t *testing.T) {
+	e := testEnv(t)
+	skillsDir := filepath.Join(e.Home, ".claude", "skills")
+	putCopy(t, filepath.Join(skillsDir, "openvaultdb"), map[string]string{"SKILL.md": skillText(t, "openvaultdb")})
+	before := tree(t, skillsDir)
+	d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
+	for _, dryRun := range []bool{true, false} {
+		doc, err := Build{}.Install(context.Background(), e, d, targets, dryRun, false, false)
+		problem := envelope.As(err)
+		if problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "wasn't installed by OVDB") || problem.Targets != nil {
+			t.Fatalf("dryRun=%v: err = %+v", dryRun, err)
+		}
+		if o := doc.Outcomes[0]; o.Result != "conflict" || o.Reason != "unmanaged target" || o.State != StateNotOVDB || o.BackupPath != "" {
+			t.Errorf("dryRun=%v: outcome = %+v", dryRun, o)
+		}
+	}
+	after := tree(t, skillsDir)
+	if len(after) != len(before) || after["openvaultdb/SKILL.md"] != before["openvaultdb/SKILL.md"] {
+		t.Errorf("the folder was touched: %v", after)
+	}
+
+	// The document a client that did not say it knows "adoptable" reads never has it.
+	inspected := Inspect(e)
+	if inspected.Skills[0].Targets[0].State != StateAdoptable {
+		t.Fatalf("Inspect = %+v", inspected.Skills[0].Targets[0])
+	}
+	if state := inspected.WithoutAdoptable().Skills[0].Targets[0].State; state != StateNotOVDB {
+		t.Errorf("WithoutAdoptable = %s", state)
+	}
+}
+
+// An install that fails for one target says what it did to the others, for
+// every kind of change and not only adoption (it said only the failure before
+// this, since v0.21.0): in the reason, in words, and in the error's targets;
+// a failure that changed nothing is exactly the document it always was.
+func TestFailedInstallNamesTheTargetsThatChanged(t *testing.T) {
+	e := testEnv(t)
+	putCopy(t, filepath.Join(e.Home, ".codex", "skills", "openvaultdb"), map[string]string{"SKILL.md": "mine"})
+	d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude", "codex"}})
+
+	_, err := Build{}.Install(context.Background(), e, d, targets, true, false, true)
+	plan := envelope.As(err)
+	claude := filepath.Join(e.Home, ".claude", "skills", "openvaultdb")
+	if plan == nil || !strings.Contains(plan.Reason, "Claude Code would change: "+claude+" (added).") || plan.Targets == nil {
+		t.Fatalf("dry run = %+v", err)
+	}
+	if _, statErr := os.Stat(claude); !os.IsNotExist(statErr) {
+		t.Errorf("a dry run wrote %s", claude)
+	}
+
+	_, err = Build{}.Install(context.Background(), e, d, targets, false, false, true)
+	failure := envelope.As(err)
+	if failure == nil || failure.Code != envelope.AlreadyExists || !strings.Contains(failure.Reason, "Before it stopped, Claude Code changed: "+claude+" (added).") {
+		t.Fatalf("install = %+v", err)
+	}
+	var outcomes []Outcome
+	if json.Unmarshal(failure.Targets, &outcomes) != nil || len(outcomes) != 2 || outcomes[0].Result != "added" || outcomes[1].Result != "conflict" {
+		t.Errorf("targets = %s", failure.Targets)
+	}
+	if _, statErr := os.Stat(filepath.Join(claude, "SKILL.md")); statErr != nil {
+		t.Errorf("the added target is not there: %v", statErr)
+	}
+
+	// An update, too: the next run finds Claude Code installed, so it changes nothing.
+	again, err := Build{}.Install(context.Background(), e, d, targets, false, false, true)
+	if p := envelope.As(err); p == nil || p.Targets != nil || strings.Contains(p.Reason, "changed") || again.Outcomes[0].Result != "unchanged" {
+		t.Errorf("a failure that changed nothing = %+v", err)
 	}
 }
