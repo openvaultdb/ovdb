@@ -181,3 +181,10 @@ or `ovdb version` for build version/commit/date.
 go build -o ovdb .
 go test ./...
 ```
+
+The packages under `internal/publisher` (the groundwork of a future
+`ovdb publisher check`) are held to exactly 100% statement coverage by a gate
+scoped to them, `cmd/covergate`, run by the `publisher-coverage` job of
+`.github/workflows/ci.yml`; how to run it, and the rules those packages
+implement and how they are proved against their JavaScript references, are in
+[internal/publisher/rules/README.md](internal/publisher/rules/README.md).

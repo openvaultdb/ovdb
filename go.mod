@@ -1,8 +1,6 @@
 module github.com/openvaultdb/ovdb
 
-go 1.26.1
-
-toolchain go1.27.0
+go 1.27.0
 
 // web/node_modules holds thousands of third-party npm packages, some with
 // file names or symlinks the go command's module-graph walk need not (and

@@ -82,7 +82,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.0'
           cache: true
 
       # single-target keeps this to one build (the runner's own OS/arch)
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.1'
+          go-version: '1.27.0'
           cache: true
       # Project contexts (symlinks, Windows drive letters and case, Git
       # worktrees) and data paths join the matrix in increment 3.
@@ -176,7 +176,33 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # Must be >= this repo's go.mod `go` directive.
-          go-version: '1.26.1'
+          go-version: '1.27.0'
           cache: true
       - name: go mod tidy -diff
         run: go mod tidy -diff
+
+  # Exact statement coverage, on the packages of the publisher check only
+  # (`ovdb publisher check`, added in small steps: the rules, the readers, the
+  # command). The module as a whole cannot be gated this way: some of its
+  # packages have a TestMain and some have files for one operating system, and
+  # the gate refuses both. So the gate takes a list of packages, and passes
+  # only when every statement of exactly those is covered, each of them is in
+  # the cover profile, and none of them has a TestMain or a build-constrained
+  # file (internal/covergate). A test of that package keeps this list equal to
+  # the packages under internal/publisher plus the gate itself, so a package
+  # added there cannot escape it. The rest of the module is tested by the jobs
+  # above, as before.
+  publisher-coverage:
+    name: Exact coverage (publisher check packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= this repo's go.mod `go` directive.
+          go-version: '1.27.0'
+          cache: true
+      - name: go test with coverage (publisher check packages)
+        run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./internal/covergate/... ./cmd/covergate/...
+      - name: Every statement of exactly those packages is covered
+        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/rules ./internal/covergate ./cmd/covergate
