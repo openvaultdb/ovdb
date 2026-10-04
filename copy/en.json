@@ -527,7 +527,7 @@
   "skills.next.replace_changed": "Replace the changed skill with this version (ask the person first: their changes are lost)",
   "skills.state.changed": "changed since install",
   "skills.state.not_ovdb": "another skill with this name",
-  "skills.state.adoptable": "already here, not managed yet",
+  "skills.state.adoptable": "not managed yet",
   "skills.consent.adoptable": "already here — installing takes it over and keeps a backup of your copy",
   "skills.install.adopts": "It also takes over the copy already in: {dirs}. OVDB keeps a backup of it.",
   "skills.install.replaces_changes": "It also replaces the changes made since OVDB installed it in: {dirs}",

@@ -24,7 +24,7 @@ func TestSkillAdoptionIsAskedInATerminal(t *testing.T) {
 	}
 
 	declined := e.runWithTerminal("n\n", "skills", "install", "openvaultdb", "--harness", "claude")
-	for _, want := range []string{"Install the OpenVaultDB skill?", "already here, not managed yet", "It also takes over the copy already in: " + dir + ". OVDB keeps a backup of it."} {
+	for _, want := range []string{"Install the OpenVaultDB skill?", "not managed yet", "It also takes over the copy already in: " + dir + ". OVDB keeps a backup of it."} {
 		if !strings.Contains(declined.stderr, want) {
 			t.Errorf("the question lacks %q:\n%s", want, declined.stderr)
 		}

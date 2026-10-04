@@ -273,7 +273,7 @@ func TestSkillAdoptsAnExistingCopy(t *testing.T) {
 
 	// list: the folder is already here and not managed yet, not "not installed".
 	list := e.ok("skills", "list")
-	if !strings.Contains(list.stdout, "already here, not managed yet") {
+	if !strings.Contains(list.stdout, "not managed yet") {
 		t.Errorf("list = %s", list.stdout)
 	}
 	var listed skills.Document
