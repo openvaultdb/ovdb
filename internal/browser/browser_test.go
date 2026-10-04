@@ -3,6 +3,7 @@ package browser
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -49,5 +50,26 @@ func TestOpen(t *testing.T) {
 	failing := Opener{GOOS: "darwin", LookPath: found, Start: func(string, ...string) error { return errors.New("boom") }}
 	if err := failing.Open("http://x"); err == nil || errors.Is(err, ErrUnavailable) {
 		t.Errorf("start failure = %v", err)
+	}
+}
+
+// A test binary that reaches the real opener fails, on every operating system
+// and whether or not a display exists: on a desktop the real one opens the
+// person's browser at a test server. With a fake Start the opener is the
+// ordinary one.
+func TestTestBinaryCannotReachTheRealOpener(t *testing.T) {
+	t.Parallel()
+	func() {
+		defer func() {
+			message, _ := recover().(string)
+			if !strings.Contains(message, "a test reached the real browser opener for http://x.test/") {
+				t.Errorf("recovered %q, want the guard's panic", message)
+			}
+		}()
+		_ = Opener{GOOS: "linux", Getenv: func(string) string { return "" }}.Open("http://x.test/")
+		t.Error("the real opener ran in a test binary")
+	}()
+	if err := (Opener{GOOS: "darwin", LookPath: func(string) (string, error) { return "open", nil }, Start: func(string, ...string) error { return nil }}).Open("http://x.test/"); err != nil {
+		t.Errorf("an opener with a fake Start = %v", err)
 	}
 }
