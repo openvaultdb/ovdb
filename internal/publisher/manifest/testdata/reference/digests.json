@@ -1,5 +1,5 @@
 {
- "manifest/testdata/reference/corpus.json": "07fbc4af751d01b54a986470579d19427a2fd820d4f974da168bb391d368f14c",
+ "manifest/testdata/reference/corpus.json": "78920cbbfbaf3d85190da5d78853bdc63c6eba1aa3eab0d56459d795cad15169",
  "manifest/testdata/reference/directory.verdicts.json": "65f9d8b8c058c56652e3700203767cbd54e30cbf1c9cd61efaf3802a08b99fe2",
  "manifest/testdata/reference/directory.facts.json": "6b724524b0e2a2de9586df494a91134615f223b45c699ea03b8c651557cb67b4",
  "manifest/testdata/reference/publisher.verdicts.json": "262ffc6ca6cf0c522260048f2d1b80a1548256b67332cb5d99bbb886775fedc6",

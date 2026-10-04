@@ -31,7 +31,8 @@ const (
 // its time grows with the product of the two: 20,000 recordsets against a model of 330,000 entities (3.8 MiB) took it 6 seconds, and a repository
 // may list 32 manifests. This check compares with sets, so its time is linear, but it holds the same two numbers, far above anything real (the
 // reference model has eleven entities), so that what one check costs in time and memory is bounded by the size of the files it reads and
-// by these. Both are recorded as stricter kinds.
+// by these. The entities limit is a recorded stricter kind; the recordsets limit is not (no repository that the checker accepts reaches it, because a
+// manifest it accepts has the entities of its model as recordsets, and a model over MaxEntities is refused first).
 const (
 	MaxEntities   = 10000
 	MaxRecordsets = 10000
@@ -71,7 +72,7 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 		c.add(file, RuleModelDepth, 0, "is nested more than %d levels deep, which is more than this check reads", maxJSONDepth)
 		return ""
 	case errors.Is(err, errEntities):
-		c.add(file, RuleEntitiesLimit, 0, "has more than %d entities, which is more than this check reads", MaxEntities)
+		c.add(file, RuleEntitiesLimit, 0, "has an entities object of more than %d entities, which is more than this check reads (a repeated entities member is read as the last, but each of them is read)", MaxEntities)
 		return ""
 	case endsEarly(err):
 		c.add(file, RuleModelJSON, lineAt(data, len(data)), "is not a ModelSpec JSON file: it is empty or ends before the JSON value does")

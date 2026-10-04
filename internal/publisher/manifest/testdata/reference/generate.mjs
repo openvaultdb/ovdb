@@ -752,7 +752,7 @@ for (const name of [chinookYaml, hosterYaml]) {
   addManifest('reader', name, text.replace(/^title:.*$/m, 'title: Chinook\rmusic'));
   addManifest('reader', name, text.replace(/^title:.*$/m, 'title: "Chinook \\ud83c store"'));
 }
-for (const flags of ['pad=262144', 'pad=262145', 'latin1']) for (const name of [chinookMd, hosterMd]) addMd('size', name, bases[name], 'ovdb.yaml', flags);
+for (const flags of ['pad=262144', 'pad=262145', 'latin1']) for (const name of [chinookMd, hosterMd]) addMd('size', name, flags === 'latin1' ? `${bases[name]}caf\u00e9\n` : bases[name], 'ovdb.yaml', flags); // latin1 changes only a non-ASCII character: the files are ASCII, so one is added
 const entryOf = (length) => `./${longPath(length - 2, '.yaml')}`;
 for (const length of [1026, 1027, 1100]) addMd('md length', mdName, front(`ovdb: 1\npublish: ["${entryOf(length)}", ./ovdb.yaml]`));
 for (let count = 1; count <= 3; count += 1) addMd('md repeated', mdName, front(`ovdb: 1\npublish: [${Array(count).fill('./ovdb.yaml').join(', ')}, ./b.yaml, ./b.yaml]`));

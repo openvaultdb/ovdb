@@ -200,7 +200,7 @@ at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entitie
 | `repo-file-size` | 1 | A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB. |
 | `repo-manifests-limit` | 1 | OVDB.md lists more than 32 manifests; the checker judges every one. |
 | `repo-model-depth` | 4 | The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound. |
-| `repo-model-entities-limit` | 1 | The model file has more than 10000 entities (MaxEntities); the checker compares each recordset with each entity, so 20000 recordsets against 330000 entities took it 6 seconds. |
+| `repo-model-entities-limit` | 1 | The model file has an entities object of more than 10000 entities (MaxEntities); the checker compares each recordset with each entity, so 20000 recordsets against 330000 entities took it 6 seconds. |
 | `repo-partial-clone` | 2 | A partial clone (--filter=blob:none or --filter=tree:0) that lacks an object the commit needs: the checker's git fetches the object from the remote, which this check never does (a repository that a remote can make run a command must not be asked to); the message says to check a full clone or to fetch the files first. |
 | `repo-subdirectory` | 1 | The directory is inside a repository and not its top; the checker reads it as if it were the top, with a note, and the Directory reads OVDB.md at the top. |
 | `repo-tree-limit` | 1 | A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound. |
