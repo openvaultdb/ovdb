@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
+	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 )
 
 const ownManifest = `format: ovdb-manifest/draft-1
@@ -286,7 +287,11 @@ func TestRepositoryOptionIsComparedExactly(t *testing.T) {
 			t.Errorf("%q: findings %v", c.value, r.Findings)
 		}
 		if !c.ok {
-			only(t, r, RuleRepository, "ovdb.yaml", 24, "publisher.repository must be ")
+			f := only(t, r, RuleRepository, "ovdb.yaml", 24, "publisher.repository and --repository must be written the same, letter case included: ")
+			// Both spellings are in the message, so a publisher sees the difference at once.
+			if !strings.HasSuffix(f.Message, "the manifest has "+rules.Quote(ownRepo)+", --repository is "+rules.Quote(c.value)) {
+				t.Errorf("message %q", f.Message)
+			}
 		}
 	}
 	// A publisher.repository the manifest rules refuse is not compared: its own finding says what is wrong.
@@ -828,4 +833,26 @@ func manyEntitiesObject(n int) string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// The reason of a failure is cut at 200 bytes by ascii, and the advice is last: no error of the reader is longer, so none loses its advice.
+func TestNoErrorOfTheReaderIsCutByAscii(t *testing.T) {
+	for _, err := range []error{ErrNoCommit, ErrBare, ErrSubdirectory, ErrPartialClone, ErrObjectMissing, ErrObjectCorrupt, ErrAlternates, ErrOldGit, ErrMalformed, ErrCannotRun} {
+		if got := ascii(err.Error()); got != err.Error() {
+			t.Errorf("ascii changes %q to %q", err, got)
+		}
+	}
+}
+
+// A quote is printable ASCII and stays a quote; a backslash is shown as one.
+func TestAsciiLeavesQuotesRaw(t *testing.T) {
+	if got := ascii(`exec: "git": not found`); got != `exec: "git": not found` {
+		t.Errorf("quotes: %q", got)
+	}
+	if got := ascii(`a\b"c`); got != `a\\b"c` {
+		t.Errorf("backslash: %q", got)
+	}
+	if got := ascii("tab\there\u00e9"); got != `tab\there\u00e9` {
+		t.Errorf("escapes: %q", got)
+	}
 }

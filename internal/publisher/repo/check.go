@@ -130,7 +130,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 	}
 	c.res.Findings = append(c.res.Findings, findings...)
 	if r := m.PublisherRepository; o.Repository != nil && r.Usable() && r.Value != *o.Repository {
-		c.add(path, RuleRepository, r.Line, "publisher.repository must be %s, the repository this manifest is in", rules.Quote(*o.Repository))
+		c.add(path, RuleRepository, r.Line, "publisher.repository and --repository must be written the same, letter case included: the manifest has %s, --repository is %s", rules.Quote(r.Value), rules.Quote(*o.Repository))
 	}
 	if m.Form != manifest.FormOwn {
 		return

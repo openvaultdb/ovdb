@@ -108,5 +108,21 @@ func ascii(s string) string {
 		s = s[:200] + "..."
 	}
 	q := strconv.QuoteToASCII(s)
-	return q[1 : len(q)-1]
+	q = q[1 : len(q)-1]
+	// QuoteToASCII writes " as \": a quote is printable, and the escape reads as a stray backslash (exec: \"git\": executable file not found).
+	var b strings.Builder
+	for i := 0; i < len(q); i++ {
+		switch {
+		case q[i] == '\\' && i+1 < len(q) && q[i+1] == '"':
+			b.WriteByte('"')
+			i++
+		case q[i] == '\\' && i+1 < len(q):
+			b.WriteByte('\\')
+			b.WriteByte(q[i+1])
+			i++
+		default:
+			b.WriteByte(q[i])
+		}
+	}
+	return b.String()
 }

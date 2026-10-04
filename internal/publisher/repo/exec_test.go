@@ -120,7 +120,7 @@ func TestExecRunnerStopsGitThatTakesTooLong(t *testing.T) {
 	r := runner(t, "sleep")
 	r.Timeout = 300 * time.Millisecond
 	start := time.Now()
-	if _, err := r.Run(nil, 100); err == nil || !strings.Contains(err.Error(), "did not finish in 300ms") {
+	if _, err := r.Run(nil, 100); err == nil || !strings.Contains(err.Error(), "did not finish in 300ms") || !errors.Is(err, ErrCannotRun) {
 		t.Errorf("err = %v", err)
 	}
 	if time.Since(start) > 20*time.Second {
