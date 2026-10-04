@@ -205,7 +205,7 @@ func verdictOf(t testing.TB, b byte) bool {
 func TestGoldenDigests(t *testing.T) {
 	var want map[string]string
 	readGolden(t, "digests.json", &want)
-	if len(want) != 6 {
+	if len(want) != 7 {
 		t.Fatalf("digests.json holds %d digests, want 6", len(want))
 	}
 	for name, digest := range want {
@@ -550,7 +550,7 @@ var publisherSpec = referenceSpec{
 // The kinds of the reader in sharedKinds are the rules of the places of the reader that have documents the references accept (and document-size, which is
 // checked before the reader): the list of kinds cannot drift from the table of places.
 func TestReaderKinds(t *testing.T) {
-	counts := readerPlaceCounts(t)
+	counts, _ := readerPlaceCounts(t, readerSourceDir(t, ""))
 	stricter := map[string]bool{"document-size": true}
 	for _, p := range readerPlaces {
 		for _, n := range counts[p.id] {

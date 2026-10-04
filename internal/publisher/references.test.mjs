@@ -3,7 +3,8 @@
 //   node --test internal/publisher/references.test.mjs
 //
 // It fetches from a repository of its own made in a temporary directory (no network), and shows that a checkout that is not as committed is
-// refused: an edited tracked file, an extra file, another commit; that the default is a new private directory each time; and that a cache
+// refused: an edited tracked file (also one marked assume-unchanged, which git status does not show), an extra file, a node_modules that the
+// repository ignores and Node would resolve first, another commit; that the default is a new private directory each time; and that a cache
 // the user keeps is reused only as committed. It is not part of `go test`, which reads the goldens and starts no process.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -26,6 +27,7 @@ before(() => {
   git(remote, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
   mkdirSync(join(remote, 'scripts'));
   writeFileSync(join(remote, 'scripts', 'check.mjs'), "export const licenceIds = ['MIT'];\n");
+  writeFileSync(join(remote, '.gitignore'), 'node_modules\n'); // as the repositories of the references do
   git(remote, 'add', '.');
   git(remote, 'commit', '--quiet', '-m', 'the reference');
   pin = { repository: 'example/reference', commit: git(remote, 'rev-parse', 'HEAD') };
@@ -57,6 +59,34 @@ test('a file that the commit does not have is refused, a dependency is not', () 
   assert.equal(checkoutReference('chinookdb', options(cache)), dir);
   writeFileSync(join(dir, 'scripts', 'extra.mjs'), 'export {};\n');
   assert.throws(() => checkoutReference('chinookdb', options(cache)), /files that are not in/);
+});
+
+test('a tracked file edited and marked assume-unchanged is refused', () => {
+  const cache = join(scratch, 'cache-hidden');
+  const dir = checkoutReference('chinookdb', options(cache));
+  writeFileSync(join(dir, 'scripts', 'check.mjs'), "export const licenceIds = ['MIT', 'EUPL-1.2'];\n");
+  git(dir, 'update-index', '--assume-unchanged', 'scripts/check.mjs');
+  assert.equal(git(dir, 'status', '--porcelain'), '', 'git status shows nothing: that is the point');
+  assert.throws(() => checkoutReference('chinookdb', options(cache)), /has local changes \(scripts\/check.mjs\)/);
+  git(dir, 'update-index', '--skip-worktree', 'scripts/check.mjs');
+  assert.throws(() => checkoutReference('chinookdb', options(cache)), /has local changes/);
+});
+
+test('a tracked file that is deleted is refused', () => {
+  const cache = join(scratch, 'cache-deleted');
+  const dir = checkoutReference('chinookdb', options(cache));
+  rmSync(join(dir, 'scripts', 'check.mjs'));
+  assert.throws(() => checkoutReference('chinookdb', options(cache)), /lacks a file|has local changes/);
+});
+
+test('a node_modules that the repository ignores, below the root, is refused', () => {
+  const cache = join(scratch, 'cache-shadow');
+  const dir = checkoutReference('chinookdb', options(cache));
+  mkdirSync(join(dir, 'scripts', 'node_modules', 'yaml'), { recursive: true });
+  writeFileSync(join(dir, 'scripts', 'node_modules', 'yaml', 'index.js'), 'export const parse = () => ({});\n');
+  assert.equal(git(dir, 'status', '--porcelain'), '', 'git status shows nothing: it is ignored');
+  assert.equal(git(dir, 'ls-files', '--others', '--exclude-standard'), '', 'and it is not an untracked file');
+  assert.throws(() => checkoutReference('chinookdb', options(cache)), /files that are not in .*scripts\/node_modules/);
 });
 
 test('a cache at another commit is refused', () => {

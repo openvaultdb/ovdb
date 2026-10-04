@@ -206,3 +206,30 @@ jobs:
         run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./internal/covergate/... ./cmd/covergate/...
       - name: Every statement of exactly those packages is covered
         run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/manifest ./internal/publisher/rules ./internal/covergate ./cmd/covergate
+
+  # The goldens that the parity tests of the publisher check read (testdata/reference of
+  # internal/publisher/rules and internal/publisher/manifest) are made by two generators
+  # from the JavaScript of the references at pinned commits, and `go test` only reads
+  # them, so nothing else notices when one is stale, or when the generators go wrong.
+  # This job runs both with --check, which fails if a golden is not what its generator
+  # writes now, and the test of the rule that keeps a reference checkout as committed
+  # (references.mjs). Each reference is fetched fresh, by its commit, into a directory
+  # of this run (no cache is kept). Its network use is the two reference repositories on
+  # github.com and the registry for `yaml` (npm ci from the Directory's lock file), and
+  # nothing else. The goldens record the Node that made them (node-version below is
+  # that version, exactly; a test of internal/covergate holds the two together), so a
+  # new Node is a change of this line and a regeneration, together.
+  publisher-goldens:
+    name: Parity goldens are current (publisher check packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.20.0'
+      - name: The reference checkout rule
+        run: node --test internal/publisher/references.test.mjs
+      - name: The goldens of package rules are current
+        run: node internal/publisher/rules/testdata/reference/generate.mjs --check
+      - name: The goldens of package manifest are current
+        run: node internal/publisher/manifest/testdata/reference/generate.mjs --check
