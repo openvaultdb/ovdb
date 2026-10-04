@@ -102,14 +102,14 @@ form.
 | `homepage` | directory.mjs 230, 231, 667 | `Homepage` |
 | `deployment.url` | directory.mjs 110, 189, 666 | `DeploymentURL` |
 | `deployment.engine` | directory.mjs 190, 666 | `Engine` |
-| `deployment.discovery` | directory.mjs 191, 193 | `Discovery` |
-| `deployment.recordset_page` | directory.mjs 111, 197, 651 | `RecordsetPage` |
-| `model.modelspec` | directory.mjs 173, 216, 391, 395 | `ModelSpec` |
+| `deployment.discovery` | directory.mjs 191, 193, 194 | `Discovery` |
+| `deployment.recordset_page` | directory.mjs 111, 197, 651, 676 | `RecordsetPage` |
+| `model.modelspec` | directory.mjs 173, 216, 390, 391, 395, 402, 424, 441, 450 | `ModelSpec` |
 | `model.hcl` | directory.mjs 173, 198, 415 | `ModelHCL` |
-| `model.address` | directory.mjs 201, 217, 418, 458, 475 | `ModelAddress` |
+| `model.address` | directory.mjs 201, 202, 217, 418, 419, 421, 422, 426, 458, 475 | `ModelAddress` |
 | `model.name` | directory.mjs 402, 552 | `ModelName` |
-| `meaning.address` | directory.mjs 205, 218, 459, 476 | `MeaningAddress` |
-| `meaning.file` | directory.mjs 209, 220, 372, 392, 460, 546 | `MeaningFile` |
+| `meaning.address` | directory.mjs 205, 206, 218, 459, 476 | `MeaningAddress` |
+| `meaning.file` | directory.mjs 209, 220, 372, 386, 392, 401, 407, 409, 413, 415, 460, 535, 539, 546 | `MeaningFile` |
 | `meaning.graph.id` | directory.mjs 210, 221, 314 | `GraphID` |
 | `meaning.graph.address` | directory.mjs 211, 222, 383, 502 | `GraphAddress` |
 | `licences.model` | directory.mjs 213, 223, 490 | `LicenceModel` |
@@ -117,13 +117,13 @@ form.
 | `licences.data` | directory.mjs 234, 671 | `LicenceData` |
 | `publisher.name` | directory.mjs 226 | `PublisherName` |
 | `publisher.url` | directory.mjs 227 | `PublisherURL` |
-| `publisher.repository` | directory.mjs 315 | `PublisherRepository` |
+| `publisher.repository` | directory.mjs 315, 316 | `PublisherRepository` |
 | `recordsets` | directory.mjs 235, 337 | `Recordsets` |
-| `recordsets_partial` | directory.mjs 214, 219, 342 | `RecordsetsPartial` |
+| `recordsets_partial` | directory.mjs 214, 219, 342, 351 | `RecordsetsPartial` |
 | `form` | directory.mjs 173, 179, 319 | `Form` |
-| `model.address.repository` | directory.mjs 201, 419, 458 | `ModelAddress.Repository` |
-| `model.address.module` | directory.mjs 201, 424, 458 | `ModelAddress.Module` |
-| `model.address.ref` | directory.mjs 201, 425, 458 | `ModelAddress.Ref` |
+| `model.address.repository` | directory.mjs 201, 217, 419, 458, 564 | `ModelAddress.Repository` |
+| `model.address.module` | directory.mjs 201, 217, 419, 458, 564 | `ModelAddress.Module` |
+| `model.address.ref` | directory.mjs 201, 217, 419, 458, 564 | `ModelAddress.Ref` |
 | `meaning.address.repository` | directory.mjs 205, 459 | `MeaningAddress.Repository` |
 | `meaning.address.ref` | directory.mjs 205, 459 | `MeaningAddress.Ref` |
 
@@ -131,10 +131,14 @@ form.
 `publish` (`frontmatter.publish`, each entry, and `published.has(data.manifest)`) is
 `OVDBMd.Publish`, `OVDBMd.Entries` and `OVDBMd.Repeated`.
 
-The fields not in the table are not read by the Directory: `title` and
-`description` of the manifest are read only to be required (the record's own are
-published), and the manifest's `publisher.name`, `publisher.url` and `discovery` only
-to be required and checked once.
+The table is complete: the generator finds the lines by reading `directory.mjs`
+(a line reads a field when it names the whole path, in a chain such as
+`manifest.meaning?.graph?.address`, in `need(manifest.meaning?.graph, 'address', ...)`
+or in a loop over field names), and a test holds this table to its list. Some fields
+are read only to be required: `title` and `description` of the manifest (the
+published ones are the record's), and `publisher.name`, `publisher.url` and
+`deployment.discovery` (whose origin is compared once). A key the Directory never
+reads, an unknown key, is not a fact.
 
 ### What is judged now, and what the facts leave to the caller
 

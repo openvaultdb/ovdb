@@ -253,8 +253,6 @@ func kindOf(f Finding) string {
 		return "length-entry"
 	case strings.Contains(f.Message, "a repository URL is at most"):
 		return "length-repository"
-	case strings.Contains(f.Message, "a licence id is at most"):
-		return "length-licence"
 	case strings.Contains(f.Message, "bytes; at most") || strings.Contains(f.Message, "names a repository of"):
 		return "length-address"
 	case strings.Contains(f.Message, "internationalised name"):

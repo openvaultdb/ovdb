@@ -163,27 +163,33 @@ const factsOf = (manifest) => {
   return facts;
 };
 const factFields = ['format', 'id', 'title', 'description', 'url', 'homepage', 'deployment.url', 'deployment.engine', 'deployment.discovery', 'deployment.recordset_page', 'model.modelspec', 'model.hcl', 'model.address', 'model.name', 'meaning.address', 'meaning.file', 'meaning.graph.id', 'meaning.graph.address', 'licences.model', 'licences.meaning', 'licences.data', 'publisher.name', 'publisher.url', 'publisher.repository', 'recordsets', 'recordsets_partial'];
-// Where directory.mjs at the pinned commit reads each field, after manifestProblems and in it (the lines cited in the
-// README table). The script fails if a line no longer mentions the field, so a pin that moves cannot leave the
-// table wrong.
-const reads = {
-  format: [180], id: [181, 313], title: [181], description: [181], url: [109, 188, 193, 194, 312], homepage: [230, 231, 667],
-  'deployment.url': [110, 189, 666], 'deployment.engine': [190, 666], 'deployment.discovery': [191, 193], 'deployment.recordset_page': [111, 197, 651],
-  'model.modelspec': [173, 216, 391, 395], 'model.hcl': [173, 198, 415], 'model.address': [201, 217, 418, 458, 475], 'model.name': [402, 552],
-  'meaning.address': [205, 218, 459, 476], 'meaning.file': [209, 220, 372, 392, 460, 546], 'meaning.graph.id': [210, 221, 314], 'meaning.graph.address': [211, 222, 383, 502],
-  'licences.model': [213, 223, 490], 'licences.meaning': [213, 224, 401, 503], 'licences.data': [234, 671],
-  'publisher.name': [226], 'publisher.url': [227], 'publisher.repository': [315], recordsets: [235, 337], recordsets_partial: [214, 219, 342],
-  form: [173, 179, 319],
-  'model.address.repository': [201, 419, 458], 'model.address.module': [201, 424, 458], 'model.address.ref': [201, 425, 458],
-  'meaning.address.repository': [205, 459], 'meaning.address.ref': [205, 459],
-};
+// Where directory.mjs at the pinned commit reads each field (the lines cited in the README table), found by
+// reading the file: a line reads a field when it names the whole path in one of the Directory's spellings: a chain
+// (`manifest.meaning?.graph?.address`), `need(manifest.meaning?.graph, 'address', ...)`, or a loop over field names
+// (`for (const field of ['model', 'meaning']) ... manifest.licences?.[field]`); the form and the parts of an address
+// are read where `manifestForm`, `parseModelAddress` and `parseGraphAddress` are called. Comment lines do not count.
+// The script fails if a field is read nowhere, so a pin that moves cannot leave the table wrong or empty.
 const directoryLines = directorySource.split('\n');
-for (const [path, cited] of Object.entries(reads)) {
-  const words = path === 'form' ? ['manifestForm'] : path.startsWith('model.address.') ? ['parseModelAddress', 'parsed.', 'modelPin'] : path.startsWith('meaning.address.') ? ['parseGraphAddress', 'graphPin'] : [path.split('.').at(-1)];
-  for (const line of cited) {
-    if (!words.some((w) => directoryLines[line - 1]?.includes(w))) throw new Error(`directory.mjs:${line} no longer mentions ${words.join(' or ')}, where the table of generate.mjs says it reads ${path}`);
-  }
-}
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const chain = (segments) => segments.map((segment) => `\\??\\.${escapeRegExp(segment)}`).join('');
+const readingLines = (path) => {
+  const segments = path.split('.');
+  const parent = segments.slice(0, -1); const last = segments.at(-1);
+  const patterns = path === 'form' ? [/manifestForm[ (]/]
+    : path.startsWith('model.address.') ? [/parseModelAddress\(/]
+      : path.startsWith('meaning.address.') ? [/parseGraphAddress\(/]
+        : [
+          new RegExp(`manifest${chain(segments)}(?![A-Za-z0-9_])`),
+          new RegExp(`need\\(manifest${chain(parent)}, '${escapeRegExp(last)}'`),
+          new RegExp(`for \\(const field of \\[[^\\]]*'${escapeRegExp(last)}'[^\\]]*\\]\\).*manifest${chain(parent)}(?:\\?)?(?:\\.)?\\[field\\]`),
+        ];
+  return directoryLines.flatMap((line, at) => (!/^\s*\/\//.test(line) && patterns.some((pattern) => pattern.test(line)) ? [at + 1] : []));
+};
+const reads = Object.fromEntries([...factFields, 'form', 'model.address.repository', 'model.address.module', 'model.address.ref', 'meaning.address.repository', 'meaning.address.ref'].map((path) => {
+  const lines = readingLines(path);
+  if (lines.length === 0) throw new Error(`directory.mjs at ${pins.directory.commit} reads ${path} nowhere: the table of fields of the README would be empty`);
+  return [path, lines];
+}));
 const mdDerive = (buffer, path) => {
   try {
     const { data, error } = directory.parseFrontmatter(decoded(buffer));
