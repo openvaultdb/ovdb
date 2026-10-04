@@ -116,6 +116,7 @@ type Package struct {
 	Constraints   []string // one message per build constraint, GOOS/GOARCH file name or import "C"
 	Directives    []string // one message per //line or /*line*/ directive, which renames the blocks of a profile
 	Imports       []Import // the imports of this module by the non-test files: Check holds each to the list of gated packages
+	Others        []Import // the other imports of the non-test files: Run holds each to the modules that go.mod and go.work send to a directory
 }
 
 // The gate reads every .go file of the package directory, whatever its name or
@@ -222,8 +223,11 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 			}
 		} else {
 			for _, spec := range parsed.Imports {
-				if imported, _ := strconv.Unquote(spec.Path.Value); imported == module || strings.HasPrefix(imported, module+"/") { // the parser has checked the literal
+				imported, _ := strconv.Unquote(spec.Path.Value) // the parser has checked the literal
+				if imported == module || strings.HasPrefix(imported, module+"/") {
 					pkg.Imports = append(pkg.Imports, Import{File: file, Path: imported})
+				} else {
+					pkg.Others = append(pkg.Others, Import{File: file, Path: imported})
 				}
 			}
 		}
@@ -312,6 +316,110 @@ func hasStatement(file *ast.File) bool {
 		return !found
 	})
 	return found
+}
+
+// LocalModules are the modules that the module's go.mod and its go.work (when it has one) send to a directory: a `replace` whose target is a path, and a
+// `use`. A package of one of them is built from that directory, and the directory is not a package of the list that the gate was given, so its
+// statements are in no profile entry that the gate reads. A go.mod or go.work that cannot be read says nothing here: the gate is given the
+// module root, and the absence of a file is the absence of its directives.
+func LocalModules(root fs.FS) []string {
+	var modules []string
+	for _, name := range []string{"go.mod", "go.work"} {
+		text, err := fs.ReadFile(root, name)
+		if err != nil {
+			continue
+		}
+		block := ""
+		for _, line := range strings.Split(string(text), "\n") {
+			line, _, _ = strings.Cut(line, "//")
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			if block != "" && fields[0] == ")" {
+				block = ""
+				continue
+			}
+			if block == "" && len(fields) == 2 && fields[1] == "(" {
+				block = fields[0]
+				continue
+			}
+			directive, rest := block, fields
+			if block == "" {
+				directive, rest = fields[0], fields[1:]
+			}
+			switch directive {
+			case "replace":
+				if old, target, found := splitReplace(rest); found && isLocalPath(target) {
+					modules = append(modules, old)
+				}
+			case "use":
+				if len(rest) > 0 {
+					if dir := unquote(rest[0]); dir != "" {
+						modules = append(modules, workModule(root, dir))
+					}
+				}
+			}
+		}
+	}
+	return slices.DeleteFunc(modules, func(m string) bool { return m == "" })
+}
+
+// splitReplace reads `old [version] => new [version]`.
+func splitReplace(fields []string) (old, target string, found bool) {
+	arrow := slices.Index(fields, "=>")
+	if arrow < 1 || arrow+1 >= len(fields) {
+		return "", "", false
+	}
+	return unquote(fields[0]), unquote(fields[arrow+1]), true
+}
+
+func unquote(s string) string {
+	if u, err := strconv.Unquote(s); err == nil {
+		return u
+	}
+	return s
+}
+
+// isLocalPath reports whether a replace target is a directory (go: a path that starts with ./ or ../, or is rooted) and not a module.
+func isLocalPath(target string) bool {
+	return target == "." || target == ".." || strings.HasPrefix(target, "./") || strings.HasPrefix(target, "../") || strings.HasPrefix(target, "/") || strings.HasPrefix(target, `.\`) || strings.HasPrefix(target, `..\`)
+}
+
+// workModule is the module path of the go.mod in a directory that go.work uses, or "" when it has none that can be read.
+func workModule(root fs.FS, dir string) string {
+	dir = path.Clean(strings.ReplaceAll(dir, `\`, "/"))
+	if path.IsAbs(dir) || dir == ".." || strings.HasPrefix(dir, "../") {
+		return "" // outside the tree the gate reads
+	}
+	module, err := modulePath(subFS{root, dir})
+	if err != nil {
+		return ""
+	}
+	return module
+}
+
+// subFS is the part of a file tree below a directory.
+type subFS struct {
+	fs.FS
+	dir string
+}
+
+func (s subFS) Open(name string) (fs.File, error) { return s.FS.Open(path.Join(s.dir, name)) }
+
+// ReplacedImports are the problems of the non-test files of the gated packages that import a package of a module that LocalModules names.
+func ReplacedImports(pkgs []Package, modules []string) []string {
+	var problems []string
+	for _, pkg := range pkgs {
+		for _, imp := range pkg.Others {
+			for _, module := range modules {
+				if imp.Path == module || strings.HasPrefix(imp.Path, module+"/") {
+					problems = append(problems, fmt.Sprintf("%s imports %s, a package of the module %s that go.mod replaces with a directory (or go.work uses): the gate cannot see its statements, so an untested branch there would pass; a gated package may not import it", imp.File, imp.Path, module))
+				}
+			}
+		}
+	}
+	return problems
 }
 
 // Result is what the gate found out.
@@ -413,10 +521,14 @@ func packageDir(arg, module string) (string, error) {
 // Run is the gate command: Run([]string{"cover.out", "./internal/a", ...}, ...)
 // prints the totals and returns 0 when every statement of the packages is
 // covered and nothing hides a package from the profile, 1 when anything is
-// wrong, and 2 for a usage or read error. root is the module's file tree.
-func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), root fs.FS) int {
+// wrong, and 2 for a usage or read error. root is the module's file tree, and goflags the value of GOFLAGS the profile was made under.
+func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), root fs.FS, goflags string) int {
 	if len(args) < 2 {
 		_, _ = fmt.Fprintln(stderr, "usage: covergate <cover profile> <package>...")
+		return 2
+	}
+	if problem := hiddenBuild(root, goflags); problem != "" {
+		_, _ = fmt.Fprintf(stderr, "covergate: %s\n", problem)
 		return 2
 	}
 	file, err := open(args[0])
@@ -454,6 +566,7 @@ func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadClos
 		pkgs = append(pkgs, pkg)
 	}
 	result := Check(pkgs, blocks)
+	result.Problems = append(result.Problems, ReplacedImports(pkgs, LocalModules(root))...)
 	_, _ = fmt.Fprintf(stdout, "statements covered: %d of %d, in %d packages\n", result.Covered, result.Total, len(pkgs))
 	if result.OK() {
 		return 0
@@ -463,4 +576,22 @@ func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadClos
 	}
 	_, _ = fmt.Fprintf(stderr, "covergate: %d problem(s); every statement of the given packages must be covered\n", len(result.Problems))
 	return 1
+}
+
+// hiddenBuild says why the profile cannot be trusted to be of the sources the gate reads, or "": a build that is not of the module's own files at the
+// module's own versions makes a profile of other code. GOFLAGS can name another go.mod (-modfile), replace files (-overlay), use another go.work
+// (-workfile), and choose vendored (-mod=vendor) or freshly resolved (-mod=mod) dependencies, and a vendor directory is used by the go command of its
+// own accord when go.mod says go 1.14 or later. Every one of them hides a function from the gate or puts another in its place.
+func hiddenBuild(root fs.FS, goflags string) string {
+	for _, flag := range strings.Fields(goflags) {
+		name, value, _ := strings.Cut(strings.TrimLeft(flag, "-"), "=")
+		switch {
+		case name == "modfile", name == "overlay", name == "workfile", name == "mod" && (value == "vendor" || value == "mod"):
+			return fmt.Sprintf("GOFLAGS has %s: the profile would be of another build than the module's own files, so the gate cannot tell what it measured; unset it", flag)
+		}
+	}
+	if info, err := fs.Stat(root, "vendor"); err == nil && info.IsDir() {
+		return "the module has a vendor directory: the go command builds from it, not from the module's dependencies, so the profile may be of other code than the gate reads; remove it"
+	}
+	return ""
 }

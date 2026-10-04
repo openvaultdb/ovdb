@@ -311,8 +311,13 @@ func opener(files map[string]string) func(string) (io.ReadCloser, error) {
 
 func run(t *testing.T, profile string, fsys fs.FS, args ...string) (int, string, string) {
 	t.Helper()
+	return runWith(t, profile, fsys, "", args...)
+}
+
+func runWith(t *testing.T, profile string, fsys fs.FS, goflags string, args ...string) (int, string, string) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := Run(args, &stdout, &stderr, opener(map[string]string{"cover.out": profile}), fsys)
+	code := Run(args, &stdout, &stderr, opener(map[string]string{"cover.out": profile}), fsys, goflags)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -423,5 +428,67 @@ func TestAGatedPackageMayImportOnlyGatedPackages(t *testing.T) {
 	}
 	if code, _, stderr := run(t, profile, fsys, "cover.out", "./gate", "./seen", "./ungated"); code == 0 || strings.Contains(stderr, "not one of the gated") {
 		t.Errorf("with the package gated the import is allowed (it then has no profile entry): %d %q", code, stderr)
+	}
+}
+
+// The third bypass, from the review of slice 3b-1: a nested module, with its own go.mod, that the module's go.mod reaches by replace (or go.work by use).
+// Its package is built from a directory inside the repository that the list of packages does not name.
+func TestAGatedPackageMayNotImportAModuleThatIsReplacedByADirectory(t *testing.T) {
+	zz := file("package zz\n\nfunc Z(b bool) int {\n\tif b {\n\t\treturn 1\n\t}\n\treturn 0\n}\n")
+	importer := file("package gate\n\nimport \"example.test/third/zz\"\n\nfunc G() int { return zz.Z(false) }\n")
+	profile := "mode: set\n" + module + "/gate/g.go:5.16,5.40 1 1\n"
+	for name, c := range map[string]struct {
+		root  map[string]string
+		wants bool
+	}{
+		"a replace line":                 {map[string]string{"go.mod": "module example.test/m\n\ngo 1.27.0\n\nreplace example.test/third => ./third\n"}, true},
+		"a replace with a version":       {map[string]string{"go.mod": "module example.test/m\n\nreplace example.test/third v1.0.0 => ../third // c\n"}, true},
+		"a replace block":                {map[string]string{"go.mod": "module example.test/m\n\nreplace (\n\t// c\n\texample.test/other => ./other\n\t\"example.test/third\" => ./third\n)\n"}, true},
+		"a rooted target":                {map[string]string{"go.mod": "module example.test/m\nreplace example.test/third => /abs/third\n"}, true},
+		"go.work use":                    {map[string]string{"go.mod": "module example.test/m\n", "go.work": "go 1.27\n\nuse ./third\n", "third/go.mod": "module example.test/third\n"}, true},
+		"go.work use block":              {map[string]string{"go.mod": "module example.test/m\n", "go.work": "use (\n\t.\n\t./third\n)\n", "third/go.mod": "module example.test/third\n"}, true},
+		"go.work replace":                {map[string]string{"go.mod": "module example.test/m\n", "go.work": "replace example.test/third => ./third\n"}, true},
+		"a module replaced by a module":  {map[string]string{"go.mod": "module example.test/m\nreplace example.test/third => example.test/fork v1.0.0\n"}, false},
+		"another module replaced":        {map[string]string{"go.mod": "module example.test/m\nreplace example.test/other => ./other\n"}, false},
+		"a go.work use without a go.mod": {map[string]string{"go.mod": "module example.test/m\n", "go.work": "use ./third\n"}, false},
+		"a go.work use outside":          {map[string]string{"go.mod": "module example.test/m\n", "go.work": "use ../third\n"}, false},
+		"a replace with no target":       {map[string]string{"go.mod": "module example.test/m\nreplace example.test/third =>\n"}, false},
+		"a module with the same prefix":  {map[string]string{"go.mod": "module example.test/m\nreplace example.test/thir => ./thir\n"}, false},
+		"nothing":                        {map[string]string{"go.mod": "module example.test/m\n"}, false},
+	} {
+		fsys := fstest.MapFS{"gate/g.go": importer, "third/zz/zz.go": zz}
+		for name, text := range c.root {
+			fsys[name] = file(text)
+		}
+		code, _, stderr := run(t, profile, fsys, "cover.out", "./gate")
+		if got := strings.Contains(stderr, "gate/g.go imports example.test/third/zz, a package of the module example.test/third"); got != c.wants || (code == 0) == c.wants {
+			t.Errorf("%s: code %d, stderr %q, want a problem: %v", name, code, stderr, c.wants)
+		}
+	}
+}
+
+// A profile made under a build that is not of the module's own files is refused, and says why: GOFLAGS=-modfile=<abs>/alt.mod hid a function from the
+// gate, and a vendor directory failed it only by accident (review of #39).
+func TestRunRefusesABuildThatHidesWhatItMeasures(t *testing.T) {
+	for _, flags := range []string{"-modfile=/abs/alt.mod", "-mod=vendor", "-mod=mod", "-overlay=/abs/o.json", "-workfile=/abs/go.work", "-count=1 -modfile=/abs/alt.mod", "--mod=vendor"} {
+		code, stdout, stderr := runWith(t, goodProfile, tree(), flags, "cover.out", "./good")
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "GOFLAGS has "+strings.Fields(flags)[len(strings.Fields(flags))-1]) || !strings.Contains(stderr, "unset it") {
+			t.Errorf("GOFLAGS=%s: %d %q %q", flags, code, stdout, stderr)
+		}
+	}
+	for _, flags := range []string{"", "-mod=readonly", "-count=1 -race", "-modcacherw", "-tags=modfile"} {
+		if code, _, stderr := runWith(t, goodProfile, tree(), flags, "cover.out", "./good"); code != 0 {
+			t.Errorf("GOFLAGS=%q is fine and was refused: %d %q", flags, code, stderr)
+		}
+	}
+	withVendor := tree()
+	withVendor["vendor/modules.txt"] = file("# example.test/dep v1.0.0\n")
+	if code, _, stderr := run(t, goodProfile, withVendor, "cover.out", "./good"); code != 2 || !strings.Contains(stderr, "vendor directory") || !strings.Contains(stderr, "remove it") {
+		t.Errorf("a vendor directory: %d %q", code, stderr)
+	}
+	withFile := tree()
+	withFile["vendor"] = file("a file called vendor is not the go command's vendor directory")
+	if code, _, stderr := run(t, goodProfile, withFile, "cover.out", "./good"); code != 0 {
+		t.Errorf("a file called vendor: %d %q", code, stderr)
 	}
 }

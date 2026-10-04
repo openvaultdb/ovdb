@@ -413,6 +413,8 @@ const flagged = (text, flags) => {
   if (flag.includes('bom')) out = `\ufeff${out}`;
   const pad = flag.find((f) => f.startsWith('pad='));
   if (pad) out = `${out}# ${'x'.repeat(Number(pad.slice(4)) - Buffer.byteLength(out) - 3)}\n`;
+  // latin1 turns each character into one byte and loses what is above U+00FF without a word: a text with such a character is not the bytes meant.
+  if (flag.includes('latin1') && /[^\u0000-\u00ff]/.test(out)) throw new Error(`a latin1 document has a character above U+00FF: ${JSON.stringify(out.match(/[^\u0000-\u00ff]/)[0])}`);
   return Buffer.from(out, flag.includes('latin1') ? 'latin1' : 'utf8');
 };
 

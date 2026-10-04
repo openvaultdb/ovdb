@@ -1,11 +1,14 @@
 package repo
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
 )
@@ -77,10 +80,15 @@ const (
 	meaningPth = "model/chinook.meaning.yaml"
 )
 
+const (
+	goodModel   = `{"module": {"name": "chinook"}, "entities": {"Album": {}, "Artist": {}}}`
+	goodMeaning = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\n"
+)
+
 // goodRepository is a repository that holds everything the own manifest names.
 func goodRepository() *Memory {
 	m := &Memory{Nodes: map[string]Node{}, Untracked: map[string]bool{}}
-	for path, text := range map[string]string{"OVDB.md": goodMD, "ovdb.yaml": ownManifest, modelPath: "{}", hclPath: "module", meaningPth: "id: chinook"} {
+	for path, text := range map[string]string{"OVDB.md": goodMD, "ovdb.yaml": ownManifest, modelPath: goodModel, hclPath: "module", meaningPth: goodMeaning} {
 		m.Nodes[path] = Node{Kind: File, Content: []byte(text)}
 	}
 	return m
@@ -237,7 +245,7 @@ func TestEveryFileAnOwnManifestNamesMustBeATrackedRegularFile(t *testing.T) {
 		}
 	}
 	m := goodRepository()
-	m.Nodes[modelPath] = Node{Kind: Executable}
+	m.Nodes[modelPath] = Node{Kind: Executable, Content: []byte(goodModel)}
 	if r := Check(m, publisher()); !r.OK() {
 		t.Errorf("an executable model file: %v", r.Findings)
 	}
@@ -508,8 +516,19 @@ func TestAFileAManifestNamesMustBeReadable(t *testing.T) {
 		} else if !r.OK() {
 			t.Errorf("%s is not read: %v", c.label, r.Findings)
 		}
-		m.Nodes[c.path] = Node{Kind: File, Content: make([]byte, MaxFileBytes)}
-		if r := Check(m, publisher()); !r.OK() {
+		// Exactly the bound: the model file is read to its end; the meaning file is read, and is longer than a meaning file may be.
+		switch c.path {
+		case modelPath:
+			m.Nodes[c.path] = Node{Kind: File, Content: padded(goodModel, MaxFileBytes)}
+		case meaningPth:
+			m.Nodes[c.path] = Node{Kind: File, Content: padded(goodMeaning, MaxFileBytes)}
+		default:
+			m.Nodes[c.path] = Node{Kind: File, Content: make([]byte, MaxFileBytes)}
+		}
+		r = Check(m, publisher())
+		if c.path == meaningPth {
+			only(t, r, "document-size", c.path, 0, "bytes; at most 262144 are read")
+		} else if !r.OK() {
 			t.Errorf("%s of exactly the bound: %v", c.label, r.Findings)
 		}
 	}
@@ -561,5 +580,234 @@ func TestCaseCollisionsAreFoundInBothOrders(t *testing.T) {
 			return entries, err
 		}}, publisher())
 		only(t, r, RuleCase, "OVDB.md", 0, fmt.Sprintf("%q and %q", names[0], names[1]))
+	}
+}
+
+// padded is text followed by a YAML or JSON-safe tail so that it is exactly n bytes: a comment line after YAML, and spaces after JSON (white space).
+func padded(text string, n int) []byte {
+	return append([]byte(text), bytes.Repeat([]byte(" "), n-len(text))...)
+}
+
+// lineOf is the line of the first line of text that has the needle.
+func lineOf(text, needle string) int {
+	for i, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, needle) {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// withManifest is a good repository whose manifest has an edit.
+func withManifest(find, replace string) (*Memory, string) {
+	m := goodRepository()
+	text := strings.Replace(ownManifest, find, replace, 1)
+	m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: []byte(text)}
+	return m, text
+}
+
+func TestTheModelFileMustBeAModelSpec(t *testing.T) {
+	for name, c := range map[string]struct {
+		model string
+		rule  string
+		line  int
+		text  string
+	}{
+		"empty":                         {"", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short":                     {`{"module": {"name": "chinook"}, "entities": {`, RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short in a value":          {"{\n\"a\":", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short in a string":         {"{\n\"a\":\"x", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short after a number":      {"{\"a\":1", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short in a list":           {"{\"a\":[1,2\n", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"not JSON":                      {"{\n  \"module\": x\n}", RuleModelJSON, 2, "is not a ModelSpec JSON file: invalid character 'x'"},
+		"a byte order mark":             {"\xef\xbb\xbf" + goodModel, RuleModelJSON, 1, "is not a ModelSpec JSON file"},
+		"a list":                        {`[]`, RuleModelJSON, 0, "is not a ModelSpec JSON file: it must be a JSON object"},
+		"text after the value":          {goodModel + "\n{}", RuleModelJSON, 0, "text after the JSON value"},
+		"nested too deep":               {`{"x":` + strings.Repeat("[", 100) + strings.Repeat("]", 100) + "}", RuleModelDepth, 0, "is nested more than 100 levels deep"},
+		"too many entities":             {manyEntities(MaxEntities + 1), RuleEntitiesLimit, 0, "has more than 10000 entities, which is more than this check reads"},
+		"no module":                     {`{"entities": {"Album": {}, "Artist": {}}}`, RuleModelModule, 0, "has no module.name that is a ModelSpec module name"},
+		"a module name that is not one": {`{"module": {"name": "_x"}, "entities": {"Album": {}, "Artist": {}}}`, RuleModelModule, 0, "has no module.name"},
+		"no entities":                   {`{"module": {"name": "chinook"}}`, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)"},
+		"entities a list":               {`{"module": {"name": "chinook"}, "entities": []}`, RuleModelEntities, 0, "has no entities"},
+	} {
+		m := goodRepository()
+		m.Nodes[modelPath] = Node{Kind: File, Content: []byte(c.model)}
+		f := only(t, Check(m, publisher()), c.rule, modelPath, c.line, c.text)
+		_ = f
+		if c.rule == RuleModelJSON && strings.Contains(c.text, "invalid character") && c.line != 2 {
+			t.Errorf("%s: line %d", name, c.line)
+		}
+	}
+	// A model with neither: two findings, in the order of the checker's lines.
+	m := goodRepository()
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{}`)}
+	if r := Check(m, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelModule, RuleModelEntities}) {
+		t.Errorf("findings %v", r.Findings)
+	}
+}
+
+func TestTheManifestMustAgreeWithTheModelFile(t *testing.T) {
+	// model.name and the module of model.address agree with each other (a rule of the manifest) and not with the file: both are findings.
+	m, text := withManifest("  address: modelspec://github.com/datatug/chinookdb/chinook", "  name: Other\n  address: modelspec://github.com/datatug/chinookdb/Other")
+	r := Check(m, publisher())
+	if len(r.Findings) != 2 || r.Findings[0].Rule != RuleModelName || r.Findings[1].Rule != RuleModelAddress || r.Findings[0].Line != lineOf(text, "name: Other") ||
+		!strings.Contains(r.Findings[0].Message, `model.name is "Other", but "model/chinook.modelspec.json" is module "chinook"`) {
+		t.Errorf("findings %v", r.Findings)
+	}
+	// Written in another case than the module of the file, both are wrong: a name is compared as it is spelled.
+	m, _ = withManifest("  address: modelspec://github.com/datatug/chinookdb/chinook", "  name: Chinook\n  address: modelspec://github.com/datatug/chinookdb/Chinook")
+	r = Check(m, publisher())
+	if len(r.Findings) != 2 || r.Findings[0].Rule != RuleModelName || r.Findings[1].Rule != RuleModelAddress || !strings.Contains(r.Findings[0].Message, `model.name is "Chinook"`) || !strings.Contains(r.Findings[1].Message, `module "Chinook"`) {
+		t.Errorf("findings %v", r.Findings)
+	}
+	m, _ = withManifest("  address: modelspec", "  name: chinook\n  address: modelspec")
+	if r := Check(m, publisher()); !r.OK() {
+		t.Errorf("model.name that is the module: %v", r.Findings)
+	}
+	m, text = withManifest("datatug/chinookdb/chinook\n", "datatug/chinookdb/Other\n")
+	only(t, Check(m, publisher()), RuleModelAddress, "ovdb.yaml", lineOf(text, "modelspec://"), `model.address names module "Other", but "model/chinook.modelspec.json" is module "chinook"`)
+	// A model.name or model.address that the manifest rules refuse is not compared (their finding is made), and no module is nothing to compare with.
+	m, _ = withManifest("  address: modelspec", "  name: 5x\n  address: modelspec")
+	if r := Check(m, publisher()); len(r.Findings) != 1 || r.Findings[0].Rule != "manifest-model" {
+		t.Errorf("findings %v", r.Findings)
+	}
+	m, _ = withManifest("  address: modelspec://github.com/datatug/chinookdb/chinook", "  name: Other\n  address: modelspec://github.com/datatug/chinookdb/Other")
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"entities": {"Album": {}, "Artist": {}}}`)}
+	only(t, Check(m, publisher()), RuleModelModule, modelPath, 0, "has no module.name")
+}
+
+func TestRecordsetsAreTheEntitiesOfTheModelFile(t *testing.T) {
+	m, text := withManifest("  - Artist\n", "")
+	only(t, Check(m, publisher()), RuleRecordsets, "ovdb.yaml", lineOf(text, "- Album"), `recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Artist"`)
+	m, text = withManifest("  - Artist\n", "  - Artist\n  - Extra\n")
+	only(t, Check(m, publisher()), RuleRecordsets, "ovdb.yaml", lineOf(text, "- Album"), `recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Extra"`)
+	var many strings.Builder
+	for i := range 7 {
+		fmt.Fprintf(&many, "  - More%d\n", i)
+	}
+	m, text = withManifest("  - Artist\n", "  - Artist\n"+many.String())
+	if f := only(t, Check(m, publisher()), RuleRecordsets, "ovdb.yaml", lineOf(text, "- Album"), `"More0", "More1", "More2", "More3", "More4" and 2 more`); len(f.Message) > manifest400 {
+		t.Error(f.Message)
+	}
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"module": {"name": "chinook"}, "entities": {"Album": {}, "Artist": {}, "__proto__": {}}}`)}
+	if r := Check(m, publisher()); len(r.Findings) != 2 || r.Findings[0].Rule != RuleRecordsets || r.Findings[1].Rule != RuleRecordsets {
+		t.Errorf("findings %v", r.Findings)
+	}
+	// A name is compared as it is spelled, in both directions: album for Album is a recordset that lacks Album and names a thing that is not an entity.
+	m, _ = withManifest("  - Album\n", "  - album\n")
+	if r := Check(m, publisher()); len(r.Findings) != 2 || !strings.Contains(r.Findings[0].Message, `lacks the ModelSpec entities of "model/chinook.modelspec.json": "Album"`) || !strings.Contains(r.Findings[1].Message, `names things that are not ModelSpec entities of "model/chinook.modelspec.json": "album"`) {
+		t.Errorf("another case in the recordsets: %v", r.Findings)
+	}
+	m, _ = withManifest("  - Artist\n", "  - Artist\n  - album\n")
+	if r := Check(m, publisher()); len(r.Findings) != 1 || !strings.Contains(r.Findings[0].Message, `names things that are not ModelSpec entities of "model/chinook.modelspec.json": "album"`) {
+		t.Errorf("another case, one name too many: %v", r.Findings)
+	}
+	m, _ = withManifest("  - Artist\n", "  - Zed\n  - Artist\n  - Extra\n")
+	if f := Check(m, publisher()).Findings; len(f) != 1 || !strings.HasSuffix(f[0].Message, `: "Extra", "Zed"`) {
+		t.Errorf("the names that are not entities are listed in order: %v", f)
+	}
+	// Both ways at once, and the recordsets of a manifest that the rules refuse are not compared.
+	m, _ = withManifest("  - Artist\n", "  - Extra\n")
+	if r := Check(m, publisher()); len(r.Findings) != 2 || !strings.Contains(r.Findings[0].Message, "lacks") || !strings.Contains(r.Findings[1].Message, "names things") {
+		t.Errorf("findings %v", r.Findings)
+	}
+	m, _ = withManifest("  - Artist\n", "  - 1bad\n")
+	if r := Check(m, publisher()); len(r.Findings) != 1 || r.Findings[0].Rule != "manifest-recordsets" {
+		t.Errorf("findings %v", r.Findings)
+	}
+}
+
+const manifest400 = 400
+
+func TestTheMeaningFileMustAgreeWithTheManifest(t *testing.T) {
+	m := goodRepository()
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: other\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\n")}
+	only(t, Check(m, publisher()), "meaning-id", meaningPth, 1, `meaning.graph.id is "chinook" in the manifest, but the id of this file is "other"`)
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("- a\n")}
+	only(t, Check(m, publisher()), "meaning-shape", meaningPth, 1, "is not a MeaningGraph file")
+	m.Nodes[meaningPth] = Node{Kind: File}
+	only(t, Check(m, publisher()), "meaning-shape", meaningPth, 1, "is not a MeaningGraph file")
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: other.modelspec.hcl\n")}
+	only(t, Check(m, publisher()), "meaning-hcl", meaningPth, 4, `model.hcl is "model/chinook.modelspec.hcl", but the models: entry for "chinook" is "model/other.modelspec.hcl"`)
+	// The models: entry is judged when the module is known and model.hcl is a file: with no readable model there is no module, and with
+	// no model.hcl the manifest rules and the kind finding speak.
+	noModules := "id: chinook\nlicense: CC0-1.0\n"
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(noModules)}
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte("{")}
+	only(t, Check(m, publisher()), RuleModelJSON, modelPath, 1, "is not a ModelSpec JSON file")
+	m = goodRepository()
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(noModules)}
+	delete(m.Nodes, hclPath)
+	only(t, Check(m, publisher()), RuleFile, "ovdb.yaml", 15, "model.hcl")
+	// The model file is not read when it cannot be, and the meaning file still is.
+	m = goodRepository()
+	m.BrokenBlobs = map[string]error{modelPath: ErrObjectMissing}
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: nope\nlicense: CC0-1.0\n")}
+	r := Check(m, publisher())
+	if !slices.Equal(rulesOf(r), []string{RuleObjectGone, "meaning-id"}) {
+		t.Errorf("findings %v", r.Findings)
+	}
+}
+
+// Recordsets and entities are held to MaxRecordsets and MaxEntities, and compared in linear time: the review's worst case, 20,000 recordsets against a
+// model of 330,000 entities (3.8 MiB), took the checker 6.3 seconds, and 32 such manifests about four minutes.
+func TestWhatOneCheckCostsIsBounded(t *testing.T) {
+	list := func(n int) string {
+		var b strings.Builder
+		b.WriteString("  - Album\n")
+		for i := 1; i < n; i++ {
+			b.WriteString("  - e" + strconv.FormatInt(int64(i), 36) + "\n")
+		}
+		return b.String()
+	}
+	m, _ := withManifest("  - Album\n  - Artist\n", list(MaxEntities+1))
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(manifestWithEntities(MaxEntities + 1))}
+	only(t, Check(m, publisher()), RuleEntitiesLimit, modelPath, 0, "has more than 10000 entities")
+	m2, text := withManifest("  - Album\n  - Artist\n", list(MaxRecordsets+1))
+	m2.Nodes[modelPath] = Node{Kind: File, Content: []byte(manifestWithEntities(MaxEntities))}
+	only(t, Check(m2, publisher()), RuleRecordsetsLimit, "ovdb.yaml", lineOf(text, "- Album"), "recordsets lists 10001 names, which is more than the 10000 this check reads")
+	// The reviewer's worst case is refused at once, and the most that is accepted takes a moment for 32 manifests.
+	start := time.Now()
+	worst, _ := withManifest("  - Album\n  - Artist\n", list(20000))
+	worst.Nodes[modelPath] = Node{Kind: File, Content: []byte(manifestWithEntities(330000))}
+	if r := Check(worst, publisher()); len(r.Findings) == 0 || r.Findings[0].Rule != RuleEntitiesLimit {
+		t.Errorf("findings %v", r.Findings)
+	}
+	full, _ := withManifest("  - Album\n  - Artist\n", list(MaxRecordsets))
+	full.Nodes[modelPath] = Node{Kind: File, Content: []byte(manifestWithEntities(MaxEntities))}
+	var paths []string
+	for i := range 32 {
+		p := fmt.Sprintf("m/%02d.yaml", i)
+		full.Nodes[p] = full.Nodes["ovdb.yaml"]
+		paths = append(paths, "./"+p)
+	}
+	full.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte("---\novdb: 1\npublish: [" + strings.Join(paths, ", ") + "]\n---\n")}
+	Check(full, publisher())
+	if took := time.Since(start); took > 20*time.Second {
+		t.Errorf("the worst case and 32 manifests of %d recordsets took %v, want under 20s (linear time: well under one)", MaxRecordsets, took)
+	}
+}
+
+// manifestWithEntities is a model whose entities are Album and the ones listed by list in TestWhatOneCheckCostsIsBounded: e1, e2 ... in base 36.
+func manifestWithEntities(n int) string {
+	var b strings.Builder
+	b.WriteString(`{"module":{"name":"chinook"},"entities":{"Album":{}`)
+	for i := 1; i < n; i++ {
+		b.WriteString(`,"e` + strconv.FormatInt(int64(i), 36) + `":{}`)
+	}
+	b.WriteString("}}")
+	return b.String()
+}
+
+// finished records nothing for a test that skipped or failed, and the real-git check holds a test to that.
+func TestFinishedRecordsOnlyATestThatRanToItsEnd(t *testing.T) {
+	t.Run("skipped", func(t *testing.T) {
+		t.Cleanup(func() { finished(t) }) // runs after the skip below
+		t.Skip("skipped on purpose")
+	})
+	realGitFinishedMu.Lock()
+	defer realGitFinishedMu.Unlock()
+	if realGitFinished[t.Name()+"/skipped"] {
+		t.Error("a skipped test was recorded as finished")
 	}
 }

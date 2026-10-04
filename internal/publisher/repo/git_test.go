@@ -382,3 +382,33 @@ func TestHeadExplainsACommitThatCannotBeRead(t *testing.T) {
 		t.Errorf("a failure that names no reason: Head = %v", err)
 	}
 }
+
+// Each line that explain knows, written out here and not read from its lists, so that dropping one from them or matching anywhere in a line instead
+// of at its start fails: a line that has the text after something else, as a file name can make it, is no reason.
+func TestExplainKnowsEachLineByItsStart(t *testing.T) {
+	for line, want := range map[string]error{
+		"error: unable to normalize alternate object path: /gone/objects":                          ErrAlternates,
+		"error: object directory /gone/objects does not exist; check .git/objects/info/alternates": ErrAlternates,
+		"error: inflate: data stream error (incorrect header check)":                               ErrObjectCorrupt,
+		"error: unable to unpack abc header":                                                       ErrObjectCorrupt,
+		"fatal: loose object abc (stored in .git/objects/ab/c) is corrupt":                         ErrObjectCorrupt,
+		"fatal: unable to stream abc to stdout":                                                    ErrObjectCorrupt,
+		"error: object file .git/objects/ab/c is empty":                                            ErrObjectCorrupt,
+		"error: packfile .git/objects/pack/pack-1.pack does not match index":                       ErrObjectCorrupt,
+		"fatal: packed object abc (stored in .git/objects/pack/p.pack) is corrupt":                 ErrObjectCorrupt,
+	} {
+		if got := explain(&ExitError{Full: "fatal: first\n" + line + "\nfatal: last\n"}); got != want {
+			t.Errorf("%q: %v, want %v", line, got, want)
+		}
+		if got := explain(&ExitError{Full: "fatal: git cat-file HEAD:x " + line + "\n"}); got != nil {
+			t.Errorf("%q after other text: %v, want no reason", line, got)
+		}
+	}
+	if got := explain(&ExitError{Full: ""}); got != nil {
+		t.Errorf("nothing said: %v", got)
+	}
+	// Both reasons in one output: the alternate that is gone is what makes the rest unreadable.
+	if got := explain(&ExitError{Full: "error: inflate: x\nerror: unable to normalize alternate object path: /gone\n"}); got != ErrAlternates {
+		t.Errorf("both: %v", got)
+	}
+}

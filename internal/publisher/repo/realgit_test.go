@@ -3,12 +3,16 @@ package repo
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
@@ -178,12 +182,21 @@ func breakObject(t testing.TB, dir string, b [3]string) {
 		t.Fatal(err)
 	}
 	content := []byte("garbage\n")
-	if b[2] == "truncate" {
+	switch b[2] {
+	case "truncate":
 		whole, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}
-		content = whole[:len(whole)/2]
+		content = whole[:12]
+	case "empty":
+		content = nil
+	case "other": // the bytes of another object, which git reads as this one's
+		other := git(t, dir, []byte("other\n"), "hash-object", "-w", "--stdin")
+		var err error
+		if content, err = os.ReadFile(filepath.Join(gitDir, "objects", other[:2], other[2:])); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := os.WriteFile(file, content, 0o644); err != nil {
 		t.Fatal(err)
@@ -197,17 +210,62 @@ func ignoreFile(m *model) map[string]string {
 	return nil
 }
 
+// realGitTests are the real-git tests of this file, written here and nowhere else: TestRealGitEveryTestRan fails for a test function in the file that is
+// not in the list (a test renamed away from its prefix, or added without being listed), and for a listed test that did not reach the line of its
+// last statement, finished(t) (a skip, an early return, a failure). A subtest that skips fails (see subtest).
+var realGitTests = []string{
+	"TestRealGitReadsEveryCaseAsTheMemoryReaderDoes",
+	"TestRealGitFindsAnOversizeBlob",
+	"TestRealGitDoesNotRunTheFsmonitorOfTheRepository",
+	"TestRealGitDoesNotRunThePromisorRemoteOfTheRepository",
+	"TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled",
+}
+
+const lastRealGitTest = "TestRealGitEveryTestRan"
+
+var (
+	realGitFinished   = map[string]bool{}
+	realGitFinishedMu sync.Mutex
+)
+
+// realGit skips the test unless OVDB_REAL_GIT is set.
 func realGit(t *testing.T) {
+	t.Helper()
 	if os.Getenv("OVDB_REAL_GIT") == "" {
 		t.Skip("set OVDB_REAL_GIT=1 to read real repositories with git")
 	}
 }
 
+// finished records that the test ran to its last statement. It is that statement: a test that returns early, skips or fails never records.
+func finished(t *testing.T) {
+	t.Helper()
+	if t.Failed() || t.Skipped() {
+		return
+	}
+	realGitFinishedMu.Lock()
+	defer realGitFinishedMu.Unlock()
+	realGitFinished[t.Name()] = true
+}
+
+// subtest runs body as a subtest, and fails it if it skips: with OVDB_REAL_GIT set nothing may be skipped.
+func subtest(t *testing.T, name string, body func(t *testing.T)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		t.Cleanup(func() {
+			if t.Skipped() {
+				t.Error("a subtest of a real-git test skipped: with OVDB_REAL_GIT set nothing is skipped")
+			}
+		})
+		body(t)
+	})
+}
+
 func TestRealGitReadsEveryCaseAsTheMemoryReaderDoes(t *testing.T) {
 	realGit(t)
 	g := readGolden(t)
+	checked := 0
 	for _, c := range g.Cases {
-		t.Run(c.Group+"/"+c.Name, func(t *testing.T) {
+		subtest(t, c.Group+"/"+c.Name, func(t *testing.T) {
 			m := build(t, g, c.Ops)
 			dir := buildReal(t, m)
 			real := NewGit(ExecRunner{Dir: dir})
@@ -228,14 +286,20 @@ func TestRealGitReadsEveryCaseAsTheMemoryReaderDoes(t *testing.T) {
 					t.Errorf("accepted, and the checker refuses")
 				}
 			}
+			checked++
 		})
 	}
+	if checked != len(g.Cases) {
+		t.Fatalf("%d of the %d cases of the golden were read to the end", checked, len(g.Cases))
+	}
+	finished(t)
 }
 
 func TestRealGitFindsAnOversizeBlob(t *testing.T) {
 	realGit(t)
 	dir := buildReal(t, &model{tracked: map[string]Node{"OVDB.md": {Kind: File, Content: bytes.Repeat([]byte("x"), manifest.MaxDocumentBytes+100)}}, location: "normal"})
 	only(t, Check(NewGit(ExecRunner{Dir: dir}), publisher()), "document-size", "OVDB.md", 0, "is more than 262144 bytes")
+	finished(t)
 }
 
 // A repository's own configuration can name a program that git runs: core.fsmonitor, which `ls-files` runs when the untracked cache
@@ -256,7 +320,7 @@ func TestRealGitDoesNotRunTheFsmonitorOfTheRepository(t *testing.T) {
 	}
 	git(t, dir, nil, "ls-files", "-z", "--cached", "--others", "--", "ovdb.yaml")
 	if _, err := os.Stat(marker); err != nil {
-		t.Skip("this git does not run the file system monitor for ls-files: there is nothing to show")
+		t.Fatal("the control did not run the file system monitor: with OVDB_REAL_GIT set the test must show something, and a git that does not run it here hides what it guards (it is a skip only without OVDB_REAL_GIT)")
 	}
 	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
@@ -266,6 +330,7 @@ func TestRealGitDoesNotRunTheFsmonitorOfTheRepository(t *testing.T) {
 		t.Error("the reader ran the repository's core.fsmonitor")
 	}
 	only(t, r, RuleManifest, "OVDB.md", 3, "it is in the working tree or the index but not committed")
+	finished(t)
 }
 
 // The mechanism behind MinGit, not the number: a repository whose promisor remote is a command (ext::), with an object missing, makes
@@ -288,7 +353,7 @@ func TestRealGitDoesNotRunThePromisorRemoteOfTheRepository(t *testing.T) {
 	control.Env = slices.DeleteFunc(append(gitEnv(os.Environ()), "GIT_CONFIG_NOSYSTEM=1"), func(kv string) bool { return strings.HasPrefix(kv, "GIT_NO_LAZY_FETCH=") })
 	_ = control.Run() // it fails: the object is not there, and the remote has nothing
 	if _, err := os.Stat(marker); err != nil {
-		t.Skip("this git does not run the promisor remote when the variable is unset: there is nothing to show")
+		t.Fatal("the control did not run the promisor remote when the variable is unset: with OVDB_REAL_GIT set the test must show something, and a git that does not run it here hides what it guards (it is a skip only without OVDB_REAL_GIT)")
 	}
 	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
@@ -298,6 +363,7 @@ func TestRealGitDoesNotRunThePromisorRemoteOfTheRepository(t *testing.T) {
 		t.Error("the reader ran the command of the repository's promisor remote")
 	}
 	only(t, r, RulePartial, "ovdb.yaml", 14, "cannot be read at the commit")
+	finished(t)
 }
 
 // The reason of an unreadable object is told from what git prints, not from the file names of the repository, and a truncated blob and a
@@ -326,7 +392,7 @@ func TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled(t *testing
 		"a truncated blob": {[3]string{"break", "model/alternate.modelspec.json", "truncate"}, RuleObjectBad, "ovdb.yaml"},
 		"a garbage commit": {[3]string{"break-commit", "", "corrupt"}, RuleObjectBad, "repository"},
 	} {
-		t.Run(name, func(t *testing.T) {
+		subtest(t, name, func(t *testing.T) {
 			dir := buildReal(t, repository())
 			breakObject(t, dir, c.spec)
 			r := Check(NewGit(ExecRunner{Dir: dir}), publisher())
@@ -335,4 +401,28 @@ func TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled(t *testing
 			}
 		})
 	}
+	finished(t)
+}
+
+// Every real-git test of this file is listed and ran to its end: a skip would be a test that guards nothing and a log that says "ok". It is the last
+// test of the file, and runs only with OVDB_REAL_GIT set and the others selected (-run RealGit, as the goldens job does).
+func TestRealGitEveryTestRan(t *testing.T) {
+	realGit(t)
+	parsed, err := parser.ParseFile(token.NewFileSet(), "realgit_test.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, decl := range parsed.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") && fn.Name.Name != lastRealGitTest && !slices.Contains(realGitTests, fn.Name.Name) {
+			t.Errorf("%s is a test of the real-git file that realGitTests does not list: list it, or move it to another file", fn.Name.Name)
+		}
+	}
+	realGitFinishedMu.Lock()
+	defer realGitFinishedMu.Unlock()
+	for _, name := range realGitTests {
+		if !realGitFinished[name] {
+			t.Errorf("%s did not run to its last statement: it failed, skipped, returned early, or was not selected", name)
+		}
+	}
+	t.Logf("%d real-git tests ran to their end", len(realGitTests))
 }

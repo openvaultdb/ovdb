@@ -50,7 +50,14 @@ type checker struct {
 	res   manifest.Result
 	dirs  map[string]dirResult
 	seen  map[string]bool
-	files map[string]error // the result of reading each file that a manifest names
+	files map[string]fileRead // the result of reading each file that a manifest names, while there is room
+	kept  int                 // the bytes in files
+}
+
+// fileRead is what reading a file gave.
+type fileRead struct {
+	data []byte
+	err  error
 }
 
 type dirResult struct {
@@ -74,7 +81,7 @@ func Check(r Reader, o Options) manifest.Result {
 	if j == nil {
 		return manifest.Result{Profile: o.Profile, Findings: bad}
 	}
-	c := &checker{r: r, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]error{}}
+	c := &checker{r: r, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]fileRead{}}
 	c.run(o)
 	c.res.Findings = append(c.res.Findings, j.Notice("OVDB.md")...)
 	return c.res
@@ -128,15 +135,31 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 	if m.Form != manifest.FormOwn {
 		return
 	}
+	var own ownFiles
 	for _, named := range []struct {
 		label string
 		fact  manifest.Fact[string]
 		read  bool // the checker reads the file (the model file and the meaning file); it only looks at the kind of model.hcl
 	}{{"model.modelspec", m.ModelSpec, true}, {"model.hcl", m.ModelHCL, false}, {"meaning.file", m.MeaningFile, true}} {
-		if subject := named.label + " " + rules.Quote(named.fact.Value); named.fact.Usable() && c.require(path, RuleFile, named.fact.Line, subject, named.fact.Value) && named.read {
-			c.readable(path, named.fact.Line, subject, named.fact.Value)
+		subject := named.label + " " + rules.Quote(named.fact.Value)
+		if !named.fact.Usable() || !c.require(path, RuleFile, named.fact.Line, subject, named.fact.Value) {
+			continue
+		}
+		var data []byte
+		var ok bool
+		if named.read {
+			data, ok = c.readable(path, named.fact.Line, subject, named.fact.Value)
+		}
+		switch named.label {
+		case "model.modelspec":
+			own.model, own.haveModel = data, ok
+		case "model.hcl":
+			own.haveHCL = true
+		default:
+			own.meaning, own.haveMeaning = data, ok
 		}
 	}
+	c.content(path, m, own)
 }
 
 // require says whether path is a tracked regular file of the commit, and when it is not,
@@ -173,22 +196,29 @@ func (c *checker) read(document, path string) ([]byte, bool) {
 	return doc, err == nil
 }
 
-// readable adds the finding for a file that a manifest names and that cannot be read, or is larger than MaxFileBytes
-// (the checker's lines 345 and 347 refuse an unreadable one and one over 16 MiB). The content is not judged here.
-// A path is read once for all the manifests that name it.
-func (c *checker) readable(document string, line int, subject, path string) {
-	err, done := c.files[path]
+// readable reads a file that a manifest names and that the checker reads (lines 345 and 347 refuse one that cannot be read, or is over 16 MiB; the
+// bound here is MaxFileBytes), and adds the finding when it cannot be. A file is read once for the manifests that name it, as long as the
+// files kept are few: they are at most maxKept bytes in all.
+func (c *checker) readable(document string, line int, subject, path string) ([]byte, bool) {
+	got, done := c.files[path]
 	if !done {
-		_, err = c.r.Blob(path, MaxFileBytes)
-		c.files[path] = err
+		got.data, got.err = c.r.Blob(path, MaxFileBytes)
+		if c.kept+len(got.data) <= maxKept {
+			c.kept += len(got.data)
+			c.files[path] = got
+		}
 	}
 	switch {
-	case errors.Is(err, ErrTooLarge):
+	case errors.Is(got.err, ErrTooLarge):
 		c.add(document, RuleFileSize, line, "%s must be at most %d bytes", subject, MaxFileBytes)
-	case err != nil:
-		c.add(document, ruleOf(err), line, "%s cannot be read at the commit: %s", subject, ascii(err.Error()))
+	case got.err != nil:
+		c.add(document, ruleOf(got.err), line, "%s cannot be read at the commit: %s", subject, ascii(got.err.Error()))
 	}
+	return got.data, got.err == nil
 }
+
+// maxKept is the most bytes of the files named by manifests that are kept for the next manifest that names them.
+const maxKept = 8 << 20
 
 // ruleOf is the rule of a finding about an error that a Reader gave.
 func ruleOf(err error) string {
