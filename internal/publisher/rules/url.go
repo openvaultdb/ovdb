@@ -111,6 +111,10 @@ func PublicHTTPSURL(s string) error {
 	return err
 }
 
+// noURL is what a refused read returns: the zero URL would read as "a template
+// with {name} at offset 0".
+var noURL = URL{Placeholder: -1}
+
 // URL is an accepted URL in its parts, so that the rules that look at a host or
 // a path (the marker of a canonical url, the same-origin rule, a publisher url)
 // never split the text again. The scheme is always https and there is no port,
@@ -189,19 +193,19 @@ func checkURL(s string, o options) *Problem {
 // the path to the end.
 func readURL(s string, o options) (URL, *Problem) {
 	if len(s) > o.maxLen {
-		return URL{}, problem(RuleLength, "is longer than %d characters", o.maxLen)
+		return noURL, problem(RuleLength, "is longer than %d characters", o.maxLen)
 	}
 	rest, ok := strings.CutPrefix(s, scheme)
 	if !ok {
-		return URL{}, notHTTPS(s)
+		return noURL, notHTTPS(s)
 	}
 	pathStart, p := scanHost(rest, o)
 	if p != nil {
-		return URL{}, p
+		return noURL, p
 	}
 	at, p := scanPath(rest, pathStart, o)
 	if p != nil {
-		return URL{}, p
+		return noURL, p
 	}
 	return URL{Host: rest[:pathStart], Path: rest[pathStart:], Placeholder: at}, nil
 }
@@ -311,7 +315,7 @@ func checkLabel(label string, o options) *Problem {
 	case punyInvalid:
 		return problem(RuleHostPunycode, "host label %s is not valid punycode for a host name (or it decodes to text that begins with xn-- or has hyphens in positions 3 and 4); write the host name in ASCII letters, digits and hyphens", show(label))
 	case punyForeign:
-		return problem(RuleHostIDN, "host label %s is an internationalised name: only Latin-1 letters are accepted in one, and internationalised host names are not accepted here yet; use an ASCII host name", show(label))
+		return problem(RuleHostIDN, "host label %s is an internationalised name with letters that are not accepted yet: an xn-- label may only spell Latin-1 letters (accented ones such as e with an acute accent, u with a diaeresis, n with a tilde) with ASCII letters, digits and hyphens, and other scripts and letters are not accepted; use an ASCII host name", show(label))
 	}
 	return nil
 }

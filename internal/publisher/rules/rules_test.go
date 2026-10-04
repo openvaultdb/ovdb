@@ -309,6 +309,30 @@ func TestRelationConflicts(t *testing.T) {
 	}
 }
 
+// A refused read returns Placeholder -1, so that the zero URL is never read as a
+// template with {name} at offset 0, and the idn message says what is true.
+func TestRefusedParseReturnsNoPlaceholder(t *testing.T) {
+	for _, s := range []string{"", "http://acme.io/", "https://acme.io/x?y", "https://xn--80ak6aa92e.com/x"} {
+		for _, parse := range []func(string) (URL, error){ParsePublicHTTPSURL, ParsePublicHTTPSURLTemplate} {
+			if u, err := parse(s); err == nil || u.Placeholder != -1 || u.Host != "" || u.Path != "" {
+				t.Errorf("a refused parse of %q = %+v, %v", s, u, err)
+			}
+		}
+	}
+	err := PublicHTTPSURL("https://xn--80ak6aa92e.com/x")
+	for _, want := range []string{"Latin-1", "accented", "other scripts", "use an ASCII host name"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the host-idn message %q does not say %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "only Latin-1 letters are accepted in one, and internationalised host names are not accepted") {
+		t.Error("the host-idn message contradicts itself again")
+	}
+	if PublicHTTPSURL("https://xn--caf-dma.fr/x") != nil {
+		t.Error("xn--caf-dma.fr is refused, so the message must not say Latin-1 is refused")
+	}
+}
+
 func TestParseURLParts(t *testing.T) {
 	u, err := ParsePublicHTTPSURL("https://cloud.openvaultdb.com/ovdb/dbs/chinook")
 	if err != nil || u != (URL{Host: "cloud.openvaultdb.com", Path: "/ovdb/dbs/chinook", Placeholder: -1}) {
@@ -326,11 +350,11 @@ func TestParseURLParts(t *testing.T) {
 		t.Errorf("a template at the start of the path = %+v, %v", u, err)
 	}
 	for _, s := range []string{"http://acme.io/", "https://acme.io", "https://acme.io/{name}"} {
-		if u, err := ParsePublicHTTPSURL(s); err == nil || u != (URL{}) {
+		if u, err := ParsePublicHTTPSURL(s); err == nil || u != noURL || u.Placeholder != -1 {
 			t.Errorf("ParsePublicHTTPSURL(%q) = %+v, %v", s, u, err)
 		}
 	}
-	if u, err := ParsePublicHTTPSURLTemplate("https://acme.io/x"); err == nil || u != (URL{}) {
+	if u, err := ParsePublicHTTPSURLTemplate("https://acme.io/x"); err == nil || u != noURL || u.Placeholder != -1 {
 		t.Errorf("a template without {name} = %+v, %v", u, err)
 	}
 	// The verdict functions agree with the parts.

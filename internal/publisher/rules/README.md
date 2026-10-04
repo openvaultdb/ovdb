@@ -117,7 +117,7 @@ with the one limit named taken away, Go accepts the same input.
 | --- | --- | --- |
 | `url-length` | 5 | A URL over 2048 bytes. The references have no bound; a published URL is text that people and tools read, and an unbounded input is a way to make a check slow. |
 | `punycode-decoded-hyphens` | 504 | An `xn--` label that is valid punycode of Latin-1 letters but decodes to text that begins with `xn--` or has hyphens in its third and fourth positions. As UTS #46 reads it (15.1 on), such a label is invalid when hyphens are not checked, so a later Node may refuse it; Node v24.20.0 accepts it. One comparison makes the rule independent of the Node version. |
-| `punycode-other-text` | 4997 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says that internationalised host names are not accepted here yet and to use an ASCII host name; whether to accept more is a product decision. |
+| `punycode-other-text` | 4997 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says which letters a label may spell, that other scripts and letters are not accepted yet, and to use an ASCII host name; whether to accept more is a product decision. |
 | `punycode-malformed` | 1940 | An `xn--` label that is not punycode of any text (truncated, ASCII only, a number too large). Node's URL parser takes such labels as written; a hostile publisher could use one to name a host no client can resolve the same way. The message says it is not valid punycode and to write the host name in ASCII. |
 | `repository-length` | 4 | A repository URL over 255 bytes. The references have no bound; GitHub names are far shorter. |
 | `path-length` | 3 | A path inside a repository over 1024 bytes. The references have no bound. |
@@ -174,7 +174,12 @@ The gate also refuses whatever lets the build leave a file out of the profile:
 a build constraint in any spelling that Go reads (`//go:build`, `// +build`,
 `//+build`, extra spaces or a tab, judged by `go/build/constraint` on the header
 before the package clause), a GOOS or GOARCH file name, and `import "C"` (left
-out when cgo is off). And it closes the class by a file-set rule: every
+out when cgo is off). It refuses `//line` and `/*line*/` directives in any file
+(found with the scanner's comments, so the same text in a string is not one):
+the profile names a block by the file a directive gives and the physical line
+and column, so a block that never ran could take the location of a covered one
+of another file and be merged into it as covered. A profile with the same
+location listed with two statement counts is refused. And it closes the class by a file-set rule: every
 non-test file of a gated package that has a statement must have a block in the
 profile, so a file left out for any other reason fails the gate by name. To run
 it locally:

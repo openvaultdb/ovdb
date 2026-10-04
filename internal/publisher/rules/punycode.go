@@ -21,11 +21,13 @@ import "strings"
 // references accepts any xn-- label as written, even one that is not punycode,
 // so no verdict here depends on what a Node version happens to do.
 //
-// There is no check that re-encoding the decoded label gives the label back. It
-// was there once and decided nothing: no lower-case body of one to five bytes
-// (every one was tried) decodes to a label that spells differently when
-// encoded, so nothing that the host loop lets through has a second spelling.
-// The encoder is kept in the tests, which build labels with it.
+// There is no check that re-encoding the decoded label gives the label back,
+// and none is needed at any length: a decoder's state (the code point, the
+// position and the bias) only moves forward, inserting code points in increasing
+// order of value and then of position, and each number has exactly one spelling,
+// so a lower-case label has exactly one encoding and nothing that the host loop
+// lets through has a second. (It was once there and decided no verdict; the
+// encoder is kept in the tests, which build labels with it.)
 const (
 	punyBase        = 36
 	punyTMin        = 1
