@@ -25,7 +25,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { references as pinnedReferences, remoteUrl } from '../../../references.mjs';
+import { checkoutReference, references as pinnedReferences } from '../../../references.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = join(here, 'corpus.json');
@@ -42,38 +42,17 @@ const pins = pinnedReferences; // internal/publisher/references.mjs: the one pla
 const argValue = (name) => { const at = process.argv.indexOf(name); return at === -1 ? undefined : process.argv[at + 1]; };
 const run = (cwd, command, args) => execFileSync(command, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' }).trim();
 
-function checkout(name) {
-  const { repository, commit } = pins[name];
-  let dir = argValue(`--${name}`);
-  if (dir) {
-    dir = resolve(dir);
-    if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}`);
-    if (run(dir, 'git', ['status', '--porcelain', '--untracked-files=no'])) throw new Error(`${dir} has local changes; the references are read as committed`);
-    if (name === 'directory' && !existsSync(join(dir, 'node_modules', 'yaml'))) {
-      throw new Error(`${dir} has no node_modules/yaml, which the Directory's directory.mjs imports: run \`npm ci --omit=dev --ignore-scripts\` there first`);
-    }
-    return dir;
-  }
-  dir = join(process.env.OVDB_REFERENCE_CACHE ?? join(tmpdir(), 'ovdb-publisher-reference'), `${name}-${commit}`);
-  if (!existsSync(join(dir, '.git'))) {
-    mkdirSync(dir, { recursive: true });
-    run(dir, 'git', ['init', '--quiet']);
-    run(dir, 'git', ['fetch', '--quiet', '--depth', '1', remoteUrl(name), commit]);
-    run(dir, 'git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD']);
-  }
-  if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}; remove it`);
-  if (name === 'directory' && !existsSync(join(dir, 'node_modules', 'yaml'))) {
-    run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
-  }
-  return dir;
-}
+const checkout = (name) => checkoutReference(name, { explicit: argValue(`--${name}`) });
 
 const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');
 // The Chinook checker imports the `yaml` package, which its own checkout does not have installed (it would need the whole of its
-// site's dependencies): the checkout we fetch gets a link to the copy that the Directory's checkout has, the same package.
-if (!existsSync(join(chinookRoot, 'node_modules', 'yaml'))) {
-  if (argValue('--chinookdb')) throw new Error(`${chinookRoot} has no node_modules/yaml, which ovdb-manifest.mjs imports: install it there, or let the script fetch the checkout`);
+// site's dependencies): a checkout that we fetched gets a fresh link to the copy that the Directory's checkout installed from its lock
+// file, the same package (whatever node_modules it had is removed first: it is not part of the commit).
+if (argValue('--chinookdb')) {
+  if (!existsSync(join(chinookRoot, 'node_modules', 'yaml'))) throw new Error(`${chinookRoot} has no node_modules/yaml, which ovdb-manifest.mjs imports: install it there, or let the script fetch the checkout`);
+} else {
+  rmSync(join(chinookRoot, 'node_modules'), { recursive: true, force: true });
   mkdirSync(join(chinookRoot, 'node_modules'), { recursive: true });
   symlinkSync(join(directoryRoot, 'node_modules', 'yaml'), join(chinookRoot, 'node_modules', 'yaml'), 'dir');
 }
@@ -443,14 +422,14 @@ const mdCases = []; // [base, patch, flags, path, family]
 const seenManifest = new Set(); const seenMd = new Set();
 function addManifest(family, base, text, flags = '') {
   const patch = patchOf(bases[base], text);
-  const key = JSON.stringify([base, patch, flags]);
+  const key = JSON.stringify([base, patch, flags, family.startsWith('reader place: ') ? family : '']); // a place keeps its documents even when another family has them
   if (seenManifest.has(key)) return;
   seenManifest.add(key);
   manifestCases.push([base, patch, flags, familyIndex(family)]);
 }
 function addMd(family, base, text, path = 'ovdb.yaml', flags = '') {
   const patch = patchOf(bases[base], text);
-  const key = JSON.stringify([base, patch, flags, path]);
+  const key = JSON.stringify([base, patch, flags, path, family.startsWith('reader place: ') ? family : '']);
   if (seenMd.has(key)) return;
   seenMd.add(key);
   mdCases.push([base, patch, flags, path, familyIndex(family)]);
@@ -914,6 +893,183 @@ for (const [url, repository] of [['https://github.com/data', 'https://github.com
     const m = clone(ownObject); m.deployment.recordset_page = `${stem}${'x'.repeat(total - stem.length - '{name}'.length)}{name}`; m.recordsets = [name, ...ownObject.recordsets.filter((entry) => entry !== name).slice(0, 2)];
     addManifest('publisher: expansion', ownJson, jsonOf(m));
   }
+}
+
+// ---- the reader's raising places ----
+//
+// Every place in the reader (meaninggraph/cli pkg/meaning, yaml.go and yaml_flow.go) that raises a refusal is a row of the
+// table of reader_places_test.go, named by file:line (and, for a function that several places call, by the caller). Here each
+// place gets documents of its own, in the family `reader place: <id>`: the real Chinook manifest (the only base the Chinook
+// checker accepts) with one line replaced, as the Directory profile and the Publisher profile are both judged on it, and the
+// same on an extra unknown key, which only the Directory accepts. The test says which of them the reference accepts.
+{
+  const place = (id, ...docs) => { for (const [base, text, flags] of docs) addManifest(`reader place: ${id}`, base, text, flags ?? ''); };
+  const hosts = (id, snippet, flags = '') => {
+    // snippet: lines whose first key is written K; K becomes title (an allowed key) or extra (an unknown key, for the Directory profile).
+    for (const name of [chinookYaml, hosterYaml]) {
+      const text = bases[name];
+      const asTitle = snippet.replace(/\bK\b/, 'title');
+      const asExtra = snippet.replace(/\bK\b/, 'extra');
+      place(id, [name, text.replace(/^title:.*$/m, asTitle), flags], [name, text.replace(/^title:.*$/m, (line) => `${line}\n${asExtra}`), flags]);
+    }
+  };
+  const publisherBlock = /^publisher:\n  name: .*\n  url: .*\n  repository: .*\n/m;
+  const publisherAs = (id, make) => {
+    for (const name of [chinookYaml, hosterYaml]) {
+      const text = bases[name];
+      const m = text.match(/^publisher:\n  name: (.*)\n  url: (.*)\n  repository: (.*)\n/m);
+      place(id, [name, text.replace(publisherBlock, make({ name: m[1], url: m[2], repository: m[3] }))]);
+    }
+  };
+  const whole = (id, make, flags = '') => { for (const name of [chinookYaml, hosterYaml]) place(id, [name, make(bases[name]), flags]); };
+  const ownOnly = (id, make, flags = '') => place(id, [chinookYaml, make(bases[chinookYaml]), flags]);
+  const mdPlace = (id, text, flags = '') => addMd(`reader place: ${id}`, chinookMd, text, 'ovdb.yaml', flags);
+  const nest = (depth, open, close, inner = '') => `${open.repeat(depth)}${inner}${close.repeat(depth)}`;
+
+  // --- yaml.go: the characters, the lines and the document ---
+  whole('yaml.go:148', (t) => t.replace(/^(#.*\n|\n)+/, '').replace(/^(.*)$/gm, (line) => (line === '' ? line : `  ${line}`)), 'bom');
+  hosts('yaml.go:171', 'K: caf\u00e9', 'latin1'); whole('yaml.go:171', (t) => `${t}# \u00ff\n`, 'latin1');
+  hosts('yaml.go:173', 'K: a\u0000b'); whole('yaml.go:173', (t) => `${t}\u0000`);
+  hosts('yaml.go:178', 'K: a\rb');
+  hosts('yaml.go:182', 'K: a\u0085b'); hosts('yaml.go:182', 'K: a\u2028b'); hosts('yaml.go:182', 'K: a\u007fb');
+  hosts('yaml.go:295', 'K: Chinook\t'); hosts('yaml.go:295', 'K:\u0020Chinook # c\t');
+  hosts('yaml.go:320', `K: ${nest(70, '[', ']')}`); hosts('yaml.go:320', `K:\n${Array.from({ length: 70 }, (_, i) => `${'  '.repeat(i + 1)}a:`).join('\n')} x`);
+  whole('yaml.go:332', (t) => `%YAML 1.2\n---\n${t}`); whole('yaml.go:332', (t) => `${t}%TAG ! tag:x,2000:\n`);
+  whole('yaml.go:341', (t) => `---\t\n${t}`); whole('yaml.go:341', (t) => `---\t# c\n${t}`);
+  whole('yaml.go:345', (t) => `--- &doc\n${t}`); whole('yaml.go:345', (t) => `--- !!map\n${t}`); whole('yaml.go:345', (t) => `--- text\n${t}`);
+  whole('yaml.go:352', (t) => `${t}...\n`); whole('yaml.go:352', (t) => `${t}---\nformat: x\n`); whole('yaml.go:352', (t) => `---\n${t}...\n`);
+  whole('yaml.go:365', (t) => `${t.replace(/^(.+)$/gm, '  $1')}format: x\n`); whole('yaml.go:365', (t) => `${t.replace(/^(.+)$/gm, '    $1')}  format: x\n`);
+  hosts('yaml.go:399', 'K:\n# c\n  Chinook'); hosts('yaml.go:399', 'K: # c\n  # d\n  Chinook');
+  // --- yaml.go: block mappings and sequences ---
+  whole('yaml.go:462', (t) => t.replace(/^title:.*$/m, 'title: "Chinook"\n    extra: x')); whole('yaml.go:462', (t) => t.replace(/^title:.*$/m, "title: 'Chinook'\n    extra: x")); whole('yaml.go:462', (t) => t.replace(/^( {2}url: .*)$/m, '$1\n     extra: x'));
+  whole('yaml.go:466', (t) => t.replace(/^title:.*$/m, 'title: Chinook\n- a')); whole('yaml.go:466', (t) => t.replace(/^( {2}url: .*)$/m, '$1\n  - a'));
+  whole('yaml.go:473', (t) => t.replace(/^title:.*$/m, 'title: Chinook\nnotakey')); whole('yaml.go:473', (t) => t.replace(/^( {2}url: .*)$/m, '$1\n  notakey'));
+  whole('yaml.go:476', (t) => t.replace(/^title:.*$/m, 'title: a\ntitle: b'));
+  whole('yaml.go:509', (t) => t.replace(/^( {2}- Album)$/m, '$1\n      - x')); whole('yaml.go:509', (t) => t.replace(/^( {2}- Album)$/m, '  - "Album"\n      - x'));
+  whole('yaml.go:436', (t) => t.replace(/^recordsets:\n( {2}- Album)$/m, 'recordsets:\n  -\tAlbum')); whole('yaml.go:436', (t) => t.replace(/^recordsets:\n( {2}- Album)$/m, 'recordsets:\n-\tAlbum'));
+  whole('yaml.go:464', (t) => t.replace(/^title:.*$/m, 'title: Chinook\n-\tx'));
+  whole('yaml.go:511', (t) => t.replace(/^( {2}- Artist)$/m, '  -\tArtist')); whole('yaml.go:511', (t) => t.replace(/^( {2}- Album)$/m, '  - Album\n  -\tx'));
+  hosts('yaml.go:557', '"K"\t: Chinook'); hosts('yaml.go:563', '"K":\tChinook'); hosts('yaml.go:586', 'K:\tChinook');
+  hosts('yaml.go:571', '&k K: Chinook'); hosts('yaml.go:571', '*k K: Chinook');
+  hosts('yaml.go:573', '!!str K: Chinook'); hosts('yaml.go:573', '!x K: Chinook');
+  hosts('yaml.go:578', '? K\n: Chinook'); hosts('yaml.go:578', '?\n  K\n: Chinook');
+  place('yaml.go:594', ...[chinookYaml, hosterYaml].flatMap((n) => ['2024', 'true', 'null', '~', '0x1F', '.inf', '1e3'].map((k) => [n, `${bases[n]}${k}: x\n`])));
+  place('yaml.go:594', ...[chinookYaml, hosterYaml].flatMap((n) => ['2024', 'true', 'null'].map((k) => [n, bases[n].replace(/^title:.*$/m, `${k}: x\ntitle: Chinook`)])));
+  hosts('yaml.go:628', `K${' '.repeat(1100)}: Chinook`);
+  place('yaml.go:628', ...[chinookYaml, hosterYaml].map((n) => [n, `${bases[n]}${'k'.repeat(1100)}: x\n`]), ...[chinookYaml, hosterYaml].map((n) => [n, `${bases[n]}"${'k'.repeat(1100)}": x\n`]));
+  place('yaml.go:630', ...[chinookYaml, hosterYaml].map((n) => [n, `${bases[n]}<<: x\n`]), ...[chinookYaml, hosterYaml].map((n) => [n, `${bases[n]}"<<": x\n`]));
+  // --- yaml.go: values ---
+  hosts('yaml.go:643', 'K:  \tChinook');
+  hosts('yaml.go:646', 'K:\n  >\n  Chinook'); hosts('yaml.go:646', 'K:\n  |\n  Chinook');
+  hosts('yaml.go:654', 'K: &a Chinook'); hosts('yaml.go:654', 'K: *a');
+  hosts('yaml.go:656', 'K: !!str Chinook'); hosts('yaml.go:656', 'K: !x Chinook');
+  for (const c of ['@', '`', '%', ',', ']', '}']) hosts('yaml.go:658', `K: ${c}x`);
+  hosts('yaml.go:661', 'K: -\tx'); hosts('yaml.go:661', 'K: ?\tx'); hosts('yaml.go:661', 'K: :\tx');
+  hosts('yaml.go:664', 'K: - x'); hosts('yaml.go:664', 'K: ? x'); hosts('yaml.go:664', 'K: : x'); hosts('yaml.go:664', 'K: -');
+  for (const c of ['[', ']', '{', '}', ',', '&', '*', '!', '|', '>', "'", '"', '%', '@', '`']) hosts('yaml.go:696', `K: A music store,\n  ${c}the${c === '[' ? ']' : c === '{' ? '}' : ''} one`);
+  hosts('yaml.go:735', 'K: a: b'); hosts('yaml.go:735', 'K: a:'); hosts('yaml.go:735', 'K: Chinook\n  music: store');
+  // the numbers of resolvePlain, from a block value, a block key, a flow value and a flow key; and in OVDB.md
+  const numbers = [['yaml.go:784', '9007199254740993'], ['yaml.go:788', '0x1F'], ['yaml.go:788', '0o17'], ['yaml.go:790', '.inf'], ['yaml.go:790', '.nan'], ['yaml.go:794', '1e999']];
+  for (const [id, n] of numbers) {
+    hosts(`${id}@block value`, `K: ${n}`);
+    place(`${id}@block key`, ...[chinookYaml, hosterYaml].map((b) => [b, `${bases[b]}${n}: x\n`]));
+    whole(`${id}@flow value`, (t) => t.replace(/^title:.*$/m, `title: {a: ${n}}`)); whole(`${id}@flow value`, (t) => `${t}extra: [${n}]\n`);
+    whole(`${id}@flow key`, (t) => `${t}extra: {${n}: x}\n`);
+    mdPlace(`${id}@block value`, `---\novdb: ${n}\npublish: [./ovdb.yaml]\n---\n`);
+    mdPlace(`${id}@flow value`, `---\novdb: 1\npublish: [./ovdb.yaml, ${n}]\n---\n`);
+  }
+  mdPlace('yaml.go:788@block value', '---\novdb: 0x1\npublish: [./ovdb.yaml]\n---\n'); mdPlace('yaml.go:788@block value', '---\novdb: 0o1\npublish: [./ovdb.yaml]\n---\n');
+  hosts('yaml.go:825@quoted value', 'K: "Chinook" music'); hosts('yaml.go:825@quoted value', 'K: "Chinook"# c'); hosts('yaml.go:825@quoted value', "K: 'Chinook' x");
+  hosts('yaml.go:825@block scalar header', 'K: >x\n  Chinook'); hosts('yaml.go:825@block scalar header', 'K: |-x\n  Chinook');
+  hosts('yaml.go:825@flow', 'K: {a: b} x'); hosts('yaml.go:825@flow', 'K: [a] x');
+  // the quoted scalars of scanQuoted, from a block value, a flow value and a block key (where a failure only says "not a key")
+  const quoted = [
+    ['yaml.go:864', (q) => `${q}Chinook\n  music${q}`], ['yaml.go:871', () => 'Chinook \\\n  music'], ['yaml.go:878', () => 'a\\qb'], ['yaml.go:878', () => 'a\\zb'],
+    ['yaml.go:882', () => 'a\\x4g'], ['yaml.go:882', () => 'a\\u12'], ['yaml.go:892', () => 'a\\ud83cb'], ['yaml.go:892', () => 'a\\ud83c\\u0041'], ['yaml.go:897', () => 'a\\udc00b'], ['yaml.go:897', () => 'a\\U00110000b'], ['yaml.go:897', () => 'a\\UFFFFFFFFb'],
+  ];
+  // A quoted scalar that is a block key never raises (splitKey drops the error: the line is then not a key line, and the mapping says so),
+  // so there is no row for it. In a flow collection the text of publisher.name is a quoted scalar that the checker accepts.
+  for (const [id, make] of quoted) {
+    if (id === 'yaml.go:864') {
+      for (const q of ['"', "'"]) {
+        hosts(`${id}@block value`, `K: ${make(q)}`);
+        publisherAs(`${id}@flow`, (p) => `publisher: {name: ${make(q)}, url: ${p.url}, repository: ${p.repository}}\n`);
+        whole(`${id}@flow`, (t) => `${t}extra: [${make(q)}]\n`);
+      }
+      continue;
+    }
+    hosts(`${id}@block value`, `K: "${make()}"`);
+    publisherAs(`${id}@flow`, (p) => `publisher: {name: "${make()}", url: ${p.url}, repository: ${p.repository}}\n`);
+    whole(`${id}@flow`, (t) => `${t}extra: ["${make()}"]\n`); whole(`${id}@flow`, (t) => `${t}extra: {"${make()}": x}\n`);
+  }
+  // --- yaml_flow.go: block scalars and flow collections ---
+  hosts('yaml_flow.go:14', 'K: >+\n  Chinook'); hosts('yaml_flow.go:14', 'K: |+\n  Chinook');
+  hosts('yaml_flow.go:20', 'K: >2\n   Chinook'); hosts('yaml_flow.go:20', 'K: |1\n  Chinook');
+  hosts('yaml_flow.go:51', 'K: |\n  Chinook\n      \n  music'); hosts('yaml_flow.go:51', 'K: >-\n  Chinook\n     \n  music');
+  whole('yaml_flow.go:169', (t) => `${t}extra: [a, b\n`); whole('yaml_flow.go:169', (t) => `${t}extra: {a: b\n`);
+  publisherAs('yaml_flow.go:178', (p) => `publisher: {name: ${p.name},\n  # c\n  url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:186', (p) => `publisher: {name: ${p.name}, # c\n  url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:182', (p) => `publisher: {name: ${p.name},\nurl: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:182', (p) => `publisher: {name: ${p.name}, url: ${p.url},\n repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:202', (p) => `publisher: {name: &a ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:204', (p) => `publisher: {name: !!str ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:206', (p) => `publisher: {name: ${p.name}, , url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:206', (p) => `publisher: {name: |x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:206', (p) => `publisher: {name: ${p.name}, url: ${p.url}, repository: ${p.repository},}\n`);
+  publisherAs('yaml_flow.go:206', (p) => `publisher: {name: @x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:210', (p) => `publisher: {name: - x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:210', (p) => `publisher: {name: ? x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:210', (p) => `publisher: {name: : x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:240', (p) => `publisher: {name: Data\tTug, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:240', (p) => `publisher: {name:\t${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:254', (p) => `publisher: {name: ${p.name.slice(0, 3)}\n  ${p.name.slice(3)}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:254', (p) => `publisher: {name: ${p.name}\n  x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:256', (p) => `publisher: {name: "${p.name}" x, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:256', (p) => `publisher: {name: ${p.name} url: ${p.url}, repository: ${p.repository}}\n`);
+  whole('yaml_flow.go:256', (t) => t.replace(/^recordsets:\n( {2}- .*\n)+/m, 'recordsets: ["Album" "Artist"]\n'));
+  hosts('yaml_flow.go:261', `K: ${nest(70, '{a: ', '}', '1')}`); hosts('yaml_flow.go:261', `K: ${nest(70, '[', ']')}`);
+  hosts('yaml_flow.go:286', 'K: [a: b]'); hosts('yaml_flow.go:286', 'K: [a: b, c]');
+  whole('yaml_flow.go:286', (t) => t.replace(/^recordsets:\n( {2}- .*\n)+/m, 'recordsets: [Album: x]\n'));
+  hosts('yaml_flow.go:306', 'K: {a: 1, a: 2}'); publisherAs('yaml_flow.go:306', (p) => `publisher: {name: ${p.name}, name: x, url: ${p.url}, repository: ${p.repository}}\n`);
+  hosts('yaml_flow.go:310', 'K: {a, b: c}'); hosts('yaml_flow.go:310', 'K: {a: 1, b}');
+  publisherAs('yaml_flow.go:310', (p) => `publisher: {name: ${p.name}, url: ${p.url}, repository: ${p.repository}, name2}\n`);
+  whole('yaml_flow.go:310', (t) => t.replace(/^deployment:\n[\s\S]*?recordset_page: .*\n/m, 'deployment: {url: https://cloud.openvaultdb.com/ovdb/dbs/chinook, engine: sqlite, discovery: https://chinookdb.com/.well-known/openvaultdb, recordset_page}\n'));
+  // a key with no value in a flow mapping is null: for each key of the own manifest, the whole document as a flow mapping without that value
+  {
+    const flowOf = (value, omit, path = []) => `{${Object.entries(value).map(([key, v]) => {
+      const here = [...path, key].join('.');
+      if (here === omit) return JSON.stringify(key);
+      return `${JSON.stringify(key)}: ${v !== null && typeof v === 'object' && !Array.isArray(v) ? flowOf(v, omit, [...path, key]) : JSON.stringify(v)}`;
+    }).join(', ')}}`;
+    const object = ownObject;
+    for (const omit of paths(object).map((path) => path.join('.'))) place('yaml_flow.go:310', [chinookYaml, `${flowOf(object, omit)}\n`]);
+  }
+  hosts('yaml_flow.go:342', 'K: {&a b: c}'); publisherAs('yaml_flow.go:342', (p) => `publisher: {&a name: ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  hosts('yaml_flow.go:344', 'K: {!!str b: c}'); publisherAs('yaml_flow.go:344', (p) => `publisher: {!!str name: ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  for (const c of ['[a]', '{a: b}', '|', '>', '%x', '@x', '`x', ',', ']']) hosts('yaml_flow.go:346', `K: {${c}: x}`);
+  publisherAs('yaml_flow.go:346', (p) => `publisher: {[name]: ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  for (const k of ['2024', 'true', 'null', '~', '? a', '?']) hosts('yaml_flow.go:354', `K: {${k}: x}`);
+  publisherAs('yaml_flow.go:354', (p) => `publisher: {? name: ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml_flow.go:354', (p) => `publisher: {? name : ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml.go:628@flow key', (p) => `publisher: {name${' '.repeat(1100)}: ${p.name}, url: ${p.url}, repository: ${p.repository}}\n`);
+  publisherAs('yaml.go:628@flow key', (p) => `publisher: {name: ${p.name}, url: ${p.url}, repository: ${p.repository}, ${'k'.repeat(1100)}: x}\n`);
+  hosts('yaml.go:630@flow key', 'K: {<<: x}');
+  // The three inputs of the review of 3c7ef0b, on its kitchen/sink manifest: a plain value that continues with `*`, `"` or `[`, and the two flow
+  // forms of publisher with a key that the checker allows (an explicit key; a key written over 1024 bytes).
+  {
+    const kitchen = clone(ownObject); kitchen.publisher = { name: 'Kitchen', url: 'https://github.com/kitchen', repository: 'https://github.com/kitchen/sink' };
+    kitchen.model.address = 'modelspec://github.com/kitchen/sink/chinook'; kitchen.meaning.graph.address = 'meaning://github.com/kitchen/sink'; kitchen.description = 'A music store, one';
+    const text = stringifyYaml(kitchen);
+    for (const continuation of ['*the* one', '"store" one', '[beta] one']) place('yaml.go:696', [chinookYaml, text.replace(/^description: .*$/m, `description: A music store,\n  ${continuation}`)]);
+    const flow = (key) => `publisher: {${key}: Kitchen, url: https://github.com/kitchen, repository: https://github.com/kitchen/sink}\n`;
+    const publisher = /^publisher:\n  name: .*\n  url: .*\n  repository: .*\n/m;
+    place('yaml_flow.go:354', [chinookYaml, text.replace(publisher, flow('? name'))]);
+    place('yaml.go:628@flow key', [chinookYaml, text.replace(publisher, flow(`name${' '.repeat(1100)}`))]);
+  }
+  // OVDB.md front matter, the same reader (OVDB.md allows ovdb and publish only)
+  mdPlace('yaml.go:696', '---\novdb: 1\npublish: [./ovdb.yaml]\n---\n'.replace('ovdb: 1', 'ovdb: 1\nx: a b,\n  *c* d'));
+  mdPlace('yaml.go:864@block value', '---\novdb: 1\nx: "a\n  b"\npublish: [./ovdb.yaml]\n---\n');
+  mdPlace('yaml_flow.go:254', '---\novdb: 1\npublish: [./ovdb.yaml,\n  ./a\n  .yaml]\n---\n'); mdPlace('yaml_flow.go:310', '---\novdb: 1\npublish: [./ovdb.yaml]\nx: {a}\n---\n');
 }
 
 // ---- the goldens ----

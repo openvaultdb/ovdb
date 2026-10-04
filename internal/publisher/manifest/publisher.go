@@ -146,7 +146,7 @@ func (k *manifestChecker) publisherOwner() string {
 		return ""
 	}
 	owner, ok := strings.CutPrefix(f.Value, "https://github.com/")
-	// The Directory's URL rule has refused a trailing slash and an empty path already, so owner is not empty; a slash is not a name character.
+	// allChars is false for an empty owner (the URL rule accepts https://github.com/) and for a slash (not a name character), so neither needs a check of its own.
 	if ok && allChars(owner, isNameChar) {
 		return owner
 	}

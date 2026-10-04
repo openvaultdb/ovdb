@@ -220,12 +220,13 @@ func TestGoldenDigests(t *testing.T) {
 	}
 }
 
-// stricterKinds are the ways in which the Go functions are stricter than the
-// Directory's JavaScript on the corpus, each with the reason; the README of this
-// package lists the same kinds, and a test holds the two together. A refusal of a
-// document that the reference accepts is classified by kindOf, or the test fails;
-// a kind that no document of the corpus shows fails it too.
-var stricterKinds = map[string]string{
+// sharedKinds are the ways in which the Go functions are stricter than the references on the corpus, in either profile, each with the
+// reason; the README lists the same kinds with a count for each profile, and a test holds the two together. They are shared by
+// construction: the reader and the bound on a document's size act before a profile's rules run, and the Directory's rules (the
+// lengths, the punycode rule) run first under the Publisher profile too, so a kind of this list is recorded once and counted for
+// each profile, and cannot be recorded for one and forgotten for the other. Only kinds of rules that one profile alone has are
+// listed apart (publisherKinds). A refusal of a document that a reference accepts is classified by kindOf, or the test fails.
+var sharedKinds = map[string]string{
 	"document-size":     "A document over 262144 bytes (MaxDocumentBytes) is refused before it is read; the references read files of any size.",
 	"length-address":    "An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound.",
 	"length-entry":      "A publish entry whose path after ./ is over 1024 bytes; the references have no bound.",
@@ -233,7 +234,7 @@ var stricterKinds = map[string]string{
 	"length-repository": "A publisher.repository over 255 bytes; the references have no bound.",
 	"punycode":          "A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label.",
 	"url-length":        "A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound.",
-	"yaml":              "The reader accepts a subset of YAML, and a structure it cannot place (a flow collection as a key, as in [a]: x) is refused; the reference reads it.",
+	"yaml":              "The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or \" at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them.",
 	"yaml-anchor":       "The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one.",
 	"yaml-character":    "The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string.",
 	"yaml-directive":    "The reader refuses a %YAML or %TAG directive; the reference follows it.",
@@ -247,6 +248,14 @@ var stricterKinds = map[string]string{
 	"yaml-tag":          "The reader refuses tags (!, !!), which the reference resolves; it reads plain values only.",
 	"yaml-limit":        "The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth.",
 	"yaml-unsupported":  "The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both.",
+}
+
+// readerKinds are the kinds of sharedKinds that the reader (or the bound checked before it) makes: the rules of its refusals, and
+// document-size. TestReaderKinds holds them to the places of the reader (reader_places_test.go).
+var readerKinds = map[string]bool{
+	"document-size": true, "yaml": true, "yaml-anchor": true, "yaml-character": true, "yaml-directive": true, "yaml-documents": true,
+	"yaml-encoding": true, "yaml-escape": true, "yaml-key": true, "yaml-limit": true, "yaml-line-ending": true, "yaml-number": true,
+	"yaml-tab": true, "yaml-tag": true, "yaml-unsupported": true,
 }
 
 // kindOf names the kind of a refusal that the reference does not make.
@@ -335,15 +344,20 @@ type referenceSpec struct {
 	name    string // "Directory" or "Publisher", as the tests and the README call it
 	profile Profile
 	refName string // what the README calls the reference in its totals
-	heading string // the README section that lists the stricter kinds
+	column  int    // the column of the table of shared kinds that holds this profile's counts
 	golden  string // the verdict file
-	kinds   map[string]string
+	own     map[string]string
 	verdict func(referenceCase) bool
 }
 
+const (
+	sharedHeading = "### Recorded differences: shared by both profiles"
+	ownHeading    = "### Recorded differences: the Publisher profile's own"
+)
+
 var directorySpec = referenceSpec{
-	name: "Directory", profile: Directory, refName: "Directory", heading: "### Recorded differences: where Go is stricter", golden: "directory.verdicts.json",
-	kinds: stricterKinds, verdict: func(c referenceCase) bool { return c.Verdict },
+	name: "Directory", profile: Directory, refName: "Directory", column: 0, golden: "directory.verdicts.json",
+	verdict: func(c referenceCase) bool { return c.Verdict },
 }
 
 // readmeKinds are the rows of the table that follows a heading of the README.
@@ -363,6 +377,26 @@ func readmeKinds(t testing.TB, readme, heading string) map[string][2]string {
 	rows := map[string][2]string{}
 	for _, m := range readmeRow.FindAllStringSubmatch(section, -1) {
 		rows[m[1]] = [2]string{m[2], m[3]}
+	}
+	return rows
+}
+
+var readmeSharedRow = regexp.MustCompile("(?m)^\\| `([a-z0-9-]+)` \\| (\\d+) \\| (\\d+) \\| (.+) \\|$")
+
+// readmeSharedKinds are the rows of the table of the kinds that both profiles share: the counts of each profile, and the reason.
+func readmeSharedKinds(t testing.TB, readme string) map[string][3]string {
+	t.Helper()
+	at := strings.Index(readme, sharedHeading+"\n")
+	if at < 0 {
+		t.Fatalf("README has no section %q", sharedHeading)
+	}
+	section := readme[at+len(sharedHeading):]
+	if end := strings.Index(section, "\n### "); end >= 0 {
+		section = section[:end]
+	}
+	rows := map[string][3]string{}
+	for _, m := range readmeSharedRow.FindAllStringSubmatch(section, -1) {
+		rows[m[1]] = [3]string{m[2], m[3], m[4]}
 	}
 	return rows
 }
@@ -408,33 +442,84 @@ func runReference(t *testing.T, spec referenceSpec) {
 		t.Errorf("verdicts are of profile %q, and the reference threw on %d documents", verdicts.Profile, verdicts.Thrown)
 	}
 
-	// Every stricter kind is documented, real, and counted in the README.
+	// Every stricter kind is documented, real, and counted in the README: those of both profiles in the table of the shared kinds, with a
+	// count for each profile, and those of this profile alone in a table of its own.
+	known := func(kind string) bool {
+		_, shared := sharedKinds[kind]
+		_, own := spec.own[kind]
+		return shared || own
+	}
 	for kind, count := range total.kinds {
-		if _, ok := spec.kinds[kind]; !ok {
+		if !known(kind) {
 			t.Errorf("a stricter kind %q is not recorded (%d documents, e.g. %s): record it with its reason, or make Go agree", kind, count, total.examples[kind])
 		}
 	}
-	for kind := range spec.kinds {
+	for kind := range spec.own {
 		if total.kinds[kind] == 0 {
 			t.Errorf("the stricter kind %q is recorded but no document of the corpus shows it", kind)
 		}
 	}
-	readme := readReadme(t)
-	rows := readmeKinds(t, readme, spec.heading)
-	for kind, row := range rows {
-		n, _ := strconv.Atoi(row[0])
-		if want, ok := spec.kinds[kind]; ok && row[1] != want {
-			t.Errorf("README reason of %q differs from the recorded one:\n  README: %s\n  test:   %s", kind, row[1], want)
+	for kind := range sharedKinds {
+		if total.kinds[kind] != 0 {
+			continue
 		}
-		if _, ok := spec.kinds[kind]; !ok {
-			t.Errorf("README lists the stricter kind %q, which is not recorded in the test", kind)
-		} else if total.kinds[kind] != n {
-			t.Errorf("README counts %d documents of the stricter kind %q; the corpus shows %d", n, kind, total.kinds[kind])
+		// A kind of the reader may show none under a profile when each place of the reader that makes it is shown to have none there.
+		places := 0
+		for _, p := range readerPlaces {
+			if !readerKinds[kind] || p.rule != kind {
+				continue
+			}
+			places++
+			none := p.directoryNone
+			if spec.profile == Publisher {
+				none = p.publisherNone
+			}
+			if none == "" {
+				t.Errorf("the shared kind %q shows no document under the %s profile, but its place %s says it has some", kind, spec.name, p.id)
+			}
+		}
+		if places == 0 {
+			t.Errorf("the shared kind %q is recorded but no document of the corpus shows it under the %s profile", kind, spec.name)
 		}
 	}
-	for kind, count := range total.kinds {
-		if _, ok := rows[kind]; !ok {
-			t.Errorf("README does not list the stricter kind %q (%d documents)", kind, count)
+	t.Logf("%s: %d documents: agree %d, stricter %d, looser %d (mined edits %d of %d)", spec.name, len(manifests)+len(mds), total.agree, total.stricter, total.looser, corpus.MinedEdits.Applied, corpus.MinedEdits.Found)
+	for _, kind := range slices.Sorted(maps.Keys(total.kinds)) {
+		t.Logf("stricter %-20s %5d  e.g. %s", kind, total.kinds[kind], total.examples[kind])
+	}
+	readme := readReadme(t)
+	shared := readmeSharedKinds(t, readme)
+	for kind, row := range shared {
+		n, _ := strconv.Atoi(row[spec.column])
+		if want, ok := sharedKinds[kind]; !ok {
+			t.Errorf("README lists the shared kind %q, which is not recorded in the test", kind)
+		} else if row[2] != want {
+			t.Errorf("README reason of %q differs from the recorded one:\n  README: %s\n  test:   %s", kind, row[2], want)
+		}
+		if total.kinds[kind] != n {
+			t.Errorf("README counts %d documents of the shared kind %q under the %s profile; the corpus shows %d", n, kind, spec.name, total.kinds[kind])
+		}
+	}
+	for kind := range sharedKinds {
+		if _, ok := shared[kind]; !ok {
+			t.Errorf("README does not list the shared kind %q", kind)
+		}
+	}
+	if spec.own != nil {
+		own := readmeKinds(t, readme, ownHeading)
+		for kind, row := range own {
+			n, _ := strconv.Atoi(row[0])
+			if want, ok := spec.own[kind]; !ok {
+				t.Errorf("README lists the kind %q of the %s profile, which is not recorded in the test", kind, spec.name)
+			} else if row[1] != want {
+				t.Errorf("README reason of %q differs from the recorded one:\n  README: %s\n  test:   %s", kind, row[1], want)
+			} else if total.kinds[kind] != n {
+				t.Errorf("README counts %d documents of the kind %q; the corpus shows %d", n, kind, total.kinds[kind])
+			}
+		}
+		for kind := range spec.own {
+			if _, ok := own[kind]; !ok {
+				t.Errorf("README does not list the kind %q of the %s profile", kind, spec.name)
+			}
 		}
 	}
 	flat := strings.Join(strings.Fields(readme), " ")
@@ -448,53 +533,52 @@ func runReference(t *testing.T, spec referenceSpec) {
 			t.Errorf("README does not state %q", want)
 		}
 	}
-	t.Logf("%s: %d documents: agree %d, stricter %d, looser %d (mined edits %d of %d)", spec.name, len(manifests)+len(mds), total.agree, total.stricter, total.looser, corpus.MinedEdits.Applied, corpus.MinedEdits.Found)
-	for _, kind := range slices.Sorted(maps.Keys(total.kinds)) {
-		t.Logf("stricter %-20s %5d  e.g. %s", kind, total.kinds[kind], total.examples[kind])
-	}
 }
 
-// publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker
-// on the corpus; see stricterKinds.
-var publisherKinds = func() map[string]string {
-	kinds := map[string]string{
-		"graph-address-case":   "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
-		"graph-address-scheme": "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
-	}
-	for _, kind := range []string{"document-size", "length-address", "length-entry", "length-path", "length-repository", "punycode", "url-length", "yaml-anchor", "yaml-character", "yaml-directive", "yaml-documents", "yaml-encoding", "yaml-escape", "yaml-line-ending", "yaml-number", "yaml-tab", "yaml-tag", "yaml-unsupported"} {
-		kinds[kind] = stricterKinds[kind]
-	}
-	return kinds
-}()
-
-// directoryKindsNotSeenUnderPublisher are the stricter kinds of the Directory profile that cannot
-// occur under the Publisher profile, and why: no document that has them is otherwise acceptable to the checker.
-var directoryKindsNotSeenUnderPublisher = map[string]string{
-	"yaml":       "a flow collection used as a key ([a]: x) is a key that the checker does not allow at any level, so the checker refuses the document too, and Go's refusal is not stricter",
-	"yaml-key":   "a key that YAML reads as a number, a boolean or null is never one of the keys that the checker allows, so the checker refuses the document too, and Go's refusal is not stricter",
-	"yaml-limit": "a collection nested 64 deep cannot be the value of any key that the checker allows (the deepest is meaning.graph.id, at three levels), so the checker refuses the document too",
-}
-
-// Every stricter kind of the Directory profile has a document under the Publisher profile that
-// is otherwise acceptable, or provably cannot: a kind that is in neither list was missed by the corpus.
-func TestEveryDirectoryKindIsSeenUnderThePublisherProfile(t *testing.T) {
-	for kind := range stricterKinds {
-		_, seen := publisherKinds[kind]
-		_, cannot := directoryKindsNotSeenUnderPublisher[kind]
-		if seen == cannot {
-			t.Errorf("the Directory kind %q is under the Publisher profile: seen %v, provably impossible %v: exactly one must hold", kind, seen, cannot)
-		}
-	}
-	for kind := range publisherKinds {
-		if _, ok := stricterKinds[kind]; !ok && kind != "graph-address-case" && kind != "graph-address-scheme" {
-			t.Errorf("the Publisher kind %q is neither a Directory kind nor one of the profile's own", kind)
-		}
-	}
+// publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker through rules that only it has (the
+// others are sharedKinds).
+var publisherKinds = map[string]string{
+	"graph-address-case":   "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
+	"graph-address-scheme": "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
 }
 
 var publisherSpec = referenceSpec{
-	name: "Publisher", profile: Publisher, refName: "Chinook checker", heading: "### Recorded differences: the Publisher profile", golden: "publisher.verdicts.json",
-	kinds: publisherKinds, verdict: func(c referenceCase) bool { return c.Publisher },
+	name: "Publisher", profile: Publisher, refName: "Chinook checker", column: 1, golden: "publisher.verdicts.json",
+	own: publisherKinds, verdict: func(c referenceCase) bool { return c.Publisher },
+}
+
+// The kinds of the reader in sharedKinds are the rules of the places of the reader that have documents the references accept (and document-size, which is
+// checked before the reader): the list of kinds cannot drift from the table of places.
+func TestReaderKinds(t *testing.T) {
+	counts := readerPlaceCounts(t)
+	stricter := map[string]bool{"document-size": true}
+	for _, p := range readerPlaces {
+		for _, n := range counts[p.id] {
+			if n.stricter > 0 {
+				stricter[p.rule] = true
+			}
+		}
+	}
+	for kind := range readerKinds {
+		if _, ok := sharedKinds[kind]; !ok {
+			t.Errorf("the reader's kind %q is not recorded in sharedKinds", kind)
+		}
+		if !stricter[kind] {
+			t.Errorf("the reader's kind %q is recorded, but no place of the reader that makes it has a document that a reference accepts", kind)
+		}
+	}
+	for kind := range stricter {
+		if !readerKinds[kind] {
+			t.Errorf("a place of the reader that raises %q has documents that a reference accepts, and the kind is not one of readerKinds", kind)
+		}
+	}
+	for kind := range sharedKinds {
+		if readerKinds[kind] || strings.HasPrefix(kind, "yaml") {
+			if !readerKinds[kind] {
+				t.Errorf("%q is a kind of the reader and is not listed in readerKinds", kind)
+			}
+		}
+	}
 }
 
 func TestReferenceDirectory(t *testing.T) { runReference(t, directorySpec) }
