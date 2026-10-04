@@ -632,15 +632,15 @@ node internal/publisher/manifest/testdata/reference/generate.mjs --check  # fail
 
 It needs Node 24 or later, git, npm and network access (`go test` needs none): it
 fetches the two references at their pinned commits into a directory that only this run can write, made for the
-run and removed when it ends (`OVDB_REFERENCE_CACHE=<dir>` keeps a cache instead: it is reused only if it is as committed: every tracked file is hashed and compared with the blob of the commit (so an edit that
-`git status` does not show, `assume-unchanged`, is found), and an untracked or ignored file, or a `node_modules` below the root, refuses it; the root
-`node_modules` is removed and the `yaml` of the Directory installed again; `node --test internal/publisher/references.test.mjs` shows
-it on a repository of its own). The
-locations are one constant, `internal/publisher/references.mjs`, shared with the
-generator of package `rules`; `npm ci --omit=dev --ignore-scripts` runs in the
-Directory's for the `yaml` package, which the Chinook checkout borrows by a link. It
-takes about a minute, most of it for the real repositories. `--directory <dir>` and
-`--chinookdb <dir>` use clones you already have, at the pinned commits. When a reference
+run and removed when it ends: no checkout is kept between runs (a kept one is state that the run did not make, and what a check can see of it is
+less than what could have been done to its object store, so the way not to trust it is not to have it). The locations are one constant,
+`internal/publisher/references.mjs`, shared with the generator of package `rules`; `npm ci --omit=dev --ignore-scripts` runs in the
+Directory's for the `yaml` package, which the Chinook checkout borrows by a link. A clone that you pass (`--directory <dir>`, `--chinookdb <dir>`) is
+checked, not changed: the checkout must be as committed, which is read without trusting its `.git` (replace objects off, the caller's `GIT_*` variables
+and the global config ignored; every tracked file hashed raw and compared with the commit's blob; the index compared with the tree; every untracked file
+listed with no exclude pattern; local config limited to the keys of a fresh clone), against a mistake and a hidden edit of the working tree, not against
+someone who rewrites the object store. `node --test internal/publisher/references.test.mjs` shows each case on a repository of its own. It
+takes about a minute, most of it for the real repositories. When a reference
 moves, change `references.mjs`, regenerate, and read the diff of the goldens and of the
 tables above. The digests of the rules golden are read from its committed file: run
 `internal/publisher/rules/testdata/reference/generate.mjs` first when the rules change.

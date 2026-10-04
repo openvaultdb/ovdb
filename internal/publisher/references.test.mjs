@@ -1,4 +1,4 @@
-// A scripted check of checkoutReference (references.mjs), the function that gives the generators the references they import and run:
+// A scripted check of checkoutReference and assertAsCommitted (references.mjs), the functions that give the generators the references they import and run:
 //
 //   node --test internal/publisher/references.test.mjs
 //
@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { checkoutReference } from './references.mjs';
+import { assertAsCommitted, checkoutReference } from './references.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 let scratch; let remote; let pin;
@@ -34,68 +34,113 @@ before(() => {
 });
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-const options = (cacheRoot) => ({ pin, remote, cacheRoot });
+// A fresh checkout in its own parent directory, and the check of it as the generators make it.
+let counter = 0;
+const fresh = () => checkoutReference('chinookdb', { pin, remote, parent: join(scratch, `parent-${counter += 1}`) });
+const check = (dir) => assertAsCommitted(dir, pin.repository, pin.commit);
+const refused = (dir, pattern) => assert.throws(() => check(dir), pattern);
+const edited = "export const licenceIds = ['MIT', 'EUPL-1.2'];\n";
 
-test('a cache that is as committed is reused', () => {
-  const cache = join(scratch, 'cache-clean');
-  const dir = checkoutReference('chinookdb', options(cache));
-  assert.equal(dir, join(cache, `chinookdb-${pin.commit}`));
-  assert.equal(checkoutReference('chinookdb', options(cache)), dir);
+test('a checkout that a run made is as committed, and is never reused', () => {
+  const dir = fresh();
+  assert.equal(dir, join(scratch, `parent-${counter}`, `chinookdb-${pin.commit}`));
+  check(dir);
+  assert.throws(() => checkoutReference('chinookdb', { pin, remote, parent: join(scratch, `parent-${counter}`) }), /fetched fresh, never reused/);
 });
 
-test('an edited checker in the cache is refused', () => {
-  const cache = join(scratch, 'cache-edited');
-  const dir = checkoutReference('chinookdb', options(cache));
-  writeFileSync(join(dir, 'scripts', 'check.mjs'), "export const licenceIds = ['MIT', 'EUPL-1.2'];\n"); // HEAD is unchanged, the working tree is not
+test('an edited tracked file is refused', () => {
+  const dir = fresh();
+  writeFileSync(join(dir, 'scripts', 'check.mjs'), edited); // HEAD is unchanged, the working tree is not
   assert.equal(git(dir, 'rev-parse', 'HEAD'), pin.commit);
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /has local changes/);
+  refused(dir, /has local changes/);
 });
 
-test('a file that the commit does not have is refused, a dependency is not', () => {
-  const cache = join(scratch, 'cache-stray');
-  const dir = checkoutReference('chinookdb', options(cache));
-  mkdirSync(join(dir, 'node_modules', 'yaml'), { recursive: true });
-  writeFileSync(join(dir, 'node_modules', 'yaml', 'index.js'), '');
-  assert.equal(checkoutReference('chinookdb', options(cache)), dir);
-  writeFileSync(join(dir, 'scripts', 'extra.mjs'), 'export {};\n');
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /files that are not in/);
-});
-
-test('a tracked file edited and marked assume-unchanged is refused', () => {
-  const cache = join(scratch, 'cache-hidden');
-  const dir = checkoutReference('chinookdb', options(cache));
-  writeFileSync(join(dir, 'scripts', 'check.mjs'), "export const licenceIds = ['MIT', 'EUPL-1.2'];\n");
+test('a tracked file edited and marked assume-unchanged or skip-worktree is refused', () => {
+  const dir = fresh();
+  writeFileSync(join(dir, 'scripts', 'check.mjs'), edited);
   git(dir, 'update-index', '--assume-unchanged', 'scripts/check.mjs');
   assert.equal(git(dir, 'status', '--porcelain'), '', 'git status shows nothing: that is the point');
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /has local changes \(scripts\/check.mjs\)/);
+  refused(dir, /has local changes \(scripts\/check.mjs\)/);
+  git(dir, 'update-index', '--no-assume-unchanged', 'scripts/check.mjs');
   git(dir, 'update-index', '--skip-worktree', 'scripts/check.mjs');
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /has local changes/);
+  refused(dir, /has local changes/);
 });
 
 test('a tracked file that is deleted is refused', () => {
-  const cache = join(scratch, 'cache-deleted');
-  const dir = checkoutReference('chinookdb', options(cache));
+  const dir = fresh();
   rmSync(join(dir, 'scripts', 'check.mjs'));
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /lacks a file|has local changes/);
+  refused(dir, /lacks a file|has local changes|index/);
 });
 
-test('a node_modules that the repository ignores, below the root, is refused', () => {
-  const cache = join(scratch, 'cache-shadow');
-  const dir = checkoutReference('chinookdb', options(cache));
+test('a file that the commit does not have is refused, the root node_modules is not', () => {
+  const dir = fresh();
+  mkdirSync(join(dir, 'node_modules', 'yaml'), { recursive: true });
+  writeFileSync(join(dir, 'node_modules', 'yaml', 'index.js'), '');
+  check(dir);
+  writeFileSync(join(dir, 'scripts', 'extra.mjs'), 'export {};\n');
+  refused(dir, /files that are not in/);
+});
+
+test('a node_modules below the root that .gitignore or .git/info/exclude hides is refused', () => {
+  for (const hide of ['.gitignore', '.git/info/exclude']) {
+    const dir = fresh();
+    mkdirSync(join(dir, 'scripts', 'node_modules', 'yaml'), { recursive: true });
+    writeFileSync(join(dir, 'scripts', 'node_modules', 'yaml', 'index.js'), 'export const parse = () => ({});\n');
+    if (hide === '.git/info/exclude') writeFileSync(join(dir, '.git', 'info', 'exclude'), 'node_modules\n');
+    assert.equal(git(dir, 'status', '--porcelain'), '', `git status shows nothing: ${hide} hides it`);
+    assert.equal(git(dir, 'ls-files', '--others', '--exclude-standard'), '', 'and it is not an untracked file');
+    refused(dir, /files that are not in .*scripts\/node_modules/);
+  }
+});
+
+test('a node_modules planted and staged with git add -f is refused', () => {
+  const dir = fresh();
   mkdirSync(join(dir, 'scripts', 'node_modules', 'yaml'), { recursive: true });
   writeFileSync(join(dir, 'scripts', 'node_modules', 'yaml', 'index.js'), 'export const parse = () => ({});\n');
-  assert.equal(git(dir, 'status', '--porcelain'), '', 'git status shows nothing: it is ignored');
-  assert.equal(git(dir, 'ls-files', '--others', '--exclude-standard'), '', 'and it is not an untracked file');
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /files that are not in .*scripts\/node_modules/);
+  git(dir, 'add', '-f', 'scripts/node_modules/yaml/index.js');
+  assert.equal(git(dir, 'ls-files', '--others'), '', 'it is tracked now, in the index');
+  refused(dir, /index that is not the commit's tree \(scripts\/node_modules\/yaml\/index.js\)/);
 });
 
-test('a cache at another commit is refused', () => {
-  const cache = join(scratch, 'cache-moved');
-  const dir = checkoutReference('chinookdb', options(cache));
-  git(dir, 'config', 'user.email', 'test@example.com');
-  git(dir, 'config', 'user.name', 'test');
-  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'another commit');
-  assert.throws(() => checkoutReference('chinookdb', options(cache)), /is not at example\/reference@/);
+test('git replace of the pinned commit by an edited one is refused', () => {
+  const dir = fresh();
+  writeFileSync(join(dir, 'scripts', 'check.mjs'), edited);
+  git(dir, 'add', 'scripts/check.mjs');
+  git(dir, '-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '--quiet', '-m', 'edited');
+  const other = git(dir, 'rev-parse', 'HEAD');
+  git(dir, 'reset', '--quiet', '--hard', pin.commit);
+  git(dir, 'replace', pin.commit, other);
+  git(dir, 'reset', '--quiet', '--hard', pin.commit); // with the replacement, this writes the edited tree
+  assert.equal(readFileSync(join(dir, 'scripts', 'check.mjs'), 'utf8'), edited);
+  assert.equal(git(dir, 'rev-parse', 'HEAD'), pin.commit);
+  assert.equal(git(dir, 'status', '--porcelain'), '', 'git status shows nothing: the pinned commit now has the edited tree');
+  refused(dir, /has local changes|index that is not/);
+});
+
+test('a clean filter in .git/config and .git/info/attributes that hides an edit is refused', () => {
+  const dir = fresh();
+  git(dir, 'config', 'filter.hide.clean', "printf \"export const licenceIds = ['MIT'];\\n\"");
+  writeFileSync(join(dir, '.git', 'info', 'attributes'), 'scripts/check.mjs filter=hide\n');
+  writeFileSync(join(dir, 'scripts', 'check.mjs'), "export const licenceIds = ['XYZ'];\n"); // the same size: git runs the filter only then
+  assert.equal(git(dir, 'status', '--porcelain'), '', 'git status shows nothing: the filter makes the edit look like the commit');
+  refused(dir, /has local changes|local git config/);
+  // and a config key that a fresh clone does not have is refused by itself
+  const clean = fresh();
+  git(clean, 'config', 'core.fsmonitor', 'false');
+  refused(clean, /local git config that a fresh clone does not have \(core.fsmonitor\)/);
+});
+
+test('the environment of the caller does not point git elsewhere', () => {
+  const dir = fresh();
+  writeFileSync(join(dir, 'scripts', 'check.mjs'), edited);
+  const other = fresh();
+  const saved = process.env.GIT_DIR;
+  process.env.GIT_DIR = join(other, '.git'); // the other checkout is clean: if git used it, the edit would not be seen
+  try {
+    refused(dir, /has local changes/);
+  } finally {
+    if (saved === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = saved;
+  }
 });
 
 test('a clone that the user passes is held to the same rule', () => {
@@ -106,12 +151,19 @@ test('a clone that the user passes is held to the same rule', () => {
   assert.throws(() => checkoutReference('chinookdb', { pin, remote, explicit: clone }), /has local changes/);
 });
 
-test('with no cache the directory is new, private and not at a fixed name', () => {
-  const dir = checkoutReference('chinookdb', { pin, remote, cacheRoot: '' });
+test('a checkout at another commit is refused', () => {
+  const dir = fresh();
+  git(dir, 'config', 'user.email', 'test@example.com');
+  git(dir, 'config', 'user.name', 'test');
+  git(dir, 'commit', '--quiet', '--allow-empty', '-m', 'another commit');
+  refused(dir, /is not at example\/reference@/);
+});
+
+test('with no parent the directory is new, private and not at a fixed name', () => {
+  const dir = checkoutReference('chinookdb', { pin, remote });
   const parent = join(dir, '..');
   assert.match(parent, /ovdb-reference-[A-Za-z0-9]+$/);
   assert.notEqual(parent, join(tmpdir(), 'ovdb-publisher-reference'));
   if (process.platform !== 'win32') assert.equal(statSync(parent).mode & 0o077, 0, 'readable or writable by others');
-  assert.ok(existsSync(join(dir, 'scripts', 'check.mjs')));
   assert.equal(readFileSync(join(dir, 'scripts', 'check.mjs'), 'utf8'), "export const licenceIds = ['MIT'];\n");
 });
