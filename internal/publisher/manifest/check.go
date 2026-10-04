@@ -60,7 +60,7 @@ func Check(ovdbMd []byte, manifestPath string, manifest []byte, profile Profile)
 	}
 	b := newBudget()
 	md, findings := checkOVDBMd(ovdbMd, b, profile)
-	if md.Read && md.Publish.Usable() && !md.Lists(manifestPath) {
+	if md.Read && md.Publish.Present && len(md.Entries) > 0 && !md.Lists(manifestPath) {
 		c := newCollector("OVDB.md", b)
 		c.add("ovdbmd-unlisted", md.Publish.Line, "OVDB.md does not list %s in publish (it lists %s); the publisher has not opted this manifest in: add %s to publish", rules.Quote("./"+manifestPath), listed(md.Entries), rules.Quote("./"+manifestPath))
 		findings = append(findings, c.findings...)

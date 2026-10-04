@@ -49,7 +49,7 @@ func TestPublisherRules(t *testing.T) {
 		{"publisher url", edit(t, ownManifest, "url: https://github.com/datatug\n", "url: https://github.com/datatug/x\n"), "manifest-publisher", 23, func(m Manifest) bool { return m.PublisherURL.Unusable() }},
 		{"publisher url host", edit(t, ownManifest, "url: https://github.com/datatug\n", "url: https://example.com/datatug\n"), "manifest-publisher", 23, func(m Manifest) bool { return m.PublisherURL.Unusable() }},
 		{"repository owner", edit(t, ownManifest, "repository: https://github.com/datatug/chinookdb", "repository: https://github.com/other/chinookdb"), "manifest-publisher", 24, func(m Manifest) bool { return m.PublisherRepository.Unusable() }},
-		{"repository absent", edit(t, ownManifest, "  repository: https://github.com/datatug/chinookdb\n", ""), "manifest-publisher", 22, nil},
+		{"repository absent", edit(t, ownManifest, "  repository: https://github.com/datatug/chinookdb\n", ""), "manifest-required", 22, nil},
 		{"address module", edit(t, ownManifest, "datatug/chinookdb/chinook\n", "datatug/chinookdb/_chinook\n"), "manifest-model", 13, func(m Manifest) bool { return m.ModelAddress.Unusable() }},
 		{"model name", edit(t, ownManifest, "model:\n  address: modelspec://github.com/datatug/chinookdb/chinook\n", "model:\n  name: _x\n"), "manifest-model", 13, func(m Manifest) bool { return m.ModelName.Unusable() }},
 		{"model name and address", edit(t, ownManifest, "model:\n", "model:\n  name: other\n"), "manifest-model", 13, func(m Manifest) bool { return m.ModelName.Unusable() }},
@@ -119,6 +119,154 @@ func TestPublisherOVDBMd(t *testing.T) {
 		}
 		if c.rule == "ovdbmd-duplicate" && (md.Publish.Usable() || !slices.Equal(md.Repeated, []string{"a.yaml"}) || len(md.Entries) == 0) {
 			t.Errorf("%s: %+v", c.name, md)
+		}
+	}
+}
+
+// The own form's meaning.graph.address is compared with the repository in ASCII case only, because
+// Go's strings.ToLower and JavaScript's toLowerCase differ outside ASCII (review of slice 2b, blocker 1).
+func TestGraphAddressIsComparedInAsciiCaseOnly(t *testing.T) {
+	const own = "meaning://github.com/datatug/chinookdb"
+	for _, c := range []struct {
+		name, address string
+		accepted      bool
+	}{
+		{"exact", own, true},
+		{"ASCII upper case", "meaning://GITHUB.com/DataTug/ChinookDB", true},
+		// Go lower-cases U+0130 to i; JavaScript to i and a combining dot, so the checker refuses these.
+		{"dotted capital I in the name", "meaning://github.com/datatug/ch\u0130nookdb", false},
+		{"dotted capital I in the owner", "meaning://github.com/datatug\u0130/chinookdb", false},
+		{"dotted capital I in the host", "meaning://g\u0130thub.com/datatug/chinookdb", false},
+		{"dotless i", "meaning://github.com/datatug/ch\u0131nookdb", false},
+		{"long s", "meaning://github.com/datatug/chinookdb\u017f", false},
+		{"sharp s", "meaning://github.com/datatug/chinookdb\u00df", false},
+		{"fullwidth letter", "meaning://github.com/datatug/chinookd\uff22", false},
+		{"combining mark", "meaning://github.com/datatug/chinookdb\u0307", false},
+		// JavaScript folds the Kelvin sign onto k, so the checker accepts this one and Go refuses it: kind graph-address-case.
+		{"Kelvin sign", "meaning://github.com/datatug/chinoo\u212adb", false},
+	} {
+		doc := edit(t, ownManifest, "address: "+own+"\n", "address: "+c.address+"\n")
+		m, findings := CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
+		if (len(findings) == 0) != c.accepted {
+			t.Errorf("%s: accepted %v, want %v: %v", c.name, len(findings) == 0, c.accepted, findings)
+		}
+		if !c.accepted && (len(findings) == 0 || findings[0].Rule != "manifest-meaning" || findings[0].Line != 20 || !m.GraphAddress.Unusable()) {
+			t.Errorf("%s: %v %+v", c.name, findings, m.GraphAddress)
+		}
+	}
+	for in, want := range map[string]string{"": "", "abc": "abc", "ABC xyz-09": "abc xyz-09", "@AMZ[`az{": "@amz[`az{", "\u0130\u212a\u00c9\u0391": "\u0130\u212a\u00c9\u0391", "\xff\xc4": "\xff\xc4"} {
+		if got := lowerASCII(in); got != want {
+			t.Errorf("lowerASCII(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The own repository's owner is a whole path segment: an owner that is a prefix of another is not that owner.
+func TestOwnerBoundary(t *testing.T) {
+	for _, c := range []struct {
+		name, url, repository string
+		accepted              bool
+	}{
+		{"same owner", "https://github.com/datatug", "https://github.com/datatug/chinookdb", true},
+		{"owner is a prefix of the other", "https://github.com/data", "https://github.com/datatug/chinookdb", false},
+		{"owner is a prefix with a hyphen", "https://github.com/datatug", "https://github.com/datatug-labs/chinookdb", false},
+		{"owner with a longer name", "https://github.com/datatug-labs", "https://github.com/datatug/chinookdb", false},
+		{"owner in another case", "https://github.com/DataTug", "https://github.com/datatug/chinookdb", false},
+	} {
+		doc := edit(t, ownManifest, "  url: https://github.com/datatug\n", "  url: "+c.url+"\n")
+		doc = edit(t, doc, "  repository: https://github.com/datatug/chinookdb\n", "  repository: "+c.repository+"\n")
+		m, findings := CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
+		var owned []Finding
+		for _, f := range findings {
+			if f.Rule == "manifest-publisher" && f.Line == 24 {
+				owned = append(owned, f)
+			}
+		}
+		if (len(owned) == 0) != c.accepted || (len(owned) > 0 && !m.PublisherRepository.Unusable()) {
+			t.Errorf("%s: owner refused %v, want %v: %v", c.name, len(owned) > 0, !c.accepted, findings)
+		}
+	}
+}
+
+// A recordset page is judged for every name of recordsets, so an expansion that is too long is refused at
+// the line of recordsets, and it makes recordsets not usable (the template alone is fine).
+func TestRecordsetPageExpansion(t *testing.T) {
+	long := "L" + strings.Repeat("x", 2100)
+	doc := edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - "+long+"\n")
+	m, findings := CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
+	if len(findings) != 1 || findings[0].Rule != "manifest-recordsets" || findings[0].Line != 30 || !strings.Contains(findings[0].Message, "the recordset page of") {
+		t.Fatalf("%v", findings)
+	}
+	if !m.Recordsets.Present || m.Recordsets.Usable() || len(m.Recordsets.Value) != 0 || !m.RecordsetPage.Usable() {
+		t.Errorf("recordsets %+v, page %+v", m.Recordsets, m.RecordsetPage)
+	}
+	// The Directory profile has no such rule: it judges the template, which is fine.
+	if _, f := CheckManifest([]byte(doc), "ovdb.yaml", Directory); len(f) != 0 {
+		t.Errorf("the Directory profile: %v", f)
+	}
+}
+
+// What the Chinook checker allows, held to the generator's copy of it (read from the checker) both ways.
+func TestAllowListsAreTheCheckers(t *testing.T) {
+	var golden struct {
+		AllowLists struct {
+			Licences []string            `json:"licences"`
+			Keys     map[string][]string `json:"keys"`
+		} `json:"allowLists"`
+	}
+	readGolden(t, "publisher.verdicts.json", &golden)
+	if got, want := slices.Sorted(slices.Values(licenceIDs)), golden.AllowLists.Licences; !slices.Equal(got, want) || len(want) < 10 {
+		t.Errorf("licence ids: Go has %v, the checker %v", got, want)
+	}
+	seen := map[string]bool{}
+	for _, set := range allowedKeys {
+		where := strings.Join(set.path, ".")
+		seen[where] = true
+		want, ok := golden.AllowLists.Keys[where]
+		if got := slices.Sorted(slices.Values(set.keys)); !ok || !slices.Equal(got, want) {
+			t.Errorf("keys of %q: Go has %v, the checker %v", where, got, want)
+		}
+	}
+	for where := range golden.AllowLists.Keys {
+		if !seen[where] {
+			t.Errorf("the checker allows keys at %q, which Go does not know", where)
+		}
+	}
+	if len(golden.AllowLists.Keys) != 7 {
+		t.Errorf("%d mappings", len(golden.AllowLists.Keys))
+	}
+}
+
+// The messages of the Publisher profile say what that profile asks: publisher.repository is required, not optional.
+func TestPublisherMessagesDoNotOfferToLeaveTheRepositoryOut(t *testing.T) {
+	for _, repository := range []string{"https://github.com/datatug/chinookdb/", "5", "\"\"", "https://example.com/datatug/chinookdb", "https://github.com/datatug/chinookdb?ref=x"} {
+		doc := edit(t, ownManifest, "  repository: https://github.com/datatug/chinookdb\n", "  repository: "+repository+"\n")
+		_, publisher := CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
+		_, directory := CheckManifest([]byte(doc), "ovdb.yaml", Directory)
+		if len(publisher) == 0 || len(directory) == 0 {
+			t.Fatalf("%s: publisher %v, directory %v", repository, publisher, directory)
+		}
+		for _, f := range publisher {
+			if strings.Contains(f.Message, "leave publisher.repository out") || strings.Contains(f.Message, "when given") {
+				t.Errorf("%s: the Publisher profile offers to leave the field out: %v", repository, f)
+			}
+		}
+		if !strings.Contains(directory[0].Message, "leave publisher.repository out") {
+			t.Errorf("%s: the Directory profile no longer offers it: %v", repository, directory[0])
+		}
+	}
+}
+
+// A repeated entry does not hide that the manifest is not listed: both findings are made, as in the Directory profile.
+func TestDuplicateEntryDoesNotHideUnlisted(t *testing.T) {
+	const md = "---\novdb: 1\npublish: [./a.yaml, ./a.yaml]\n---\n"
+	for _, profile := range []Profile{Directory, Publisher} {
+		r := Check([]byte(md), "ovdb.yaml", []byte(ownManifest), profile)
+		if !slices.Contains(rulesOf(r.Findings), "ovdbmd-unlisted") {
+			t.Errorf("%v: %v", profile, r.Findings)
+		}
+		if profile == Publisher && !slices.Contains(rulesOf(r.Findings), "ovdbmd-duplicate") {
+			t.Errorf("%v: %v", profile, r.Findings)
 		}
 	}
 }

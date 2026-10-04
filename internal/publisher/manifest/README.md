@@ -215,8 +215,8 @@ reads them; the facts it needs are already here.
 | publisher.repository is required, a github.com repository, owned by the owner of publisher.url | documents | `manifest-publisher` | ovdb-manifest.mjs 305, 306, 308 |
 | model.address names a repository of github.com and a module that starts with a letter | documents | `manifest-model` | ovdb-manifest.mjs 67, 319, 320 |
 | model.name is a module name that starts with a letter | documents | `manifest-model` | ovdb-manifest.mjs 322, 323 |
-| shared form: model.name is the module of model.address | documents | `manifest-model` | ovdb-manifest.mjs 486, 487 |
-| shared form: neither address is the publisher's own repository | documents | `manifest-model`, `manifest-meaning` | ovdb-manifest.mjs 333, 485, 499 |
+| model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file) | documents | `manifest-model` | ovdb-manifest.mjs 486, 487 |
+| shared form: neither address is the publisher's own repository | documents | `manifest-model`, `manifest-meaning` | ovdb-manifest.mjs 333, 334, 485, 499 |
 | own form: model.hcl is required, model.modelspec ends in .modelspec.json | documents | `manifest-required`, `manifest-model` | ovdb-manifest.mjs 378, 387, 388 |
 | own form: model.address is this repository (publisher.repository), without a pin | documents | `manifest-model` | ovdb-manifest.mjs 426, 427, 428, 429 |
 | meaning.graph.id is a registry id (lower-case letters, digits, single hyphens) | documents | `manifest-meaning` | ovdb-manifest.mjs 437, 507 |
@@ -227,16 +227,21 @@ reads them; the facts it needs are already here.
 | every recordset page the template makes is a public https URL | documents | `manifest-recordsets` | ovdb-manifest.mjs 528, 529, 530, 531 |
 | OVDB.md has no key but ovdb and publish | documents | `ovdbmd-keys` | ovdb-manifest.mjs 198, 199 |
 | publish lists each manifest once | documents | `ovdbmd-duplicate` | ovdb-manifest.mjs 216, 217 |
-| OVDB.md and every manifest it lists are tracked regular files | files | slice 3 | ovdb-manifest.mjs 189 |
+| the repository can be read at HEAD (it is a git repository with a commit) | files | slice 3 | ovdb-manifest.mjs 186, 187 |
+| OVDB.md is a tracked regular file | files | slice 3 | ovdb-manifest.mjs 188, 189 |
+| OVDB.md can be read (and is not over 16 MB) | files | slice 3 | ovdb-manifest.mjs 194 |
+| every manifest that OVDB.md lists is a tracked regular file | files | slice 3 | ovdb-manifest.mjs 221, 222, 223 |
+| every manifest that OVDB.md lists can be read (and is not over 16 MB) | files | slice 3 | ovdb-manifest.mjs 244, 246 |
+| every manifest that OVDB.md lists is checked | files | slice 3 | ovdb-manifest.mjs 226 |
 | every file a manifest names is a tracked regular file | files | slice 3 | ovdb-manifest.mjs 391, 392 |
+| every file a manifest names can be read (and is not over 16 MB) | files | slice 3 | ovdb-manifest.mjs 345, 347 |
 | the model file is JSON with a module name and entities | files | slice 3 | ovdb-manifest.mjs 408, 410, 413, 415 |
 | own form: model.name is the module of the model file | files | slice 3 | ovdb-manifest.mjs 420 |
 | own form: the module of model.address is the model file's | files | slice 3 | ovdb-manifest.mjs 427, 429 |
-| the meaning file is YAML whose id and license are the manifest's | files | slice 3 | ovdb-manifest.mjs 451, 453, 454 |
-| the meaning file's models: entry for the module is model.hcl | files | slice 3 | ovdb-manifest.mjs 459, 461, 468 |
+| the meaning file is YAML whose id and license are the manifest's | files | slice 3 | ovdb-manifest.mjs 448, 451, 453, 455 |
+| the meaning file's models: entry for the module is model.hcl | files | slice 3 | ovdb-manifest.mjs 459, 461, 467, 468 |
 | own form: recordsets are exactly the model's entities | files | slice 3 | ovdb-manifest.mjs 535, 538, 539 |
 | publisher.repository is the repository the check is run in (the --repository option) | input | slice 3 | ovdb-manifest.mjs 309 |
-| every manifest that OVDB.md lists is checked | files | slice 3 | ovdb-manifest.mjs 226 |
 
 Not judged, whatever the profile: that the named files are tracked regular files at HEAD
 and of a size, and anything read through a registry. A required text is checked with
@@ -284,7 +289,7 @@ verdict on each document (`directory.verdicts.json`), and the values its own cod
 derives for every field of the table above from each accepted manifest
 (`directory.facts.json`, as the difference from the facts of the document's base).
 `go test` reads them, applies the Go functions, starts no process and needs no
-network. The corpus is **5325 manifests and 487 OVDB.md documents** (637
+network. The corpus is **6063 manifests and 487 OVDB.md documents** (820
 KiB), stored as patches of whole lines against a few base documents (the real
 Chinook manifest and `OVDB.md`, the hoster example, the Directory's own fixture,
 JSON spellings of the manifests), with flags for CRLF, a byte-order mark, invalid
@@ -323,15 +328,15 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **5481 agree, 331 stricter, 0 accepted by Go where the
+On the corpus: **6215 agree, 335 stricter, 0 accepted by Go where the
 Directory refuses**.
 
-On the facts: 1473 manifests and 124 OVDB.md documents have their facts compared.
+On the facts: 1811 manifests and 124 OVDB.md documents have their facts compared.
 
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 4259 manifests, 2786 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 4997 manifests, 3186 of them refused.
 
 ### Recorded differences: where Go is stricter
 
@@ -347,10 +352,10 @@ publisher to write the value as a block scalar, `>-` or `|-`.
 | Kind | Documents | Why |
 | --- | --- | --- |
 | `document-size` | 6 | A document over 262144 bytes (MaxDocumentBytes) is refused before it is read; the references read files of any size. |
-| `length-address` | 5 | An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound. |
+| `length-address` | 7 | An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound. |
 | `length-entry` | 2 | A publish entry whose path after ./ is over 1024 bytes; the references have no bound. |
 | `length-path` | 8 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
-| `length-repository` | 2 | A publisher.repository over 255 bytes; the references have no bound. |
+| `length-repository` | 4 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
 | `url-length` | 5 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 2 | The reader accepts a subset of YAML, and a structure it cannot place (a flow collection as a key, as in [a]: x) is refused; the reference reads it. |
@@ -377,7 +382,7 @@ reference of the profile refuses**. The reference is the Chinook checker of
 each case is run on a repository: held in memory through the `files` object that the
 checker's own tests use for their hundreds of cases (`problem`, `read`, `kind`), and
 again on a real throwaway repository (`git init`, the files, `git commit`, the checker's
-own `gitRepoFiles`) for a sample of 261 runs, one directory of its own each, removed
+own `gitRepoFiles`) for a sample of 278 runs, one directory of its own each, removed
 afterwards. The script fails if the two ever differ.
 
 What the checker refuses falls in two groups, found by running each case on four
@@ -390,20 +395,20 @@ repository holds only `OVDB.md` and the manifest; the *wrong* one has well forme
 that disagree with the manifest; the *broken* one has files that are not JSON and not YAML.
 What these refuse and the consistent one does not **needs other files** and is
 slice 3's. An `OVDB.md` case lists the real Chinook manifest under each entry, so that only
-`OVDB.md` can be wrong. Of the 1100 manifests and 124 OVDB.md documents that the
+`OVDB.md` can be wrong. Of the 1129 manifests and 124 OVDB.md documents that the
 checker accepts, these classes of refusal would follow from files (manifests, OVDB.md
 documents):
 
-- a tracked regular file (599 manifests, 124 OVDB.md documents)
-- model.address against the model file (589 manifests, 124 OVDB.md documents)
+- a tracked regular file (620 manifests, 124 OVDB.md documents)
+- model.address against the model file (610 manifests, 124 OVDB.md documents)
 - model.name against the model file (5 manifests, 0 OVDB.md documents)
-- recordsets against the model (599 manifests, 124 OVDB.md documents)
-- the meaning file against the manifest (599 manifests, 124 OVDB.md documents)
-- the model file: JSON, module and entities (599 manifests, 124 OVDB.md documents)
+- recordsets against the model (620 manifests, 124 OVDB.md documents)
+- the meaning file against the manifest (620 manifests, 124 OVDB.md documents)
+- the model file: JSON, module and entities (620 manifests, 124 OVDB.md documents)
 
-The corpus is the one of the Directory profile, **5325 manifests and 487
-OVDB.md documents**, judged again by this reference (it accepts 1100 manifests and
-124 OVDB.md documents and refuses 4225 and 363), with the rows aimed at what
+The corpus is the one of the Directory profile, **6063 manifests and 487
+OVDB.md documents**, judged again by this reference (it accepts 1129 manifests and
+124 OVDB.md documents and refuses 4934 and 363), with the rows aimed at what
 only this profile refuses: every manifest edit of the checker's own test suite that
 applies on its own (the single-field edits of `scripts/test-model.mjs`, with bodies of
 several lines too), each licence id in and out of the list and in other letter case in
@@ -415,13 +420,13 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **5520 agree, 292 stricter, 0 accepted by Go where the Chinook
-checker refuses**. The facts: under the Publisher profile, 828 manifests and 104
+On the corpus: **6245 agree, 305 stricter, 0 accepted by Go where the Chinook
+checker refuses**. The facts: under the Publisher profile, 844 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 3852 manifests, 338 OVDB.md documents and 4567 pairs (of 6299) that the
+every one of the 4252 manifests, 338 OVDB.md documents and 4967 pairs (of 7037) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -429,17 +434,30 @@ the corpus names).
 ### Recorded differences: the Publisher profile
 
 The stricter kinds are those of the Directory profile that the reader and the bounds
-make, with the same reasons and the counts of this corpus; no rule of the Directory
-that the checker lacks makes one.
+make, with the same reasons and the counts of this corpus, and two that only this profile
+has, both about `meaning.graph.address` in the own form: the Directory's rule that the
+address starts with the literal `meaning://` still applies (the Chinook checker accepts
+`MEANING://` and `Meaning://`: it compares the address in lower case), and the address is
+compared with `publisher.repository` in ASCII case only (the paragraph after the table).
+Three kinds of the Directory profile never happen here, because the Chinook checker
+refuses every document that has them too: `yaml` (a flow collection as a key is a key the
+checker does not allow at any level), `yaml-key` (no key the checker allows reads as a
+number, a boolean or null) and `yaml-limit` (none can hold a collection nested 64 deep). Every other kind of the
+Directory profile has documents here that the checker accepts
+(`TestEveryDirectoryKindIsSeenUnderThePublisherProfile` fails if a kind is in neither
+group).
 
 | Kind | Documents | Why |
 | --- | --- | --- |
 | `document-size` | 6 | A document over 262144 bytes (MaxDocumentBytes) is refused before it is read; the references read files of any size. |
-| `length-address` | 5 | An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound. |
+| `graph-address-case` | 2 | An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round. |
+| `graph-address-scheme` | 4 | An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://. |
+| `length-address` | 7 | An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound. |
 | `length-entry` | 4 | A publish entry whose path after ./ is over 1024 bytes; the references have no bound. |
 | `length-path` | 6 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
+| `length-repository` | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
-| `url-length` | 6 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
+| `url-length` | 9 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml-anchor` | 48 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
 | `yaml-character` | 6 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
 | `yaml-directive` | 4 | The reader refuses a %YAML or %TAG directive; the reference follows it. |
@@ -451,6 +469,37 @@ that the checker lacks makes one.
 | `yaml-tab` | 42 | The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation). |
 | `yaml-tag` | 82 | The reader refuses tags (!, !!), which the reference resolves; it reads plain values only. |
 | `yaml-unsupported` | 69 | The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both. |
+
+**Why the address is compared in ASCII case only.** The checker lower-cases the
+address with JavaScript's `toLowerCase`, and Go's `strings.ToLower` is not the same
+function outside ASCII: U+0130 (capital I with dot above) is `i` to Go and `i` with a
+combining dot (two code points) to JavaScript, so a Go comparison with `strings.ToLower`
+accepted `meaning://github.com/k\u0130tchen/sink` for the repository
+`https://github.com/kitchen/sink`, which the checker refuses (found by the review of
+slice 2b). The Go comparison now folds A to Z and nothing else. Its other side is built from
+`publisher.repository`, which is ASCII, so a lower-cased ASCII string is the same in both
+languages and the comparison is never looser than the checker's; it is stricter only where
+JavaScript folds a non-ASCII letter onto an ASCII one (the Kelvin sign U+212A onto `k`),
+the kind `graph-address-case`. The corpus holds U+0130, U+0131, U+017F, U+212A, U+00DF,
+U+03A3 and U+03C2, a fullwidth Latin letter and a combining mark after an ASCII letter in
+every field that either side compares or lower-cases (families `unicode: case` and
+`unicode: kitchen`).
+
+Every other call in `internal/publisher` (rules included) that can differ from
+JavaScript outside ASCII, found by a search for `strings.ToLower`, `ToUpper`, `EqualFold`,
+`Title`, `TrimSpace`, `Fields`, `Trim*`, `unicode`, `utf8`, `regexp` and the
+`(?i)`, `\s`, `\w`, `\d`, `\b` classes, and what each does:
+
+| Site | What it judges | The reference | Can Go be looser? |
+| --- | --- | --- | --- |
+| `publisher.go`, `lowerASCII` | `meaning.graph.address` against the repository | `toLowerCase` | No: ASCII only (above) |
+| `manifest.go`, address rule | the repository of an address is lower case | `toLowerCase` compare | No: the repository has passed `rules.RepositoryKey`, which refuses every byte that is not A-Z a-z 0-9 . _ -, so it is ASCII there |
+| `rules/repo.go`, `CompareKey` | repositories compared in any case | `toLowerCase` | No: the key is ASCII (same function) |
+| `rules/repo.go`, `hasSuffixFold` | a `.git` suffix | `/\.git$/i` | No: the string is ASCII there, and `.git` holds no letter that Go's folding joins to a non-ASCII one (those are `k` and `s`) |
+| `check.go`, `unprintable` | the bytes of a message are printable | not a judgement | Not applicable: it sanitises output |
+| `rules.IsBlank`, `rules.IsID`, `isLetter` and the other hand-written classes | blank text, ids, names | `trim()`, `/^[a-z0-9]+(-[a-z0-9]+)*$/` and the like | No: byte tests on ASCII, and `IsBlank` is JavaScript's `trim()` set, not Go's |
+
+No site of `rules` needed a change.
 
 ## Regenerate
 

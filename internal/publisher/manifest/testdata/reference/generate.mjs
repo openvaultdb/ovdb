@@ -321,6 +321,14 @@ const mdEntries = (buffer) => {
 // What the checker's source says, by line: each rule that the publisher profile adds to the Directory's, whether the two documents
 // decide it, and where the checker makes it. The script fails if a cited line no longer holds its snippet.
 const chinookLines = read(chinookRoot, 'scripts/lib/ovdb-manifest.mjs').split('\n');
+// The lists the checker holds: the licence ids (exported) and the allowed keys of each mapping (read from the source of the checker).
+const chinookAllowedKeys = (() => {
+  const text = chinookLines.join('\n');
+  const start = text.indexOf('const allowedKeys = {');
+  const end = text.indexOf('\n};', start);
+  if (start < 0 || end < 0) throw new Error('ovdb-manifest.mjs no longer holds `const allowedKeys = {...};`');
+  return new Function(`return ${text.slice(start + 'const allowedKeys = '.length, end + 2)}`)();
+})();
 const publisherRules = [
   // [id, who decides, Go rule, snippet, lines]
   ['unknown keys at every level of a manifest', 'documents', 'manifest-keys', 'const unknown = Object.keys(object)', [251, 254, 255]],
@@ -331,8 +339,8 @@ const publisherRules = [
   ['publisher.repository is required, a github.com repository, owned by the owner of publisher.url', 'documents', 'manifest-publisher', 'publisher.repository must belong to the owner in publisher.url', [305, 306, 308]],
   ['model.address names a repository of github.com and a module that starts with a letter', 'documents', 'manifest-model', 'model.address must be modelspec://github.com', [67, 319, 320]],
   ['model.name is a module name that starts with a letter', 'documents', 'manifest-model', 'model.name, when given, must be a ModelSpec module name', [322, 323]],
-  ['shared form: model.name is the module of model.address', 'documents', 'manifest-model', 'but model.address names module', [486, 487]],
-  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [333, 485, 499]],
+  ['model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file)', 'documents', 'manifest-model', 'but model.address names module', [486, 487]],
+  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [333, 334, 485, 499]],
   ['own form: model.hcl is required, model.modelspec ends in .modelspec.json', 'documents', 'manifest-required, manifest-model', 'model.hcl is required with local model files', [378, 387, 388]],
   ['own form: model.address is this repository (publisher.repository), without a pin', 'documents', 'manifest-model', 'model.address must be ${expected}', [426, 427, 428, 429]],
   ['meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)', 'documents', 'manifest-meaning', 'meaning.graph.id must be a MeaningGraph registry id', [437, 507]],
@@ -343,19 +351,41 @@ const publisherRules = [
   ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [528, 529, 530, 531]],
   ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [198, 199]],
   ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [216, 217]],
-  ['OVDB.md and every manifest it lists are tracked regular files', 'files', '', 'OVDB.md must be a tracked regular file', [189]],
+  ['the repository can be read at HEAD (it is a git repository with a commit)', 'files', '', 'files.problem?.()', [186, 187]],
+  ['OVDB.md is a tracked regular file', 'files', '', 'OVDB.md must be a tracked regular file', [188, 189]],
+  ['OVDB.md can be read (and is not over 16 MB)', 'files', '', "problems: [`OVDB.md: ${error.message}`]", [194]],
+  ['every manifest that OVDB.md lists is a tracked regular file', 'files', '', 'must be a tracked regular file, but it is', [221, 222, 223]],
+  ['every manifest that OVDB.md lists can be read (and is not over 16 MB)', 'files', '', 'is not valid YAML', [244, 246]],
+  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [226]],
   ['every file a manifest names is a tracked regular file', 'files', '', 'which must be a tracked regular file', [391, 392]],
+  ['every file a manifest names can be read (and is not over 16 MB)', 'files', '', 'bad(error.message)', [345, 347]],
   ['the model file is JSON with a module name and entities', 'files', '', 'is not a ModelSpec JSON file', [408, 410, 413, 415]],
   ['own form: model.name is the module of the model file', 'files', '', 'model.name !== moduleName', [420]],
   ['own form: the module of model.address is the model file\'s', 'files', '', 'this repository plus the module name in', [427, 429]],
-  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [451, 453, 454]],
-  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [459, 461, 468]],
+  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [448, 451, 453, 455]],
+  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [459, 461, 467, 468]],
   ['own form: recordsets are exactly the model\'s entities', 'files', '', 'recordsets lacks ModelSpec entities', [535, 538, 539]],
   ['publisher.repository is the repository the check is run in (the --repository option)', 'input', '', 'the repository this manifest is in', [309]],
-  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [226]],
+];
+// What the Publisher profile shares with the Directory's: every other refusal of the checker is one the Directory's rules make as well
+// (the checker's directory-rules.mjs are copies of the Directory's), so it is a rule of the Directory profile.
+const sharedWithDirectory = [
+  [[197, 200, 202, 208, 213], 'the shape of OVDB.md: front matter, ovdb: 1, a non-empty publish list of ./ paths'],
+  [[227], 'the problems of a listed manifest, passed on'],
+  [[248, 258, 259, 265, 269, 273, 282, 286], 'the manifest is a mapping with its format, required texts, URLs, homepage and engine'],
+  [[320, 330, 425, 482, 484, 494, 496, 498], 'the addresses: spelled as the Directory does, pinned in the shared form and not in the own'],
+  [[359, 370, 372, 377, 379, 384, 503, 504, 509, 514, 521, 524], 'required fields, paths, the forms that never mix, recordsets listed once'],
 ];
 for (const [id, , , snippet, cited] of publisherRules) {
   if (!cited.some((line) => chinookLines[line - 1]?.includes(snippet))) throw new Error(`ovdb-manifest.mjs at ${pins.chinookdb.commit}: none of lines ${cited.join(', ')} holds \`${snippet}\`, which is where the table of generate.mjs says the checker makes "${id}"`);
+}
+// Every refusal the checker can make is accounted for: a line with `bad(`, `problems.push(` or an early `return { problems` is in a
+// rule above (the publisher's, or one that needs files or input) or in what the Directory's rules share.
+{
+  const accounted = new Set([...publisherRules.flatMap((rule) => rule[4]), ...sharedWithDirectory.flatMap((entry) => entry[0])]);
+  const refusals = chinookLines.flatMap((line, at) => (/\bbad\(|problems\.push\(|return \{ problems:/.test(line) && !/const bad =/.test(line) ? [at + 1] : []));
+  const missing = refusals.filter((line) => !accounted.has(line));
+  if (missing.length > 0) throw new Error(`ovdb-manifest.mjs at ${pins.chinookdb.commit} refuses at lines ${missing.join(', ')}, which no rule of generate.mjs accounts for`);
 }
 
 // ---- the bases: real documents, and what is made from them ----
@@ -821,6 +851,71 @@ for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObjec
   for (const value of ['1', '{a: b}', '[1, 2]', '~', '""', 'true']) addMd('publisher: keys', mdName, front(`ovdb: 1\npublish: [./ovdb.yaml]\nextra: ${value}`));
 }
 
+// ---- case mapping, look-alikes, and the edges of the publisher rules ----
+
+// Go and JavaScript map case differently outside ASCII (U+0130 lower-cases to i in Go and to i and a combining dot in JavaScript, the
+// Kelvin sign to k in both, U+00DF and the sigmas by context): every string that either checker compares or lower-cases gets each
+// of these in the place of its first letter of interest, and after its last character.
+const lookAlikes = ['İ', 'ı', 'ſ', 'K', 'ß', 'Σ', 'ς', 'Ａ', 'ａ', 'é'];
+const compared = [['id'], ['licences', 'data'], ['licences', 'model'], ['licences', 'meaning'], ['model', 'name'], ['model', 'address'], ['meaning', 'address'], ['meaning', 'graph', 'address'], ['meaning', 'graph', 'id'], ['publisher', 'url'], ['publisher', 'repository'], ['deployment', 'discovery'], ['deployment', 'recordset_page'], ['model', 'hcl'], ['model', 'modelspec'], ['meaning', 'file']];
+for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObject]]) {
+  const mutate = (family, change) => { const copy = clone(object); change(copy); addManifest(family, baseName, jsonOf(copy)); };
+  const leaf = (path) => path.reduce((value, key) => value?.[key], object);
+  for (const path of compared) {
+    const value = leaf(path);
+    if (typeof value !== 'string') continue;
+    let at = value.search(/[iksIKS]/);
+    if (at < 0) at = value.search(/[A-Za-z]/);
+    for (const c of lookAlikes) {
+      mutate('unicode: case', (m) => { parentOf(m, path)[path.at(-1)] = `${value.slice(0, at)}${c}${value.slice(at + 1)}`; });
+      mutate('unicode: case', (m) => { parentOf(m, path)[path.at(-1)] = `${value}${c}`; });
+    }
+  }
+  const names = object.recordsets[0];
+  for (const c of lookAlikes) mutate('unicode: case', (m) => { m.recordsets = [`${names}${c}`, ...m.recordsets.slice(1)]; });
+}
+// The reviewer's input and its neighbours: an own-form manifest of kitchen/sink, the address spelled with each look-alike in the place of each letter.
+{
+  const kitchen = (address) => { const m = clone(ownObject); m.publisher.url = 'https://github.com/kitchen'; m.publisher.repository = 'https://github.com/kitchen/sink'; m.model.address = 'modelspec://github.com/kitchen/sink/chinook'; m.meaning.graph.address = address; return m; };
+  const address = 'meaning://github.com/kitchen/sink';
+  addManifest('unicode: kitchen', ownJson, jsonOf(kitchen(address)));
+  addManifest('unicode: kitchen', ownJson, jsonOf(kitchen(address.toUpperCase())));
+  addManifest('unicode: kitchen', ownJson, jsonOf(kitchen('meaning://github.com/KITCHEN/Sink')));
+  for (let at = 'meaning://'.length; at < address.length; at += 1) {
+    if (!/[A-Za-z]/.test(address[at])) continue;
+    for (const c of lookAlikes) addManifest('unicode: kitchen', ownJson, jsonOf(kitchen(`${address.slice(0, at)}${c}${address.slice(at + 1)}`)));
+  }
+  // and a repository that itself holds a letter that look-alikes fold onto
+  for (const c of lookAlikes) {
+    const m = kitchen(address); m.meaning.graph.address = `meaning://github.com/k${c}tchen/sink`; addManifest('unicode: kitchen', ownJson, jsonOf(m));
+  }
+}
+// The scheme of an own-form meaning.graph.address: the checker compares in lower case, the Directory wants the literal scheme.
+for (const address of ['MEANING://github.com/datatug/chinookdb', 'Meaning://github.com/datatug/chinookdb', 'meaning://GitHub.com/DATATUG/ChinookDB', 'meaning:/github.com/datatug/chinookdb', ' meaning://github.com/datatug/chinookdb', 'meaning://github.com/datatug/chinookdb ', 'MEANING://GITHUB.COM/DATATUG/CHINOOKDB']) {
+  const m = clone(ownObject); m.meaning.graph.address = address; addManifest('publisher: graph address scheme', ownJson, jsonOf(m));
+}
+// A publisher.repository at and over its bound (255 bytes), in both forms, with everything else consistent.
+for (const length of [226, 227, 228, 229, 230, 262, 1000]) {
+  const shared = clone(sharedObject); shared.publisher.url = 'https://github.com/hoster'; shared.publisher.repository = `https://github.com/hoster/${'r'.repeat(length - 'https://github.com/hoster/'.length)}`;
+  addManifest('publisher: repository length', sharedJson, jsonOf(shared));
+  const own = clone(ownObject); const name = 'r'.repeat(length - 'https://github.com/datatug/'.length);
+  own.publisher.repository = `https://github.com/datatug/${name}`; own.model.address = `modelspec://github.com/datatug/${name}/chinook`; own.meaning.graph.address = `meaning://github.com/datatug/${name}`;
+  addManifest('publisher: repository length', ownJson, jsonOf(own));
+}
+// An owner that is the beginning of another, either way round.
+for (const [url, repository] of [['https://github.com/data', 'https://github.com/datatug/chinookdb'], ['https://github.com/datatug-x', 'https://github.com/datatug/chinookdb'], ['https://github.com/datatug', 'https://github.com/datatug-x/chinookdb'], ['https://github.com/datatug', 'https://github.com/datatug/chinookdb'], ['https://github.com/dat', 'https://github.com/dat/chinookdb']]) {
+  const m = clone(ownObject); m.publisher.url = url; m.publisher.repository = repository; addManifest('publisher: owner boundary', ownJson, jsonOf(m));
+  const shared = clone(sharedObject); shared.publisher.url = url; shared.publisher.repository = repository; addManifest('publisher: owner boundary', sharedJson, jsonOf(shared));
+}
+// A recordset page whose template is within the bound and whose expansion is not (the names are longer than {name}).
+{
+  const cloud = new URL(ownObject.deployment.url).origin; const stem = `${cloud}/c/`;
+  for (const [total, name] of [[2048, 'InvoiceLine'], [2043, 'InvoiceLine'], [2042, 'InvoiceLine'], [2048, 'Album'], [2040, 'A'.repeat(20)]]) {
+    const m = clone(ownObject); m.deployment.recordset_page = `${stem}${'x'.repeat(total - stem.length - '{name}'.length)}{name}`; m.recordsets = [name, ...ownObject.recordsets.filter((entry) => entry !== name).slice(0, 2)];
+    addManifest('publisher: expansion', ownJson, jsonOf(m));
+  }
+}
+
 // ---- the goldens ----
 
 const manifestBuffers = manifestCases.map(([base, patch, flags]) => flagged(applyPatch(bases[base], patch), flags));
@@ -892,6 +987,7 @@ const publisherVerdictFile = {
   manifest: { accepted: count(publisherVerdicts.manifest, '1'), refused: count(publisherVerdicts.manifest, '0'), verdicts: publisherVerdicts.manifest },
   md: { accepted: count(publisherVerdicts.md, '1'), refused: count(publisherVerdicts.md, '0'), verdicts: publisherVerdicts.md },
   needsFiles,
+  allowLists: { licences: [...chinook.licenceIds].sort(), keys: Object.fromEntries(Object.entries(chinookAllowedKeys).map(([where, keys]) => [where, [...keys].sort()])) },
   rules: publisherRules.map(([id, who, go, , lines]) => ({ id, who, go, lines })),
 };
 // The facts: for each accepted manifest, the values factsOf derives, as the difference from those of its base

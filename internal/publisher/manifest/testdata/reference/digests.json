@@ -1,8 +1,8 @@
 {
- "manifest/testdata/reference/corpus.json": "c5efad898ac77eadee0ad978f8c1d9cc436ea9a43359b1e74d34f03f287646f2",
- "manifest/testdata/reference/directory.verdicts.json": "b6bd0abaeeb60e9a987bf9b00aa0f05967d3ea63d8e84280ef254b61540fc8e3",
- "manifest/testdata/reference/directory.facts.json": "b0171a6fd9b501d332c88a71af2c2e8a6ddd246f839af0405bf9556bcedee5f6",
- "manifest/testdata/reference/publisher.verdicts.json": "0ba68c3fff1e574d1b39fa037060694a6a520b14d2242954bf7ee128aa53efb4",
- "manifest/testdata/reference/publisher.facts.json": "ea5f559ff97bc855aef3ba615f5623974731306c158d72651efc8435848a93ff",
+ "manifest/testdata/reference/corpus.json": "fcf9fc7759250709898994514546910f9dc5549cad03a091f1f419b45a0d25ed",
+ "manifest/testdata/reference/directory.verdicts.json": "8887f8717b600cbcde87165b390d031ef8475675ad569570836669e584d86d80",
+ "manifest/testdata/reference/directory.facts.json": "61ef6d12324d3b7f14dd432a52582bc9b77a02f574a290787fd3cad21ea606c8",
+ "manifest/testdata/reference/publisher.verdicts.json": "6d8e3591e81da72d35e0c98818fa957dc4e1179b088d73a6c9ab7c15cb4a3ec0",
+ "manifest/testdata/reference/publisher.facts.json": "f1f3c7b1c904eb7bb7179ea393e525304eb2021f78dc08482ce87d942a84ca0c",
  "rules/testdata/reference/matrix.golden.json": "0d2c21ed457c4701d3311c3b8ffe3afa2e7ba046bcf540792f2aa3fb669bb07a"
 }

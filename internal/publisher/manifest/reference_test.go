@@ -266,6 +266,10 @@ func kindOf(f Finding) string {
 		return "length-address"
 	case strings.Contains(f.Message, "internationalised name"):
 		return "punycode"
+	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "(in any case), derived from publisher.repository"):
+		return "graph-address-case"
+	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "must be the graph's meaning:// address"):
+		return "graph-address-scheme"
 	}
 	return f.Rule
 }
@@ -453,12 +457,40 @@ func runReference(t *testing.T, spec referenceSpec) {
 // publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker
 // on the corpus; see stricterKinds.
 var publisherKinds = func() map[string]string {
-	kinds := map[string]string{}
-	for _, kind := range []string{"document-size", "length-address", "length-entry", "length-path", "punycode", "url-length", "yaml-anchor", "yaml-character", "yaml-directive", "yaml-documents", "yaml-encoding", "yaml-escape", "yaml-line-ending", "yaml-number", "yaml-tab", "yaml-tag", "yaml-unsupported"} {
+	kinds := map[string]string{
+		"graph-address-case":   "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
+		"graph-address-scheme": "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
+	}
+	for _, kind := range []string{"document-size", "length-address", "length-entry", "length-path", "length-repository", "punycode", "url-length", "yaml-anchor", "yaml-character", "yaml-directive", "yaml-documents", "yaml-encoding", "yaml-escape", "yaml-line-ending", "yaml-number", "yaml-tab", "yaml-tag", "yaml-unsupported"} {
 		kinds[kind] = stricterKinds[kind]
 	}
 	return kinds
 }()
+
+// directoryKindsNotSeenUnderPublisher are the stricter kinds of the Directory profile that cannot
+// occur under the Publisher profile, and why: no document that has them is otherwise acceptable to the checker.
+var directoryKindsNotSeenUnderPublisher = map[string]string{
+	"yaml":       "a flow collection used as a key ([a]: x) is a key that the checker does not allow at any level, so the checker refuses the document too, and Go's refusal is not stricter",
+	"yaml-key":   "a key that YAML reads as a number, a boolean or null is never one of the keys that the checker allows, so the checker refuses the document too, and Go's refusal is not stricter",
+	"yaml-limit": "a collection nested 64 deep cannot be the value of any key that the checker allows (the deepest is meaning.graph.id, at three levels), so the checker refuses the document too",
+}
+
+// Every stricter kind of the Directory profile has a document under the Publisher profile that
+// is otherwise acceptable, or provably cannot: a kind that is in neither list was missed by the corpus.
+func TestEveryDirectoryKindIsSeenUnderThePublisherProfile(t *testing.T) {
+	for kind := range stricterKinds {
+		_, seen := publisherKinds[kind]
+		_, cannot := directoryKindsNotSeenUnderPublisher[kind]
+		if seen == cannot {
+			t.Errorf("the Directory kind %q is under the Publisher profile: seen %v, provably impossible %v: exactly one must hold", kind, seen, cannot)
+		}
+	}
+	for kind := range publisherKinds {
+		if _, ok := stricterKinds[kind]; !ok && kind != "graph-address-case" && kind != "graph-address-scheme" {
+			t.Errorf("the Publisher kind %q is neither a Directory kind nor one of the profile's own", kind)
+		}
+	}
+}
 
 var publisherSpec = referenceSpec{
 	name: "Publisher", profile: Publisher, refName: "Chinook checker", heading: "### Recorded differences: the Publisher profile", golden: "publisher.verdicts.json",

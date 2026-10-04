@@ -70,7 +70,7 @@ func (k *manifestChecker) publisher() {
 		demote(&out.ID)
 	}
 
-	if k.canonical.Host != "" && out.Discovery.Usable() && k.discovery.Host == k.canonical.Host && k.discovery.Path != discoveryPath {
+	if out.Discovery.Usable() && k.discovery.Host == k.canonical.Host && k.discovery.Path != discoveryPath {
 		c.add("manifest-discovery", out.Discovery.Line, "deployment.discovery must be https://%s%s: the discovery document is always at that path", k.canonical.Host, discoveryPath)
 		demote(&out.Discovery)
 	}
@@ -90,9 +90,6 @@ func (k *manifestChecker) publisher() {
 	if out.ModelName.Usable() && out.ModelAddress.Usable() && out.ModelName.Value != out.ModelAddress.Value.Module {
 		c.add("manifest-model", out.ModelName.Line, "model.name is %s, but model.address names module %s: they must agree", rules.Quote(out.ModelName.Value), rules.Quote(out.ModelAddress.Value.Module))
 		demote(&out.ModelName)
-	}
-	if out.PublisherRepository.Absent() {
-		c.add("manifest-publisher", where(m.Field("publisher"), "repository"), "publisher.repository is required: write the https URL of the repository that carries this manifest")
 	}
 	if out.PublisherRepository.Usable() && owner != "" && !strings.HasPrefix(out.PublisherRepository.Value, "https://github.com/"+owner+"/") {
 		c.add("manifest-publisher", out.PublisherRepository.Line, "publisher.repository must belong to the owner in publisher.url (%s), got %s", rules.Quote(owner), rules.Quote(out.PublisherRepository.Value))
@@ -121,6 +118,27 @@ func (k *manifestChecker) publisher() {
 	k.recordsetNames()
 }
 
+// lowerASCII lower-cases A to Z and leaves every other byte as written. It is the
+// whole of the case folding this package does where the Chinook checker lower-cases
+// (meaning.graph.address against the repository). Go's strings.ToLower and
+// JavaScript's toLowerCase disagree outside ASCII: U+0130 becomes plain i in Go and
+// i with a combining dot in JavaScript, which was how Go accepted an address the
+// checker refuses. The text it is compared with is ASCII (it is built from
+// publisher.repository, which names github.com in A-Z a-z 0-9 . _ -), so a value that
+// equals it after lowerASCII is itself ASCII, and JavaScript lower-cases an ASCII
+// string to the same text: what Go accepts, the checker accepts. Where the checker
+// folds a non-ASCII letter onto an ASCII one (the Kelvin sign onto k) Go refuses,
+// which is a recorded kind.
+func lowerASCII(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
 // publisherOwner is the owner of publisher.url when it is https://github.com/<owner>, else "".
 func (k *manifestChecker) publisherOwner() string {
 	f := &k.out.PublisherURL
@@ -128,7 +146,8 @@ func (k *manifestChecker) publisherOwner() string {
 		return ""
 	}
 	owner, ok := strings.CutPrefix(f.Value, "https://github.com/")
-	if ok && owner != "" && owner != "." && owner != ".." && !strings.Contains(owner, "/") && allChars(owner, isNameChar) {
+	// The Directory's URL rule has refused a trailing slash and an empty path already, so owner is not empty; a slash is not a name character.
+	if ok && allChars(owner, isNameChar) {
 		return owner
 	}
 	k.c.add("manifest-publisher", f.Line, "publisher.url must be https://github.com/<owner>, got %s", rules.Quote(f.Value))
@@ -177,7 +196,7 @@ func (k *manifestChecker) ownForm(own string) {
 		c.add("manifest-model", out.ModelAddress.Line, "model.address must be modelspec://%s/<module>, this repository plus the module name, got %s", own, rules.Quote(out.ModelAddress.Value.Text))
 		demote(&out.ModelAddress)
 	}
-	if out.GraphAddress.Usable() && own != "" && strings.ToLower(out.GraphAddress.Value) != "meaning://"+own {
+	if out.GraphAddress.Usable() && own != "" && lowerASCII(out.GraphAddress.Value) != "meaning://"+own {
 		c.add("manifest-meaning", out.GraphAddress.Line, "meaning.graph.address must be meaning://%s (in any case), derived from publisher.repository, got %s", own, rules.Quote(out.GraphAddress.Value))
 		demote(&out.GraphAddress)
 	}

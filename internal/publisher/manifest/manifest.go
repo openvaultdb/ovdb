@@ -299,7 +299,11 @@ func (k *manifestChecker) check() {
 	publisher := m.Field("publisher")
 	out.PublisherName = k.text(field{parent: publisher, key: "name", label: "publisher.name", required: true, hint: "write the publisher's name"})
 	_, out.PublisherURL = k.urlField(publisher, "url", "publisher.url", true, publicURL)
-	out.PublisherRepository = k.text(field{parent: publisher, key: "repository", label: "publisher.repository", rule: "manifest-publisher", hint: "write the repository that carries this manifest, or leave publisher.repository out", problem: repositoryURLProblem})
+	repository := field{parent: publisher, key: "repository", label: "publisher.repository", rule: "manifest-publisher", hint: "write the repository that carries this manifest, or leave publisher.repository out", problem: repositoryURLProblem}
+	if k.profile == Publisher { // the Chinook checker requires it
+		repository.required, repository.hint = true, "write the https URL of the repository that carries this manifest"
+	}
+	out.PublisherRepository = k.text(repository)
 
 	licences := m.Field("licences")
 	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
@@ -378,7 +382,7 @@ func (k *manifestChecker) address(parent *Node, label string, parse func(string)
 		} else {
 			c.add("manifest-"+family(label), n.Line, "%s must name a repository on github.com, as github.com/<org>/<repository>, got %s", label, rules.Quote(parsed.Repository))
 		}
-	} else if parsed.Repository != strings.ToLower(parsed.Repository) {
+	} else if parsed.Repository != lowerASCII(parsed.Repository) {
 		valid = false
 		c.add("manifest-"+family(label), n.Line, "%s must be written in lower case (host, organisation and repository; a module name is case-sensitive), got %s", label, rules.Quote(parsed.Repository))
 	}
