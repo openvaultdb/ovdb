@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -251,13 +252,16 @@ func withoutNames(job map[string]any) map[string]any {
 	return out
 }
 
+// Values are compared by kind and content (reflect.DeepEqual on what the YAML parser made of them), never by how they print: `branches: '[main]'` as a
+// string prints as the list does, and so does a step written as a string that looks like a map.
+
 // goldensJobProblems says how a workflow differs from the allowed shape of the job that checks the goldens.
 func goldensJobProblems(doc map[string]any, node string) []string {
 	var problems []string
 	if keys := slices.Sorted(maps.Keys(doc)); !slices.Equal(keys, goldensWorkflowKeys()) {
 		problems = append(problems, fmt.Sprintf("the workflow has the keys %v, want %v", keys, goldensWorkflowKeys()))
 	}
-	if got := triggers(doc); fmt.Sprint(got) != fmt.Sprint(goldensTriggers()) {
+	if got := triggers(doc); !reflect.DeepEqual(got, goldensTriggers()) {
 		problems = append(problems, fmt.Sprintf("the triggers are %v, want %v: a filter could make the job not run", got, goldensTriggers()))
 	}
 	jobs, _ := doc["jobs"].(map[string]any)
@@ -267,7 +271,7 @@ func goldensJobProblems(doc map[string]any, node string) []string {
 	}
 	want := goldensJob(node)
 	got := withoutNames(job)
-	if fmt.Sprint(got["runs-on"]) != fmt.Sprint(want["runs-on"]) || len(got) != len(want) {
+	if !reflect.DeepEqual(got["runs-on"], want["runs-on"]) || len(got) != len(want) {
 		problems = append(problems, fmt.Sprintf("the job has the keys %v with runs-on %v, want runs-on and steps only, on %v", slices.Sorted(maps.Keys(got)), got["runs-on"], want["runs-on"]))
 	}
 	gotSteps, _ := got["steps"].([]any)
@@ -276,7 +280,7 @@ func goldensJobProblems(doc map[string]any, node string) []string {
 		problems = append(problems, fmt.Sprintf("the job has %d steps, want %d", len(gotSteps), len(wantSteps)))
 	}
 	for i := range min(len(gotSteps), len(wantSteps)) {
-		if fmt.Sprint(gotSteps[i]) != fmt.Sprint(wantSteps[i]) { // maps print with their keys in order
+		if !reflect.DeepEqual(gotSteps[i], wantSteps[i]) { // by kind and content: a string that prints like a map is not one
 			problems = append(problems, fmt.Sprintf("step %d is %v, want %v", i+1, gotSteps[i], wantSteps[i]))
 		}
 	}
@@ -387,6 +391,32 @@ func TestWorkflowChecksTheGoldens(t *testing.T) {
 		"defaults on the workflow":   trigger("", "defaults", map[string]any{"run": map[string]any{"shell": "true {0}"}}),
 		"the job under another name": func(doc map[string]any, job map[string]any) { doc["jobs"] = map[string]any{"goldens": job} },
 		"the job removed":            func(doc map[string]any, _ map[string]any) { doc["jobs"] = map[string]any{} },
+	} {
+		if len(goldensJobProblems(parseWorkflow(t, goldensWorkflow(t, node, change)), node)) == 0 {
+			t.Errorf("%s: the job is accepted", name)
+		}
+	}
+	// Values that print as the allowed ones and are not: a string that looks like a list, and a step that is a string that looks like a map.
+	for name, change := range map[string]func(map[string]any, map[string]any){
+		"branches written as the string [main]": func(doc map[string]any, _ map[string]any) {
+			doc["on"].(map[string]any)["push"].(map[string]any)["branches"] = "[main]"
+		},
+		"branches written as the string [**]": func(doc map[string]any, _ map[string]any) {
+			doc["on"].(map[string]any)["pull_request"].(map[string]any)["branches"] = "[**]"
+		},
+		"a trigger written as a string that looks like a mapping": func(doc map[string]any, _ map[string]any) {
+			doc["on"].(map[string]any)["push"] = "map[branches:[main]]"
+		},
+		"a step that is the string a map prints as": func(_ map[string]any, job map[string]any) {
+			job["steps"].([]any)[0] = "map[uses:actions/checkout@v7]"
+		},
+		"a step whose run is a list of the command": func(_ map[string]any, job map[string]any) {
+			step(job, 2, func(s map[string]any) { s["run"] = []any{"node --test internal/publisher/references.test.mjs"} })
+		},
+		"with written as a string": func(_ map[string]any, job map[string]any) {
+			step(job, 1, func(s map[string]any) { s["with"] = "map[node-version:" + node + "]" })
+		},
+		"runs-on a list of the runner": jobKey("runs-on", []any{"ubuntu-latest"}),
 	} {
 		if len(goldensJobProblems(parseWorkflow(t, goldensWorkflow(t, node, change)), node)) == 0 {
 			t.Errorf("%s: the job is accepted", name)
