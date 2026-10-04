@@ -285,7 +285,9 @@ func FuzzParseTree(f *testing.F) {
 func TestHeadRefusesAGitThatWouldFetch(t *testing.T) {
 	for out, want := range map[string]error{
 		"git version 2.54.0 (Apple Git-157)\n": nil,
-		"git version 2.44.0\n":                 nil,
+		"git version 2.45.0\n":                 nil,
+		"git version 2.44.2\n":                 ErrOldGit,
+		"git version 2.44.0\n":                 ErrOldGit,
 		"git version 2.45.1.windows.1\n":       nil,
 		"git version 3.0.0\n":                  nil,
 		"git version 2.43.5\n":                 ErrOldGit,
@@ -364,5 +366,19 @@ func TestAnObjectThatCannotBeReadIsExplained(t *testing.T) {
 		if _, err := g.Entries(""); err != c.want {
 			t.Errorf("%s: Entries = %v, want %v", name, err, c.want)
 		}
+	}
+}
+
+// A commit that git cannot read: it names a reason when git says one, and is otherwise what git said.
+func TestHeadExplainsACommitThatCannotBeRead(t *testing.T) {
+	garbage := &ExitError{Code: 128, Full: "error: inflate: data stream error (incorrect header check)\nerror: unable to unpack 2fe3 header\nfatal: loose object 2fe3 (stored in .git/objects/2f/e3) is corrupt\n", Stderr: "fatal: loose object"}
+	g, _ := newGit(t, map[string]reply{versionCall: {out: versionOut}, whereCall: {out: "false\n\n"}, commitCall: {err: garbage}})
+	if _, err := g.Head(); err != ErrObjectCorrupt {
+		t.Errorf("a garbage commit: Head = %v", err)
+	}
+	other := &ExitError{Code: 128, Full: "fatal: something else\n", Stderr: "fatal: something else"}
+	g, _ = newGit(t, map[string]reply{versionCall: {out: versionOut}, whereCall: {out: "false\n\n"}, commitCall: {err: other}})
+	if _, err := g.Head(); err != other {
+		t.Errorf("a failure that names no reason: Head = %v", err)
 	}
 }

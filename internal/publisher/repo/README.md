@@ -67,7 +67,7 @@ What the reader trusts, and what it does not:
   replace refs.
 - **git is never allowed to fetch.** `GIT_NO_LAZY_FETCH` stops a partial clone from fetching a
   missing object from its promisor remote, whose URL can be a command of the repository's
-  choosing. git older than 2.44 does not know the variable, so `Head` reads `git version` first and
+  choosing. git older than 2.45 does not know the variable (it is in git's `environment.h`, `git.c` and `Documentation/git.txt` and in the 2.45.0 release notes, and in none of them at v2.44.0 or v2.44.2), so `Head` reads `git version` first and
   refuses to go on with anything older (`repo-git-version`).
 
 The repository states, each proved on real git by the slower test:
@@ -75,7 +75,7 @@ The repository states, each proved on real git by the slower test:
 | State | Result |
 | --- | --- |
 | not a repository, git cannot run, a git that cannot be asked | `repo-unreadable`, with git's last line of standard error |
-| git older than 2.44 | `repo-git-version`, saying to update git |
+| git older than 2.45 | `repo-git-version`, saying to update git |
 | unborn branch (no commit) | `repo-no-commit` |
 | HEAD names a commit that is not in the repository | the reason below, not "no commit" |
 | bare repository | `repo-bare`: the checker reads `HEAD:./path`, which git refuses outside a working tree, so it refuses; so does this check |

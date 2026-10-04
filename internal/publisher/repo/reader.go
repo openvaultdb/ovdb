@@ -53,7 +53,7 @@ const (
 	// MaxFileBytes is the most bytes of a file that a manifest names (the model and the meaning file) that are read. The checker reads 16 MiB.
 	MaxFileBytes = 4 << 20
 	// MinGit is the first git that has GIT_NO_LAZY_FETCH: an older one fetches a missing object of a partial clone, from a remote whose command the repository chooses.
-	MinGit = "2.44"
+	MinGit = "2.45"
 )
 
 // What a Reader may report, besides what the operating system reports.
@@ -75,7 +75,7 @@ var (
 	// ErrAlternates: the repository borrows its objects from a directory that is not there.
 	ErrAlternates = errors.New("this repository borrows objects from another directory that is not there (objects/info/alternates): run the check in a complete clone")
 	// ErrOldGit: git is older than MinGit.
-	ErrOldGit = errors.New("git is older than " + MinGit + ", which is the first that can be told never to fetch a missing object: update git")
+	ErrOldGit = errors.New("git is older than " + MinGit + ", which is the first that can be told never to fetch a missing object (GIT_NO_LAZY_FETCH): update git")
 	// ErrMalformed: git's output is not in the form that is read.
 	ErrMalformed = errors.New("git's output is not in a form this check reads")
 )

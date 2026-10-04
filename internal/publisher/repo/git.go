@@ -73,6 +73,8 @@ func (g *Git) Head() (string, error) {
 			return "", ErrNoCommit
 		}
 		return "", g.unreadable(err)
+	} else if errors.As(err, &exit) && explain(exit) != nil {
+		return "", explain(exit) // a commit that git cannot read, and says why
 	} else if err != nil {
 		return "", err
 	}
@@ -133,8 +135,9 @@ func checkVersion(out string) error {
 }
 
 // unreadable says why git could not read an object that the commit has: only a failure of git is explained (the path is known to be
-// there, because Entries said so, so the failure is the object's), and what is not one is passed on. The reasons are told from the
-// repository's configuration and from what git printed, in git's own C locale.
+// there, because Entries said so, so the failure is the object's), and what is not one is passed on. A promisor remote is told from the
+// repository's configuration; the other reasons from what git printed, in its own C locale (see explain), and an object that git
+// says nothing about is missing.
 func (g *Git) unreadable(err error) error {
 	var exit *ExitError
 	if !errors.As(err, &exit) {
@@ -143,18 +146,36 @@ func (g *Git) unreadable(err error) error {
 	if out, listed := g.git(maxSmall, "config", "--local", "--get-regexp", `^(extensions\.partialclone|remote\..*\.promisor)$`); listed == nil && len(bytes.TrimSpace(out)) > 0 {
 		return ErrPartialClone
 	}
-	said := strings.ToLower(exit.Full)
-	switch {
-	case strings.Contains(said, "alternate"):
-		return ErrAlternates
-	case containsAny(said, "corrupt", "inflate", "unable to unpack", "is empty", "hash mismatch", "bad object"):
-		return ErrObjectCorrupt
+	if reason := explain(exit); reason != nil {
+		return reason
 	}
 	return ErrObjectMissing
 }
 
-func containsAny(s string, parts ...string) bool {
-	return slices.ContainsFunc(parts, func(p string) bool { return strings.Contains(s, p) })
+// The lines that git prints about an object it cannot read, each by its start. Only a line that starts so counts, and a repository's
+// file names cannot make one: a path reaches git's message only inside the line that names the request ("fatal: git cat-file
+// HEAD:<path>: bad file", "fatal: Not a valid object name <id>:<path>"), which starts with something else, and a path has no line
+// break. (The directory of an alternate, which a repository chooses, is in the line that says it is gone, and that line is the
+// reason whatever it holds.)
+var (
+	alternatesLines = []string{"error: unable to normalize alternate object path", "error: object directory "}
+	corruptLines    = []string{"error: inflate:", "error: unable to unpack ", "fatal: loose object ", "fatal: unable to stream ", "error: object file ", "error: packfile ", "fatal: packed object "}
+)
+
+// explain tells from what git printed why it could not read an object, or nil when it says nothing that names a reason.
+func explain(exit *ExitError) error {
+	lines := strings.Split(exit.Full, "\n")
+	for _, known := range []struct {
+		prefixes []string
+		err      error
+	}{{alternatesLines, ErrAlternates}, {corruptLines, ErrObjectCorrupt}} {
+		if slices.ContainsFunc(lines, func(line string) bool {
+			return slices.ContainsFunc(known.prefixes, func(p string) bool { return strings.HasPrefix(line, p) })
+		}) {
+			return known.err
+		}
+	}
+	return nil
 }
 
 // Uncommitted asks the index and the working tree; a bare repository has neither.

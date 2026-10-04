@@ -160,8 +160,11 @@ func breakObject(t testing.TB, dir string, b [3]string) {
 		git(t, dir, pack, "unpack-objects", "-q")
 	}
 	rev := "HEAD:" + b[1]
-	if b[0] == "break-tree" && b[1] == "" {
+	switch {
+	case b[0] == "break-tree" && b[1] == "":
 		rev = "HEAD^{tree}"
+	case b[0] == "break-commit":
+		rev = "HEAD"
 	}
 	id := git(t, dir, nil, "rev-parse", rev)
 	file := filepath.Join(gitDir, "objects", id[:2], id[2:])
@@ -174,7 +177,15 @@ func breakObject(t testing.TB, dir string, b [3]string) {
 	if err := os.Chmod(file, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(file, []byte("garbage\n"), 0o644); err != nil {
+	content := []byte("garbage\n")
+	if b[2] == "truncate" {
+		whole, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content = whole[:len(whole)/2]
+	}
+	if err := os.WriteFile(file, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -255,4 +266,73 @@ func TestRealGitDoesNotRunTheFsmonitorOfTheRepository(t *testing.T) {
 		t.Error("the reader ran the repository's core.fsmonitor")
 	}
 	only(t, r, RuleManifest, "OVDB.md", 3, "it is in the working tree or the index but not committed")
+}
+
+// The mechanism behind MinGit, not the number: a repository whose promisor remote is a command (ext::), with an object missing, makes
+// git run that command when it is allowed to fetch. The reader runs nothing. (The control is plain git with the variable unset; a git
+// that needs no control to be told, for want of the feature, is the one MinGit refuses.)
+func TestRealGitDoesNotRunThePromisorRemoteOfTheRepository(t *testing.T) {
+	realGit(t)
+	m := &model{tracked: goodRepository().Nodes, location: "normal"}
+	dir := buildReal(t, m)
+	breakObject(t, dir, [3]string{"break", modelPath, "missing"})
+	marker := filepath.Join(t.TempDir(), "ran")
+	script := filepath.Join(t.TempDir(), "remote.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch '"+marker+"'\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{"core.repositoryformatversion": "1", "extensions.partialclone": "origin", "remote.origin.promisor": "true", "remote.origin.url": "ext::" + script, "protocol.ext.allow": "always"} {
+		git(t, dir, nil, "config", k, v)
+	}
+	control := exec.Command("git", "-C", dir, "cat-file", "blob", "HEAD:"+modelPath)
+	control.Env = slices.DeleteFunc(append(gitEnv(os.Environ()), "GIT_CONFIG_NOSYSTEM=1"), func(kv string) bool { return strings.HasPrefix(kv, "GIT_NO_LAZY_FETCH=") })
+	_ = control.Run() // it fails: the object is not there, and the remote has nothing
+	if _, err := os.Stat(marker); err != nil {
+		t.Skip("this git does not run the promisor remote when the variable is unset: there is nothing to show")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	r := Check(NewGit(ExecRunner{Dir: dir}), publisher())
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the reader ran the command of the repository's promisor remote")
+	}
+	only(t, r, RulePartial, "ovdb.yaml", 14, "cannot be read at the commit")
+}
+
+// The reason of an unreadable object is told from what git prints, not from the file names of the repository, and a truncated blob and a
+// garbage commit have one (the reviewer's four inputs, on real git).
+func TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled(t *testing.T) {
+	realGit(t)
+	names := strings.NewReplacer("model/chinook.modelspec.json", "model/alternate.modelspec.json", "model/chinook.meaning.yaml", "model/corrupt.meaning.yaml")
+	repository := func() *model {
+		m := &model{tracked: goodRepository().Nodes, location: "normal"}
+		for path, node := range m.tracked {
+			if node.Kind == File {
+				content := names.Replace(string(node.Content))
+				delete(m.tracked, path)
+				m.tracked[names.Replace(path)] = Node{Kind: File, Content: []byte(content)}
+			}
+		}
+		return m
+	}
+	for name, c := range map[string]struct {
+		spec [3]string
+		rule string
+		in   string
+	}{
+		"a missing blob at a path with alternate in it": {[3]string{"break", "model/alternate.modelspec.json", "missing"}, RuleObjectGone, "ovdb.yaml"},
+		"a missing blob at a path with corrupt in it":   {[3]string{"break", "model/corrupt.meaning.yaml", "missing"}, RuleObjectGone, "ovdb.yaml"},
+		"a truncated blob": {[3]string{"break", "model/alternate.modelspec.json", "truncate"}, RuleObjectBad, "ovdb.yaml"},
+		"a garbage commit": {[3]string{"break-commit", "", "corrupt"}, RuleObjectBad, "repository"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := buildReal(t, repository())
+			breakObject(t, dir, c.spec)
+			r := Check(NewGit(ExecRunner{Dir: dir}), publisher())
+			if len(r.Findings) != 1 || r.Findings[0].Rule != c.rule || r.Findings[0].Document != c.in {
+				t.Errorf("findings %v, want one of %s in %s", r.Findings, c.rule, c.in)
+			}
+		})
+	}
 }
