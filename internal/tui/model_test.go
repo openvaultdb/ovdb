@@ -34,7 +34,7 @@ func testModel(t *testing.T, width, height int) Model {
 			return ""
 		},
 	}
-	m := New(context.Background(), local, nil, width, height)
+	m := New(context.Background(), local, discardBrowser, width, height)
 	// A real bubbletea Program calls Init() before any input reaches
 	// Update, so Home already has its (pure-read) document loaded; tests
 	// that navigate straight from Home rely on that, exactly like the TUI

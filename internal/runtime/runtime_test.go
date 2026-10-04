@@ -31,6 +31,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/porttest"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 )
 
@@ -51,9 +52,28 @@ func TestMain(m *testing.M) {
 	case "sleep":
 		time.Sleep(time.Minute)
 		os.Exit(0)
+	case "porthold":
+		os.Exit(childPortHold())
 	default:
 		os.Exit(3)
 	}
+}
+
+// childPortHold is a process with its own temporary directory that tries to
+// take the lease on the port in its last argument, then to bind it for TCP.
+func childPortHold() int {
+	port, _ := strconv.Atoi(os.Args[len(os.Args)-1])
+	release, held := porttest.Hold(port)
+	if held {
+		defer release()
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	bound := err == nil
+	if bound {
+		_ = listener.Close()
+	}
+	fmt.Printf("held=%t tcp=%t\n", held, bound)
+	return 0
 }
 
 // childServe is the detached server: the equivalent of `ovdb server run`.
@@ -113,14 +133,31 @@ func testDirs(t *testing.T) paths.Dirs {
 	}
 }
 
+// freePort is a port leased to this test until it ends (internal/porttest):
+// the server binds it later, in another process, so a port picked by binding
+// :0 and closing it can be given to another parallel test, or used as the
+// source of another test's connection, before it is bound (issue #29).
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	return porttest.Lease(t)
+}
+
+// A lease is exclusive across processes that share nothing but the machine
+// (here: another temporary directory, as another user or sandbox has), and
+// does not stop the leased number being bound for TCP. This is the property
+// the port lease stands on, so it runs on every operating system of the matrix.
+func TestPortLeaseIsExclusiveAcrossProcessesAndTCPStaysBindable(t *testing.T) {
+	port := freePort(t)
+	other := t.TempDir()
+	command := exec.Command(os.Args[0], strconv.Itoa(port))
+	command.Env = append(os.Environ(), childEnv+"=porthold", "TMPDIR="+other, "TMP="+other, "TEMP="+other)
+	out, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("child: %v\n%s", err, out)
 	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
+	if got := strings.TrimSpace(string(out)); got != "held=false tcp=true" {
+		t.Errorf("child result %q, want %q: refused the lease this process holds, and able to listen on the number", got, "held=false tcp=true")
+	}
 }
 
 // stopOnCleanup stops whatever server dirs has and waits for its process,
@@ -459,12 +496,13 @@ func processAlive(process *os.Process) bool {
 // port_in_use instead of serving IPv4 only next to it.
 func TestImpostorOnIPv6LoopbackIsPortInUse(t *testing.T) {
 	t.Parallel()
-	impostor, err := net.Listen("tcp6", "[::1]:0")
+	// The impostor holds a leased port, on [::1] only, for the whole test.
+	port := freePort(t)
+	impostor, err := net.Listen("tcp6", "[::1]:"+strconv.Itoa(port))
 	if err != nil {
 		t.Skipf("IPv6 loopback unavailable: %v", err)
 	}
 	defer func() { _ = impostor.Close() }()
-	port := impostor.Addr().(*net.TCPAddr).Port
 	if dialable(port, "127.0.0.1") {
 		t.Skip("IPv4 port also taken")
 	}
@@ -483,12 +521,13 @@ func TestImpostorOnIPv6LoopbackIsPortInUse(t *testing.T) {
 // AC:error-envelope-shape (runtime half): a non-OVDB program on the port.
 func TestPortHeldByAnotherProgram(t *testing.T) {
 	t.Parallel()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	// The program holds a leased port for the whole test.
+	port := freePort(t)
+	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = listener.Close() }()
-	port := listener.Addr().(*net.TCPAddr).Port
 	dirs := testDirs(t)
 	_, err = runtime.Start(context.Background(), startOptions(dirs, port))
 	e := wantCode(t, err, envelope.PortInUse)

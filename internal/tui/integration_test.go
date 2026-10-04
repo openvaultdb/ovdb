@@ -22,6 +22,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/client"
 	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/porttest"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/setup"
 )
@@ -53,14 +54,19 @@ func childServe() int {
 	return 0
 }
 
+// discardBrowser is the opener of every model these tests build: opening a
+// link is not what they test, and the real opener starts the person's
+// browser on a desktop (internal/browser panics for a test binary that reaches
+// it). A test that checks what was opened passes its own.
+func discardBrowser(string) error { return nil }
+
+// freePort is a port leased to this test until it ends (internal/porttest):
+// the server binds it later, in another process, so a port picked by binding
+// :0 and closing it can be given to another parallel test, or used as the
+// source of another test's connection, before it is bound (issue #29).
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
+	return porttest.Lease(t)
 }
 
 // realModel builds a root Model over a *client.Local that can really start
@@ -87,7 +93,7 @@ func realModel(t *testing.T, port int) Model {
 	t.Cleanup(func() {
 		_, _ = runtime.Stop(context.Background(), dirs.Runtime, 0)
 	})
-	m := New(context.Background(), local, nil, 80, 24)
+	m := New(context.Background(), local, discardBrowser, 80, 24)
 	return drain(t, m, m.Init())
 }
 
@@ -145,7 +151,9 @@ func TestHomeServerStartOpenBrowserStop(t *testing.T) {
 // it (local-server-and-web-console#REQ:deterministic-port-conflict,
 // first-run-onboarding#AC:problem-shows-why-and-fix).
 func TestPortConflictProblemThenUsePortRemedy(t *testing.T) {
-	port := freePort(t)
+	// The port that is busy and the one after it, which the remedy starts on,
+	// are both leased to this test.
+	port := porttest.LeaseRun(t, 2)
 	occupied, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		t.Fatal(err)

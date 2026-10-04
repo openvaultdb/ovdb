@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	openvaultdbcloud "github.com/openvaultdb/openvaultdb-go/cloud"
+	"github.com/openvaultdb/ovdb/internal/browser"
 	"github.com/spf13/cobra"
 	"github.com/strongo/deviceauth"
 	"golang.org/x/oauth2"
@@ -60,13 +61,25 @@ type cloudIdentity struct {
 }
 
 func newCloudCmd() *cobra.Command {
-	return newCloudCmdWithDependencies(cloudDependencies{
+	return newCloudCmdWithDependencies(productionCloudDependencies())
+}
+
+func productionCloudDependencies() cloudDependencies {
+	return cloudDependencies{
 		httpClient:    &http.Client{Timeout: 15 * time.Second},
 		login:         deviceauth.Login,
-		openBrowser:   deviceauth.OpenBrowser,
+		openBrowser:   openCloudBrowser,
 		deviceInfo:    cloudDeviceInfo,
 		userConfigDir: os.UserConfigDir,
-	})
+	}
+}
+
+// openCloudBrowser is the opener of `ovdb cloud login`: the device-login
+// library's own, behind the guard that keeps a test binary from starting the
+// person's real browser (internal/browser.RefuseInTest).
+func openCloudBrowser(rawURL string) error {
+	browser.RefuseInTest(rawURL)
+	return deviceauth.OpenBrowser(rawURL)
 }
 
 func newCloudCmdWithDependencies(deps cloudDependencies) *cobra.Command {
