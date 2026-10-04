@@ -174,7 +174,17 @@ For scripts and API clients (`--json` is the body of the local API):
   request says `"adopt":true` (the CLI sends it when its plan has a folder to
   take over, after you agreed; the console when you ticked such an agent). A
   request without it is answered as it was before adoption: `already_exists`
-  (exit 1, HTTP 409), nothing touched.
+  (exit 1, HTTP 409), nothing touched. Two narrow cases remain until the
+  skills library can switch adoption off: a folder that becomes adoptable in
+  the instant between `ovdb`'s check and the install, and a skills folder in
+  which an earlier install was interrupted (a leftover
+  `.cli-helpers-skills-recovery.json`). In both, the folder can be taken
+  over, with a backup, by a request that did not ask; `ovdb` v0.21.0 and
+  older then stop with an error after printing "Installed".
+- A script that runs `ovdb skills install <skill> --yes` on such a folder
+  used to get exit 1 with `already_exists`. It now takes the folder over,
+  keeps a backup and exits 0: `--yes` is the consent, there is no separate
+  flag.
 - An adoption is a success: exit 0, HTTP 201, `"result":"adopted"`, and
   `"backup_path"` on that target (absent in a dry run, which reports the
   plan).
