@@ -112,6 +112,7 @@ type Package struct {
 	TestMains     []string // test files that declare TestMain
 	Constraints   []string // one message per build constraint, GOOS/GOARCH file name or import "C"
 	Directives    []string // one message per //line or /*line*/ directive, which renames the blocks of a profile
+	Imports       []string // one message per import of a testdata path by a non-test file, which the cover profile does not count
 }
 
 // The gate reads every .go file of the package directory, whatever its name or
@@ -131,6 +132,17 @@ type Package struct {
 // counts as covered. Directives are found with the scanner's comments, so one
 // in any position that Go honours is seen and the same text inside a string
 // literal is not.
+//
+// A non-test file of a gated package may not import a path with a testdata
+// element either. The go tool never lists such a directory as a package of the
+// module (`./...` skips it, and so does the gate's list of packages), but an
+// import by its path builds it, and its statements are in no list that the gate
+// reads: a function with an untested branch there, called from a gated file,
+// would pass. Test files may import one (their code is not counted), and the
+// rule is that narrow because it is what the go tool itself leaves out of a
+// package list: every other package of the module that a gated file imports is
+// one that the list can name, and the test of the workflow holds the list to the
+// packages below the gated roots.
 //
 // Those rules name the causes that are known. The file-set rule closes the
 // class: every non-test file of a gated package that has a statement must have
@@ -207,7 +219,14 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 			if declaresTestMain(parsed) {
 				pkg.TestMains = append(pkg.TestMains, file)
 			}
-		} else if hasStatement(parsed) {
+		} else {
+			for _, spec := range parsed.Imports {
+				if imported, _ := strconv.Unquote(spec.Path.Value); slices.Contains(strings.Split(imported, "/"), "testdata") { // the parser has checked the literal
+					pkg.Imports = append(pkg.Imports, fmt.Sprintf("%s imports %s: a testdata directory is not a package of the module as the go tool lists them, so the gate cannot see its statements; no non-test file of a gated package may import one", file, imported))
+				}
+			}
+		}
+		if !strings.HasSuffix(name, "_test.go") && hasStatement(parsed) {
 			pkg.HasStatements = true
 			pkg.Files = append(pkg.Files, path.Join(pkg.Path, name))
 		}
@@ -336,6 +355,7 @@ func Check(pkgs []Package, blocks []Block) Result {
 			result.Problems = append(result.Problems, fmt.Sprintf("%s: a Go file with a build constraint can be left out of a test run and so out of the coverage profile, where the gate cannot see it; no file of a gated package may have one", constraint))
 		}
 		result.Problems = append(result.Problems, pkg.Directives...)
+		result.Problems = append(result.Problems, pkg.Imports...)
 		for _, file := range pkg.TestMains {
 			result.Problems = append(result.Problems, fmt.Sprintf("%s declares TestMain, which can hide a failing test (it may run the tests and exit 0); no gated package may have one", file))
 		}
