@@ -11,6 +11,8 @@
 package libguard
 
 import (
+	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -22,16 +24,28 @@ import (
 	"testing"
 )
 
+// goListDir is the directory of the package importPath as the build resolves
+// it. A failure carries what the go command said, not just its exit status.
+func goListDir(importPath string) (string, error) {
+	var stderr bytes.Buffer
+	cmd := exec.Command("go", "list", "-f", "{{.Dir}}", importPath)
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go list %s: %w: %s", importPath, err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // Source parses the non-test Go files of the package importPath as the build
 // resolves it. It fails the test when the go command or the source is not
 // available: a guard that cannot read the library must not pass quietly.
 func Source(t testing.TB, importPath string) []*ast.File {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-f", "{{.Dir}}", importPath).Output()
+	dir, err := goListDir(importPath)
 	if err != nil {
-		t.Fatalf("go list %s: %v (the guard reads the library's source to list its values)", importPath, err)
+		t.Fatalf("%v (the guard reads the library's source to list its values)", err)
 	}
-	dir := strings.TrimSpace(string(out))
 	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("no Go files in %s: %v", dir, err)
@@ -51,8 +65,9 @@ func Source(t testing.TB, importPath string) []*ast.File {
 	return files
 }
 
-// StringConstsOfType lists, sorted, the string values of the constants
-// declared as `Name Type = "value"` in files.
+// StringConstsOfType lists, sorted, the string values of the constants of type
+// typeName in files, written either as `Name Type = "value"` or as
+// `Name = Type("value")`.
 func StringConstsOfType(files []*ast.File, typeName string) []string {
 	var values []string
 	for _, file := range files {
@@ -66,10 +81,19 @@ func StringConstsOfType(files []*ast.File, typeName string) []string {
 				if !ok || len(value.Values) != 1 {
 					continue
 				}
-				if ident, ok := value.Type.(*ast.Ident); !ok || ident.Name != typeName {
+				literal := value.Values[0]
+				if ident, ok := value.Type.(*ast.Ident); ok && ident.Name == typeName {
+					// Name Type = "value"
+				} else if call, ok := literal.(*ast.CallExpr); ok && value.Type == nil && len(call.Args) == 1 {
+					// Name = Type("value")
+					if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != typeName {
+						continue
+					}
+					literal = call.Args[0]
+				} else {
 					continue
 				}
-				if lit, ok := value.Values[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				if lit, ok := literal.(*ast.BasicLit); ok && lit.Kind == token.STRING {
 					if text, err := strconv.Unquote(lit.Value); err == nil {
 						values = append(values, text)
 					}
