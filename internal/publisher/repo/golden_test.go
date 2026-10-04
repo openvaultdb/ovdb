@@ -89,6 +89,7 @@ type model struct {
 	tracked   map[string]Node
 	untracked map[string]string
 	dirty     map[string]string
+	breaks    [][3]string // op, target, how
 	location  string
 }
 
@@ -175,6 +176,19 @@ func build(t testing.TB, g golden, ops [][]json.RawMessage) *model {
 			for _, p := range paths {
 				m.tracked[p[2:]] = Node{Kind: File, Content: []byte(m.text(t, "ovdb.yaml"))}
 			}
+		case "copy":
+			m.tracked[a[1]] = m.tracked[a[0]]
+		case "padjson":
+			n, _ := strconv.Atoi(a[1])
+			var object map[string]any
+			if err := json.Unmarshal([]byte(m.text(t, a[0])), &object); err != nil {
+				t.Fatalf("%s: %v", a[0], err)
+			}
+			object["_pad"] = strings.Repeat("x", n)
+			padded, _ := json.Marshal(object)
+			m.tracked[a[0]] = Node{Kind: File, Content: padded}
+		case "break", "break-tree":
+			m.breaks = append(m.breaks, [3]string{name, a[0], a[1]})
 		case "state":
 			m.location = a[0]
 		default:
@@ -199,6 +213,32 @@ func (m *model) memory() *Memory {
 		mem.Err = ErrSubdirectory
 	case "not-a-repository":
 		mem.Err = errors.New("fatal: not a git repository")
+	case "alternates-gone":
+		mem.Err = ErrAlternates
+	case "partial-blob":
+		mem.BrokenBlobs = map[string]error{}
+		for path := range m.tracked {
+			mem.BrokenBlobs[path] = ErrPartialClone
+		}
+	case "partial-tree":
+		mem.BrokenDirs = map[string]error{"": ErrPartialClone}
+	}
+	for _, b := range m.breaks {
+		err := ErrObjectMissing
+		if b[2] == "corrupt" {
+			err = ErrObjectCorrupt
+		}
+		if b[0] == "break" {
+			if mem.BrokenBlobs == nil {
+				mem.BrokenBlobs = map[string]error{}
+			}
+			mem.BrokenBlobs[b[1]] = err
+		} else {
+			if mem.BrokenDirs == nil {
+				mem.BrokenDirs = map[string]error{}
+			}
+			mem.BrokenDirs[b[1]] = err
+		}
 	}
 	return mem
 }
@@ -211,6 +251,8 @@ var stricterKinds = map[string]string{
 	RuleTreeName:     "A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory.",
 	RuleTreeLimit:    "A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound.",
 	RuleManifests:    "OVDB.md lists more than 32 manifests; the checker judges every one.",
+	RulePartial:      "A partial clone (--filter=blob:none or --filter=tree:0) that lacks an object the commit needs: the checker's git fetches the object from the remote, which this check never does (a repository that a remote can make run a command must not be asked to); the message says to check a full clone or to fetch the files first.",
+	RuleFileSize:     "A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB.",
 	RuleSubdirectory: "The directory is inside a repository and not its top; the checker reads it as if it were the top, with a note, and the Directory reads OVDB.md at the top.",
 	"document-size":  "OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB.",
 }

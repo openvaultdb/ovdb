@@ -15,6 +15,7 @@ import (
 type ExitError struct {
 	Code   int
 	Stderr string // the last line git printed on standard error
+	Full   string // what git printed on standard error, up to 4096 bytes: to tell why it failed, never to print
 }
 
 func (e *ExitError) Error() string {
@@ -84,7 +85,7 @@ func (r ExecRunner) Run(args []string, limit int) ([]byte, error) {
 		return nil, fmt.Errorf("git did not finish in %s", cmp.Or(r.Timeout, 30*time.Second))
 	case errors.As(err, &exit):
 		lines := strings.Split(strings.TrimSpace(string(stderr.buf)), "\n")
-		return nil, &ExitError{Code: exit.ExitCode(), Stderr: lines[len(lines)-1]}
+		return nil, &ExitError{Code: exit.ExitCode(), Stderr: lines[len(lines)-1], Full: string(stderr.buf)}
 	case err != nil:
 		return nil, fmt.Errorf("git could not be run: %s", ascii(err.Error()))
 	}

@@ -27,6 +27,12 @@ const (
 	RuleNoCommit     = "repo-no-commit"      // an unborn branch
 	RuleSubdirectory = "repo-subdirectory"   // not the top of the repository
 	RuleBare         = "repo-bare"           // a bare repository
+	RuleGitVersion   = "repo-git-version"    // a git older than MinGit
+	RulePartial      = "repo-partial-clone"  // a partial clone that lacks an object the commit needs: the checker fetches it, this check does not
+	RuleObjectGone   = "repo-object-missing" // an object of the commit is not in the repository
+	RuleObjectBad    = "repo-object-corrupt" // an object of the commit is damaged
+	RuleAlternates   = "repo-alternates"     // the objects are borrowed from a directory that is not there
+	RuleFileSize     = "repo-file-size"      // a file a manifest names is larger than MaxFileBytes
 	RuleOVDBMd       = "repo-ovdbmd"         // OVDB.md is not a tracked regular file
 	RuleManifest     = "repo-manifest"       // a listed manifest is not a tracked regular file
 	RuleFile         = "repo-file"           // a file a manifest names is not a tracked regular file
@@ -39,11 +45,12 @@ const (
 
 // checker holds one check.
 type checker struct {
-	r    Reader
-	j    *manifest.Judge
-	res  manifest.Result
-	dirs map[string]dirResult
-	seen map[string]bool
+	r     Reader
+	j     *manifest.Judge
+	res   manifest.Result
+	dirs  map[string]dirResult
+	seen  map[string]bool
+	files map[string]error // the result of reading each file that a manifest names
 }
 
 type dirResult struct {
@@ -67,7 +74,7 @@ func Check(r Reader, o Options) manifest.Result {
 	if j == nil {
 		return manifest.Result{Profile: o.Profile, Findings: bad}
 	}
-	c := &checker{r: r, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}}
+	c := &checker{r: r, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]error{}}
 	c.run(o)
 	c.res.Findings = append(c.res.Findings, j.Notice("OVDB.md")...)
 	return c.res
@@ -79,16 +86,7 @@ func (c *checker) add(document, rule string, line int, format string, args ...an
 
 func (c *checker) run(o Options) {
 	if _, err := c.r.Head(); err != nil {
-		rule := RuleUnreadable
-		switch {
-		case errors.Is(err, ErrNoCommit):
-			rule = RuleNoCommit
-		case errors.Is(err, ErrSubdirectory):
-			rule = RuleSubdirectory
-		case errors.Is(err, ErrBare):
-			rule = RuleBare
-		}
-		c.add("repository", rule, 0, "cannot be read: %s", ascii(err.Error()))
+		c.add("repository", ruleOf(err), 0, "cannot be read: %s", ascii(err.Error()))
 		return
 	}
 	if !c.require("OVDB.md", RuleOVDBMd, 0, "OVDB.md", "OVDB.md") {
@@ -133,9 +131,10 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 	for _, named := range []struct {
 		label string
 		fact  manifest.Fact[string]
-	}{{"model.modelspec", m.ModelSpec}, {"model.hcl", m.ModelHCL}, {"meaning.file", m.MeaningFile}} {
-		if named.fact.Usable() {
-			c.require(path, RuleFile, named.fact.Line, named.label+" "+rules.Quote(named.fact.Value), named.fact.Value)
+		read  bool // the checker reads the file (the model file and the meaning file); it only looks at the kind of model.hcl
+	}{{"model.modelspec", m.ModelSpec, true}, {"model.hcl", m.ModelHCL, false}, {"meaning.file", m.MeaningFile, true}} {
+		if subject := named.label + " " + rules.Quote(named.fact.Value); named.fact.Usable() && c.require(path, RuleFile, named.fact.Line, subject, named.fact.Value) && named.read {
+			c.readable(path, named.fact.Line, subject, named.fact.Value)
 		}
 	}
 }
@@ -169,9 +168,43 @@ func (c *checker) read(document, path string) ([]byte, bool) {
 	case errors.Is(err, ErrTooLarge):
 		c.add(document, "document-size", 0, "is more than %d bytes; at most %d are read", manifest.MaxDocumentBytes, manifest.MaxDocumentBytes)
 	case err != nil:
-		c.add(document, RuleUnreadable, 0, "cannot be read at the commit: %s", ascii(err.Error()))
+		c.add(document, ruleOf(err), 0, "cannot be read at the commit: %s", ascii(err.Error()))
 	}
 	return doc, err == nil
+}
+
+// readable adds the finding for a file that a manifest names and that cannot be read, or is larger than MaxFileBytes
+// (the checker's lines 345 and 347 refuse an unreadable one and one over 16 MiB). The content is not judged here.
+// A path is read once for all the manifests that name it.
+func (c *checker) readable(document string, line int, subject, path string) {
+	err, done := c.files[path]
+	if !done {
+		_, err = c.r.Blob(path, MaxFileBytes)
+		c.files[path] = err
+	}
+	switch {
+	case errors.Is(err, ErrTooLarge):
+		c.add(document, RuleFileSize, line, "%s must be at most %d bytes", subject, MaxFileBytes)
+	case err != nil:
+		c.add(document, ruleOf(err), line, "%s cannot be read at the commit: %s", subject, ascii(err.Error()))
+	}
+}
+
+// ruleOf is the rule of a finding about an error that a Reader gave.
+func ruleOf(err error) string {
+	for _, known := range []struct {
+		err  error
+		rule string
+	}{
+		{ErrNoCommit, RuleNoCommit}, {ErrSubdirectory, RuleSubdirectory}, {ErrBare, RuleBare}, {ErrOldGit, RuleGitVersion},
+		{ErrPartialClone, RulePartial}, {ErrObjectMissing, RuleObjectGone}, {ErrObjectCorrupt, RuleObjectBad}, {ErrAlternates, RuleAlternates},
+		{ErrTooLarge, RuleTreeLimit}, {errName, RuleTreeName}, {errCase, RuleCase},
+	} {
+		if errors.Is(err, known.err) {
+			return known.rule
+		}
+	}
+	return RuleUnreadable
 }
 
 // tree adds the finding for a directory that cannot be listed, once.
@@ -180,20 +213,11 @@ func (c *checker) tree(document string, line int, err error) {
 		return
 	}
 	c.seen[err.Error()] = true
-	rule := RuleUnreadable
-	switch {
-	case errors.Is(err, ErrTooLarge):
-		rule = RuleTreeLimit
-	case errors.Is(err, errName):
-		rule = RuleTreeName
-	case errors.Is(err, errCase):
-		rule = RuleCase
-	}
 	reason := ascii(err.Error())
 	if errors.Is(err, errName) || errors.Is(err, errCase) {
 		reason = err.Error() // made here, with names quoted by rules.Quote
 	}
-	c.add(document, rule, line, "cannot list the files of the commit: %s", reason)
+	c.add(document, ruleOf(err), line, "cannot list the files of the commit: %s", reason)
 }
 
 var (

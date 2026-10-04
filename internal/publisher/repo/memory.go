@@ -18,6 +18,8 @@ type Memory struct {
 	Err       error           // what Head returns, when set
 	Nodes     map[string]Node // everything the commit holds, but directories
 	Untracked map[string]bool // paths the working tree holds and the commit does not
+	// BrokenBlobs and BrokenDirs are the files and the directories (the top is "") whose object cannot be read, and why.
+	BrokenBlobs, BrokenDirs map[string]error
 }
 
 // Head returns a commit, or Err.
@@ -30,6 +32,9 @@ func (m *Memory) Head() (string, error) {
 
 // Entries lists a directory, in name order.
 func (m *Memory) Entries(dir string) ([]Entry, error) {
+	if err := m.BrokenDirs[dir]; err != nil {
+		return nil, err
+	}
 	prefix := ""
 	if dir != "" {
 		prefix = dir + "/"
@@ -61,6 +66,9 @@ func (m *Memory) Entries(dir string) ([]Entry, error) {
 // Blob returns the contents of a regular file.
 func (m *Memory) Blob(path string, limit int) ([]byte, error) {
 	node, ok := m.Nodes[path]
+	if err := m.BrokenBlobs[path]; err != nil {
+		return nil, err
+	}
 	switch {
 	case !ok || !node.Kind.Regular():
 		return nil, fmt.Errorf("no regular file at %s", ascii(path))

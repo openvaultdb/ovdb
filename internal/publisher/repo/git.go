@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
@@ -31,16 +33,25 @@ type Git struct {
 // NewGit returns a Git that runs git through run.
 func NewGit(run Runner) *Git { return &Git{run: run} }
 
-// gitFlags go before every git command: a path is a path and never pathspec magic, and
-// no command of the repository's own configuration (a file system monitor) is run.
-var gitFlags = []string{"--literal-pathspecs", "-c", "core.fsmonitor=false"}
+// gitFlags go before every git command: no command of the repository's own configuration (a file
+// system monitor, which `ls-files` runs when the untracked cache is on) is run. There is no
+// --literal-pathspecs: the only pathspec given is a path that rules.IsRepositoryPath has accepted, and
+// that has no character that pathspec magic uses (: * ? [ \), so it could change nothing.
+var gitFlags = []string{"-c", "core.fsmonitor=false"}
 
 func (g *Git) git(limit int, args ...string) ([]byte, error) {
 	return g.run.Run(append(append([]string(nil), gitFlags...), args...), limit)
 }
 
-// Head finds the commit of HEAD, and refuses a bare repository and a directory that is not the top of its repository.
+// Head finds the commit of HEAD, and refuses a git older than MinGit, a bare repository and a directory that is not the top of its repository.
 func (g *Git) Head() (string, error) {
+	version, err := g.git(maxSmall, "version")
+	if err != nil {
+		return "", err
+	}
+	if err := checkVersion(string(version)); err != nil {
+		return "", err
+	}
 	where, err := g.git(maxSmall, "rev-parse", "--is-bare-repository", "--show-prefix")
 	if err != nil {
 		return "", err
@@ -57,7 +68,11 @@ func (g *Git) Head() (string, error) {
 	out, err := g.git(maxSmall, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
 	var exit *ExitError
 	if errors.As(err, &exit) && exit.Code == 1 {
-		return "", ErrNoCommit
+		// Exit 1 says HEAD names no commit: an unborn branch, or an object that cannot be read as one.
+		if _, named := g.git(maxSmall, "rev-parse", "--verify", "--quiet", "HEAD"); named != nil {
+			return "", ErrNoCommit
+		}
+		return "", g.unreadable(err)
 	} else if err != nil {
 		return "", err
 	}
@@ -85,7 +100,7 @@ func (g *Git) Entries(dir string) ([]Entry, error) {
 	}
 	out, err := g.git(MaxTreeBytes, "ls-tree", "-z", rev, "--")
 	if err != nil {
-		return nil, err
+		return nil, g.unreadable(err)
 	}
 	return parseTree(out)
 }
@@ -95,7 +110,51 @@ func (g *Git) Blob(path string, limit int) ([]byte, error) {
 	if !rules.IsRepositoryPath(path) {
 		return nil, ErrMalformed
 	}
-	return g.git(limit, "cat-file", "blob", cmp.Or(g.commit, "HEAD")+":"+path)
+	out, err := g.git(limit, "cat-file", "blob", cmp.Or(g.commit, "HEAD")+":"+path)
+	return out, g.unreadable(err)
+}
+
+// checkVersion refuses a `git version` output that is older than MinGit, or not one.
+func checkVersion(out string) error {
+	fields := strings.Fields(strings.TrimPrefix(out, "git version "))
+	if len(fields) == 0 {
+		return ErrMalformed
+	}
+	var major, minor int
+	if n, _ := fmt.Sscanf(fields[0], "%d.%d", &major, &minor); n != 2 {
+		return ErrMalformed
+	}
+	var wantMajor, wantMinor int
+	_, _ = fmt.Sscanf(MinGit, "%d.%d", &wantMajor, &wantMinor)
+	if major < wantMajor || (major == wantMajor && minor < wantMinor) {
+		return ErrOldGit
+	}
+	return nil
+}
+
+// unreadable says why git could not read an object that the commit has: only a failure of git is explained (the path is known to be
+// there, because Entries said so, so the failure is the object's), and what is not one is passed on. The reasons are told from the
+// repository's configuration and from what git printed, in git's own C locale.
+func (g *Git) unreadable(err error) error {
+	var exit *ExitError
+	if !errors.As(err, &exit) {
+		return err
+	}
+	if out, listed := g.git(maxSmall, "config", "--local", "--get-regexp", `^(extensions\.partialclone|remote\..*\.promisor)$`); listed == nil && len(bytes.TrimSpace(out)) > 0 {
+		return ErrPartialClone
+	}
+	said := strings.ToLower(exit.Full)
+	switch {
+	case strings.Contains(said, "alternate"):
+		return ErrAlternates
+	case containsAny(said, "corrupt", "inflate", "unable to unpack", "is empty", "hash mismatch", "bad object"):
+		return ErrObjectCorrupt
+	}
+	return ErrObjectMissing
+}
+
+func containsAny(s string, parts ...string) bool {
+	return slices.ContainsFunc(parts, func(p string) bool { return strings.Contains(s, p) })
 }
 
 // Uncommitted asks the index and the working tree; a bare repository has neither.

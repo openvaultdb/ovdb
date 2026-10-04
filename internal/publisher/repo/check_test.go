@@ -147,6 +147,11 @@ func TestARepositoryThatCannotBeRead(t *testing.T) {
 		{ErrNoCommit, RuleNoCommit},
 		{ErrSubdirectory, RuleSubdirectory},
 		{ErrBare, RuleBare},
+		{ErrOldGit, RuleGitVersion},
+		{ErrPartialClone, RulePartial},
+		{ErrObjectMissing, RuleObjectGone},
+		{ErrObjectCorrupt, RuleObjectBad},
+		{ErrAlternates, RuleAlternates},
 		{&ExitError{Code: 128, Stderr: "fatal: not a git repository\x1b[31m"}, RuleUnreadable},
 		{ErrMalformed, RuleUnreadable},
 	} {
@@ -181,7 +186,10 @@ func TestOVDBMdMustBeATrackedRegularFile(t *testing.T) {
 			m := goodRepository()
 			c.change(m)
 			r := Check(m, publisher())
-			only(t, r, RuleOVDBMd, "OVDB.md", 0, "OVDB.md must be a tracked regular file, "+c.message)
+			f := only(t, r, RuleOVDBMd, "OVDB.md", 0, "OVDB.md must be a tracked regular file, "+c.message)
+			if c.name == "missing" && f.Message != "OVDB.md must be a tracked regular file, but it is missing" {
+				t.Errorf("a path that is nowhere has no note: %q", f.Message)
+			}
 			if r.OVDBMd.Read {
 				t.Error("OVDB.md was read")
 			}
@@ -451,4 +459,107 @@ func TestADocumentOfExactlyOneByteOverTheBoundIsRefusedByTheManifestRules(t *tes
 	m := goodRepository()
 	m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: []byte(ownManifest + "# " + strings.Repeat("x", manifest.MaxDocumentBytes-len(ownManifest)-2+1) + "\n")}
 	only(t, Check(m, publisher()), "document-size", "ovdb.yaml", 0, "bytes; at most 262144 are read")
+}
+
+func TestADocumentOrADirectoryWhoseObjectCannotBeRead(t *testing.T) {
+	for _, err := range []error{ErrPartialClone, ErrObjectMissing, ErrObjectCorrupt, ErrAlternates} {
+		rule := ruleOf(err)
+		m := goodRepository()
+		m.BrokenBlobs = map[string]error{"OVDB.md": err}
+		only(t, Check(m, publisher()), rule, "OVDB.md", 0, "cannot be read at the commit: ")
+		m = goodRepository()
+		m.BrokenBlobs = map[string]error{"ovdb.yaml": err}
+		only(t, Check(m, publisher()), rule, "ovdb.yaml", 0, "cannot be read at the commit: ")
+		m = goodRepository()
+		m.BrokenDirs = map[string]error{"": err}
+		only(t, Check(m, publisher()), rule, "OVDB.md", 0, "cannot list the files of the commit: ")
+		m = goodRepository()
+		m.BrokenDirs = map[string]error{"model": err}
+		r := Check(m, publisher())
+		if len(r.Findings) != 1 || r.Findings[0].Rule != rule || r.Findings[0].Document != "ovdb.yaml" {
+			t.Errorf("a directory of the model files: %v", r.Findings)
+		}
+	}
+}
+
+// Checker lines 345 and 347: a file that a manifest names, and that the checker reads, must be readable and at most 16 MiB; here at
+// most MaxFileBytes. The checker only looks at the kind of model.hcl.
+func TestAFileAManifestNamesMustBeReadable(t *testing.T) {
+	for _, c := range []struct {
+		path, label string
+		line        int
+		read        bool
+	}{{modelPath, "model.modelspec", 14, true}, {meaningPth, "meaning.file", 17, true}, {hclPath, "model.hcl", 15, false}} {
+		m := goodRepository()
+		m.BrokenBlobs = map[string]error{c.path: ErrObjectCorrupt}
+		r := Check(m, publisher())
+		if !c.read {
+			if !r.OK() {
+				t.Errorf("%s is not read: %v", c.label, r.Findings)
+			}
+		} else {
+			only(t, r, RuleObjectBad, "ovdb.yaml", c.line, fmt.Sprintf("%s %q cannot be read at the commit: ", c.label, c.path))
+		}
+		m = goodRepository()
+		m.Nodes[c.path] = Node{Kind: File, Content: make([]byte, MaxFileBytes+1)}
+		r = Check(m, publisher())
+		if c.read {
+			only(t, r, RuleFileSize, "ovdb.yaml", c.line, fmt.Sprintf("%s %q must be at most %d bytes", c.label, c.path, MaxFileBytes))
+		} else if !r.OK() {
+			t.Errorf("%s is not read: %v", c.label, r.Findings)
+		}
+		m.Nodes[c.path] = Node{Kind: File, Content: make([]byte, MaxFileBytes)}
+		if r := Check(m, publisher()); !r.OK() {
+			t.Errorf("%s of exactly the bound: %v", c.label, r.Findings)
+		}
+	}
+}
+
+// The mutant that required the named files of the first manifest only survived: a second own-form manifest names a file that is not there.
+func TestTheFilesOfEveryOwnFormManifestAreRequired(t *testing.T) {
+	m := goodRepository()
+	m.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte("---\novdb: 1\npublish: [./ovdb.yaml, ./two.yaml]\n---\n")}
+	m.Nodes["two.yaml"] = Node{Kind: File, Content: []byte(strings.Replace(ownManifest, "model/chinook.modelspec.json", "model/other.modelspec.json", 1))}
+	only(t, Check(m, publisher()), RuleFile, "two.yaml", 14, `model.modelspec "model/other.modelspec.json" must be a tracked regular file, but it is missing`)
+	m.Nodes["model/other.modelspec.json"] = Node{Kind: File}
+	m.BrokenBlobs = map[string]error{"model/other.modelspec.json": ErrObjectMissing}
+	only(t, Check(m, publisher()), RuleObjectGone, "two.yaml", 14, "cannot be read at the commit")
+}
+
+// A file that several manifests name is read once.
+func TestAFileSeveralManifestsNameIsReadOnce(t *testing.T) {
+	m := goodRepository()
+	var names []string
+	for i := range 5 {
+		name := fmt.Sprintf("m%d.yaml", i)
+		names = append(names, "./"+name)
+		m.Nodes[name] = Node{Kind: File, Content: []byte(ownManifest)}
+	}
+	m.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte("---\novdb: 1\npublish: [" + strings.Join(names, ", ") + "]\n---\n")}
+	reads := map[string]int{}
+	r := Check(override{Memory: m, blob: func(p string, limit int) ([]byte, error) {
+		reads[p]++
+		return m.Blob(p, limit)
+	}}, publisher())
+	if !r.OK() || reads[modelPath] != 1 || reads[meaningPth] != 1 || reads[hclPath] != 0 || reads["m3.yaml"] != 1 {
+		t.Errorf("findings %v, reads %v", r.Findings, reads)
+	}
+	m.BrokenBlobs = map[string]error{modelPath: ErrObjectMissing}
+	if r := Check(m, publisher()); len(r.Findings) != 5 {
+		t.Errorf("each manifest has its finding: %v", r.Findings)
+	}
+}
+
+// Names that differ only in case are found in either order, and the two are named in the order the listing has them.
+func TestCaseCollisionsAreFoundInBothOrders(t *testing.T) {
+	for _, names := range [][2]string{{"Ab", "aB"}, {"aB", "Ab"}} {
+		r := Check(override{Memory: goodRepository(), entries: func(dir string) ([]Entry, error) {
+			entries, err := goodRepository().Entries(dir)
+			if dir == "" {
+				entries = append(entries, Entry{names[0], File}, Entry{names[1], File})
+			}
+			return entries, err
+		}}, publisher())
+		only(t, r, RuleCase, "OVDB.md", 0, fmt.Sprintf("%q and %q", names[0], names[1]))
+	}
 }

@@ -45,12 +45,14 @@ func newGit(t *testing.T, replies map[string]reply) (*Git, *fakeRunner) {
 }
 
 const (
-	whereCall  = "rev-parse --is-bare-repository --show-prefix"
-	commitCall = "rev-parse --verify --quiet HEAD^{commit}"
+	versionCall = "version"
+	versionOut  = "git version 2.54.0 (Apple Git-157)\n"
+	whereCall   = "rev-parse --is-bare-repository --show-prefix"
+	commitCall  = "rev-parse --verify --quiet HEAD^{commit}"
 )
 
 func headed(t *testing.T) (*Git, *fakeRunner, map[string]reply) {
-	replies := map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {out: commit + "\n"}}
+	replies := map[string]reply{versionCall: {out: versionOut}, whereCall: {out: "false\n\n"}, commitCall: {out: commit + "\n"}}
 	g, run := newGit(t, replies)
 	if id, err := g.Head(); id != commit || err != nil {
 		t.Fatalf("Head = %q, %v", id, err)
@@ -60,14 +62,14 @@ func headed(t *testing.T) (*Git, *fakeRunner, map[string]reply) {
 
 func TestHead(t *testing.T) {
 	g, run, _ := headed(t)
-	if want := []string{whereCall + " [4096]", commitCall + " [4096]"}; !slices.Equal(run.calls, want) {
+	if want := []string{versionCall + " [4096]", whereCall + " [4096]", commitCall + " [4096]"}; !slices.Equal(run.calls, want) {
 		t.Errorf("calls %q, want %q", run.calls, want)
 	}
 	if g.commit != commit {
 		t.Errorf("commit %q", g.commit)
 	}
 	sha256 := strings.Repeat("ab", 32)
-	g, _ = newGit(t, map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {out: sha256 + "\n"}})
+	g, _ = newGit(t, map[string]reply{versionCall: {out: versionOut}, whereCall: {out: "false\n\n"}, commitCall: {out: sha256 + "\n"}})
 	if id, err := g.Head(); id != sha256 || err != nil {
 		t.Errorf("a SHA-256 id: %q, %v", id, err)
 	}
@@ -85,13 +87,16 @@ func TestHeadRefusesWhatItCannotRead(t *testing.T) {
 		{"not a repository", map[string]reply{whereCall: {err: exit(128)}}, func(err error) bool { return err.Error() == "git exited with status 128: fatal: x" }},
 		{"odd answer", map[string]reply{whereCall: {out: "maybe\n\n"}}, func(err error) bool { return err == ErrMalformed }},
 		{"no answer", map[string]reply{whereCall: {out: ""}}, func(err error) bool { return err == ErrMalformed }},
-		{"unborn", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {err: exit(1)}}, func(err error) bool { return err == ErrNoCommit }},
+		{"unborn", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {err: exit(1)}, "rev-parse --verify --quiet HEAD": {err: exit(1)}}, func(err error) bool { return err == ErrNoCommit }},
 		{"another failure", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {err: exit(128)}}, func(err error) bool { return strings.Contains(err.Error(), "128") }},
 		{"a plain failure", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {err: ErrTooLarge}}, func(err error) bool { return err == ErrTooLarge }},
 		{"not an id", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {out: "HEAD\n"}}, func(err error) bool { return err == ErrMalformed }},
 		{"an id in capitals", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {out: strings.ToUpper(commit) + "\n"}}, func(err error) bool { return err == ErrMalformed }},
 		{"no id", map[string]reply{whereCall: {out: "false\n\n"}, commitCall: {out: "\n"}}, func(err error) bool { return err == ErrMalformed }},
 	} {
+		if _, ok := c.replies[versionCall]; !ok {
+			c.replies[versionCall] = reply{out: versionOut}
+		}
 		g, _ := newGit(t, c.replies)
 		id, err := g.Head()
 		if id != "" || err == nil || !c.want(err) {
@@ -143,13 +148,15 @@ func TestEntriesBeforeHeadAskAboutHEAD(t *testing.T) {
 }
 
 func TestEntriesPassOnWhatGitSays(t *testing.T) {
-	for _, err := range []error{ErrTooLarge, &ExitError{Code: 128}} {
-		g, _ := newGit(t, map[string]reply{"ls-tree -z HEAD --": {err: err}})
-		if _, got := g.Entries(""); got != err {
-			t.Errorf("err = %v, want %v", got, err)
-		}
+	g, _ := newGit(t, map[string]reply{"ls-tree -z HEAD --": {err: ErrTooLarge}})
+	if _, got := g.Entries(""); got != ErrTooLarge {
+		t.Errorf("err = %v, want %v", got, ErrTooLarge)
 	}
-	g, _ := newGit(t, map[string]reply{"ls-tree -z HEAD --": {out: "garbage"}})
+	g, _ = newGit(t, map[string]reply{"ls-tree -z HEAD --": {err: &ExitError{Code: 128}}, configCall: {err: &ExitError{Code: 1}}})
+	if _, got := g.Entries(""); got != ErrObjectMissing {
+		t.Errorf("err = %v, want %v", got, ErrObjectMissing)
+	}
+	g, _ = newGit(t, map[string]reply{"ls-tree -z HEAD --": {out: "garbage"}})
 	if _, err := g.Entries(""); err != ErrMalformed {
 		t.Errorf("err = %v", err)
 	}
@@ -273,4 +280,89 @@ func FuzzParseTree(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestHeadRefusesAGitThatWouldFetch(t *testing.T) {
+	for out, want := range map[string]error{
+		"git version 2.54.0 (Apple Git-157)\n": nil,
+		"git version 2.44.0\n":                 nil,
+		"git version 2.45.1.windows.1\n":       nil,
+		"git version 3.0.0\n":                  nil,
+		"git version 2.43.5\n":                 ErrOldGit,
+		"git version 2.9.1\n":                  ErrOldGit,
+		"git version 1.99.0\n":                 ErrOldGit,
+		"git version\n":                        ErrMalformed,
+		"":                                     ErrMalformed,
+		"git version two\n":                    ErrMalformed,
+		"git version 2\n":                      ErrMalformed,
+		"hello 2.54.0\n":                       ErrMalformed,
+	} {
+		g, _ := newGit(t, map[string]reply{versionCall: {out: out}, whereCall: {out: "true\n\n"}})
+		_, err := g.Head()
+		if want == nil {
+			want = ErrBare // the version was accepted: the next call decides
+		}
+		if err != want {
+			t.Errorf("%q: Head = %v, want %v", out, err, want)
+		}
+	}
+	g, _ := newGit(t, map[string]reply{versionCall: {err: &ExitError{Code: 1}}})
+	if _, err := g.Head(); err == nil || err == ErrOldGit {
+		t.Errorf("a git that cannot say its version: %v", err)
+	}
+}
+
+func TestHeadTellsAnUnbornBranchFromAnObjectThatCannotBeRead(t *testing.T) {
+	const verify = "rev-parse --verify --quiet HEAD"
+	failed := &ExitError{Code: 1, Full: "error: unable to normalize alternate object path: /gone\n"}
+	for name, c := range map[string]struct {
+		named   reply
+		config  reply
+		wantErr error
+	}{
+		"unborn":                {named: reply{err: &ExitError{Code: 1}}, wantErr: ErrNoCommit},
+		"a commit that is gone": {named: reply{out: commit + "\n"}, config: reply{err: &ExitError{Code: 1}}, wantErr: ErrObjectMissing},
+		"a promisor remote":     {named: reply{out: commit + "\n"}, config: reply{out: "extensions.partialclone origin\n"}, wantErr: ErrPartialClone},
+	} {
+		g, _ := newGit(t, map[string]reply{versionCall: {out: versionOut}, whereCall: {out: "false\n\n"}, commitCall: {err: &ExitError{Code: 1}}, verify: c.named, configCall: c.config})
+		if _, err := g.Head(); err != c.wantErr {
+			t.Errorf("%s: Head = %v, want %v", name, err, c.wantErr)
+		}
+	}
+	g, _ := newGit(t, map[string]reply{versionCall: {out: versionOut}, whereCall: {out: "false\n\n"}, commitCall: {err: failed}, verify: {out: commit + "\n"}, configCall: {err: &ExitError{Code: 1}}})
+	if _, err := g.Head(); err != ErrAlternates {
+		t.Errorf("alternates: Head = %v", err)
+	}
+}
+
+const configCall = `config --local --get-regexp ^(extensions\.partialclone|remote\..*\.promisor)$`
+
+// The reasons that git cannot read an object, told apart: what git printed in the C locale (taken from git 2.54), and whether the
+// repository is a partial clone.
+func TestAnObjectThatCannotBeReadIsExplained(t *testing.T) {
+	for name, c := range map[string]struct {
+		stderr string
+		config reply
+		want   error
+	}{
+		"a missing blob":               {"fatal: git cat-file abc:OVDB.md: bad file\n", reply{err: &ExitError{Code: 1}}, ErrObjectMissing},
+		"a missing tree":               {"fatal: not a tree object\n", reply{err: &ExitError{Code: 1}}, ErrObjectMissing},
+		"an unknown object":            {"fatal: Not a valid object name abc:model\n", reply{err: &ExitError{Code: 1}}, ErrObjectMissing},
+		"a damaged blob":               {"error: inflate: data stream error (incorrect header check)\nerror: unable to unpack ce01 header\nfatal: loose object ce01 (stored in .git/objects/ce/01) is corrupt\n", reply{err: &ExitError{Code: 1}}, ErrObjectCorrupt},
+		"an empty object file":         {"error: object file .git/objects/ce/01 is empty\nfatal: git cat-file abc:OVDB.md: bad file\n", reply{err: &ExitError{Code: 1}}, ErrObjectCorrupt},
+		"alternates":                   {"error: unable to normalize alternate object path: /gone/.git/objects\nfatal: not a tree object\n", reply{err: &ExitError{Code: 1}}, ErrAlternates},
+		"a partial clone":              {"fatal: git cat-file abc:OVDB.md: bad file\n", reply{out: "extensions.partialclone origin\n"}, ErrPartialClone},
+		"a promisor remote":            {"fatal: not a tree object\n", reply{out: "remote.origin.promisor true\n"}, ErrPartialClone},
+		"a config that cannot be read": {"fatal: not a tree object\n", reply{err: &ExitError{Code: 128}}, ErrObjectMissing},
+		"an empty answer":              {"fatal: not a tree object\n", reply{out: "\n"}, ErrObjectMissing},
+	} {
+		replies := map[string]reply{configCall: c.config, "cat-file blob HEAD:a": {err: &ExitError{Code: 128, Full: c.stderr}}, "ls-tree -z HEAD --": {err: &ExitError{Code: 128, Full: c.stderr}}}
+		g, _ := newGit(t, replies)
+		if _, err := g.Blob("a", 10); err != c.want {
+			t.Errorf("%s: Blob = %v, want %v", name, err, c.want)
+		}
+		if _, err := g.Entries(""); err != c.want {
+			t.Errorf("%s: Entries = %v, want %v", name, err, c.want)
+		}
+	}
 }

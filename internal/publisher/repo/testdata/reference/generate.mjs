@@ -29,10 +29,18 @@
 //   ["dirty", path, text]      the working tree's copy of a tracked file differs from the commit's
 //   ["many", dir, n]           n empty tracked files in dir
 //   ["manifests", n]           OVDB.md lists n manifests, m/00.yaml and on, each a copy of ovdb.yaml
-//   ["state", name]            the repository is bare, shallow, detached, unborn, not a repository, or is checked in a subdirectory
+//   ["copy", from, to]         a copy of a tracked file
+//   ["padjson", path, n]       a JSON file with one more key, whose value is n letters x (valid, and large)
+//   ["break", path, how]       the object of a tracked file is gone ("missing") or damaged ("corrupt") in the repository that is checked
+//   ["break-tree", dir, how]   the same for the tree object of a directory ("" is the top)
+//   ["state", name]            the repository is bare, shallow, detached, unborn, not a repository, or is checked in a subdirectory;
+//                              partial-blob and partial-tree are partial clones (--filter=blob:none, --filter=tree:0) whose source is
+//                              still there to fetch from (the checker's git fetches what it lacks; this check does not);
+//                              alternates-gone borrows its objects from a repository that is then deleted, and alternates-dangling has
+//                              its own copy of the objects and an alternates file that points to the deleted repository
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -85,7 +93,7 @@ const putEntry = (tracked, path, entry) => {
 };
 const listing = (n) => Array.from({ length: n }, (_, i) => `./m/${String(i).padStart(2, '0')}.yaml`);
 const apply = (ops) => {
-  const state = { tracked: new Map(), worktree: new Map(), staged: new Map(), ignored: [], location: 'normal' };
+  const state = { tracked: new Map(), worktree: new Map(), staged: new Map(), ignored: [], breaks: [], location: 'normal' };
   for (const [path, text] of Object.entries(base)) state.tracked.set(path, { mode: '100644', text });
   const text = (path) => { const entry = state.tracked.get(path); if (entry?.text === undefined) throw new Error(`no text at ${path}`); return entry.text; };
   for (const [op, a, b, c] of ops) {
@@ -109,6 +117,9 @@ const apply = (ops) => {
         for (const path of paths) state.tracked.set(path.slice(2), { mode: '100644', text: text(manifestPath) });
         break;
       }
+      case 'copy': state.tracked.set(b, { ...state.tracked.get(a) }); break;
+      case 'padjson': { const json = JSON.parse(text(a)); json._pad = 'x'.repeat(b); state.tracked.get(a).text = JSON.stringify(json); break; }
+      case 'break': case 'break-tree': state.breaks.push([op, a, b]); break;
       case 'state': state.location = a; break;
       default: throw new Error(`unknown operation ${op}`);
     }
@@ -142,6 +153,21 @@ const writeTree = (root, files, blob) => {
   records.sort((a, b) => Buffer.compare(a.key, b.key));
   return git(root, ['hash-object', '-t', 'tree', '-w', '--literally', '--stdin'], Buffer.concat(records.map((r) => r.bytes)));
 };
+// Makes an object of the repository in dir unreadable: loose objects are what can be deleted or damaged one at a time, so packs are
+// unpacked first.
+const breakObject = (dir, [op, target, how]) => {
+  const gitDir = git(dir, ['rev-parse', '--absolute-git-dir']);
+  const packs = join(gitDir, 'objects', 'pack');
+  for (const name of existsSync(packs) ? readdirSync(packs).filter((n) => n.endsWith('.pack')) : []) {
+    const pack = readFileSync(join(packs, name));
+    for (const sibling of readdirSync(packs).filter((n) => n.startsWith(name.slice(0, -5)))) rmSync(join(packs, sibling));
+    git(dir, ['unpack-objects', '-q'], pack);
+  }
+  const id = git(dir, ['rev-parse', op === 'break' ? `HEAD:${target}` : target === '' ? 'HEAD^{tree}' : `HEAD:${target}`]);
+  const file = join(gitDir, 'objects', id.slice(0, 2), id.slice(2));
+  if (how === 'missing') rmSync(file);
+  else { chmodSync(file, 0o644); writeFileSync(file, 'garbage\n'); }
+};
 // Returns the directory to run the checker in, and a function that removes everything.
 const build = (state) => {
   const parent = mkdtempSync(join(tmpdir(), 'ovdb-repository-case-'));
@@ -164,8 +190,21 @@ const build = (state) => {
     let dir = root;
     if (state.location === 'bare') { dir = join(parent, 'bare'); git(parent, ['clone', '--quiet', '--bare', root, dir]); }
     if (state.location === 'shallow') { dir = join(parent, 'shallow'); git(parent, ['clone', '--quiet', '--depth', '1', `file://${root}`, dir]); }
+    if (state.location.startsWith('partial-')) {
+      git(root, ['config', 'uploadpack.allowFilter', 'true']);
+      git(root, ['config', 'uploadpack.allowAnySHA1InWant', 'true']); // the lazy fetch asks for an object by its id
+      dir = join(parent, 'partial');
+      git(parent, ['clone', '--quiet', `--filter=${state.location === 'partial-blob' ? 'blob:none' : 'tree:0'}`, '--no-checkout', `file://${root}`, dir]);
+    }
+    if (state.location.startsWith('alternates-')) {
+      dir = join(parent, 'borrower');
+      git(parent, ['clone', '--quiet', '--shared', '--no-checkout', root, dir]);
+      if (state.location === 'alternates-dangling') git(dir, ['repack', '-a', '-d', '--quiet']); // takes the borrowed objects in: -l is not given
+      rmSync(root, { recursive: true, force: true });
+    }
     if (state.location === 'detached') git(root, ['update-ref', '--no-deref', 'HEAD', commit]);
     if (state.location === 'subdirectory') { dir = join(root, 'sub'); mkdirSync(dir); }
+    for (const spec of state.breaks) breakObject(dir, spec);
     for (const [path, text] of state.staged) git(root, ['update-index', '--add', '--cacheinfo', `100644,${blob(text)},${path}`]);
     for (const [path, text] of state.worktree) writeWorktree(root, `${prefix}${path}`, text);
     return [dir, cleanup];
@@ -264,7 +303,26 @@ addCase('worktree', 'only the working tree has a valid manifest', [edit(manifest
 addCase('worktree', 'only the working tree has a broken manifest', [['dirty', manifestPath, 'broken: [']]);
 addCase('worktree', 'only the index has OVDB.md', [['remove', 'OVDB.md'], ['staged', 'OVDB.md', base['OVDB.md']]]);
 
-for (const state of ['bare', 'shallow', 'detached', 'unborn', 'not-a-repository', 'subdirectory']) addCase('state', state, [['state', state]]);
+for (const state of ['bare', 'shallow', 'detached', 'unborn', 'not-a-repository', 'subdirectory', 'partial-blob', 'partial-tree', 'alternates-gone', 'alternates-dangling']) addCase('state', state, [['state', state]]);
+
+// A file that a manifest names that cannot be read, or is larger than this check reads (4 MiB; the checker reads 16).
+for (const how of ['missing', 'corrupt']) {
+  addCase('object', `OVDB.md: ${how}`, [['break', 'OVDB.md', how]]);
+  addCase('object', `the manifest: ${how}`, [['break', manifestPath, how]]);
+  addCase('object', `the model file: ${how}`, [['break', modelPath, how]]);
+  addCase('object', `the meaning file: ${how}`, [['break', meaningPath, how]]);
+  addCase('object', `the hcl file, which the checker does not read: ${how}`, [['break', hclPath, how]]);
+  addCase('object', `the tree of the directory of the model files: ${how}`, [['break-tree', 'model', how]]);
+  addCase('object', `the top tree: ${how}`, [['break-tree', '', how]]);
+  addCase('object', `the model file of a shallow clone: ${how}`, [['state', 'shallow'], ['break', modelPath, how]]);
+}
+addCase('object', 'a model file larger than this check reads', [['padjson', modelPath, 4194304]]);
+addCase('object', 'a model file of 3 MiB', [['padjson', modelPath, 3145728]]);
+// The named files of a manifest after the first.
+const second = [['copy', manifestPath, 'two.yaml'], ['file', 'OVDB.md', '---\novdb: 1\npublish: [./ovdb.yaml, ./two.yaml]\n---\n']];
+addCase('listed', 'a second own-form manifest names a file that is not there', [...second, ['edit', 'two.yaml', 'model/chinook.modelspec.json', 'model/other.modelspec.json']]);
+addCase('listed', 'a second own-form manifest names a file that is a directory', [...second, ['edit', 'two.yaml', 'model/chinook.meaning.yaml', 'model/elsewhere.meaning.yaml'], ['file', 'model/elsewhere.meaning.yaml/x', 'x']]);
+addCase('listed', 'a second own-form manifest, all there', second);
 
 // ---- the golden ----
 

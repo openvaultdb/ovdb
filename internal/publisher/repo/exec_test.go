@@ -35,7 +35,10 @@ func fakeGit(mode string) {
 		fmt.Fprint(os.Stderr, strings.Repeat("noise\n", 2000), "the last line\n")
 		os.Exit(3)
 	default:
-		if _, err := fmt.Sscanf(mode, "out:%d", &n); err == nil {
+		if _, err := fmt.Sscanf(mode, "outsleep:%d", &n); err == nil {
+			fmt.Print(strings.Repeat("a", n)) // all of it fits in the pipe: git has nothing more to write, and does not exit
+			time.Sleep(time.Minute)
+		} else if _, err := fmt.Sscanf(mode, "out:%d", &n); err == nil {
 			fmt.Print(strings.Repeat("a", n))
 		} else if _, err := fmt.Sscanf(mode, "exit:%d", &code); err == nil {
 			fmt.Fprint(os.Stderr, "boom\n  \nfatal: it failed \x1b[31m\n")
@@ -104,7 +107,7 @@ func TestExecRunnerReportsAFailure(t *testing.T) {
 	}
 	// What git says on standard error is read up to a bound, and the last line of what was kept is reported.
 	_, err = runner(t, "stderr").Run(nil, 100)
-	if !errors.As(err, &exit) || exit.Code != 3 || len(exit.Stderr) > 100 {
+	if !errors.As(err, &exit) || exit.Code != 3 || len(exit.Stderr) > 100 || len(exit.Full) != maxSmall || !strings.HasPrefix(exit.Full, "noise\n") {
 		t.Errorf("err = %#v", err)
 	}
 	// A git that prints nothing and succeeds.
@@ -136,5 +139,18 @@ func TestGitEnvironmentDropsEveryGitVariable(t *testing.T) {
 	env := gitEnv([]string{"PATH=/bin", "GIT_DIR=x", "git_index_file=y", "GITHUB_TOKEN=z", "HOME=/h"})
 	if !slices.Equal(env[:3], []string{"PATH=/bin", "GITHUB_TOKEN=z", "HOME=/h"}) {
 		t.Errorf("env = %q", env)
+	}
+}
+
+// A git that has written all it has and does not exit is stopped as soon as its output is over the limit, not when the call times out.
+func TestExecRunnerStopsGitAtOnceWhenItsOutputIsOverTheLimit(t *testing.T) {
+	r := runner(t, "outsleep:100")
+	r.Timeout = 30 * time.Second
+	start := time.Now()
+	if _, err := r.Run(nil, 10); !errors.Is(err, ErrTooLarge) {
+		t.Errorf("err = %v", err)
+	}
+	if took := time.Since(start); took > 15*time.Second {
+		t.Errorf("the call took %s: git was left running until the timeout", took)
 	}
 }

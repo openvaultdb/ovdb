@@ -97,11 +97,29 @@ func buildReal(t testing.TB, m *model) string {
 		git(t, parent, nil, "clone", "--quiet", "--depth", "1", "file://"+root, dir)
 	case "detached":
 		git(t, root, nil, "update-ref", "--no-deref", "HEAD", commit)
+	case "partial-blob", "partial-tree":
+		git(t, root, nil, "config", "uploadpack.allowFilter", "true")
+		git(t, root, nil, "config", "uploadpack.allowAnySHA1InWant", "true")
+		dir = filepath.Join(parent, "partial")
+		filter := map[string]string{"partial-blob": "blob:none", "partial-tree": "tree:0"}[m.location]
+		git(t, parent, nil, "clone", "--quiet", "--filter="+filter, "--no-checkout", "file://"+root, dir)
+	case "alternates-gone", "alternates-dangling":
+		dir = filepath.Join(parent, "borrower")
+		git(t, parent, nil, "clone", "--quiet", "--shared", "--no-checkout", root, dir)
+		if m.location == "alternates-dangling" {
+			git(t, dir, nil, "repack", "-a", "-d", "--quiet")
+		}
+		if err := os.RemoveAll(root); err != nil {
+			t.Fatal(err)
+		}
 	case "subdirectory":
 		dir = filepath.Join(root, "sub")
 		if err := os.Mkdir(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, b := range m.breaks {
+		breakObject(t, dir, b)
 	}
 	for path, text := range m.untracked {
 		if _, staged := m.tracked[path]; !staged {
@@ -120,6 +138,45 @@ func buildReal(t testing.TB, m *model) string {
 		}
 	}
 	return dir
+}
+
+// breakObject deletes or damages one loose object of the repository in dir, after unpacking its packs.
+func breakObject(t testing.TB, dir string, b [3]string) {
+	t.Helper()
+	gitDir := git(t, dir, nil, "rev-parse", "--absolute-git-dir")
+	packs := filepath.Join(gitDir, "objects", "pack")
+	names, _ := filepath.Glob(filepath.Join(packs, "*.pack"))
+	for _, name := range names {
+		pack, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		siblings, _ := filepath.Glob(strings.TrimSuffix(name, ".pack") + ".*")
+		for _, sibling := range siblings {
+			if err := os.Remove(sibling); err != nil {
+				t.Fatal(err)
+			}
+		}
+		git(t, dir, pack, "unpack-objects", "-q")
+	}
+	rev := "HEAD:" + b[1]
+	if b[0] == "break-tree" && b[1] == "" {
+		rev = "HEAD^{tree}"
+	}
+	id := git(t, dir, nil, "rev-parse", rev)
+	file := filepath.Join(gitDir, "objects", id[:2], id[2:])
+	if b[2] == "missing" {
+		if err := os.Remove(file); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if err := os.Chmod(file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func ignoreFile(m *model) map[string]string {
@@ -168,4 +225,34 @@ func TestRealGitFindsAnOversizeBlob(t *testing.T) {
 	realGit(t)
 	dir := buildReal(t, &model{tracked: map[string]Node{"OVDB.md": {Kind: File, Content: bytes.Repeat([]byte("x"), manifest.MaxDocumentBytes+100)}}, location: "normal"})
 	only(t, Check(NewGit(ExecRunner{Dir: dir}), publisher()), "document-size", "OVDB.md", 0, "is more than 262144 bytes")
+}
+
+// A repository's own configuration can name a program that git runs: core.fsmonitor, which `ls-files` runs when the untracked cache
+// is on and a file is asked about (as Uncommitted does for a manifest that is only in the working tree). Without `-c core.fsmonitor=false`
+// the reader would run it. The control is plain git, which does.
+func TestRealGitDoesNotRunTheFsmonitorOfTheRepository(t *testing.T) {
+	realGit(t)
+	dir := buildReal(t, &model{tracked: map[string]Node{"OVDB.md": {Kind: File, Content: []byte(goodMD)}}, location: "normal"})
+	marker := filepath.Join(t.TempDir(), "ran")
+	hook := filepath.Join(t.TempDir(), "hook.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\ntouch '"+marker+"'\nprintf '\\0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, nil, "config", "core.fsmonitor", hook)
+	git(t, dir, nil, "config", "core.untrackedCache", "true")
+	if err := os.WriteFile(filepath.Join(dir, "ovdb.yaml"), []byte(ownManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, nil, "ls-files", "-z", "--cached", "--others", "--", "ovdb.yaml")
+	if _, err := os.Stat(marker); err != nil {
+		t.Skip("this git does not run the file system monitor for ls-files: there is nothing to show")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	r := Check(NewGit(ExecRunner{Dir: dir}), publisher())
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("the reader ran the repository's core.fsmonitor")
+	}
+	only(t, r, RuleManifest, "OVDB.md", 3, "it is in the working tree or the index but not committed")
 }

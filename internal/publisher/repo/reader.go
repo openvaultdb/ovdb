@@ -50,6 +50,10 @@ const (
 	MaxEntries = 50_000
 	// MaxTreeBytes is the most bytes of git's listing of one directory that are read.
 	MaxTreeBytes = 4 << 20
+	// MaxFileBytes is the most bytes of a file that a manifest names (the model and the meaning file) that are read. The checker reads 16 MiB.
+	MaxFileBytes = 4 << 20
+	// MinGit is the first git that has GIT_NO_LAZY_FETCH: an older one fetches a missing object of a partial clone, from a remote whose command the repository chooses.
+	MinGit = "2.44"
 )
 
 // What a Reader may report, besides what the operating system reports.
@@ -62,6 +66,16 @@ var (
 	ErrSubdirectory = errors.New("the directory is inside a repository, not its top: run the check at the top, where the Directory reads OVDB.md")
 	// ErrTooLarge: what was asked for is larger than the limit.
 	ErrTooLarge = errors.New("larger than this check reads")
+	// ErrPartialClone: the repository is a partial clone and an object that the commit needs is not in it. The checker's git fetches it; this check never does.
+	ErrPartialClone = errors.New("this is a partial clone and an object the commit needs is not in it, and this check does not fetch: run the check in a full clone, or fetch the files first (git checkout fetches them)")
+	// ErrObjectMissing: an object of the commit is not in the repository.
+	ErrObjectMissing = errors.New("an object of the commit is missing from this repository: fetch it, or run the check in a complete clone")
+	// ErrObjectCorrupt: an object of the commit is damaged.
+	ErrObjectCorrupt = errors.New("an object of the commit is damaged in this repository: run the check in a clone made again from the remote")
+	// ErrAlternates: the repository borrows its objects from a directory that is not there.
+	ErrAlternates = errors.New("this repository borrows objects from another directory that is not there (objects/info/alternates): run the check in a complete clone")
+	// ErrOldGit: git is older than MinGit.
+	ErrOldGit = errors.New("git is older than " + MinGit + ", which is the first that can be told never to fetch a missing object: update git")
 	// ErrMalformed: git's output is not in the form that is read.
 	ErrMalformed = errors.New("git's output is not in a form this check reads")
 )

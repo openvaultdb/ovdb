@@ -940,6 +940,20 @@ func TestPublisherRefusesWhatTheDirectoryRefuses(t *testing.T) {
 	}
 }
 
+// madeByRepo are the rules that need files or input and that package repo (slice 3b-1) makes, with the rules it makes them by; every other
+// rule that is not decided by the documents is slice 3b-2's (it needs the content of the model file or the meaning file).
+var madeByRepo = map[string]string{
+	"the repository can be read at HEAD (it is a git repository with a commit)":            "package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version`",
+	"OVDB.md is a tracked regular file":                                                    "package repo: `repo-ovdbmd`",
+	"OVDB.md can be read (and is not over 16 MB)":                                          "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
+	"every manifest that OVDB.md lists is a tracked regular file":                          "package repo: `repo-manifest`",
+	"every manifest that OVDB.md lists can be read (and is not over 16 MB)":                "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
+	"every manifest that OVDB.md lists is checked":                                         "package repo: `manifest.Judge`",
+	"every file a manifest names is a tracked regular file":                                "package repo: `repo-file`",
+	"every file a manifest names can be read (and is not over 16 MB)":                      "package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
+	"publisher.repository is the repository the check is run in (the --repository option)": "package repo: `repo-repository`",
+}
+
 var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)
 
 // The README lists every rule that the Chinook checker adds to the Directory's, who
@@ -963,7 +977,10 @@ func TestPublisherRulesTable(t *testing.T) {
 	documents, other := 0, 0
 	for _, rule := range golden.Rules {
 		row, ok := rows[rule.ID]
-		goCell := "slice 3"
+		goCell := "slice 3b-2"
+		if made, ok := madeByRepo[rule.ID]; ok {
+			goCell = made
+		}
 		if rule.Go != "" {
 			goCell = "`" + strings.ReplaceAll(rule.Go, ", ", "`, `") + "`"
 		}
