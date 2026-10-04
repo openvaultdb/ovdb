@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	goruntime "runtime"
+	"testing"
 )
 
 // ErrUnavailable means no browser can be launched from this process.
@@ -40,7 +41,18 @@ func Command(goos, url string) (name string, args []string) {
 }
 
 // Open launches the default browser at url and returns without waiting for it.
+//
+// A test binary must never get here with the real Start: on a desktop that
+// opens the person's browser at a test server (it did, on macOS, at an
+// ephemeral port), and on CI, where there is no display, nobody would notice.
+// Open panics there, on every operating system, so the test that built its
+// model or App without an opener fails where it is written; a test injects a
+// fake (cli.App.OpenBrowser, the TUI's opener, or Opener.Start). testing.Testing
+// is false in every binary a person runs.
 func (o Opener) Open(url string) error {
+	if o.Start == nil && testing.Testing() {
+		panic("browser: a test reached the real browser opener for " + url + "; inject a fake opener (cli.App.OpenBrowser, the TUI's opener or Opener.Start)")
+	}
 	goos, getenv, lookPath, start := o.GOOS, o.Getenv, o.LookPath, o.Start
 	if goos == "" {
 		goos = goruntime.GOOS
