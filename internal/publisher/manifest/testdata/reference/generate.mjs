@@ -25,6 +25,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { references as pinnedReferences, remoteUrl } from '../../../references.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = join(here, 'corpus.json');
@@ -32,10 +33,7 @@ const verdictsPath = join(here, 'directory.verdicts.json');
 const factsPath = join(here, 'directory.facts.json');
 const digestsPath = join(here, 'digests.json');
 
-const pins = {
-  directory: { repository: 'openvaultdb/directory', commit: 'e8db5488db31d3f63865e404acef487c33cf35df' },
-  chinookdb: { repository: 'datatug/chinookdb', commit: '79e7bb0b1d6f0666dce465874990dec64348331f' },
-};
+const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
 
 // ---- the references, at the pinned commits ----
 
@@ -58,7 +56,7 @@ function checkout(name) {
   if (!existsSync(join(dir, '.git'))) {
     mkdirSync(dir, { recursive: true });
     run(dir, 'git', ['init', '--quiet']);
-    run(dir, 'git', ['fetch', '--quiet', '--depth', '1', `https://github.com/${repository}.git`, commit]);
+    run(dir, 'git', ['fetch', '--quiet', '--depth', '1', remoteUrl(name), commit]);
     run(dir, 'git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD']);
   }
   if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}; remove it`);
