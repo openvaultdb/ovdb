@@ -17,12 +17,26 @@
 //
 // Lease takes ports from a range below every operating system's ephemeral
 // range (Linux 32768-60999, macOS and Windows 49152-65535), so nothing that
-// asks the OS for "any port" can land on one, and holds the right to each
-// number with an advisory file lock (shared by every process of every package
-// that uses this package, released by the OS when a process dies), so no two
-// tests are given the same one while a lease is held. A number something else
-// already listens on is skipped. What remains is a program outside the tests
-// that binds exactly a leased number in the time between lease and use.
+// asks the OS for "any port" can land on one.
+//
+// The lease on TCP port N is a UDP socket bound to 127.0.0.1:N (and to [::1]:N
+// where the machine has IPv6 loopback), held until the test ends. The UDP port
+// space is the operating system's own table, so the lease is exclusive between
+// every process on the machine that goes through Lease or Hold, whatever its
+// user, TMPDIR or working directory (Linux network namespaces, which a
+// container may have, are one table each), and the OS drops it when the
+// process dies, however it dies. It does not stop a TCP listener on the same
+// number (the TCP and UDP tables are separate), which is what lets the test's
+// server bind the number. Go sets no SO_REUSEADDR or SO_REUSEPORT on a unicast
+// UDP socket on any system (only on stream listeners and multicast sockets),
+// so another Go program cannot share the number by accident; a program that
+// asks for SO_REUSEADDR on UDP itself can, on Linux and macOS.
+//
+// What the lease does not guarantee: a program outside the tests (not using
+// this package) that binds exactly the leased number for TCP between the lease
+// and the server's own bind still wins, and a number something already listens
+// on, or answers on, is skipped when leasing, not reserved against a listener
+// that appears later.
 //
 // Only tests import this package.
 package porttest
@@ -31,13 +45,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/strongo/cli-helpers/daemonlifecycle"
 )
 
 const (
@@ -52,11 +64,15 @@ const (
 // not all contend for the first slot.
 var next atomic.Uint32
 
-// lockDir is where the lease files live: one directory per user and machine,
-// shared by every test process.
-func lockDir() string {
-	return filepath.Join(os.TempDir(), "ovdb-test-ports")
-}
+// hasIPv6Loopback reports whether [::1] can be bound on this machine.
+var hasIPv6Loopback = sync.OnceValue(func() bool {
+	conn, err := net.ListenPacket("udp6", "[::1]:0")
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+})
 
 // Lease returns a TCP port on the loopback addresses that no other lease
 // holds, until the end of the test (t.Cleanup releases it). Register the
@@ -75,57 +91,65 @@ func LeaseRun(t testing.TB, n int) int {
 	if n < 1 || n > Count/2 {
 		t.Fatalf("porttest: cannot lease %d consecutive ports", n)
 	}
-	dir := lockDir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatalf("porttest: %v", err)
-	}
 	span := Count - n + 1
 	start := int((uint32(os.Getpid())*2654435761 + next.Add(uint32(n))*7919) % uint32(span))
 	for i := 0; i < span; i++ {
 		port := First + (start+i)%span
-		if files, ok := leaseSlots(dir, port, n); ok {
+		var releases []func()
+		held := true
+		for p := port; p < port+n; p++ {
+			release, ok := Hold(p)
+			if !ok {
+				held = false
+				break
+			}
+			releases = append(releases, release)
+		}
+		if held {
 			t.Cleanup(func() {
-				for _, file := range files {
-					_ = daemonlifecycle.Unlock(file)
-					_ = file.Close()
+				for _, release := range releases {
+					release()
 				}
 			})
 			return port
+		}
+		for _, release := range releases {
+			release()
 		}
 	}
 	t.Fatalf("porttest: no %d consecutive free ports to lease in %d-%d", n, First, First+Count-1)
 	return 0
 }
 
-// leaseSlots locks the n files of ports port..port+n-1 and checks that
-// nothing is listening on them; on any failure it releases what it took.
-func leaseSlots(dir string, port, n int) ([]*os.File, bool) {
-	var files []*os.File
-	release := func() {
-		for _, file := range files {
-			_ = daemonlifecycle.Unlock(file)
-			_ = file.Close()
+// Hold takes the lease on one specific port, for a process that is not a Go
+// test (or one that must name the number), and reports whether it got it: it
+// does not if another holder has it or something listens on, or answers at,
+// that TCP number. release gives the lease back; the OS gives it back anyway
+// when the process ends.
+func Hold(port int) (release func(), ok bool) {
+	var conns []net.PacketConn
+	release = func() {
+		for _, conn := range conns {
+			_ = conn.Close()
 		}
 	}
-	for p := port; p < port+n; p++ {
-		file, err := os.OpenFile(filepath.Join(dir, "port-"+strconv.Itoa(p)+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	addrs := []struct{ network, addr string }{{"udp4", fmt.Sprintf("127.0.0.1:%d", port)}}
+	if hasIPv6Loopback() {
+		addrs = append(addrs, struct{ network, addr string }{"udp6", fmt.Sprintf("[::1]:%d", port)})
+	}
+	for _, a := range addrs {
+		conn, err := net.ListenPacket(a.network, a.addr)
 		if err != nil {
 			release()
 			return nil, false
 		}
-		locked, err := daemonlifecycle.TryLock(file)
-		if err != nil || !locked {
-			_ = file.Close()
-			release()
-			return nil, false
-		}
-		files = append(files, file)
-		if !free(p) {
-			release()
-			return nil, false
-		}
+		conns = append(conns, conn)
 	}
-	return files, true
+	if !free(port) {
+		release()
+		return nil, false
+	}
+	return release, true
 }
 
 // free reports whether nothing answers on either loopback address of port and

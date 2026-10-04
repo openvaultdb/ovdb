@@ -52,9 +52,28 @@ func TestMain(m *testing.M) {
 	case "sleep":
 		time.Sleep(time.Minute)
 		os.Exit(0)
+	case "porthold":
+		os.Exit(childPortHold())
 	default:
 		os.Exit(3)
 	}
+}
+
+// childPortHold is a process with its own temporary directory that tries to
+// take the lease on the port in its last argument, then to bind it for TCP.
+func childPortHold() int {
+	port, _ := strconv.Atoi(os.Args[len(os.Args)-1])
+	release, held := porttest.Hold(port)
+	if held {
+		defer release()
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	bound := err == nil
+	if bound {
+		_ = listener.Close()
+	}
+	fmt.Printf("held=%t tcp=%t\n", held, bound)
+	return 0
 }
 
 // childServe is the detached server: the equivalent of `ovdb server run`.
@@ -121,6 +140,24 @@ func testDirs(t *testing.T) paths.Dirs {
 func freePort(t *testing.T) int {
 	t.Helper()
 	return porttest.Lease(t)
+}
+
+// A lease is exclusive across processes that share nothing but the machine
+// (here: another temporary directory, as another user or sandbox has), and
+// does not stop the leased number being bound for TCP. This is the property
+// the port lease stands on, so it runs on every operating system of the matrix.
+func TestPortLeaseIsExclusiveAcrossProcessesAndTCPStaysBindable(t *testing.T) {
+	port := freePort(t)
+	other := t.TempDir()
+	command := exec.Command(os.Args[0], strconv.Itoa(port))
+	command.Env = append(os.Environ(), childEnv+"=porthold", "TMPDIR="+other, "TMP="+other, "TEMP="+other)
+	out, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("child: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "held=false tcp=true" {
+		t.Errorf("child result %q, want %q: refused the lease this process holds, and able to listen on the number", got, "held=false tcp=true")
+	}
 }
 
 // stopOnCleanup stops whatever server dirs has and waits for its process,
