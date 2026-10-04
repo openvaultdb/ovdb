@@ -1,6 +1,6 @@
 {
  "manifest/testdata/reference/corpus.json": "240621d42e2206ab6b23dbdccc4913fcdb89f752268b4c89f28fc5f3ed629863",
  "manifest/testdata/reference/directory.verdicts.json": "651003a9546626116746696f0eea543edf097885289eeb4ad0cc9fb647e256ec",
- "manifest/testdata/reference/directory.facts.json": "fb94869b7ad9ec171433443c681df0a152487a2c642253e22055ed65efabaabe",
+ "manifest/testdata/reference/directory.facts.json": "ebdf094d5f42f4d0f341c72e44009caba15483f08216f7a6a59ef3a0cdfd8685",
  "rules/testdata/reference/matrix.golden.json": "0d2c21ed457c4701d3311c3b8ffe3afa2e7ba046bcf540792f2aa3fb669bb07a"
 }

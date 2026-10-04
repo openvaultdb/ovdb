@@ -52,6 +52,8 @@ type factsFile struct {
 	Fields   []string                  `json:"fields"`
 	Reads    map[string][]int          `json:"reads"`
 	Bases    map[string]map[string]any `json:"bases"`
+	Presence []string                  `json:"presence"`
+	PBases   map[string]string         `json:"presenceBases"`
 	Manifest []map[string]any          `json:"manifest"`
 	Md       [][]string                `json:"md"`
 }
@@ -603,6 +605,58 @@ func TestFactsAgreeWithTheReference(t *testing.T) {
 				t.Errorf("Manifest.%s is in no row of the README table", name)
 			}
 		}
+	}
+}
+
+// Presence is held for every manifest the Go reader reads, accepted or not: the
+// fields the Directory's parsed manifest has (the key is written) are the facts
+// that are Present, so a written value that is refused is never an absent fact.
+func TestPresenceAgreesWithTheReference(t *testing.T) {
+	_, _, manifests, _ := loadReference(t)
+	var facts factsFile
+	readGolden(t, "directory.facts.json", &facts)
+	if len(facts.Presence) != len(manifests) || len(facts.Fields) < 26 {
+		t.Fatalf("the facts golden holds %d presence masks for %d manifests", len(facts.Presence), len(manifests))
+	}
+	names := facts.Fields[:26]
+	compared, refused := 0, 0
+	for i, c := range manifests {
+		m, findings := CheckManifest(c.Document, "ovdb.yaml", Directory)
+		if !m.Read {
+			continue
+		}
+		mask := facts.Presence[i]
+		if mask == "" {
+			mask = facts.PBases[c.Base]
+		}
+		if mask == "-" {
+			t.Fatalf("Go reads a document that the reference cannot: %q", c.Document)
+		}
+		want, err := strconv.ParseUint(mask, 16, 32)
+		if err != nil {
+			t.Fatalf("presence %q: %v", mask, err)
+		}
+		values := factValues(m)
+		var got uint64
+		for bit, name := range names {
+			if values[name] != nil {
+				got |= 1 << bit
+			}
+		}
+		if got != want {
+			t.Fatalf("%s document %d: the facts that are present are %x, the Directory's parsed manifest has %x (fields %v):\n%q", c.Family, i, got, want, names, c.Document)
+		}
+		if len(findings) > 0 {
+			refused++
+		}
+		compared++
+	}
+	if compared < 3000 || refused < 2000 {
+		t.Fatalf("presence compared on %d manifests, %d of them refused", compared, refused)
+	}
+	t.Logf("presence compared on %d manifests, %d of them refused", compared, refused)
+	if want := fmt.Sprintf("presence of every field is compared on %d manifests, %d of them refused", compared, refused); !strings.Contains(strings.Join(strings.Fields(readReadme(t)), " "), want) {
+		t.Errorf("README does not state %q", want)
 	}
 }
 

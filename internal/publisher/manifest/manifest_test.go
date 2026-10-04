@@ -712,3 +712,65 @@ func TestLinesOfOVDBMdFindingsAndTheNoticePosition(t *testing.T) {
 		t.Errorf("the notice is about the call: %+v", r.Findings[MaxFindings])
 	}
 }
+
+// The ten facts whose written, refused value must stay a present fact: five URLs,
+// the format, the recordsets, both addresses (unparsable and not text) and, in the
+// shared form, recordsets_partial.
+func TestUnusableFactsStayPresent(t *testing.T) {
+	type fact func(Manifest) (present, valid bool, value any)
+	text := func(f Fact[string]) (bool, bool, any) { return f.Present, f.Valid, f.Value }
+	for _, c := range []struct {
+		name, doc string
+		fact      fact
+	}{
+		{"url", edit(t, ownManifest, "url: https://chinookdb.com/ovdb/dbs/chinook\n", "url: http://chinookdb.com/ovdb/dbs/chinook\n"), func(m Manifest) (bool, bool, any) { return text(m.URL) }},
+		{"url number", edit(t, ownManifest, "url: https://chinookdb.com/ovdb/dbs/chinook\n", "url: 7\n"), func(m Manifest) (bool, bool, any) { return text(m.URL) }},
+		{"url empty", edit(t, ownManifest, "url: https://chinookdb.com/ovdb/dbs/chinook\n", "url: \"\"\n"), func(m Manifest) (bool, bool, any) { return text(m.URL) }},
+		{"deployment.url", edit(t, ownManifest, "https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine", "https://cloud.openvaultdb.com:8443/ovdb/dbs/chinook\n  engine"), func(m Manifest) (bool, bool, any) { return text(m.DeploymentURL) }},
+		{"deployment.url number", edit(t, ownManifest, "  url: https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine", "  url: 7\n  engine"), func(m Manifest) (bool, bool, any) { return text(m.DeploymentURL) }},
+		{"discovery", edit(t, ownManifest, "discovery: https://chinookdb.com/", "discovery: http://chinookdb.com/"), func(m Manifest) (bool, bool, any) { return text(m.Discovery) }},
+		{"discovery list", edit(t, ownManifest, "discovery: https://chinookdb.com/.well-known/openvaultdb", "discovery: [a]"), func(m Manifest) (bool, bool, any) { return text(m.Discovery) }},
+		{"recordset page", edit(t, ownManifest, "collections/{name}", "collections/x"), func(m Manifest) (bool, bool, any) { return text(m.RecordsetPage) }},
+		{"recordset page empty", edit(t, ownManifest, "recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}", "recordset_page: \"\""), func(m Manifest) (bool, bool, any) { return text(m.RecordsetPage) }},
+		{"publisher url", edit(t, ownManifest, "url: https://github.com/datatug\n", "url: http://github.com/datatug\n"), func(m Manifest) (bool, bool, any) { return text(m.PublisherURL) }},
+		{"publisher url null", edit(t, ownManifest, "url: https://github.com/datatug\n", "url:\n"), func(m Manifest) (bool, bool, any) { return text(m.PublisherURL) }},
+		{"format", edit(t, ownManifest, "ovdb-manifest/draft-1", "ovdb-manifest/v9"), func(m Manifest) (bool, bool, any) { return text(m.Format) }},
+		{"format number", edit(t, ownManifest, "format: ovdb-manifest/draft-1", "format: 1"), func(m Manifest) (bool, bool, any) { return text(m.Format) }},
+		{"recordsets mapping", edit(t, ownManifest, "recordsets:\n  - Album\n  - Artist\n", "recordsets: {a: b}\n"), func(m Manifest) (bool, bool, any) {
+			return m.Recordsets.Present, m.Recordsets.Valid, m.Recordsets.Value
+		}},
+		{"recordsets string", edit(t, ownManifest, "recordsets:\n  - Album\n  - Artist\n", "recordsets: Album\n"), func(m Manifest) (bool, bool, any) {
+			return m.Recordsets.Present, m.Recordsets.Valid, m.Recordsets.Value
+		}},
+		{"recordsets empty", edit(t, ownManifest, "recordsets:\n  - Album\n  - Artist\n", "recordsets: []\n"), func(m Manifest) (bool, bool, any) {
+			return m.Recordsets.Present, m.Recordsets.Valid, m.Recordsets.Value
+		}},
+		{"recordsets number", edit(t, ownManifest, "  - Artist\n", "  - 5\n"), func(m Manifest) (bool, bool, any) {
+			return m.Recordsets.Present, m.Recordsets.Valid, m.Recordsets.Value
+		}},
+		{"model address unparsable", edit(t, ownManifest, "datatug/chinookdb/chinook\n", "datatug/chinookdb\n"), func(m Manifest) (bool, bool, any) {
+			return m.ModelAddress.Present, m.ModelAddress.Valid, m.ModelAddress.Value
+		}},
+		{"model address number", edit(t, ownManifest, "address: modelspec://github.com/datatug/chinookdb/chinook\n", "address: 4\n"), func(m Manifest) (bool, bool, any) {
+			return m.ModelAddress.Present, m.ModelAddress.Valid, m.ModelAddress.Value
+		}},
+		{"shared model address unparsable", edit(t, sharedManifest, "chinook?ref="+pin, "?ref="+pin), func(m Manifest) (bool, bool, any) {
+			return m.ModelAddress.Present, m.ModelAddress.Valid, m.ModelAddress.Value
+		}},
+		{"shared meaning address unparsable", edit(t, sharedManifest, "meaning://github.com/datatug/chinookdb?ref="+pin, "meaning://github.com/datatug?ref="+pin), func(m Manifest) (bool, bool, any) {
+			return m.MeaningAddress.Present, m.MeaningAddress.Valid, m.MeaningAddress.Value
+		}},
+		{"shared meaning address number", edit(t, sharedManifest, "address: meaning://github.com/datatug/chinookdb?ref="+pin, "address: 4"), func(m Manifest) (bool, bool, any) {
+			return m.MeaningAddress.Present, m.MeaningAddress.Valid, m.MeaningAddress.Value
+		}},
+		{"recordsets_partial not a boolean", edit(t, sharedManifest, "recordsets:", "recordsets_partial: yes\nrecordsets:"), func(m Manifest) (bool, bool, any) {
+			return m.RecordsetsPartial.Present, m.RecordsetsPartial.Valid, m.RecordsetsPartial.Value
+		}},
+	} {
+		m, findings := CheckManifest([]byte(c.doc), "ovdb.yaml", Directory)
+		present, valid, value := c.fact(m)
+		if !present || valid || len(findings) == 0 || !reflect.DeepEqual(value, reflect.Zero(reflect.TypeOf(value)).Interface()) {
+			t.Errorf("%s: present %v valid %v value %v findings %v: want written, not usable, with no value, and a finding", c.name, present, valid, value, findings)
+		}
+	}
+}

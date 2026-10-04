@@ -627,12 +627,27 @@ manifestCases.forEach(([base], at) => {
 });
 const mdLists = [];
 mdCases.forEach(([, , , path], at) => { if (verdicts.md[at] === '1') mdLists.push(mdDerive(mdBuffers[at], path)); });
+// Presence: for every manifest of the corpus, accepted or not, which of the fields of the table the Directory's parsed
+// manifest has (the key is written, even with null), as a bit mask in the order of the table; "-" when the reference
+// cannot read the document and "0" when it reads something that is not a mapping. The Go test compares it with the
+// `Present` of every fact of every manifest it reads, so a written value that is refused cannot become an absent fact.
+const presenceOf = (buffer) => {
+  let manifest;
+  try { manifest = parseYaml(decoded(buffer)); } catch { return '-'; }
+  if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) return '0';
+  const at = (path) => path.split('.').reduce((value, key) => (value === undefined || value === null ? undefined : value[key]), manifest);
+  return factFields.reduce((mask, path, bit) => (at(path) !== undefined ? mask | (1 << bit) : mask), 0).toString(16);
+};
+const basePresence = {};
+for (const name of Object.keys(baseFacts)) basePresence[name] = presenceOf(Buffer.from(bases[name]));
+const presenceDeltas = manifestCases.map(([base], at) => { const mask = presenceOf(manifestBuffers[at]); return mask === basePresence[base] ? '' : mask; });
 const factsFile = {
   ...meta,
   profile: 'directory',
   fields: [...factFields, 'form', 'model.address.repository', 'model.address.module', 'model.address.ref', 'meaning.address.repository', 'meaning.address.ref'],
   reads,
   bases: baseFacts,
+  presenceBases: basePresence,
 };
 // One case per line, so that a diff of the goldens reads as a diff of cases.
 const corpusText = [
@@ -648,6 +663,7 @@ const factsText = [
   '{',
   ...Object.entries(factsFile).filter(([key]) => key !== 'bases').map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)},`),
   '  "bases": {', Object.entries(baseFacts).map(([name, facts]) => `    ${JSON.stringify(name)}: ${JSON.stringify(facts)}`).join(',\n'), '  },',
+  '  "presence": [', presenceDeltas.map((mask) => `    ${JSON.stringify(mask)}`).join(',\n'), '  ],',
   '  "manifest": [', factDeltas.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ],',
   '  "md": [', mdLists.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ]',
   '}', '',

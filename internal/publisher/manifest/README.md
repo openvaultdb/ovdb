@@ -267,6 +267,11 @@ Directory refuses**.
 
 On the facts: 911 manifests and 85 OVDB.md documents have their facts compared.
 
+For every manifest the Go reader reads, accepted or refused, the presence of every field
+is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
+facts that are `Present` are the fields the reference has, so a written value that is
+refused can never become an absent fact. The presence of every field is compared on 3344 manifests, 2433 of them refused.
+
 ### Recorded differences: where Go is stricter
 
 Go may refuse what the JavaScript accepts. Each kind is the rule of the first
