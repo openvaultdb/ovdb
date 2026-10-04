@@ -3,12 +3,16 @@ package repo
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
@@ -197,10 +201,25 @@ func ignoreFile(m *model) map[string]string {
 	return nil
 }
 
+// realGitRan are the real-git tests that ran to the end without failing or skipping, which TestRealGitEveryTestRan holds to the set of them.
+var (
+	realGitRan   = map[string]bool{}
+	realGitRanMu sync.Mutex
+)
+
+// realGit skips the test unless OVDB_REAL_GIT is set, and records that it ran.
 func realGit(t *testing.T) {
+	t.Helper()
 	if os.Getenv("OVDB_REAL_GIT") == "" {
 		t.Skip("set OVDB_REAL_GIT=1 to read real repositories with git")
 	}
+	t.Cleanup(func() {
+		if !t.Failed() && !t.Skipped() {
+			realGitRanMu.Lock()
+			defer realGitRanMu.Unlock()
+			realGitRan[t.Name()] = true
+		}
+	})
 }
 
 func TestRealGitReadsEveryCaseAsTheMemoryReaderDoes(t *testing.T) {
@@ -256,7 +275,7 @@ func TestRealGitDoesNotRunTheFsmonitorOfTheRepository(t *testing.T) {
 	}
 	git(t, dir, nil, "ls-files", "-z", "--cached", "--others", "--", "ovdb.yaml")
 	if _, err := os.Stat(marker); err != nil {
-		t.Skip("this git does not run the file system monitor for ls-files: there is nothing to show")
+		t.Fatal("the control did not run the file system monitor: with OVDB_REAL_GIT set the test must show something, and a git that does not run it here hides what it guards (it is a skip only without OVDB_REAL_GIT)")
 	}
 	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
@@ -288,7 +307,7 @@ func TestRealGitDoesNotRunThePromisorRemoteOfTheRepository(t *testing.T) {
 	control.Env = slices.DeleteFunc(append(gitEnv(os.Environ()), "GIT_CONFIG_NOSYSTEM=1"), func(kv string) bool { return strings.HasPrefix(kv, "GIT_NO_LAZY_FETCH=") })
 	_ = control.Run() // it fails: the object is not there, and the remote has nothing
 	if _, err := os.Stat(marker); err != nil {
-		t.Skip("this git does not run the promisor remote when the variable is unset: there is nothing to show")
+		t.Fatal("the control did not run the promisor remote when the variable is unset: with OVDB_REAL_GIT set the test must show something, and a git that does not run it here hides what it guards (it is a skip only without OVDB_REAL_GIT)")
 	}
 	if err := os.Remove(marker); err != nil {
 		t.Fatal(err)
@@ -334,5 +353,37 @@ func TestRealGitTellsWhyAnObjectCannotBeReadWhateverTheFilesAreCalled(t *testing
 				t.Errorf("findings %v, want one of %s in %s", r.Findings, c.rule, c.in)
 			}
 		})
+	}
+}
+
+// Every real-git test of the package ran, and none skipped or was left out: a skip would be a test that guards nothing and a log that says "ok". It is
+// the last test of the last file of its kind, and runs only with OVDB_REAL_GIT set and the others selected (-run RealGit, as the goldens job does).
+func TestRealGitEveryTestRan(t *testing.T) {
+	realGit(t)
+	files, err := filepath.Glob("*_test.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("test files: %v, %v", files, err)
+	}
+	var want []string
+	for _, file := range files {
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range parsed.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "TestRealGit") && fn.Name.Name != "TestRealGitEveryTestRan" {
+				want = append(want, fn.Name.Name)
+			}
+		}
+	}
+	if len(want) < 4 {
+		t.Fatalf("only %d real-git tests: %v", len(want), want)
+	}
+	realGitRanMu.Lock()
+	defer realGitRanMu.Unlock()
+	for _, name := range want {
+		if !realGitRan[name] {
+			t.Errorf("%s did not run to the end: it failed, skipped, or was not selected", name)
+		}
 	}
 }
