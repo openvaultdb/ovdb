@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -250,7 +250,7 @@ func TestEveryStateWithoutACommitHasATrueSummary(t *testing.T) {
 		want string
 	}{
 		"no commit yet":         {repo.ErrNoCommit, "Refused: this repository has no commit yet. Commit OVDB.md and the manifests it lists, then run the check again.\n"},
-		"a bare repository":     {repo.ErrBare, "Refused: this is a bare repository, and the check reads a working tree. Run it in a clone, then run the check again.\n"},
+		"a bare repository":     {repo.ErrBare, "Refused: this is a bare repository. Run the check at the top of a clone that has a working tree.\n"},
 		"a subdirectory":        {repo.ErrSubdirectory, "Refused: this directory is inside a repository, not at its top. Run the check at the top of the repository.\n"},
 		"not a repository":      {errors.New("fatal: not a git repository"), "Refused: git could not read a repository here. Give the directory of a Git repository.\n"},
 		"a damaged commit":      {repo.ErrObjectCorrupt, "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.\n"},
@@ -264,6 +264,28 @@ func TestEveryStateWithoutACommitHasATrueSummary(t *testing.T) {
 		}
 		if strings.Contains(out, "no commit to check") || strings.Contains(out, "commit, and run") {
 			t.Errorf("%s: the summary talks of a commit that is not the matter: %q", name, out)
+		}
+	}
+}
+
+// A partial clone whose commit can be read has the summary that says to run the check in a complete clone, not "commit": whether or not the commit id is known.
+func TestAPartialCloneIsToldToUseACompleteClone(t *testing.T) {
+	want := "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.\n"
+	known := chinook(t)
+	known.BrokenBlobs = map[string]error{"ovdb.yaml": repo.ErrPartialClone}
+	out, err := execute(t, deps(pinnedMemory{known}), "check", "repo")
+	if exitCode(err) != 1 || !strings.HasSuffix(out, want) || strings.Contains(out, "79e7bb0b1d6f") || strings.Contains(out, "Fix it, commit") {
+		t.Errorf("known commit: exit %d, output %q", exitCode(err), out)
+	}
+	out, err = execute(t, deps(&repo.Memory{Err: repo.ErrPartialClone}), "check", "repo")
+	if exitCode(err) != 1 || !strings.HasSuffix(out, want) {
+		t.Errorf("no commit: exit %d, output %q", exitCode(err), out)
+	}
+	for _, e := range []error{repo.ErrObjectMissing, repo.ErrObjectCorrupt, repo.ErrAlternates} {
+		m := chinook(t)
+		m.BrokenBlobs = map[string]error{"ovdb.yaml": e}
+		if out, _ := execute(t, deps(pinnedMemory{m}), "check", "repo"); !strings.HasSuffix(out, want) {
+			t.Errorf("%v: output %q", e, out)
 		}
 	}
 }
@@ -334,7 +356,7 @@ func (s scripted) Run(args []string, limit int) ([]byte, error) {
 	switch args[0] {
 	case "ls-tree":
 		if s.failOn == "ls-tree" {
-			return nil, fmt.Errorf("%w: git did not finish in 30s", repo.ErrCannotRun)
+			return nil, repo.TimeoutError{After: 30 * time.Second}
 		}
 		return []byte("100644 blob " + strings.Repeat("b", 40) + "\tOVDB.md\x00"), nil
 	case "version":
@@ -346,7 +368,7 @@ func (s scripted) Run(args []string, limit int) ([]byte, error) {
 		return []byte(strings.Repeat("a", 40) + "\n"), nil
 	}
 	if args[0] == s.failOn {
-		return nil, fmt.Errorf("%w: git did not finish in 30s", repo.ErrCannotRun)
+		return nil, repo.TimeoutError{After: 30 * time.Second}
 	}
 	return nil, errors.New("not scripted")
 }
@@ -354,14 +376,14 @@ func (s scripted) Run(args []string, limit int) ([]byte, error) {
 func TestGitThatDoesNotFinishIsCouldNotRun(t *testing.T) {
 	for _, call := range []string{"ls-tree", "cat-file"} {
 		out, err := execute(t, deps(repo.NewGit(scripted{failOn: call})), "check", "repo")
-		if exitCode(err) != 2 || out != "" || !strings.Contains(err.Error(), "git did not finish in 30s") || errors.Is(err, ErrRefused) {
+		if exitCode(err) != 2 || out != "" || !strings.Contains(err.Error(), "Couldn't finish the check") || !strings.Contains(err.Error(), "git was found, but it did not finish in 30 seconds") || errors.Is(err, ErrRefused) || envelope.As(err) == nil || len(envelope.As(err).Next) != 1 || !strings.Contains(envelope.As(err).Next[0].Label, "`git status`") || strings.Contains(envelope.As(err).Next[0].Label, "Install git") {
 			t.Errorf("%s: exit %d, output %q, err %v", call, exitCode(err), out, err)
 		}
 	}
 	// The same through a Blob that times out after the tree was listed.
 	m := chinook(t)
 	out, err := execute(t, deps(blobFails{m}), "check", "repo")
-	if exitCode(err) != 2 || out != "" {
+	if exitCode(err) != 2 || out != "" || !strings.Contains(err.Error(), "Couldn't finish the check") {
 		t.Errorf("blob: exit %d, output %q, err %v", exitCode(err), out, err)
 	}
 }
@@ -369,7 +391,7 @@ func TestGitThatDoesNotFinishIsCouldNotRun(t *testing.T) {
 type blobFails struct{ *repo.Memory }
 
 func (blobFails) Blob(string, int) ([]byte, error) {
-	return nil, fmt.Errorf("%w: git did not finish in 30s", repo.ErrCannotRun)
+	return nil, repo.TimeoutError{After: 30 * time.Second}
 }
 
 // A result that cannot be written is not a pass: exit 2, however the check went, in both forms.

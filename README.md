@@ -293,7 +293,9 @@ handed you, unless you have looked at its `.git/config`.
 | `git` is not installed (or not on the `PATH`) | 2 | error on standard error |
 | `git` is older than 2.45 | 2 | error on standard error |
 | a `git` call that does not finish in 30 seconds | 2 | error on standard error |
-| the result cannot be written to standard output (a closed or full pipe) | 2 | error on standard error (a pass that printed nothing is not a pass) |
+| standard output cannot be written (a full disk, a descriptor that is not open for writing) | 2 | error on standard error; with `--json` only the exit code |
+
+A pipe whose reader has gone (`ovdb publisher check | head -1`) ends the process by SIGPIPE, as it does any command; that is not this row.
 
 The rule: a wrong flag or path is the caller's mistake, and a machine whose `git` cannot be run, is too old, or does not finish gives
 no verdict about the repository, and a result that cannot be delivered is not a verdict: all are `2`. Everything about the repository itself, "not a repository" and "no commit yet" included, is a

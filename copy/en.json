@@ -707,11 +707,14 @@
   "publisher.finding.no_message": "(no description: this is a bug in ovdb, please report the rule id)",
   "publisher.check.refused_capped": "Refused: {count} problems shown at commit {commit}, and {omitted} more are not shown (at most {max} are reported). Fix them, commit, and run the check again.",
   "publisher.check.state.no_commit": "Refused: this repository has no commit yet. Commit OVDB.md and the manifests it lists, then run the check again.",
-  "publisher.check.state.bare": "Refused: this is a bare repository, and the check reads a working tree. Run it in a clone, then run the check again.",
+  "publisher.check.state.bare": "Refused: this is a bare repository. Run the check at the top of a clone that has a working tree.",
   "publisher.check.state.subdirectory": "Refused: this directory is inside a repository, not at its top. Run the check at the top of the repository.",
   "publisher.check.state.unreadable": "Refused: git could not read a repository here. Give the directory of a Git repository.",
   "publisher.check.state.damaged": "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.",
   "publisher.check.state.other": "Refused: the repository could not be read. The problem above says why.",
   "publisher.write.failed": "Couldn't write the result",
-  "publisher.write.next": "Check where standard output goes (a closed or full pipe, a file that cannot be written), then run the check again"
+  "publisher.write.next": "Check where standard output goes (a file or disk that is full, or a standard output that cannot be written to), then run the check again",
+  "publisher.env.timeout": "Couldn't finish the check",
+  "publisher.env.timeout_reason": "git was found, but it did not finish in 30 seconds",
+  "publisher.env.timeout_next": "Run the check again. A very large repository or a slow disk can need longer; check that git itself works there with `git status`"
 }

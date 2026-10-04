@@ -176,6 +176,9 @@ func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository,
 	result := repo.Check(reader, opts)
 	// Git that cannot be run, that is too old or that did not finish gives no verdict about the repository: the check could not run as asked, which is exit
 	// code 2.
+	if errors.Is(reader.unrunnable, repo.ErrTimeout) {
+		return c.Unrunnable(c.T("publisher.env.timeout", nil), c.T("publisher.env.timeout_reason", nil), c.T("publisher.env.timeout_next", nil))
+	}
 	if reader.unrunnable != nil {
 		return c.Unrunnable(c.T("publisher.env.failed", nil), safe(reader.unrunnable.Error()), c.T("publisher.env.next", nil))
 	}
@@ -274,6 +277,9 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 	params := map[string]string{"commit": shortCommit(doc.Commit), "count": strconv.Itoa(doc.Summary.Errors), "manifests": strconv.Itoa(doc.Manifests),
 		"omitted": strconv.Itoa(doc.Summary.Omitted), "max": strconv.Itoa(manifest.MaxFindings)}
 	switch {
+	case !doc.OK && unreadableObjects(doc):
+		// Committing does not help here, whether or not the commit id is known.
+		say(w, c.T("publisher.check.state.damaged", params))
 	case !doc.OK && doc.Commit == "":
 		say(w, c.noCommitSummary(doc, params))
 	case !doc.OK && doc.Summary.Capped:
@@ -289,6 +295,18 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 		say(w, c.T("publisher.check.ok_many", params))
 		say(w, c.T("publisher.check.ok_note", nil))
 	}
+}
+
+// unreadableObjects reports whether a finding says that git could not read an object of the commit: a partial clone, a missing or damaged object, borrowed
+// objects that are gone. The remedy is a complete clone, not a commit.
+func unreadableObjects(doc Document) bool {
+	for _, f := range doc.Findings {
+		switch f.Rule {
+		case "repo-partial-clone", "repo-object-missing", "repo-object-corrupt", "repo-alternates":
+			return true
+		}
+	}
+	return false
 }
 
 // noCommitSummary is the summary of a refusal that has no commit id to show: it says what was found instead, by the rule of the finding that made the
@@ -307,8 +325,6 @@ func (c command) noCommitSummary(doc Document, params map[string]string) string 
 		return c.T("publisher.check.state.subdirectory", params)
 	case "repo-unreadable":
 		return c.T("publisher.check.state.unreadable", params)
-	case "repo-object-missing", "repo-object-corrupt", "repo-alternates", "repo-partial-clone":
-		return c.T("publisher.check.state.damaged", params)
 	}
 	return c.T("publisher.check.state.other", params)
 }
