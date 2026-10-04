@@ -2,11 +2,13 @@ package repo
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -187,6 +189,16 @@ func build(t testing.TB, g golden, ops [][]json.RawMessage) *model {
 			object["_pad"] = strings.Repeat("x", n)
 			padded, _ := json.Marshal(object)
 			m.tracked[a[0]] = Node{Kind: File, Content: padded}
+		case "bytes":
+			raw, err := base64.StdEncoding.DecodeString(a[1])
+			if err != nil {
+				t.Fatalf("bytes %s: %v", a[0], err)
+			}
+			m.put(a[0], Node{Kind: File, Content: raw})
+		case "nest":
+			n, _ := strconv.Atoi(a[1])
+			text := regexp.MustCompile(`\}\s*$`).ReplaceAllLiteralString(m.text(t, a[0]), ",\"_deep\":"+strings.Repeat("[", n)+strings.Repeat("]", n)+"}\n")
+			m.tracked[a[0]] = Node{Kind: File, Content: []byte(text)}
 		case "break", "break-tree":
 			m.breaks = append(m.breaks, [3]string{name, a[0], a[1]})
 		case "state":
@@ -225,8 +237,12 @@ func (m *model) memory() *Memory {
 	}
 	for _, b := range m.breaks {
 		err := ErrObjectMissing
-		if b[2] == "corrupt" {
+		if b[2] != "missing" {
 			err = ErrObjectCorrupt
+		}
+		if b[2] == "other" { // git reads the bytes of the other object, as the file's own
+			mem.Nodes[b[1]] = Node{Kind: File, Content: []byte("other\n")}
+			continue
 		}
 		if b[0] == "break" {
 			if mem.BrokenBlobs == nil {
@@ -247,14 +263,28 @@ func (m *model) memory() *Memory {
 // the reason; the README has the same kinds with a count for each, and a test holds the two together.
 // A refusal of a repository that the checker accepts is a kind by the rule of its first finding, or the test fails.
 var stricterKinds = map[string]string{
-	RuleCase:         "Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts.",
-	RuleTreeName:     "A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory.",
-	RuleTreeLimit:    "A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound.",
-	RuleManifests:    "OVDB.md lists more than 32 manifests; the checker judges every one.",
-	RulePartial:      "A partial clone (--filter=blob:none or --filter=tree:0) that lacks an object the commit needs: the checker's git fetches the object from the remote, which this check never does (a repository that a remote can make run a command must not be asked to); the message says to check a full clone or to fetch the files first.",
-	RuleFileSize:     "A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB.",
-	RuleSubdirectory: "The directory is inside a repository and not its top; the checker reads it as if it were the top, with a note, and the Directory reads OVDB.md at the top.",
-	"document-size":  "OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB.",
+	RuleCase:           "Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts.",
+	RuleTreeName:       "A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory.",
+	RuleTreeLimit:      "A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound.",
+	RuleManifests:      "OVDB.md lists more than 32 manifests; the checker judges every one.",
+	RuleModelDepth:     "The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound.",
+	"yaml":             "The reader accepts a subset of YAML and refuses a structure it cannot place (here a flow collection used as a key); the checker's library reads it.",
+	"yaml-anchor":      "The reader refuses anchors and aliases (& and *) and merge keys (<<): it reads a document once, as written, and expanding references is how a small file becomes a large one.",
+	"yaml-character":   "The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the checker's library reads them into a string.",
+	"yaml-directive":   "The reader refuses a %YAML or %TAG directive; the checker's library follows it.",
+	"yaml-documents":   "The reader refuses a document end marker (`...`) and a second document; the checker's library reads the first document and ignores what follows.",
+	"yaml-escape":      "The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\\ud83c); the checker's library accepts it.",
+	"yaml-key":         "The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the checker's library accepts it as a key.",
+	"yaml-limit":       "The reader refuses collections nested more than 64 levels deep (63 is read); the checker's library reads any depth.",
+	"yaml-line-ending": "The reader refuses a carriage return that is not part of CRLF; the checker's library reads it as a line break.",
+	"yaml-number":      "The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the checker's library reads them as numbers.",
+	"yaml-tab":         "The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation).",
+	"yaml-tag":         "The reader refuses tags (!, !!), which the checker's library resolves; it reads plain values only.",
+	"yaml-unsupported": "The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string; the checker's library reads both.",
+	RulePartial:        "A partial clone (--filter=blob:none or --filter=tree:0) that lacks an object the commit needs: the checker's git fetches the object from the remote, which this check never does (a repository that a remote can make run a command must not be asked to); the message says to check a full clone or to fetch the files first.",
+	RuleFileSize:       "A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB.",
+	RuleSubdirectory:   "The directory is inside a repository and not its top; the checker reads it as if it were the top, with a note, and the Directory reads OVDB.md at the top.",
+	"document-size":    "OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB.",
 }
 
 // replay runs Check on every case in memory and returns what it found: for each case the findings without and with the

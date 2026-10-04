@@ -204,7 +204,7 @@ documents alone, so the Publisher profile makes it here with the rule of its own
 `files`, a file at HEAD (a model, a meaning file, a manifest that OVDB.md lists), and
 `input`, something the caller gives (the `--repository` option). Package `repo` (slice 3b-1) makes the
 ones about the presence and readability of files and the `--repository` option, each by the rules of
-its README; the ones that need the content of the model file or the meaning file are slice 3b-2's.
+its README; the ones that need the content of the model file or the meaning file are slice 3b-2's, made by package repo and by `Judge.Meaning` here.
 
 | Rule | Who | Rule of Go | Lines |
 | --- | --- | --- | --- |
@@ -236,12 +236,12 @@ its README; the ones that need the content of the model file or the meaning file
 | every manifest that OVDB.md lists is checked | files | package repo: `manifest.Judge` | ovdb-manifest.mjs 226 |
 | every file a manifest names is a tracked regular file | files | package repo: `repo-file` | ovdb-manifest.mjs 391, 392 |
 | every file a manifest names can be read (and is not over 16 MB) | files | package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 345, 347 |
-| the model file is JSON with a module name and entities | files | slice 3b-2 | ovdb-manifest.mjs 408, 410, 413, 415 |
-| own form: model.name is the module of the model file | files | slice 3b-2 | ovdb-manifest.mjs 420 |
-| own form: the module of model.address is the model file's | files | slice 3b-2 | ovdb-manifest.mjs 427, 429 |
-| the meaning file is YAML whose id and license are the manifest's | files | slice 3b-2 | ovdb-manifest.mjs 448, 451, 453, 455 |
-| the meaning file's models: entry for the module is model.hcl | files | slice 3b-2 | ovdb-manifest.mjs 459, 461, 467, 468 |
-| own form: recordsets are exactly the model's entities | files | slice 3b-2 | ovdb-manifest.mjs 535, 538, 539 |
+| the model file is JSON with a module name and entities | files | package repo: `repo-model-json`, `repo-model-depth`, `repo-model-module`, `repo-model-entities` | ovdb-manifest.mjs 408, 410, 413, 415 |
+| own form: model.name is the module of the model file | files | package repo: `repo-model-name` | ovdb-manifest.mjs 420 |
+| own form: the module of model.address is the model file's | files | package repo: `repo-model-address` | ovdb-manifest.mjs 427, 429 |
+| the meaning file is YAML whose id and license are the manifest's | files | package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules | ovdb-manifest.mjs 448, 451, 453, 455 |
+| the meaning file's models: entry for the module is model.hcl | files | package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl` | ovdb-manifest.mjs 459, 461, 467, 468 |
+| own form: recordsets are exactly the model's entities | files | package repo: `repo-recordsets` | ovdb-manifest.mjs 535, 538, 539 |
 | publisher.repository is the repository the check is run in (the --repository option) | input | package repo: `repo-repository` | ovdb-manifest.mjs 309 |
 
 Not judged, whatever the profile: that the named files are tracked regular files at HEAD
@@ -652,12 +652,8 @@ main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoSc
 
 ## What remains
 
-- Slice 3b-1 made the rules that need only the presence and the readability of files, and the
-  `--repository` option, in package `repo` (its README lists them and the checker's lines). What is
-  left of the table above (marked slice 3b-2) needs the content of the model file and the meaning
-  file: the model against the manifest (module, entities, `model.name`, `model.address`), the meaning
-  file against the manifest (id, licence, `models:` entry) and the recordsets against the entities.
-  The facts it needs are `Manifest` and `OVDBMd`: `ModelAddress.Value.Module`, `ModelName`,
-  `ModelSpec`, `MeaningFile`, `GraphID`, `LicenceMeaning`, `Recordsets`.
+- Nothing of the table above: slice 3b-1 made the rules about the presence and the readability of files and the `--repository`
+  option, and slice 3b-2 the rules about the content of the model file and the meaning file (package `repo`, with `Judge.Meaning`
+  here for the meaning file), each held to the checker's lines and proved on whole repositories (see the README of package `repo`).
 - The command itself, `ovdb publisher check` (slice 3c).
 - The Directory's own record and registry checks stay with the Directory.

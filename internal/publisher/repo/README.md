@@ -108,19 +108,53 @@ and a path below a file or symlink do not):
 | `repo-file-size` | such a file is at most 4 MiB (the checker: 16 MiB; recorded below) | 345, 347 |
 | `repo-repository` | `publisher.repository` equals `--repository` exactly (compared only when the manifest rules accept `publisher.repository`; when they do not their finding says so) | 309 |
 | `document-size` | OVDB.md and each manifest of at most 262144 bytes | 194, 244-246 |
+| `repo-model-json` | the model file is JSON that `JSON.parse` reads (no more than one value, no byte order mark, no trailing text), and an object | 405-410 |
+| `repo-model-module`, `repo-model-entities` | it has `module.name`, a letter and then letters, digits and `_`, and an `entities` object | 412-416 |
+| `repo-model-name` | `model.name`, when written, is that module | 420 |
+| `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
+| `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
+| `meaning-id`, `meaning-license` | its `id` is `meaning.graph.id` and its `license` is `licences.meaning`, as strings | 453-457 |
+| `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
+| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
 
 Every other manifest OVDB.md lists is judged with the Publisher profile through
 `manifest.Judge` (the checker's line 226).
 
-## Not yet made (slice 3b-2)
+## Nothing is left
 
-These need the content of the model and the meaning file: the model JSON's module and
-entities (checker lines 408-415), `model.name` against the model file (420), the own-form
-`model.address` module against the model file (426-429), the meaning file as YAML with its
-`id`, licence and `models:` entry (445-468), and `recordsets` against the entities (535-539).
-The two files are read (up to 4 MiB) only to know that they can be; their content is not judged,
-so an empty model file (408) or an empty or non-YAML meaning file (448, 451) is accepted here and
-refused by the checker.
+Every refusal of the checker that needs a file now has a rule here. The rows of the table of package manifest's README that are
+marked `files` or `input` are all made (the generator holds each to the checker's lines, and a test holds the README to the
+generator). The judgments of the content of the two files read the model file with `readModel` (a token reader, bounded) and the
+meaning file with `manifest.Judge.Meaning` (the strict reader that reads a manifest). `model.hcl` is never read, as in the checker: it
+is a regular file, and its path is compared with the `models:` entry.
+
+### How the model file's JSON is read, against `JSON.parse`
+
+`readModel` uses the standard decoder for its tokens only, so no value is built that the file chooses the size of but the keys of
+`entities`. Where the two differ, the choice is the one that cannot make Go looser:
+
+| Difference | Go | Why |
+| --- | --- | --- |
+| a repeated key | the last one wins, for `module`, `module.name` and `entities` | as in `JSON.parse`: accepted as it is, with the same verdict |
+| a string with a byte that is not UTF-8, or half of a surrogate pair | read (the decoder puts U+FFFD there, `JSON.parse` of a UTF-8 file the same, or the lone surrogate) | only the module name and the entity names are compared, and a module name must be ASCII; an entity name with such a character equals no recordset (they are ASCII) |
+| a number too big for a double, `-0`, an exponent | read, not converted (`UseNumber`) | no number is compared |
+| a byte order mark, a form feed, a comment, a trailing comma, single quotes, `NaN`, `01`, `+1`, `1.`, a raw tab or line break in a string, an invalid escape | refused | both refuse (cases in the golden) |
+| text after the value, or a second value | refused | `JSON.parse` refuses; the decoder would read the first and stop, so `readModel` asks for the end |
+| `__proto__` as a key | an ordinary key | `JSON.parse` makes it an own property, and `Object.keys` lists it; a recordset can be called `__proto__` |
+| nesting deeper than 100 levels | refused, `repo-model-depth`, recorded below | `JSON.parse` has no bound; the reading is recursive and a file of 4 MiB can nest 2 million levels |
+| a model file of more than 4 MiB | refused, `repo-file-size` (from slice 3b-1) | the checker reads 16 MiB |
+
+### Reading the meaning file, against what a manifest can reach
+
+The meaning file goes through the same strict reader as a manifest and OVDB.md, with the same bound (`document-size`, 262144 bytes), so
+every kind of the reader recorded in the README of package manifest applies to it, and the golden has a case for each of those that
+a meaning file can show (below, from `yaml` to `yaml-unsupported`). What a meaning file can reach that a manifest cannot is
+structure: a manifest has nesting of three or four levels, a short list of recordsets and no long text; a meaning file has
+the `concepts:` tree, long folded and literal scalars, lists of mappings, flow collections and long quoted values. The places of the reader
+that these reach (the nesting limit of 64, the plain and quoted values over more than one line, block scalars, flow collections,
+`sources:` lists) are exercised by the real Chinook meaning file (15 KiB, accepted by the checker and by Go) and by the cases of the group `yaml`; the corpus of package manifest
+has them for manifests and for OVDB.md only. A meaning file that nests deeper than the reader's limit, or writes a long value in
+quotes over several lines, is refused by Go and read by the checker: the kinds `yaml-limit` and `yaml-unsupported`.
 
 ## The proof
 
@@ -133,21 +167,37 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-131 cases: 45 accepted by the checker, 38 accepted with `--repository`; 113 agree with Go, 18
+317 cases: 108 accepted by the checker, 99 accepted with `--repository`; 279 agree with Go, 38
 are stricter in Go, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
-(5 files, each placed 10 or 11 ways), 18 where an object cannot be read, 17 documents, 12 listed
-manifests, 10 tree names and sizes, 10 repository states, 7 `--repository`, 3 working tree, 1 unchanged.
+(5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 36 model files, 37 JSON
+differences, 52 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+states, 7 recordsets, 7 `--repository`, 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
+`--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
 
 ### Recorded differences: where Go is stricter
 
-| `document-size` | 2 | OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB. |
+| `document-size` | 3 | OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB. |
 | `repo-case-collision` | 7 | Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts. |
 | `repo-file-size` | 1 | A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB. |
 | `repo-manifests-limit` | 1 | OVDB.md lists more than 32 manifests; the checker judges every one. |
+| `repo-model-depth` | 2 | The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound. |
 | `repo-partial-clone` | 2 | A partial clone (--filter=blob:none or --filter=tree:0) that lacks an object the commit needs: the checker's git fetches the object from the remote, which this check never does (a repository that a remote can make run a command must not be asked to); the message says to check a full clone or to fetch the files first. |
 | `repo-subdirectory` | 1 | The directory is inside a repository and not its top; the checker reads it as if it were the top, with a note, and the Directory reads OVDB.md at the top. |
 | `repo-tree-limit` | 1 | A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound. |
 | `repo-tree-name` | 3 | A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory. |
+| `yaml` | 1 | The reader accepts a subset of YAML and refuses a structure it cannot place (here a flow collection used as a key); the checker's library reads it. |
+| `yaml-anchor` | 2 | The reader refuses anchors and aliases (& and *) and merge keys (<<): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
+| `yaml-character` | 1 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the checker's library reads them into a string. |
+| `yaml-directive` | 1 | The reader refuses a %YAML or %TAG directive; the checker's library follows it. |
+| `yaml-documents` | 1 | The reader refuses a document end marker (`...`) and a second document; the checker's library reads the first document and ignores what follows. |
+| `yaml-escape` | 1 | The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\ud83c); the checker's library accepts it. |
+| `yaml-key` | 1 | The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the checker's library accepts it as a key. |
+| `yaml-limit` | 1 | The reader refuses collections nested more than 64 levels deep (63 is read); the checker's library reads any depth. |
+| `yaml-line-ending` | 1 | The reader refuses a carriage return that is not part of CRLF; the checker's library reads it as a line break. |
+| `yaml-number` | 3 | The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the checker's library reads them as numbers. |
+| `yaml-tab` | 1 | The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation). |
+| `yaml-tag` | 1 | The reader refuses tags (!, !!), which the checker's library resolves; it reads plain values only. |
+| `yaml-unsupported` | 2 | The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string; the checker's library reads both. |
 
 A path that git cannot report is not tested: git prints only the modes 100644, 100755, 120000,
 160000 and 040000 (it canonicalises the others, so `100664` is `100644`).

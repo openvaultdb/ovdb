@@ -182,12 +182,21 @@ func breakObject(t testing.TB, dir string, b [3]string) {
 		t.Fatal(err)
 	}
 	content := []byte("garbage\n")
-	if b[2] == "truncate" {
+	switch b[2] {
+	case "truncate":
 		whole, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}
-		content = whole[:len(whole)/2]
+		content = whole[:12]
+	case "empty":
+		content = nil
+	case "other": // the bytes of another object, which git reads as this one's
+		other := git(t, dir, []byte("other\n"), "hash-object", "-w", "--stdin")
+		var err error
+		if content, err = os.ReadFile(filepath.Join(gitDir, "objects", other[:2], other[2:])); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := os.WriteFile(file, content, 0o644); err != nil {
 		t.Fatal(err)

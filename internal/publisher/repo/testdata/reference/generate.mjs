@@ -31,8 +31,11 @@
 //   ["manifests", n]           OVDB.md lists n manifests, m/00.yaml and on, each a copy of ovdb.yaml
 //   ["copy", from, to]         a copy of a tracked file
 //   ["padjson", path, n]       a JSON file with one more key, whose value is n letters x (valid, and large)
-//   ["break", path, how]       the object of a tracked file is gone ("missing") or damaged ("corrupt") in the repository that is checked
+//   ["break", path, how]       the object of a tracked file is gone ("missing") or damaged ("corrupt", "truncate", "empty") in the repository that
+//                              is checked, or holds the bytes of another object ("other")
 //   ["break-tree", dir, how]   the same for the tree object of a directory ("" is the top)
+//   ["bytes", path, base64]    a tracked regular file of exactly these bytes
+//   ["nest", path, n]          a JSON file with one more key, _deep, whose value is n arrays inside one another
 //   ["state", name]            the repository is bare, shallow, detached, unborn, not a repository, or is checked in a subdirectory;
 //                              partial-blob and partial-tree are partial clones (--filter=blob:none, --filter=tree:0) whose source is
 //                              still there to fetch from (the checker's git fetches what it lacks; this check does not);
@@ -43,6 +46,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkoutReference, references as pins } from '../../../references.mjs';
 
@@ -66,6 +70,7 @@ if (argValue('--chinookdb')) {
   symlinkSync(join(directoryRoot, 'node_modules', 'yaml'), join(chinookRoot, 'node_modules', 'yaml'), 'dir');
 }
 const chinook = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/ovdb-manifest.mjs')).href);
+const { parse: parseYaml } = createRequire(join(directoryRoot, 'package.json'))('yaml');
 const { isolatedGitEnv } = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/git-env.mjs')).href);
 process.emitWarning = () => {}; // the yaml package warns on stderr
 const gitEnv = isolatedGitEnv();
@@ -120,6 +125,8 @@ const apply = (ops) => {
       case 'copy': state.tracked.set(b, { ...state.tracked.get(a) }); break;
       case 'padjson': { const json = JSON.parse(text(a)); json._pad = 'x'.repeat(b); state.tracked.get(a).text = JSON.stringify(json); break; }
       case 'break': case 'break-tree': state.breaks.push([op, a, b]); break;
+      case 'bytes': putEntry(state.tracked, a, { mode: '100644', text: Buffer.from(b, 'base64') }); break;
+      case 'nest': state.tracked.get(a).text = text(a).replace(/\}\s*$/, `,"_deep":${'['.repeat(b)}${']'.repeat(b)}}\n`); break;
       case 'state': state.location = a; break;
       default: throw new Error(`unknown operation ${op}`);
     }
@@ -165,8 +172,13 @@ const breakObject = (dir, [op, target, how]) => {
   }
   const id = git(dir, ['rev-parse', op === 'break' ? `HEAD:${target}` : target === '' ? 'HEAD^{tree}' : `HEAD:${target}`]);
   const file = join(gitDir, 'objects', id.slice(0, 2), id.slice(2));
-  if (how === 'missing') rmSync(file);
-  else { chmodSync(file, 0o644); writeFileSync(file, 'garbage\n'); }
+  if (how === 'missing') { rmSync(file); return; }
+  chmodSync(file, 0o644);
+  if (how === 'other') {
+    const other = git(dir, ['hash-object', '-w', '--stdin'], 'other\n');
+    writeFileSync(file, readFileSync(join(gitDir, 'objects', other.slice(0, 2), other.slice(2))));
+  } else if (how === 'truncate') writeFileSync(file, readFileSync(file).subarray(0, 12));
+  else writeFileSync(file, how === 'empty' ? '' : 'garbage\n');
 };
 // Returns the directory to run the checker in, and a function that removes everything.
 const build = (state) => {
@@ -179,7 +191,7 @@ const build = (state) => {
     git(root, ['init', '--quiet', '-b', 'main']);
     if (state.location === 'unborn') return [root, cleanup];
     const blobs = new Map();
-    const blob = (text) => { if (!blobs.has(text)) blobs.set(text, git(root, ['hash-object', '-w', '--stdin'], text)); return blobs.get(text); };
+    const blob = (text) => { const key = Buffer.isBuffer(text) ? `bytes:${text.toString('hex')}` : text; if (!blobs.has(key)) blobs.set(key, git(root, ['hash-object', '-w', '--stdin'], text)); return blobs.get(key); };
     const prefix = state.location === 'subdirectory' ? 'sub/' : '';
     const tree = writeTree(root, [...state.tracked].map(([path, entry]) => [`${prefix}${path}`.split('/'), entry]), blob);
     // Two commits, so that a shallow clone is shallow.
@@ -306,7 +318,7 @@ addCase('worktree', 'only the index has OVDB.md', [['remove', 'OVDB.md'], ['stag
 for (const state of ['bare', 'shallow', 'detached', 'unborn', 'not-a-repository', 'subdirectory', 'partial-blob', 'partial-tree', 'alternates-gone', 'alternates-dangling']) addCase('state', state, [['state', state]]);
 
 // A file that a manifest names that cannot be read, or is larger than this check reads (4 MiB; the checker reads 16).
-for (const how of ['missing', 'corrupt']) {
+for (const how of ['missing', 'corrupt', 'truncate', 'empty']) {
   addCase('object', `OVDB.md: ${how}`, [['break', 'OVDB.md', how]]);
   addCase('object', `the manifest: ${how}`, [['break', manifestPath, how]]);
   addCase('object', `the model file: ${how}`, [['break', modelPath, how]]);
@@ -316,6 +328,8 @@ for (const how of ['missing', 'corrupt']) {
   addCase('object', `the top tree: ${how}`, [['break-tree', '', how]]);
   addCase('object', `the model file of a shallow clone: ${how}`, [['state', 'shallow'], ['break', modelPath, how]]);
 }
+addCase('object', 'the model file holds the bytes of another object', [['break', modelPath, 'other']]);
+addCase('object', 'the meaning file holds the bytes of another object', [['break', meaningPath, 'other']]);
 addCase('object', 'a model file larger than this check reads', [['padjson', modelPath, 4194304]]);
 addCase('object', 'a model file of 3 MiB', [['padjson', modelPath, 3145728]]);
 // The named files of a manifest after the first.
@@ -323,6 +337,149 @@ const second = [['copy', manifestPath, 'two.yaml'], ['file', 'OVDB.md', '---\nov
 addCase('listed', 'a second own-form manifest names a file that is not there', [...second, ['edit', 'two.yaml', 'model/chinook.modelspec.json', 'model/other.modelspec.json']]);
 addCase('listed', 'a second own-form manifest names a file that is a directory', [...second, ['edit', 'two.yaml', 'model/chinook.meaning.yaml', 'model/elsewhere.meaning.yaml'], ['file', 'model/elsewhere.meaning.yaml/x', 'x']]);
 addCase('listed', 'a second own-form manifest, all there', second);
+
+
+// ---- the content of the model file and of the meaning file (checker lines 408-468 and 535-539) ----
+
+const modelJson = JSON.parse(base[modelPath]);
+const modelText = (change) => { const copy = structuredClone(modelJson); change(copy); return JSON.stringify(copy, null, 2); };
+const asModel = (text) => [['file', modelPath, text]];
+const asMeaning = (text) => [['file', meaningPath, text]];
+const rawModel = (injection) => asModel(base[modelPath].replace('{', `{${injection}`));
+const unrelated = (key, value) => asModel(base[modelPath].replace(/\}\s*$/, `,"${key}":${value}}\n`));
+const inMeaning = (extra) => [['edit', meaningPath, 'license: CC0-1.0\n', `license: CC0-1.0\n${extra}\n`]];
+const inManifest = (find, replace) => [['edit', manifestPath, find, replace]];
+const b64 = (text) => Buffer.from(text, 'latin1').toString('base64');
+
+// The model file as a ModelSpec file: what is JSON and what is a module and entities.
+for (const [name, text] of Object.entries({
+  'empty': '', 'only white space': ' \n\t\r\n', 'not JSON': 'module', 'a JSON array': '[]', 'null': 'null', 'a number': '0', 'a string': '"x"', 'an empty object': '{}',
+  'no module': modelText((m) => { delete m.module; }), 'module null': modelText((m) => { m.module = null; }), 'module a string': modelText((m) => { m.module = 'chinook'; }),
+  'module an array': modelText((m) => { m.module = [{ name: 'chinook' }]; }), 'module.name empty': modelText((m) => { m.module.name = ''; }),
+  'module.name starts with a digit': modelText((m) => { m.module.name = '1chinook'; }), 'module.name starts with an underscore': modelText((m) => { m.module.name = '_chinook'; }),
+  'module.name a number': modelText((m) => { m.module.name = 5; }), 'module.name with a space': modelText((m) => { m.module.name = 'chin ook'; }),
+  'module.name with a line break at its end': modelText((m) => { m.module.name = 'chinook\n'; }), 'module.name in full-width letters': modelText((m) => { m.module.name = 'ｃhinook'; }),
+  'module.name missing': modelText((m) => { delete m.module.name; }), 'no entities': modelText((m) => { delete m.entities; }), 'entities an array': modelText((m) => { m.entities = []; }),
+  'entities null': modelText((m) => { m.entities = null; }), 'entities empty': modelText((m) => { m.entities = {}; }), 'another module': modelText((m) => { m.module.name = 'Hostile'; }),
+  'one entity fewer': modelText((m) => { delete m.entities.Track; }), 'one entity more': modelText((m) => { m.entities.Extra = {}; }),
+  'an entity called __proto__ that recordsets lack': modelText((m) => { Object.defineProperty(m.entities, '__proto__', { value: {}, enumerable: true, configurable: true, writable: true }); }),
+})) addCase('model', name, asModel(text));
+addCase('model', 'an entity called __proto__ that recordsets list', [...asModel(modelText((m) => { Object.defineProperty(m.entities, '__proto__', { value: {}, enumerable: true, configurable: true, writable: true }); })), ...inManifest('  - Track\n', '  - Track\n  - __proto__\n')]);
+addCase('model', 'a key called __proto__ at the top', rawModel('"__proto__":{"module":{"name":"Hostile"}},'));
+addCase('model', 'model.name is the module', inManifest('  address: modelspec', '  name: chinook\n  address: modelspec'));
+addCase('model', 'model.name is not the module', inManifest('  address: modelspec', '  name: Other\n  address: modelspec'));
+addCase('model', 'model.name is not a module name, and the file is fine', inManifest('  address: modelspec', '  name: 5x\n  address: modelspec'));
+addCase('model', 'the module of model.address is not the file\'s', inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Other\n'));
+addCase('model', 'the module of model.address in another case', inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Chinook\n'));
+addCase('model', 'model.name and model.address both differ from the file', [...inManifest('  address: modelspec', '  name: Other\n  address: modelspec'), ...inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Other\n')]);
+addCase('recordsets', 'one fewer than the entities', inManifest('  - Track\n', ''));
+addCase('recordsets', 'one more than the entities', inManifest('  - Track\n', '  - Track\n  - Extra\n'));
+addCase('recordsets', 'one fewer and one more', inManifest('  - Track\n', '  - Extra\n'));
+addCase('recordsets', 'in another case', inManifest('  - Album\n', '  - album\n'));
+addCase('recordsets', 'a name twice', inManifest('  - Track\n', '  - Track\n  - Track\n'));
+addCase('recordsets', 'the entities of a model without Track, and Track listed', asModel(modelText((m) => { delete m.entities.Track; })));
+addCase('recordsets', 'many more than the entities', inManifest('  - Track\n', `  - Track\n${Array.from({ length: 40 }, (_, i) => `  - More${i}\n`).join('')}`));
+
+// What JSON.parse accepts and what Go's decoder would do: the repository's decisions, one case each.
+for (const [name, ops] of Object.entries({
+  'a repeated module: the last is right': rawModel('"module":{"name":"Hostile"},'),
+  'a repeated module: the last is wrong': asModel(base[modelPath].replace(/\}\s*$/, ',"module":{"name":"Hostile"}}\n')),
+  'a repeated module.name: the last is right': asModel(base[modelPath].replace('"name": "chinook"', '"name": "Hostile", "name": "chinook"')),
+  'a repeated module.name: the last is wrong': asModel(base[modelPath].replace('"name": "chinook"', '"name": "chinook", "name": "Hostile"')),
+  'a repeated entities: the last is right': rawModel('"entities":{"Hostile":{}},'),
+  'a repeated entities: the last is wrong': asModel(base[modelPath].replace(/\}\s*$/, ',"entities":{"Hostile":{}}}\n')),
+  'a repeated entity': asModel(base[modelPath].replace('"entities": {', '"entities": {"Album": 1, ')),
+  'a key written with an escape': asModel(base[modelPath].replace('"module"', '"m\\u006fdule"')),
+  'a module name written with an escape': asModel(base[modelPath].replace('"chinook"', '"chin\\u006fok"')),
+  'a lone surrogate in a value': unrelated('x', '"\\ud800"'),
+  'a lone surrogate in the module name': asModel(base[modelPath].replace('"chinook"', '"chinook\\ud800"')),
+  'a number too big for a double': unrelated('x', '1e999'),
+  'a long integer': unrelated('x', '123456789012345678901234567890'),
+  'minus zero': unrelated('x', '-0'),
+  'a number with an exponent': unrelated('x', '1E-5'),
+  'a number with a leading zero': unrelated('x', '01'),
+  'a number that is a plus': unrelated('x', '+1'),
+  'a number with a trailing dot': unrelated('x', '1.'),
+  'a BOM at the start': asModel(`﻿${base[modelPath]}`),
+  'text after the value': asModel(`${base[modelPath]} x`),
+  'a second value after the first': asModel(`${base[modelPath]}\n{}`),
+  'white space after the value': asModel(`${base[modelPath]}\n\n \t\r\n`),
+  'a form feed between tokens': asModel(base[modelPath].replace('{', '{\f')),
+  'a comment': asModel(base[modelPath].replace('{', '{/* c */')),
+  'single quotes': asModel(base[modelPath].replace('"modelspec"', "'modelspec'")),
+  'a trailing comma': asModel(base[modelPath].replace(/\}\s*$/, ',}\n')),
+  'a raw tab in a string': unrelated('x', '"a\tb"'),
+  'a raw line break in a string': unrelated('x', '"a\nb"'),
+  'an invalid escape': unrelated('x', '"\\x"'),
+  'NaN': unrelated('x', 'NaN'),
+  'a value of 49 nested arrays (50 levels in all)': [['nest', modelPath, 49]],
+  'a value of 99 nested arrays (100 levels in all)': [['nest', modelPath, 99]],
+  'a value of 100 nested arrays (101 levels in all)': [['nest', modelPath, 100]],
+  'a value of 5000 nested arrays': [['nest', modelPath, 5000]],
+  'a byte that is not UTF-8 in an unrelated string': [['bytes', modelPath, b64(base[modelPath].replace(/\}\s*$/, ',"x":"aÿb"}\n'))]],
+  'a byte that is not UTF-8 in the module name': [['bytes', modelPath, b64(base[modelPath].replace('"chinook"', '"chinÿook"'))]],
+  'a NUL byte in white space': asModel(base[modelPath].replace('{', '{\0')),
+})) addCase('json', name, ops);
+
+// The meaning file as a MeaningGraph file: what is YAML, a mapping, its id, license and models: entry.
+const meaningText = base[meaningPath];
+const entryPath = 'chinook.modelspec.hcl';
+const withEntry = (entry) => [['edit', meaningPath, `  chinook: ${entryPath}\n`, entry === null ? '' : `  chinook: ${entry}\n`]];
+for (const [name, ops] of Object.entries({
+  'empty': asMeaning(''), 'only comments': asMeaning('# nothing\n'), 'only white space': asMeaning('\n \n'), 'not YAML': asMeaning('a: [\n'), 'a list': asMeaning('- a\n- b\n'),
+  'a string': asMeaning('just text\n'), 'a number': asMeaning('5\n'), 'null': asMeaning('null\n'), 'a mapping with nothing in it': asMeaning('{}\n'),
+  'id of another graph': [['edit', meaningPath, '\nid: chinook\n', '\nid: other\n']], 'id missing': [['edit', meaningPath, '\nid: chinook\n', '\n']],
+  'id a number': [['edit', meaningPath, '\nid: chinook\n', '\nid: 5\n']], 'id null': [['edit', meaningPath, '\nid: chinook\n', '\nid:\n']],
+  'id quoted': [['edit', meaningPath, '\nid: chinook\n', '\nid: "chinook"\n']],
+  'a graph id that is digits, and a number in the file': [...inManifest('    id: chinook\n', '    id: "5"\n'), ['edit', meaningPath, '\nid: chinook\n', '\nid: 5\n']],
+  'a graph id that is digits, and text in the file': [...inManifest('    id: chinook\n', '    id: "5"\n'), ['edit', meaningPath, '\nid: chinook\n', '\nid: "5"\n']], 'id in another case': [['edit', meaningPath, '\nid: chinook\n', '\nid: Chinook\n']],
+  'id written twice': [['edit', meaningPath, '\nid: chinook\n', '\nid: chinook\nid: chinook\n']],
+  'license of another licence': [['edit', meaningPath, '\nlicense: CC0-1.0\n', '\nlicense: MIT\n']], 'license missing': [['edit', meaningPath, '\nlicense: CC0-1.0\n', '\n']],
+  'licence spelled the other way': [['edit', meaningPath, '\nlicense: CC0-1.0\n', '\nlicence: CC0-1.0\n']],
+  'license in another case': [['edit', meaningPath, '\nlicense: CC0-1.0\n', '\nlicense: cc0-1.0\n']],
+  'models missing': [['edit', meaningPath, 'models:\n  chinook: chinook.modelspec.hcl\n', '']], 'models a list': [['edit', meaningPath, 'models:\n  chinook: chinook.modelspec.hcl\n', 'models:\n  - chinook.modelspec.hcl\n']],
+  'models null': [['edit', meaningPath, 'models:\n  chinook: chinook.modelspec.hcl\n', 'models:\n']], 'models for another module': withEntry(null).concat([['edit', meaningPath, 'models:\n', 'models:\n  other: chinook.modelspec.hcl\n']]),
+  'the entry a number': withEntry('5'), 'the entry null': withEntry(''), 'the entry blank': withEntry('" "'), 'the entry a list': withEntry('[a]'),
+  'the entry another file': withEntry('other.modelspec.hcl'), 'the entry with ./': withEntry('./chinook.modelspec.hcl'), 'the entry through ..': withEntry('../model/chinook.modelspec.hcl'),
+  'the entry through a directory': withEntry('x/../chinook.modelspec.hcl'), 'the entry ending in /.': withEntry('chinook.modelspec.hcl/.'),
+  'the entry with a trailing slash': withEntry('chinook.modelspec.hcl/'), 'the entry with a trailing /./': withEntry('chinook.modelspec.hcl/./'),
+  'the entry with an empty segment': withEntry('.//chinook.modelspec.hcl'), 'the entry with a leading slash': withEntry('/model/chinook.modelspec.hcl'),
+  'the entry that leaves the repository': withEntry('../../chinook.modelspec.hcl'), 'the entry that is ..': withEntry('..'), 'the entry that is .': withEntry('.'),
+  'the entry with a space': withEntry('"chinook.modelspec .hcl"'), 'the entry with a glob': withEntry('"*.modelspec.hcl"'), 'the entry with a backslash': withEntry('"model\\chinook.modelspec.hcl"'),
+  'the entry in upper case': withEntry('CHINOOK.modelspec.hcl'), 'the entry written in a flow mapping': [['edit', meaningPath, 'models:\n  chinook: chinook.modelspec.hcl\n', 'models: {chinook: chinook.modelspec.hcl}\n']],
+  'the entry written in double quotes': withEntry('"chinook.modelspec.hcl"'), 'the entry written in single quotes': withEntry("'chinook.modelspec.hcl'"),
+  'models with the entry twice': [['edit', meaningPath, '  chinook: chinook.modelspec.hcl\n', '  chinook: chinook.modelspec.hcl\n  chinook: chinook.modelspec.hcl\n']],
+  'a hcl file that is not the entry': [['copy', hclPath, 'model/other.modelspec.hcl'], ...inManifest('hcl: model/chinook.modelspec.hcl', 'hcl: model/other.modelspec.hcl')],
+  'over the size bound (a comment)': [['pad', meaningPath, '# ', 300000]],
+})) addCase('meaning', name, ops);
+
+// What the YAML reader refuses and the checker's YAML library reads: each is a kind of the reader, recorded in the README of package manifest.
+for (const [name, ops] of Object.entries({
+  'an anchor and an alias': inMeaning('x-anchor: &a 1\nx-alias: *a'), 'a tag': inMeaning('x-tag: !!str 1'), 'a merge key': inMeaning('x-merge:\n  <<: {a: 1}'),
+  'a key that is a number': inMeaning('2024: x'), 'a tab after a colon': inMeaning('x-tab:\t1'), 'a quoted value over two lines': inMeaning('x-quoted: "a\n  b"'),
+  'a directive': asMeaning(`%YAML 1.2\n---\n${meaningText}`), 'a document end marker': asMeaning(`${meaningText}\n...\n`), 'a second document': asMeaning(`${meaningText}\n---\nx: 1\n`),
+  'a hexadecimal number': inMeaning('x-hex: 0x10'), 'infinity': inMeaning('x-inf: .inf'), 'an integer beyond 2^53': inMeaning('x-big: 9007199254740993'),
+  'a bare carriage return': inMeaning('x-cr: a\rb'), 'a C1 control character': inMeaning('x-c1: "\u0085"'), 'half of a surrogate pair': inMeaning('x-esc: "\\ud83c"'),
+  'a collection nested 70 levels': inMeaning(`x-deep: ${'['.repeat(70)}${']'.repeat(70)}`), 'a collection nested 40 levels': inMeaning(`x-deep: ${'['.repeat(40)}${']'.repeat(40)}`),
+  'a byte that is not UTF-8': [['bytes', meaningPath, b64(`${meaningText}# aÿb\n`)]], 'a NUL character': [['bytes', meaningPath, b64(`${meaningText}# a\0b\n`)]],
+  'a byte order mark': asMeaning(`﻿${meaningText}`), 'CRLF line endings': asMeaning(meaningText.replaceAll('\n', '\r\n')),
+  'an explicit key': inMeaning('? x-explicit\n: 1'), 'a flow mapping as a key': inMeaning('{a: 1}: x'), 'a long plain value over two lines': inMeaning('x-plain: one\n  two'),
+  'a block scalar': inMeaning('x-block: |\n  one\n  two'), 'a null written with a tilde': inMeaning('x-null: ~'), 'a date': inMeaning('x-date: 2024-01-01'),
+  'a yes': inMeaning('x-yes: yes'), 'a quoted key': inMeaning('"x-q": 1'), 'a comment after a value': inMeaning('x-c: 1 # c'),
+})) addCase('yaml', name, ops);
+
+// A second own-form manifest, judged on the content of the files it names.
+addCase('listed', 'a second own-form manifest whose model.address names another module', [...second, ['edit', 'two.yaml', 'datatug/chinookdb/chinook\n', 'datatug/chinookdb/Other\n']]);
+addCase('listed', 'a second own-form manifest whose recordsets differ from the entities', [...second, ['edit', 'two.yaml', '  - Track\n', '']]);
+addCase('listed', 'a second own-form manifest, all there, the same files', second);
+
+// The Directory's own fixture of the same repository, read from its checkout: the whole repository, as another team keeps it.
+const fixtureFile = (file) => readFileSync(join(directoryRoot, 'scripts/fixtures/chinookdb', file), 'utf8');
+const fixture = ['OVDB.md', manifestPath, modelPath, hclPath, meaningPath].map((file) => ['file', file, fixtureFile(file)]);
+addCase('fixtures', 'the Directory\'s fixture of chinookdb', fixture, null);
+addCase('fixtures', 'the Directory\'s fixture, with the repository its manifest names', fixture, JSON.parse(JSON.stringify(parseYaml(fixtureFile(manifestPath)))).publisher.repository);
+
+addCase('fixtures', 'the hoster example alone, with no model files', [['copy', 'hoster.yaml', manifestPath], ['remove', modelPath], ['remove', hclPath], ['remove', meaningPath]], null);
 
 // ---- the golden ----
 

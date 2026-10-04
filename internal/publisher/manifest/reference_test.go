@@ -940,8 +940,8 @@ func TestPublisherRefusesWhatTheDirectoryRefuses(t *testing.T) {
 	}
 }
 
-// madeByRepo are the rules that need files or input and that package repo (slice 3b-1) makes, with the rules it makes them by; every other
-// rule that is not decided by the documents is slice 3b-2's (it needs the content of the model file or the meaning file).
+// madeByRepo are the rules that need files or input, with the rules that make them (package repo, and for the meaning file Judge.Meaning of this
+// package): the README's table has the same cell in the column of the rule of Go. Every rule of the table is made.
 var madeByRepo = map[string]string{
 	"the repository can be read at HEAD (it is a git repository with a commit)":            "package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version`",
 	"OVDB.md is a tracked regular file":                                                    "package repo: `repo-ovdbmd`",
@@ -952,6 +952,12 @@ var madeByRepo = map[string]string{
 	"every file a manifest names is a tracked regular file":                                "package repo: `repo-file`",
 	"every file a manifest names can be read (and is not over 16 MB)":                      "package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
 	"publisher.repository is the repository the check is run in (the --repository option)": "package repo: `repo-repository`",
+	"the model file is JSON with a module name and entities":                               "package repo: `repo-model-json`, `repo-model-depth`, `repo-model-module`, `repo-model-entities`",
+	"own form: model.name is the module of the model file":                                 "package repo: `repo-model-name`",
+	"own form: the module of model.address is the model file's":                            "package repo: `repo-model-address`",
+	"the meaning file is YAML whose id and license are the manifest's":                     "package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules",
+	"the meaning file's models: entry for the module is model.hcl":                         "package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl`",
+	"own form: recordsets are exactly the model's entities":                                "package repo: `repo-recordsets`",
 }
 
 var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)
@@ -977,10 +983,7 @@ func TestPublisherRulesTable(t *testing.T) {
 	documents, other := 0, 0
 	for _, rule := range golden.Rules {
 		row, ok := rows[rule.ID]
-		goCell := "slice 3b-2"
-		if made, ok := madeByRepo[rule.ID]; ok {
-			goCell = made
-		}
+		goCell := madeByRepo[rule.ID]
 		if rule.Go != "" {
 			goCell = "`" + strings.ReplaceAll(rule.Go, ", ", "`, `") + "`"
 		}
