@@ -22,9 +22,28 @@ const (
 	goldenPath = "testdata/reference/matrix.golden.json"
 	readmePath = "README.md"
 
-	pinnedDirectory = "e8db5488db31d3f63865e404acef487c33cf35df"
-	pinnedChinookDB = "79e7bb0b1d6f0666dce465874990dec64348331f"
+	// referencesPath is the one place that names the references and their commits; the generators import it.
+	referencesPath = "../references.mjs"
 )
+
+var pinPattern = regexp.MustCompile(`(?m)^\s+(directory|chinookdb): \{ repository: '[^']+', commit: '([0-9a-f]{40})' \},$`)
+
+// pinnedCommits reads the commit of each reference from references.mjs: the tests hold the golden and the README to it.
+func pinnedCommits(t testing.TB) map[string]string {
+	t.Helper()
+	text, err := os.ReadFile(referencesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins := map[string]string{}
+	for _, m := range pinPattern.FindAllStringSubmatch(string(text), -1) {
+		pins[m[1]] = m[2]
+	}
+	if len(pins) != 2 {
+		t.Fatalf("%s does not name the commits of directory and chinookdb in the expected form: %v", referencesPath, pins)
+	}
+	return pins
+}
 
 // input is a string of the golden: plain text, or {"r": [prefix, unit, count,
 // suffix]} for a long one.
@@ -313,7 +332,7 @@ func TestReferenceMatrix(t *testing.T) {
 	if golden.Format != "ovdb-publisher-rules-reference/1" {
 		t.Fatalf("golden format %q", golden.Format)
 	}
-	for name, pin := range map[string]string{"directory": pinnedDirectory, "chinookdb": pinnedChinookDB} {
+	for name, pin := range pinnedCommits(t) {
 		if golden.References[name].Commit != pin {
 			t.Errorf("the golden was made from %s at %s, not the pinned %s", name, golden.References[name].Commit, pin)
 		}
@@ -517,7 +536,7 @@ func TestReferenceMatrix(t *testing.T) {
 	if !strings.Contains(string(readme), fmt.Sprintf("**%d** verdicts", golden.MatrixSize)) {
 		t.Errorf("README.md does not state the matrix size, **%d** verdicts", golden.MatrixSize)
 	}
-	for _, pin := range []string{pinnedDirectory, pinnedChinookDB, golden.Node} {
+	for _, pin := range []string{pinnedCommits(t)["directory"], pinnedCommits(t)["chinookdb"], golden.Node} {
 		if !strings.Contains(string(readme), pin) {
 			t.Errorf("README.md does not name %s", pin)
 		}
