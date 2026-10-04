@@ -130,7 +130,7 @@ func TestExecRunnerStopsGitThatTakesTooLong(t *testing.T) {
 
 func TestExecRunnerWithoutGit(t *testing.T) {
 	_, err := ExecRunner{Git: "/nonexistent/git", Dir: "."}.Run(nil, 100)
-	if err == nil || !strings.Contains(err.Error(), "git could not be run: ") {
+	if err == nil || !errors.Is(err, ErrCannotRun) || !strings.Contains(err.Error(), "git could not be run: ") {
 		t.Errorf("err = %v", err)
 	}
 }

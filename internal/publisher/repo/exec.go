@@ -87,7 +87,7 @@ func (r ExecRunner) Run(args []string, limit int) ([]byte, error) {
 		lines := strings.Split(strings.TrimSpace(string(stderr.buf)), "\n")
 		return nil, &ExitError{Code: exit.ExitCode(), Stderr: lines[len(lines)-1], Full: string(stderr.buf)}
 	case err != nil:
-		return nil, fmt.Errorf("git could not be run: %s", ascii(err.Error()))
+		return nil, fmt.Errorf("%w: %s", ErrCannotRun, ascii(err.Error()))
 	}
 	return out.buf, nil
 }

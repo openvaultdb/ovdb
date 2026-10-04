@@ -76,6 +76,8 @@ var (
 	ErrAlternates = errors.New("this repository borrows objects from another directory that is not there (objects/info/alternates): run the check in a complete clone")
 	// ErrOldGit: git is older than MinGit.
 	ErrOldGit = errors.New("git is older than " + MinGit + ", which is the first that can be told never to fetch a missing object (GIT_NO_LAZY_FETCH): update git")
+	// ErrCannotRun: git could not be started (it is not installed, or not where the PATH says).
+	ErrCannotRun = errors.New("git could not be run")
 	// ErrMalformed: git's output is not in the form that is read.
 	ErrMalformed = errors.New("git's output is not in a form this check reads")
 )
