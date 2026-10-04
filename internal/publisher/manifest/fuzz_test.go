@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -17,54 +18,51 @@ import (
 // nothing panics and that every finding is well formed; FuzzAddress holds
 // the hand-written address reader to the expressions of the Directory.
 
-func checkFindings(t *testing.T, document string, findings []Finding) {
-	t.Helper()
-	if len(findings) > MaxFindings+1 {
-		t.Fatalf("%d findings", len(findings))
-	}
-	for _, f := range findings {
-		if f.Rule == "" || f.Message == "" || f.Severity != SeverityError || f.Line < 0 || f.Document == "" {
-			t.Fatalf("a malformed finding %+v", f)
-		}
-		if !printable(f.Message) || !printable(f.Rule) {
-			t.Fatalf("a finding with text that is not printable ASCII: %q", f.Message)
-		}
-		if !strings.HasPrefix(f.String(), f.Document) {
-			t.Fatalf("String() of %+v", f)
-		}
-	}
-}
-
 func FuzzCheck(f *testing.F) {
 	_, _, manifests, mds := loadReference(f)
 	for i := 0; i < len(manifests) && i < len(mds)*10; i += 11 {
-		f.Add([]byte(mds[i%len(mds)].Document), []byte(manifests[i].Document))
+		f.Add(mds[i%len(mds)].Document, manifests[i].Document)
 	}
 	for _, c := range manifests[:20] {
-		f.Add([]byte(mds[0].Document), []byte(c.Document))
+		f.Add(mds[0].Document, c.Document)
 	}
+	f.Add([]byte("---\novdb: 1\npublish:\n"+strings.Repeat("  - x\n", 101)+"---\n"), []byte("format: 1\n"))
+	f.Add([]byte("---\novdb: 1\npublish: ["+strings.Repeat("./a,", 5000)+"./a]\n---\n"), []byte(""))
 	f.Fuzz(func(t *testing.T, ovdbMd, manifest []byte) {
-		result := Check(ovdbMd, "ovdb.yaml", manifest, Directory)
-		checkFindings(t, "ovdb.yaml", result.Findings)
+		result := Check(ovdbMd, "ovdb\x1b.yaml", manifest, Directory)
+		assertFindings(t, result.Findings)
 		if result.OK() != (len(result.Findings) == 0) {
 			t.Fatal("OK disagrees with the findings")
 		}
 		md, mdFindings := CheckOVDBMd(ovdbMd, Directory)
-		if len(mdFindings) == 0 && (!md.Valid || len(md.Publish) == 0) {
-			t.Fatalf("OVDB.md without findings is not valid: %+v", md)
+		assertFindings(t, mdFindings)
+		if len(mdFindings) == 0 && (!md.Read || !md.Version.Usable() || !md.Publish.Usable() || len(md.Entries) == 0) {
+			t.Fatalf("OVDB.md without findings is not usable: %+v", md)
 		}
-		if md.Valid && md.PublishLine == 0 {
-			t.Fatal("a valid OVDB.md has no publish line")
+		if (md.Version.Unusable() || md.Publish.Unusable()) && len(mdFindings) == 0 {
+			t.Fatalf("an unusable fact without a finding: %+v", md)
 		}
-		for _, p := range md.Publish {
-			if !rules.IsRepositoryPath(p) {
-				t.Fatalf("OVDB.md lists %q", p)
+		if md.Publish.Usable() && !slices.Equal(md.Publish.Value, md.Entries) {
+			t.Fatalf("publish %v is not the entries %v", md.Publish.Value, md.Entries)
+		}
+		seen := map[string]bool{}
+		for _, p := range md.Entries {
+			if !rules.IsRepositoryPath(p) || seen[p] {
+				t.Fatalf("OVDB.md lists %q, a bad path or a repeat", p)
 			}
+			seen[p] = true
 		}
 		m, findings := CheckManifest(manifest, "ovdb.yaml", Directory)
-		if len(findings) == 0 {
-			if rules.IsBlank(m.ID) || m.URL == "" || m.DeploymentURL == "" || m.Form != FormOwn && m.Form != FormShared {
-				t.Fatalf("an accepted manifest with facts %+v", m)
+		assertFindings(t, findings)
+		if len(findings) == 0 && (!m.Read || rules.IsBlank(m.ID.Value) || !m.URL.Usable() || !m.DeploymentURL.Usable() || m.Form != FormOwn && m.Form != FormShared || !m.Recordsets.Usable()) {
+			t.Fatalf("an accepted manifest with facts %+v", m)
+		}
+		for name, v := range factValues(m) {
+			switch {
+			case len(findings) == 0 && v == "<present and not usable>":
+				t.Fatalf("an accepted manifest with an unusable fact %s", name)
+			case !m.Read && name != "form" && v != nil:
+				t.Fatalf("an unread manifest says %s = %v", name, v)
 			}
 		}
 	})

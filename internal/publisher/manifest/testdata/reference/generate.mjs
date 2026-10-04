@@ -19,6 +19,7 @@
 // that the goldens stay small; the Go test applies the same patches. To use clones you already have, pass
 // --directory <dir> and --chinookdb <dir> (at the pinned commits; the Directory's with `npm ci --omit=dev` run).
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = join(here, 'corpus.json');
 const verdictsPath = join(here, 'directory.verdicts.json');
+const factsPath = join(here, 'directory.facts.json');
+const digestsPath = join(here, 'digests.json');
 
 const pins = {
   directory: { repository: 'openvaultdb/directory', commit: 'e8db5488db31d3f63865e404acef487c33cf35df' },
@@ -69,6 +72,8 @@ const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');
 const directory = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/directory.mjs')).href);
 const gitlib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/git.mjs')).href);
+const modelspec = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/modelspec.mjs')).href);
+const meaningLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/meaning.mjs')).href);
 const { parse: parseYaml, stringify: stringifyYaml } = createRequire(join(directoryRoot, 'package.json'))('yaml');
 const read = (root, file) => readFileSync(join(root, file), 'utf8');
 
@@ -83,6 +88,16 @@ for (const expression of [
   'if (!published.has(data.manifest)) {',
   'try { manifest = parseYaml(manifestText); } catch (parseError) {',
   'const missing = manifestProblems(manifest);',
+  // the record-stage refusals that need nothing but the two documents (see recordStageProblems below)
+  "if (manifest.publisher.repository !== undefined && lowerKey(repositoryKey(manifest.publisher.repository) ?? '') !== lowerKey(repositoryKey(data.repository))) {",
+  'if (new Set(listed).size !== listed.length) bad(',
+  'if (manifest.model.name !== undefined && manifest.model.name !== model.module) bad(',
+  'if (repositoryKey(`https://${parsed.repository}`) === null) bad(',
+  'else if (parsed.repository !== parsed.repository.toLowerCase()) bad(',
+  'else if (parsed.ref !== undefined) bad(',
+  'const spelled = (label, address, parsed, kind) => {',
+  'if (!modelSpelled || !graphSpelled) return stop();',
+  "const lowerKey = (value) => value.toLowerCase();",
 ]) {
   if (!directorySource.includes(expression)) throw new Error(`directory.mjs at ${pins.directory.commit} no longer holds \`${expression}\`: the verdicts composed from it in generate.mjs are not the Directory's`);
 }
@@ -92,25 +107,98 @@ for (const expression of [
 process.emitWarning = () => {}; // the yaml package warns on stderr; the Directory ignores it
 let thrown = 0;
 const isText = (value) => typeof value === 'string' && value.trim() !== '';
-const manifestVerdict = (text) => {
-  let manifest;
-  try { manifest = parseYaml(text); } catch { return 0; } // as the Directory reads it: default options, an error throws
-  try { return directory.manifestProblems(manifest).length === 0 ? 1 : 0; } catch { thrown += 1; return 0; }
+// What the Directory refuses after manifestProblems, at the record stage, from the manifest alone: no registry,
+// no file of the repository and no record field is needed to know it. Each is the Directory's own expression,
+// evaluated on the manifest (the line numbers are those of directory.mjs at the pinned commit):
+//  - line 315, publisher.repository: written, it must equal, ignoring case, repositoryKey of the record's
+//    repository, which recordProblems has made a repository key. A value that repositoryKey refuses ('' and
+//    numbers and lists too) equals none, and any other value equals the record that has it.
+//  - checkRecordsets: a name listed twice.
+//  - model.name (own form and shared): written, it must equal the module, which parseModelSpec makes an identifier.
+//  - the spelling of an address: own model.address, and in the shared form model.address and meaning.address:
+//    a repository on a host the Directory reads, in lower case; an own model.address carries no ?ref=.
+// What needs a record, a registry or a file (the equality of url, id and graph id with the record's, the
+// repository the addresses name being this one, the model's module, licences and files) is not judged here:
+// the facts carry it.
+const lowerKey = (value) => value.toLowerCase();
+const recordStageProblems = (manifest) => {
+  const problems = [];
+  const written = manifest.publisher.repository;
+  if (written !== undefined && gitlib.repositoryKey(written) === null) problems.push('publisher.repository');
+  if (new Set(manifest.recordsets).size !== manifest.recordsets.length) problems.push('recordsets twice');
+  const name = manifest.model?.name;
+  if (name !== undefined && !(typeof name === 'string' && modelspec.identifierPattern.test(name))) problems.push('model.name');
+  const spelled = (parsed) => gitlib.repositoryKey(`https://${parsed.repository}`) !== null && parsed.repository === lowerKey(parsed.repository);
+  if (directory.manifestForm(manifest) === 'own') {
+    const parsed = manifest.model.address === undefined ? null : modelspec.parseModelAddress(manifest.model.address);
+    if (parsed && (!spelled(parsed) || parsed.ref !== undefined)) problems.push('model.address');
+  } else {
+    if (!spelled(modelspec.parseModelAddress(manifest.model.address))) problems.push('model.address');
+    if (!spelled(meaningLib.parseGraphAddress(manifest.meaning.address))) problems.push('meaning.address');
+  }
+  return problems;
 };
-const mdVerdict = (text, path) => {
+// The Directory reads a file as UTF-8: bytes that are not are replaced by U+FFFD.
+const decoded = (buffer) => buffer.toString('utf8');
+const manifestVerdict = (buffer) => {
+  let manifest;
+  try { manifest = parseYaml(decoded(buffer)); } catch { return 0; } // as the Directory reads it: default options, an error throws
+  try { return directory.manifestProblems(manifest).length === 0 && recordStageProblems(manifest).length === 0 ? 1 : 0; } catch { thrown += 1; return 0; }
+};
+// The values the Directory's own code derives from an accepted manifest, for each field of the README table: the
+// field as written (null when the key is not written) and what manifestForm, parseModelAddress and
+// parseGraphAddress make of it.
+const factsOf = (manifest) => {
+  const at = (path) => path.split('.').reduce((value, key) => (value === undefined || value === null ? undefined : value[key]), manifest);
+  const facts = {};
+  for (const path of factFields) facts[path] = at(path) ?? null;
+  facts.form = directory.manifestForm(manifest);
+  const model = at('model.address') === undefined ? null : modelspec.parseModelAddress(manifest.model.address);
+  const meaning = at('meaning.address') === undefined ? null : meaningLib.parseGraphAddress(manifest.meaning.address);
+  facts['model.address.repository'] = model?.repository ?? null;
+  facts['model.address.module'] = model?.module ?? null;
+  facts['model.address.ref'] = model?.ref ?? null;
+  facts['meaning.address.repository'] = meaning?.repository ?? null;
+  facts['meaning.address.ref'] = meaning?.ref ?? null;
+  return facts;
+};
+const factFields = ['format', 'id', 'title', 'description', 'url', 'homepage', 'deployment.url', 'deployment.engine', 'deployment.discovery', 'deployment.recordset_page', 'model.modelspec', 'model.hcl', 'model.address', 'model.name', 'meaning.address', 'meaning.file', 'meaning.graph.id', 'meaning.graph.address', 'licences.model', 'licences.meaning', 'licences.data', 'publisher.name', 'publisher.url', 'publisher.repository', 'recordsets', 'recordsets_partial'];
+// Where directory.mjs at the pinned commit reads each field, after manifestProblems and in it (the lines cited in the
+// README table). The script fails if a line no longer mentions the field, so a pin that moves cannot leave the
+// table wrong.
+const reads = {
+  format: [180], id: [181, 313], title: [181], description: [181], url: [109, 188, 193, 194, 312], homepage: [230, 231, 667],
+  'deployment.url': [110, 189, 666], 'deployment.engine': [190, 666], 'deployment.discovery': [191, 193], 'deployment.recordset_page': [111, 197, 651],
+  'model.modelspec': [173, 216, 391, 395], 'model.hcl': [173, 198, 415], 'model.address': [201, 217, 418, 458, 475], 'model.name': [402, 552],
+  'meaning.address': [205, 218, 459, 476], 'meaning.file': [209, 220, 372, 392, 460, 546], 'meaning.graph.id': [210, 221, 314], 'meaning.graph.address': [211, 222, 383, 502],
+  'licences.model': [213, 223, 490], 'licences.meaning': [213, 224, 401, 503], 'licences.data': [234, 671],
+  'publisher.name': [226], 'publisher.url': [227], 'publisher.repository': [315], recordsets: [235, 337], recordsets_partial: [214, 219, 342],
+  form: [173, 179, 319],
+  'model.address.repository': [201, 419, 458], 'model.address.module': [201, 424, 458], 'model.address.ref': [201, 425, 458],
+  'meaning.address.repository': [205, 459], 'meaning.address.ref': [205, 459],
+};
+const directoryLines = directorySource.split('\n');
+for (const [path, cited] of Object.entries(reads)) {
+  const words = path === 'form' ? ['manifestForm'] : path.startsWith('model.address.') ? ['parseModelAddress', 'parsed.', 'modelPin'] : path.startsWith('meaning.address.') ? ['parseGraphAddress', 'graphPin'] : [path.split('.').at(-1)];
+  for (const line of cited) {
+    if (!words.some((w) => directoryLines[line - 1]?.includes(w))) throw new Error(`directory.mjs:${line} no longer mentions ${words.join(' or ')}, where the table of generate.mjs says it reads ${path}`);
+  }
+}
+const mdDerive = (buffer, path) => {
   try {
-    const { data, error } = directory.parseFrontmatter(text);
-    if (error) return 0;
-    if (data.ovdb !== 1) return 0;
-    if (!Array.isArray(data.publish) || data.publish.length === 0) return 0;
+    const { data, error } = directory.parseFrontmatter(decoded(buffer));
+    if (error) return null;
+    if (data.ovdb !== 1) return null;
+    if (!Array.isArray(data.publish) || data.publish.length === 0) return null;
     const published = new Set();
     for (const entry of data.publish) {
-      if (!isText(entry) || !entry.startsWith('./') || !gitlib.isRepositoryPath(entry.slice(2))) return 0;
+      if (!isText(entry) || !entry.startsWith('./') || !gitlib.isRepositoryPath(entry.slice(2))) return null;
       published.add(entry.slice(2));
     }
-    return published.has(path) ? 1 : 0;
-  } catch { thrown += 1; return 0; }
+    return published.has(path) ? [...published] : null;
+  } catch { thrown += 1; return null; }
 };
+const mdVerdict = (buffer, path) => (mdDerive(buffer, path) === null ? 0 : 1);
 
 // ---- the bases: real documents, and what is made from them ----
 
@@ -147,11 +235,17 @@ const patchOf = (base, text) => { // the smallest range of lines of `base` whose
   return [start, endA - start, ...b.slice(start, endB)];
 };
 const applyPatch = (base, patch) => { const a = lines(base); a.splice(patch[0], patch[1], ...patch.slice(2)); return a.join('\n'); };
+// The flags: crlf (every line ends in CRLF), bom, pad=N (a comment line makes the document exactly N bytes), and
+// latin1 (the characters of the text, all below U+0100, are written as single bytes: invalid UTF-8). The result is
+// the bytes of the document; the Go test makes the same bytes.
 const flagged = (text, flags) => {
+  const flag = flags.split(' ');
   let out = text;
-  if (flags.includes('crlf')) out = out.replaceAll('\n', '\r\n');
-  if (flags.includes('bom')) out = `﻿${out}`;
-  return out;
+  if (flag.includes('crlf')) out = out.replaceAll('\n', '\r\n');
+  if (flag.includes('bom')) out = `\ufeff${out}`;
+  const pad = flag.find((f) => f.startsWith('pad='));
+  if (pad) out = `${out}# ${'x'.repeat(Number(pad.slice(4)) - Buffer.byteLength(out) - 3)}\n`;
+  return Buffer.from(out, flag.includes('latin1') ? 'latin1' : 'utf8');
 };
 
 const families = [];
@@ -187,7 +281,7 @@ for (const name of [chinookMd, hosterMd, fixtureMd]) {
 
 // ---- object-level mutants, on the JSON form of an own and a shared manifest ----
 
-const whitespace = ['\t', '\n', '\v', '\f', '\r', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '　', '﻿', '\u0085', '᠎', '​', '‌', '‍', '⁠', '­', '\u0000'];
+const whitespace = ['\t', '\n', '\v', '\f', '\r', ' ', '\u00a0', '\u1680', '\u2000', '\u2005', '\u200a', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff', '\u0085', '\u180e', '\u200b', '\u200c', '\u200d', '\u2060', '\u00ad', '\u0000'];
 const wrongTypes = [123, 1.5, true, false, ['a'], { a: 'b' }, [], {}, null, ''];
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const paths = (object, prefix = []) => Object.entries(object).flatMap(([key, value]) => [[...prefix, key], ...(value !== null && typeof value === 'object' && !Array.isArray(value) ? paths(value, [...prefix, key]) : [])]);
@@ -345,7 +439,7 @@ for (const name of [chinookYaml, hosterYaml]) {
     addManifest('boolean', name, copy((list, i) => { list[i] = list[i].replace(/: (\S.*)$/, ': True'); }));
     addManifest('null', name, copy((list, i) => { list[i] = list[i].replace(/: (\S.*)$/, ': ~'); }));
     addManifest('unicode', name, copy((list, i) => { list[i] = list[i].replace(/: (\S.*)$/, (_, v) => `: ${v}é`); }));
-    addManifest('unicode', name, copy((list, i) => { list[i] = list[i].replace(/^ /, ' '); }));
+    addManifest('unicode', name, copy((list, i) => { list[i] = list[i].replace(/^ /, '\u00a0'); }));
     addManifest('flow', name, copy((list, i) => { list[i] = list[i].replace(/: (\S.*)$/, (_, v) => `: [${v}]`); }));
     addManifest('flow', name, copy((list, i) => { list[i] = list[i].replace(/: (\S.*)$/, (_, v) => `: {k: ${v}}`); }));
   }
@@ -361,7 +455,7 @@ for (const name of [chinookYaml, hosterYaml]) {
   wholeDocument('document', text.replace(/\n/g, '\n\r'));
   wholeDocument('document', `${text}\u0000`);
   wholeDocument('document', `${text}\u0085`);
-  wholeDocument('document', text.replace(/\n/g, ' '));
+  wholeDocument('document', text.replace(/\n/g, '\u2028'));
   wholeDocument('document', text.replace(/\n/g, ' \n'));
   wholeDocument('document', `\n\n${text}`);
   wholeDocument('document', `# only a comment\n`);
@@ -384,7 +478,7 @@ const mdName = chinookMd;
 const mdText = bases[mdName];
 const front = (inner, body = '# Title\n') => `---\n${inner}\n---\n${body}`;
 const mdExamples = [
-  '', '---', '---\n', '---\n---\n', '---\n\n---\n', '---\r\n\r\n---\r\n', '# title\n', ' ---\novdb: 1\npublish: [./ovdb.yaml]\n---\n', '﻿---\novdb: 1\npublish: [./ovdb.yaml]\n---\n',
+  '', '---', '---\n', '---\n---\n', '---\n\n---\n', '---\r\n\r\n---\r\n', '# title\n', ' ---\novdb: 1\npublish: [./ovdb.yaml]\n---\n', '\ufeff---\novdb: 1\npublish: [./ovdb.yaml]\n---\n',
   '---\novdb: 1\npublish: [./ovdb.yaml]\n', '---\novdb: 1\npublish: [./ovdb.yaml]\n---x\n', '---\novdb: 1\npublish: [./ovdb.yaml]\n----\n', '---\novdb: 1\npublish: [./ovdb.yaml]\n---', '---\novdb: 1\npublish: [./ovdb.yaml]\n--- \n',
   '---\r\novdb: 1\r\npublish: [./ovdb.yaml]\r\n---\r\n', '---\r\novdb: 1\npublish: [./ovdb.yaml]\n---\r\nbody', '---\novdb: 1\r\npublish: [./ovdb.yaml]\r\n---\n', '---\rovdb: 1\rpublish: [./ovdb.yaml]\r---\r',
   '---\n- a\n---\n', '---\na\n---\n', '---\n1\n---\n', '---\n~\n---\n', '---\n[]\n---\n', '---\n{}\n---\n', '---\novdb: &a 1\npublish: [./ovdb.yaml]\n---\n', '---\novdb: !!int 1\npublish: [./ovdb.yaml]\n---\n',
@@ -417,15 +511,73 @@ for (const space of whitespace) for (const entry of [`"./ovdb.yaml${space}"`, `"
 for (const value of wrongTypes) for (const field of ['ovdb', 'publish']) addMd('md type', mdName, front(`${field}: ${JSON.stringify(value)}\n${field === 'ovdb' ? 'publish: [./ovdb.yaml]' : 'ovdb: 1'}`));
 for (const path of ['ovdb.yaml', 'a/b.yaml', '.ovdb.yaml', 'x']) for (const entry of ['./ovdb.yaml', `./${path}`, '././ovdb.yaml', `./${path}/`, `./${path.toUpperCase()}`]) addMd('md path', mdName, front(`ovdb: 1\npublish: ["${entry}"]`), path);
 
+// ---- what the record stage refuses, and the kinds where the Go reader and bounds are stricter ----
+
+const longPath = (length, suffix = '') => `${'a/'.repeat(length).slice(0, length - suffix.length - 1)}b${suffix}`; // exactly `length` characters, a plain relative path
+const repositoryValues = ['', null, 123, true, ['https://github.com/datatug/chinookdb'], {}, ' ', 'https://github.com/datatug/chinookdb', 'https://github.com/datatug/chinookdb/', 'http://github.com/a/b', 'https://gitlab.com/a/b', 'https://github.com/a', 'https://github.com/a/b/c', 'https://github.com/a/b.git', 'https://github.com/a/b.GIT', ' https://github.com/a/b', 'https://github.com/DataTug/ChinookDB', 'https://github.com/a/b?x=1', 'https://github.com/a/b#x', 'https://github.com:443/a/b', 'https://github.com/a/..', `https://github.com/a/${'b'.repeat(300)}`, `https://github.com/a/${'b'.repeat(234)}`, 'https://github.com/a/b\n'];
+const nameValues = ['chinook', 'Chinook', '_x', 'x1', '', ' ', 123, true, null, ['a'], { a: 1 }, '1x', 'a-b', 'a b', 'é', 'x'.repeat(5000), 'Chinook\n'];
+const own = ownObject; const shared = sharedObject;
+for (const [baseName, object] of [[ownJson, own], [sharedJson, shared]]) {
+  const mutate = (family, change) => { const copy = clone(object); change(copy); addManifest(family, baseName, jsonOf(copy)); };
+  for (const value of repositoryValues) mutate('record stage: publisher.repository', (m) => { m.publisher.repository = value; });
+  for (const value of nameValues) mutate('record stage: model.name', (m) => { m.model.name = value; });
+  mutate('record stage: recordsets', (m) => { m.recordsets = [...m.recordsets, m.recordsets[0]]; });
+  mutate('record stage: recordsets', (m) => { m.recordsets = [m.recordsets[0], m.recordsets[0], ...m.recordsets.slice(1)]; });
+  mutate('record stage: recordsets', (m) => { m.recordsets = [m.recordsets[0], m.recordsets[0].toUpperCase()]; });
+  for (const value of [longPath(1024), longPath(1025), longPath(1030, '.yaml')]) {
+    mutate('length', (m) => { m.meaning.file = value; });
+    if (baseName === ownJson) mutate('length', (m) => { m.model.modelspec = value; });
+  }
+  if (baseName === ownJson) for (const value of [longPath(1024, '.modelspec.hcl'), longPath(1025, '.modelspec.hcl'), longPath(1033, '.modelspec.hcl')]) mutate('length', (m) => { m.model.hcl = value; });
+  for (const value of ['M'.repeat(64), 'M'.repeat(65), `${'M'.repeat(70)}`]) mutate('length', (m) => { m.licences.data = value; });
+  for (const value of ['p'.repeat(40), 'p'.repeat(41)]) mutate('length', (m) => { m.deployment.engine = value; });
+  for (const homepage of ['https://xn--ovdb-kva.io/ovdb', 'https://xn--bcher-kva.de/ovdb', 'https://xn--80ak6aa92e.com/ovdb', 'https://acme.io/ovdb']) mutate('punycode', (m) => { m.homepage = homepage; });
+}
+for (const [baseName, object] of [[ownJson, own], [sharedJson, shared]]) {
+  const mutate = (family, change) => { const copy = clone(object); change(copy); addManifest(family, baseName, jsonOf(copy)); };
+  const addresses = (module) => [
+    `modelspec://github.com/datatug/chinookdb/${module}`, `modelspec://github.com/datatug/chinookdb/${module}?ref=${pinHex}`, `modelspec://github.com/DataTug/chinookdb/${module}`, `modelspec://github.com/DataTug/ChinookDB/${module}?ref=${pinHex}`,
+    `modelspec://gitlab.com/datatug/chinookdb/${module}`, `modelspec://github.com.evil/datatug/chinookdb/${module}`, `modelspec://github.com/datatug/chinookdb/${module}?ref=${pinHex.toUpperCase()}`, `modelspec://github.com/a/b.git/${module}?ref=${pinHex}`, `modelspec://github.com/a/../${module}?ref=${pinHex}`,
+    `modelspec://github.com/${'o'.repeat(300)}/b/${module}?ref=${pinHex}`, `modelspec://github.com/datatug/chinookdb/${'m'.repeat(2048 - 'modelspec://github.com/datatug/chinookdb/'.length)}`, `modelspec://github.com/datatug/chinookdb/${'m'.repeat(2049 - 'modelspec://github.com/datatug/chinookdb/'.length)}`,
+    `modelspec://github.com/datatug/chinookdb/${'m'.repeat(2048 - 'modelspec://github.com/datatug/chinookdb/?ref='.length - 40)}?ref=${pinHex}`, `modelspec://github.com/datatug/chinookdb/${'m'.repeat(2049 - 'modelspec://github.com/datatug/chinookdb/?ref='.length - 40)}?ref=${pinHex}`,
+  ];
+  for (const address of addresses('chinook')) mutate('address spelling', (m) => { m.model.address = address; });
+  for (const address of [`meaning://github.com/datatug/chinookdb?ref=${pinHex}`, 'meaning://github.com/datatug/chinookdb', `meaning://github.com/DataTug/chinookdb?ref=${pinHex}`, `meaning://gitlab.com/datatug/chinookdb?ref=${pinHex}`, `meaning://github.com/datatug/chinookdb/x?ref=${pinHex}`, `meaning://github.com/${'o'.repeat(300)}/b?ref=${pinHex}`, `meaning://github.com/datatug/${'r'.repeat(2049 - 'meaning://github.com/datatug/?ref='.length - 40)}?ref=${pinHex}`]) {
+    mutate('address spelling', (m) => { m.meaning.address = address; });
+  }
+}
+
+// Spellings that the Go reader and bounds refuse and the Directory's reader and rules accept: one line added or
+// changed in a real manifest, and documents at and over the size bound.
+for (const name of [chinookYaml, hosterYaml]) {
+  const text = bases[name];
+  const add = (family, line, flags = '') => addManifest(family, name, `${text}${line}\n`, flags);
+  add('reader', '2024: archived'); add('reader', 'true: 1'); add('reader', '[a]: x'); add('reader', 'null: 1'); add('reader', '? [a, b]\n: x');
+  add('reader', 'weight: .inf'); add('reader', 'ratio: .nan'); add('reader', 'rows: 9007199254740993'); add('reader', 'neg: -.inf'); add('reader', 'ok: 9007199254740992'); add('reader', 'exp: 1e3'); add('reader', 'octal: 0o17'); add('reader', 'hex: 0xFF');
+  add('reader', 'extra: "\\ud83c"'); add('reader', 'extra: "\\q"'); add('reader', 'extra: "\\x41\\u00e9\\U0001F600"'); add('reader', 'extra: "\\N\\_\\L\\P"');
+  add('reader', '# café', 'latin1'); add('reader', '# café');
+  add('reader', 'extra: a\rb'); add('reader', 'extra: x', 'crlf');
+  addManifest('size', name, text, 'pad=262144'); addManifest('size', name, text, 'pad=262145'); addManifest('size', name, text, 'pad=1048576');
+  addManifest('reader', name, text.replace(/^title:.*$/m, 'title: Chinook\rmusic'));
+  addManifest('reader', name, text.replace(/^title:.*$/m, 'title: "Chinook \\ud83c store"'));
+}
+for (const flags of ['pad=262144', 'pad=262145', 'latin1']) for (const name of [chinookMd, hosterMd]) addMd('size', name, bases[name], 'ovdb.yaml', flags);
+const entryOf = (length) => `./${longPath(length - 2, '.yaml')}`;
+for (const length of [1026, 1027, 1100]) addMd('md length', mdName, front(`ovdb: 1\npublish: ["${entryOf(length)}", ./ovdb.yaml]`));
+for (let count = 1; count <= 3; count += 1) addMd('md repeated', mdName, front(`ovdb: 1\npublish: [${Array(count).fill('./ovdb.yaml').join(', ')}, ./b.yaml, ./b.yaml]`));
+addMd('md repeated', mdName, front(`ovdb: 1\npublish: [${Array.from({ length: 150 }, () => './x').join(', ')}]`), 'x');
+
 // ---- the goldens ----
 
+const manifestBuffers = manifestCases.map(([base, patch, flags]) => flagged(applyPatch(bases[base], patch), flags));
+const mdBuffers = mdCases.map(([base, patch, flags]) => flagged(applyPatch(bases[base], patch), flags));
 const verdicts = {
-  manifest: manifestCases.map(([base, patch, flags]) => manifestVerdict(flagged(applyPatch(bases[base], patch), flags))).join(''),
-  md: mdCases.map(([base, patch, flags, path]) => mdVerdict(flagged(applyPatch(bases[base], patch), flags), path)).join(''),
+  manifest: manifestBuffers.map((buffer) => manifestVerdict(buffer)).join(''),
+  md: mdBuffers.map((buffer, at) => mdVerdict(buffer, mdCases[at][3])).join(''),
 };
 const count = (text, digit) => [...text].filter((c) => c === digit).length;
 const meta = {
-  format: 'ovdb-publisher-manifest-reference/1',
+  format: 'ovdb-publisher-manifest-reference/2',
   generatedBy: 'internal/publisher/manifest/testdata/reference/generate.mjs',
   node: process.version,
   references: Object.fromEntries(Object.entries(pins).map(([name, pin]) => [name, pin])),
@@ -445,6 +597,30 @@ const verdictFile = {
   manifest: { accepted: count(verdicts.manifest, '1'), refused: count(verdicts.manifest, '0'), verdicts: verdicts.manifest },
   md: { accepted: count(verdicts.md, '1'), refused: count(verdicts.md, '0'), verdicts: verdicts.md },
 };
+// The facts: for each accepted manifest, the values factsOf derives, as the difference from those of its base
+// (a base that is accepted is the reference of its cases); for each accepted OVDB.md, the set it lists.
+const factsOfBuffer = (buffer) => factsOf(parseYaml(decoded(buffer)));
+const baseFacts = {};
+for (const name of Object.keys(bases)) {
+  if (!name.endsWith('-md') && manifestVerdict(Buffer.from(bases[name])) === 1) baseFacts[name] = factsOfBuffer(Buffer.from(bases[name]));
+}
+const factDeltas = [];
+manifestCases.forEach(([base], at) => {
+  if (verdicts.manifest[at] !== '1') return;
+  const facts = factsOfBuffer(manifestBuffers[at]);
+  const delta = {};
+  for (const [key, value] of Object.entries(facts)) if (JSON.stringify(value) !== JSON.stringify(baseFacts[base][key])) delta[key] = value;
+  factDeltas.push(delta);
+});
+const mdLists = [];
+mdCases.forEach(([, , , path], at) => { if (verdicts.md[at] === '1') mdLists.push(mdDerive(mdBuffers[at], path)); });
+const factsFile = {
+  ...meta,
+  profile: 'directory',
+  fields: [...factFields, 'form', 'model.address.repository', 'model.address.module', 'model.address.ref', 'meaning.address.repository', 'meaning.address.ref'],
+  reads,
+  bases: baseFacts,
+};
 // One case per line, so that a diff of the goldens reads as a diff of cases.
 const corpusText = [
   '{',
@@ -455,13 +631,32 @@ const corpusText = [
   '}', '',
 ].join('\n');
 const verdictText = `${JSON.stringify(verdictFile, null, 1)}\n`;
+const factsText = [
+  '{',
+  ...Object.entries(factsFile).filter(([key]) => key !== 'bases').map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)},`),
+  '  "bases": {', Object.entries(baseFacts).map(([name, facts]) => `    ${JSON.stringify(name)}: ${JSON.stringify(facts)}`).join(',\n'), '  },',
+  '  "manifest": [', factDeltas.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ],',
+  '  "md": [', mdLists.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ]',
+  '}', '',
+].join('\n');
+// A digest of every committed golden of both slices, so that a hand edit of any of them fails `go test` until the
+// generator is run again (the digests of the rules golden are read from the committed file, which its own
+// generator writes: run that one first when the rules change).
+const rulesGolden = join(here, '../../../rules/testdata/reference/matrix.golden.json');
+const sha = (data) => createHash('sha256').update(data).digest('hex');
+const digestText = `${JSON.stringify({
+  'manifest/testdata/reference/corpus.json': sha(corpusText),
+  'manifest/testdata/reference/directory.verdicts.json': sha(verdictText),
+  'manifest/testdata/reference/directory.facts.json': sha(factsText),
+  'rules/testdata/reference/matrix.golden.json': sha(readFileSync(rulesGolden)),
+}, null, 1)}\n`;
 
 if (thrown > 0) console.error(`note: the reference threw on ${thrown} document(s); they are recorded as refused`);
+const targets = [[corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [digestsPath, digestText]];
 if (process.argv.includes('--check')) {
-  if (readFileSync(corpusPath, 'utf8') !== corpusText || readFileSync(verdictsPath, 'utf8') !== verdictText) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
+  if (targets.some(([path, text]) => readFileSync(path, 'utf8') !== text)) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
   console.log(`the goldens are up to date (${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents)`);
 } else {
-  writeFileSync(corpusPath, corpusText);
-  writeFileSync(verdictsPath, verdictText);
-  console.log(`wrote ${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents: corpus ${(corpusText.length / 1024).toFixed(0)} KiB, verdicts ${(verdictText.length / 1024).toFixed(0)} KiB; accepted ${verdictFile.manifest.accepted}+${verdictFile.md.accepted}, refused ${verdictFile.manifest.refused}+${verdictFile.md.refused}; mined edits ${appliedEdits} of ${minedEdits} applied`);
+  for (const [path, text] of targets) writeFileSync(path, text);
+  console.log(`wrote ${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents: corpus ${(corpusText.length / 1024).toFixed(0)} KiB, verdicts ${(verdictText.length / 1024).toFixed(0)} KiB, facts ${(factsText.length / 1024).toFixed(0)} KiB; accepted ${verdictFile.manifest.accepted}+${verdictFile.md.accepted}, refused ${verdictFile.manifest.refused}+${verdictFile.md.refused}; mined edits ${appliedEdits} of ${minedEdits} applied`);
 }

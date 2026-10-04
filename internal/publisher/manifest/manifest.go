@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
@@ -14,7 +15,7 @@ type Form string
 
 const (
 	// FormOwn: the model and the meaning file are files of the publisher's
-	// repository (model.modelspec or model.hcl is present).
+	// repository (model.modelspec or model.hcl is written).
 	FormOwn Form = "own"
 	// FormShared: the model and the meaning graph are published in other
 	// repositories and named by pinned addresses.
@@ -22,43 +23,43 @@ const (
 )
 
 // Manifest is what a manifest says, for a caller that goes on to read the files
-// it names. Strings are as written; a field that is missing or not text is "".
-// Use them when the findings say nothing is wrong.
+// it names. Every field the Directory reads is a Fact (see Fact), and the README
+// lists each with where the Directory reads it. A value is as written, never
+// trimmed or coerced: a number or a boolean where text is wanted is a written,
+// unusable fact.
 type Manifest struct {
+	// Read is true when the document was read as a mapping. When it is false
+	// nothing was read, every fact is the zero Fact, and a finding says why: an
+	// absent fact then does not mean the key is not written.
+	Read bool
+	// Form is the form the manifest is written in: own when model.modelspec or
+	// model.hcl is written (even blank), else shared.
 	Form Form
 
-	ID, Title, Description string
-	URL                    string // the canonical url
-	Homepage               string
+	Format, ID, Title, Description Fact[string]
+	URL, Homepage                  Fact[string] // url is the canonical one
 
-	DeploymentURL, Engine, Discovery, RecordsetPage string
+	DeploymentURL, Engine, Discovery, RecordsetPage Fact[string]
 
-	// The files an own manifest names, relative to the repository root.
-	ModelSpecPath, ModelHCLPath, MeaningFile string
-	// ModelAddress and MeaningAddress as written, and the pins they carry.
-	ModelAddress, ModelRef, MeaningAddress, MeaningRef string
-	// ModelRepository and ModelModule are the parts of a model address
-	// (host/org/repo and the module name); MeaningRepository of a meaning address.
-	ModelRepository, ModelModule, MeaningRepository string
-	GraphID, GraphAddress                           string
+	// The files an own manifest names, relative to the repository root;
+	// MeaningFile is a file of the graph's repository in the shared form.
+	ModelSpec, ModelHCL, MeaningFile Fact[string]
+	// ModelName is model.name, which the Directory compares with the module.
+	ModelName Fact[string]
+	// ModelAddress and MeaningAddress as written and as parsed.
+	ModelAddress, MeaningAddress Fact[Address]
+	GraphID, GraphAddress        Fact[string]
 
-	LicenceModel, LicenceMeaning, LicenceData string
+	LicenceModel, LicenceMeaning, LicenceData Fact[string]
 
-	PublisherName, PublisherURL, PublisherRepository string
+	PublisherName, PublisherURL, PublisherRepository Fact[string]
 
-	Recordsets        []string
-	RecordsetsPartial bool
+	Recordsets        Fact[[]string]
+	RecordsetsPartial Fact[bool]
 }
 
 // isText is the references' isText: text that is not blank by JavaScript's trim().
 func isText(n *Node) bool { return n != nil && n.Kind == kindString && !rules.IsBlank(n.Text) }
-
-func text(n *Node) string {
-	if n != nil && n.Kind == kindString {
-		return n.Text
-	}
-	return ""
-}
 
 // where is the line of a finding about field key of m: the value's, or the map's.
 func where(m *Node, key string) int {
@@ -77,49 +78,157 @@ type manifestChecker struct {
 
 // CheckManifest judges a manifest. path names it in the findings.
 func CheckManifest(doc []byte, path string, profile Profile) (Manifest, []Finding) {
-	c := &collector{document: path}
+	if !profile.known() {
+		return Manifest{}, unknownProfile(profile)
+	}
+	b := newBudget()
+	m, findings := checkManifest(doc, path, b)
+	return m, append(findings, b.notice(path)...)
+}
+
+func checkManifest(doc []byte, path string, b *budget) (Manifest, []Finding) {
+	c := newCollector(path, b)
 	if tooBig(c, doc) {
-		return Manifest{}, c.result()
+		return Manifest{}, c.findings
 	}
 	root := readDocument(c, doc, 0)
 	if root == nil {
-		return Manifest{}, c.result()
+		return Manifest{}, c.findings
 	}
 	if root.Kind != kindMap {
 		c.add("manifest-shape", root.Line, "is not a mapping: write the manifest as keys and values (format, id, title, ...)")
-		return Manifest{}, c.result()
+		return Manifest{}, c.findings
 	}
 	k := &manifestChecker{c: c, m: root}
+	k.out.Read = true
 	k.check()
-	return k.out, c.result()
+	return k.out, c.findings
 }
 
-// required adds "<label> is required" unless n is text that ok accepts.
-func (k *manifestChecker) required(parent *Node, key, label, hint string, ok func(string) bool) {
-	n := parent.Field(key)
-	if n == nil || n.Kind != kindString || !ok(n.Text) {
-		k.c.add("manifest-required", where(parent, key), "%s is required: %s", label, hint)
+// A problem function returns what is wrong with a text, or "" when it is fine.
+type problem func(string) string
+
+func pathProblem(s string) string {
+	switch {
+	case rules.IsRepositoryPath(s):
+		return ""
+	case len(s) > rules.MaxPathLength:
+		return fmt.Sprintf("is %d bytes; a path is at most %d", len(s), rules.MaxPathLength)
 	}
+	return "must be a relative path inside the repository (no .., no leading /, no . or empty segments, no glob, no backslash or space)"
 }
 
-// urlField judges a URL the manifest publishes: missing, null and "" are
-// "required", anything else is refused unless it passes check.
-func (k *manifestChecker) urlField(parent *Node, key, label string, check func(string) (rules.URL, error)) (rules.URL, bool) {
+func hclProblem(s string) string {
+	if d := pathProblem(s); d != "" {
+		return d
+	}
+	if !strings.HasSuffix(s, ".modelspec.hcl") {
+		return "must end in .modelspec.hcl"
+	}
+	return ""
+}
+
+func moduleProblem(s string) string {
+	if isModuleName(s) {
+		return ""
+	}
+	return "must be a module name: a letter or _, then letters, digits and _"
+}
+
+func licenceProblem(s string) string {
+	switch {
+	case rules.IsLicenceID(s):
+		return ""
+	case len(s) > rules.MaxLicenceLength:
+		return fmt.Sprintf("is %d bytes; a licence id is at most %d", len(s), rules.MaxLicenceLength)
+	}
+	return "must be an SPDX-shaped licence id such as MIT or CC0-1.0"
+}
+
+func engineProblem(s string) string {
+	if rules.IsEngine(s) {
+		return ""
+	}
+	return fmt.Sprintf("must be a letter, then letters, digits and . _ + - (at most %d characters)", rules.MaxEngineLength)
+}
+
+func graphAddressProblem(s string) string {
+	if strings.HasPrefix(s, "meaning://") {
+		return ""
+	}
+	return "must be the graph's meaning:// address"
+}
+
+func repositoryURLProblem(s string) string {
+	if _, ok := rules.RepositoryKey(s); ok {
+		return ""
+	}
+	if len(s) > rules.MaxRepositoryLength {
+		return fmt.Sprintf("is %d bytes; a repository URL is at most %d", len(s), rules.MaxRepositoryLength)
+	}
+	return "must be the https URL of a repository on github.com: https://github.com/<org>/<repository> (no trailing slash, .git, port, query or fragment)"
+}
+
+// field is a text field of the manifest.
+type field struct {
+	parent *Node
+	key    string
+	label  string
+	// required: absent, null, blank and not-text are manifest-required. When it
+	// is false they are refused, as written, under rule.
+	required bool
+	rule     string  // the rule of a written value that is refused
+	hint     string  // what to write
+	problem  problem // what else is wrong with a written text; nil for nothing
+}
+
+// text judges a field and returns its Fact.
+func (k *manifestChecker) text(f field) Fact[string] {
+	n := f.parent.Field(f.key)
+	if n == nil {
+		if f.required {
+			k.c.add("manifest-required", where(f.parent, f.key), "%s is required: %s", f.label, f.hint)
+		}
+		return Fact[string]{}
+	}
+	if n.Kind != kindString || rules.IsBlank(n.Text) {
+		if f.required {
+			k.c.add("manifest-required", n.Line, "%s is required: %s, got %s", f.label, f.hint, describe(n))
+		} else {
+			k.c.add(f.rule, n.Line, "%s, when given, must be text: %s, got %s", f.label, f.hint, describe(n))
+		}
+		return found(n, false, "")
+	}
+	if f.problem != nil {
+		if d := f.problem(n.Text); d != "" {
+			k.c.add(f.rule, n.Line, "%s %s, got %s: %s", f.label, d, rules.Quote(n.Text), f.hint)
+			return found(n, false, "")
+		}
+	}
+	return found(n, true, n.Text)
+}
+
+// urlField judges a URL the manifest publishes: absent, null and "" are
+// "required" (when it is), anything else is refused unless it passes check.
+func (k *manifestChecker) urlField(parent *Node, key, label string, required bool, check func(string) (rules.URL, error)) (rules.URL, Fact[string]) {
 	n := parent.Field(key)
 	if n == nil || n.Kind == kindNull || (n.Kind == kindString && n.Text == "") {
+		if n == nil && !required {
+			return rules.URL{}, Fact[string]{}
+		}
 		k.c.add("manifest-required", where(parent, key), "%s is required: write a public https URL", label)
-		return rules.URL{}, false
+		return rules.URL{}, found(n, false, "")
 	}
 	if n.Kind != kindString {
 		k.c.add("manifest-url", n.Line, "%s is not a URL (%s): write a public https URL as text", label, describe(n))
-		return rules.URL{}, false
+		return rules.URL{}, found(n, false, "")
 	}
 	u, err := check(n.Text)
 	if err != nil {
 		k.c.add("manifest-url", n.Line, "%s %s", label, err.Error())
-		return rules.URL{}, false
+		return rules.URL{}, found(n, false, "")
 	}
-	return u, true
+	return u, found(n, true, n.Text)
 }
 
 func publicURL(s string) (rules.URL, error)   { return rules.ParsePublicHTTPSURL(s) }
@@ -142,159 +251,174 @@ func canonicalURL(s string) (rules.URL, error) {
 }
 
 func (k *manifestChecker) check() {
-	m, out := k.m, &k.out
-	c := k.c
-	if f := m.Field("format"); f == nil || f.Kind != kindString || f.Text != ManifestFormat {
-		c.add("manifest-format", where(m, "format"), "format must be %s, got %s: write format: %s", ManifestFormat, describe(m.Field("format")), ManifestFormat)
+	m, out, c := k.m, &k.out, k.c
+	f := m.Field("format")
+	out.Format = found(f, f != nil && f.Kind == kindString && f.Text == ManifestFormat, ManifestFormat)
+	if !out.Format.Valid {
+		c.add("manifest-format", where(m, "format"), "format must be %s, got %s: write format: %s", ManifestFormat, describe(f), ManifestFormat)
 	}
-	for _, field := range []string{"id", "title", "description"} {
-		if !isText(m.Field(field)) {
-			c.add("manifest-required", where(m, field), "%s is required: write some text", field)
-		}
+	somewhat := func(key string) Fact[string] {
+		return k.text(field{parent: m, key: key, label: key, required: true, hint: "write some text"})
 	}
-	out.ID, out.Title, out.Description = text(m.Field("id")), text(m.Field("title")), text(m.Field("description"))
+	out.ID, out.Title, out.Description = somewhat("id"), somewhat("title"), somewhat("description")
 
-	canonical, canonicalOK := k.urlField(m, "url", "url", canonicalURL)
-	out.URL = text(m.Field("url"))
+	canonical, urlFact := k.urlField(m, "url", "url", true, canonicalURL)
+	out.URL = urlFact
 	if hp := m.Field("homepage"); hp != nil {
+		valid := false
 		if hp.Kind == kindString && hp.Text != "" {
 			if err := rules.Homepage(hp.Text); err != nil {
 				c.add("manifest-homepage", hp.Line, "homepage %s", err.Error())
+			} else {
+				valid = true
 			}
 		} else {
 			c.add("manifest-homepage", hp.Line, "homepage is not a URL (%s): write an https URL of at most 200 characters, or leave homepage out when the database has no website", describe(hp))
 		}
-		out.Homepage = text(hp)
+		out.Homepage = found(hp, valid, hp.Text)
 	}
 
 	deployment := m.Field("deployment")
-	_, _ = k.urlField(deployment, "url", "deployment.url", publicURL)
-	out.DeploymentURL = text(deployment.Field("url"))
-	if e := deployment.Field("engine"); e == nil || e.Kind != kindString || !rules.IsEngine(e.Text) {
-		c.add("manifest-engine", where(deployment, "engine"), "deployment.engine is required: a letter, then letters, digits and . _ + - (40 characters at most)")
-	}
-	out.Engine = text(deployment.Field("engine"))
-	discovery, discoveryOK := k.urlField(deployment, "discovery", "deployment.discovery", publicURL)
-	out.Discovery = text(deployment.Field("discovery"))
-	if canonicalOK && discoveryOK && discovery.Host != canonical.Host {
+	_, out.DeploymentURL = k.urlField(deployment, "url", "deployment.url", true, publicURL)
+	out.Engine = k.text(field{parent: deployment, key: "engine", label: "deployment.engine", required: true, rule: "manifest-engine", hint: "write the engine your deployment runs, such as postgres", problem: engineProblem})
+	discovery, discoveryFact := k.urlField(deployment, "discovery", "deployment.discovery", true, publicURL)
+	out.Discovery = discoveryFact
+	if urlFact.Valid && discoveryFact.Valid && discovery.Host != canonical.Host {
 		c.add("manifest-discovery", where(deployment, "discovery"), "deployment.discovery must be on the same origin as url (https://%s), not https://%s: serve the discovery document from the canonical host", canonical.Host, discovery.Host)
 	}
-	if page := deployment.Field("recordset_page"); page != nil {
-		_, _ = k.urlField(deployment, "recordset_page", "deployment.recordset_page", templateURL)
-		out.RecordsetPage = text(page)
-	}
+	_, out.RecordsetPage = k.urlField(deployment, "recordset_page", "deployment.recordset_page", false, templateURL)
 
 	k.model()
 
-	k.required(m.Field("publisher"), "name", "publisher.name", "write the publisher's name", func(s string) bool { return !rules.IsBlank(s) })
-	_, _ = k.urlField(m.Field("publisher"), "url", "publisher.url", publicURL)
-	out.PublisherName, out.PublisherURL = text(m.Field("publisher").Field("name")), text(m.Field("publisher").Field("url"))
-	out.PublisherRepository = text(m.Field("publisher").Field("repository"))
+	publisher := m.Field("publisher")
+	out.PublisherName = k.text(field{parent: publisher, key: "name", label: "publisher.name", required: true, hint: "write the publisher's name"})
+	_, out.PublisherURL = k.urlField(publisher, "url", "publisher.url", true, publicURL)
+	out.PublisherRepository = k.text(field{parent: publisher, key: "repository", label: "publisher.repository", rule: "manifest-publisher", hint: "write the repository that carries this manifest, or leave publisher.repository out", problem: repositoryURLProblem})
 
 	licences := m.Field("licences")
-	k.required(licences, "data", "licences.data", "write an SPDX licence id such as MIT or CC0-1.0", rules.IsLicenceID)
-	out.LicenceData = text(licences.Field("data"))
-	out.LicenceModel, out.LicenceMeaning = text(licences.Field("model")), text(licences.Field("meaning"))
+	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
 
 	k.recordsets()
 }
 
 // model judges model and meaning, which the manifest writes in one of two forms
-// that never mix: own model files (model.modelspec or model.hcl present), or a
+// that never mix: own model files (model.modelspec or model.hcl written), or a
 // shared model named by pinned addresses.
 func (k *manifestChecker) model() {
 	m, out, c := k.m, &k.out, k.c
 	model, meaning := m.Field("model"), m.Field("meaning")
 	graph := meaning.Field("graph")
-	if hcl := model.Field("hcl"); hcl != nil && (hcl.Kind != kindString || !rules.IsRepositoryPath(hcl.Text) || !strings.HasSuffix(hcl.Text, ".modelspec.hcl")) {
-		c.add("manifest-model", hcl.Line, "model.hcl must be a relative path inside the repository (no .., no leading /, no . or empty segments, no glob) ending in .modelspec.hcl, got %s", describe(hcl))
-	}
-	out.ModelHCLPath = text(model.Field("hcl"))
+	licences := m.Field("licences")
+	out.ModelHCL = k.text(field{parent: model, key: "hcl", label: "model.hcl", rule: "manifest-model", hint: "write the path of the model's source, ending in .modelspec.hcl", problem: hclProblem})
+	out.ModelName = k.text(field{parent: model, key: "name", label: "model.name", rule: "manifest-model", hint: "write the ModelSpec module's name, or leave model.name out", problem: moduleProblem})
 	out.Form = FormShared
 	if model.Field("modelspec") != nil || model.Field("hcl") != nil {
 		out.Form = FormOwn
 	}
-	addr := model.Field("address")
-	out.ModelAddress, out.MeaningAddress = text(addr), text(meaning.Field("address"))
-	pathRule := func(s string) bool { return rules.IsRepositoryPath(s) }
 	if out.Form == FormOwn {
-		k.required(model, "modelspec", "model.modelspec", "write the path of the model's JSON file, relative to the repository root", pathRule)
-		out.ModelSpecPath = text(model.Field("modelspec"))
-		if parsed, ok := parseModelAddress(out.ModelAddress); addr != nil && !ok {
-			c.add("manifest-model", addr.Line, "model.address must be modelspec://github.com/<org>/<repository>/<module>, this repository and the module name, without ?ref= (a model in another repository is named by model.address alone, with ?ref= and no local model files), got %s", describe(addr))
-		} else if addr != nil {
-			out.ModelRepository, out.ModelModule, out.ModelRef = parsed.Repository, parsed.Module, parsed.Ref
-		}
+		out.ModelSpec = k.text(field{parent: model, key: "modelspec", label: "model.modelspec", required: true, rule: "manifest-model", hint: "write the path of the model's JSON file, relative to the repository root", problem: pathProblem})
+		out.ModelAddress = k.address(model, "model.address", parseModelAddress, "modelspec://github.com/<org>/<repository>/<module>, this repository and the module name, without ?ref= (a model in another repository is named by model.address alone, with ?ref= and no local model files)", noPin)
 		if a := meaning.Field("address"); a != nil {
 			c.add("manifest-form", a.Line, "meaning.address is only for a shared model (model.address with ?ref= and no local model files); a manifest with its own model files has its own meaning file and names its graph by meaning.graph.address: remove meaning.address")
+			out.MeaningAddress = found(a, false, Address{})
 		}
 		if p := m.Field("recordsets_partial"); p != nil {
 			c.add("manifest-form", p.Line, "recordsets_partial is only for a shared model; a manifest with its own model files lists every ModelSpec entity: remove recordsets_partial")
+			out.RecordsetsPartial = found(p, false, false)
 		}
-		k.required(meaning, "file", "meaning.file", "write the path of the meaning file, relative to the repository root", pathRule)
-		out.MeaningFile = text(meaning.Field("file"))
-		k.required(graph, "id", "meaning.graph.id", "write the graph's registry id", func(s string) bool { return !rules.IsBlank(s) })
-		k.required(graph, "address", "meaning.graph.address", "write the graph's meaning:// address", func(s string) bool { return !rules.IsBlank(s) && strings.HasPrefix(s, "meaning://") })
-		k.required(m.Field("licences"), "model", "licences.model", "write an SPDX licence id", rules.IsLicenceID)
-		k.required(m.Field("licences"), "meaning", "licences.meaning", "write an SPDX licence id", rules.IsLicenceID)
+		out.MeaningFile = k.text(field{parent: meaning, key: "file", label: "meaning.file", required: true, rule: "manifest-meaning", hint: "write the path of the meaning file, relative to the repository root", problem: pathProblem})
+		out.GraphAddress = k.text(field{parent: graph, key: "address", label: "meaning.graph.address", required: true, rule: "manifest-meaning", hint: "write the graph's meaning:// address", problem: graphAddressProblem})
+		out.LicenceModel = k.text(field{parent: licences, key: "model", label: "licences.model", required: true, rule: "manifest-licence", hint: "write an SPDX licence id", problem: licenceProblem})
+		out.LicenceMeaning = k.text(field{parent: licences, key: "meaning", label: "licences.meaning", required: true, rule: "manifest-licence", hint: "write an SPDX licence id", problem: licenceProblem})
 	} else {
-		k.sharedModel(addr, meaning, graph)
+		k.sharedModel(model, meaning, graph, licences)
 	}
-	out.GraphID, out.GraphAddress = text(graph.Field("id")), text(graph.Field("address"))
-	if p := m.Field("recordsets_partial"); p != nil && p.Kind == kindBool {
-		out.RecordsetsPartial = p.Text == "true"
+	out.GraphID = k.text(field{parent: graph, key: "id", label: "meaning.graph.id", required: true, hint: "write the graph's registry id"})
+}
+
+const (
+	noPin   = false
+	needPin = true
+)
+
+// address judges an address field: it parses as format says, names a repository
+// on a host the Directory reads, spells it in lower case, and carries a pin when
+// the form wants one and none when it wants none.
+func (k *manifestChecker) address(parent *Node, label string, parse func(string) (Address, bool), format string, pin bool) Fact[Address] {
+	key := strings.TrimPrefix(strings.TrimPrefix(label, "model."), "meaning.")
+	n := parent.Field(key)
+	if n == nil {
+		return Fact[Address]{}
 	}
+	c := k.c
+	if n.Kind != kindString || len(n.Text) > rules.MaxURLLength {
+		if n.Kind == kindString {
+			c.add("manifest-"+family(label), n.Line, "%s is %d bytes; at most %d", label, len(n.Text), rules.MaxURLLength)
+		} else {
+			c.add("manifest-"+family(label), n.Line, "%s must be %s, got %s", label, format, describe(n))
+		}
+		return found(n, false, Address{})
+	}
+	parsed, ok := parse(n.Text)
+	if !ok {
+		c.add("manifest-"+family(label), n.Line, "%s must be %s, got %s", label, format, describe(n))
+		return found(n, false, Address{})
+	}
+	valid := true
+	if _, ok := rules.RepositoryKey("https://" + parsed.Repository); !ok {
+		valid = false
+		if len(parsed.Repository) > rules.MaxRepositoryLength-len("https://") {
+			c.add("manifest-"+family(label), n.Line, "%s names a repository of %d bytes; a repository is at most %d", label, len(parsed.Repository), rules.MaxRepositoryLength-len("https://"))
+		} else {
+			c.add("manifest-"+family(label), n.Line, "%s must name a repository on github.com, as github.com/<org>/<repository>, got %s", label, rules.Quote(parsed.Repository))
+		}
+	} else if parsed.Repository != strings.ToLower(parsed.Repository) {
+		valid = false
+		c.add("manifest-"+family(label), n.Line, "%s must be written in lower case (host, organisation and repository; a module name is case-sensitive), got %s", label, rules.Quote(parsed.Repository))
+	}
+	switch {
+	case pin && parsed.Ref == "":
+		valid = false
+		c.add("manifest-"+family(label), n.Line, "%s must carry ?ref=<40 hex> (the pin says which commit is read): add ?ref= and the commit", label)
+	case !pin && parsed.Ref != "":
+		valid = false
+		c.add("manifest-"+family(label), n.Line, "%s must not carry ?ref= when the model's files are in the same repository: remove ?ref=", label)
+	}
+	return found(n, valid, parsed)
+}
+
+func family(label string) string {
+	if strings.HasPrefix(label, "meaning.") {
+		return "meaning"
+	}
+	return "model"
 }
 
 // sharedModel judges the shared form: no local files, both addresses pinned.
-func (k *manifestChecker) sharedModel(addr, meaning, graph *Node) {
+func (k *manifestChecker) sharedModel(model, meaning, graph, licences *Node) {
 	m, out, c := k.m, &k.out, k.c
-	if addr == nil {
-		c.add("manifest-model", where(m.Field("model"), "address"), "model must name the model by local files (model.modelspec and model.hcl) or, for a model published in another repository, by model.address with ?ref=<40 hex>")
-	} else {
-		parsed, ok := parseModelAddress(text(addr))
-		switch {
-		case !ok:
-			c.add("manifest-model", addr.Line, "model.address must be modelspec://github.com/<org>/<repository>/<module>?ref=<40 hex> for a model in another repository, got %s", describe(addr))
-		case parsed.Ref == "":
-			c.add("manifest-model", addr.Line, "model.address must carry ?ref=<40 hex> when the model is in another repository (the pin says which commit is read): add ?ref= and the commit")
-		}
-		if ok {
-			out.ModelRepository, out.ModelModule, out.ModelRef = parsed.Repository, parsed.Module, parsed.Ref
-		}
+	if model.Field("address") == nil {
+		c.add("manifest-model", where(model, "address"), "model must name the model by local files (model.modelspec and model.hcl) or, for a model published in another repository, by model.address with ?ref=<40 hex>")
 	}
-	a := meaning.Field("address")
-	if a == nil {
+	out.ModelAddress = k.address(model, "model.address", parseModelAddress, "modelspec://github.com/<org>/<repository>/<module>?ref=<40 hex> for a model in another repository", needPin)
+	if meaning.Field("address") == nil {
 		c.add("manifest-meaning", where(meaning, "address"), "meaning.address is required when model.address names a model in another repository (the meaning graph is then shared too): write meaning://github.com/<org>/<repository>?ref=<40 hex>")
-	} else {
-		parsed, ok := parseGraphAddress(text(a))
-		switch {
-		case !ok:
-			c.add("manifest-meaning", a.Line, "meaning.address must be meaning://github.com/<org>/<repository>?ref=<40 hex>, got %s", describe(a))
-		case parsed.Ref == "":
-			c.add("manifest-meaning", a.Line, "meaning.address must carry ?ref=<40 hex> (the pin says which commit of the meaning graph is read): add ?ref= and the commit")
-		}
-		if ok {
-			out.MeaningRepository, out.MeaningRef = parsed.Repository, parsed.Ref
-		}
 	}
-	k.required(meaning, "file", "meaning.file", "write the path of the file of the graph, in the graph's repository, that binds the model", func(s string) bool { return rules.IsRepositoryPath(s) })
-	out.MeaningFile = text(meaning.Field("file"))
-	k.required(graph, "id", "meaning.graph.id", "write the MeaningGraph registry id", func(s string) bool { return !rules.IsBlank(s) })
-	if ga := graph.Field("address"); ga != nil && (!isText(ga) || !strings.HasPrefix(ga.Text, "meaning://")) {
-		c.add("manifest-meaning", ga.Line, "meaning.graph.address, when given, must be the graph's meaning:// address without a pin, got %s", describe(ga))
-	}
-	for _, field := range []string{"model", "meaning"} {
-		if l := m.Field("licences").Field(field); l != nil && (l.Kind != kindString || !rules.IsLicenceID(l.Text)) {
-			c.add("manifest-licence", l.Line, "licences.%s, when given, must be an SPDX-shaped licence id such as MIT or CC0-1.0, got %s", field, describe(l))
+	out.MeaningAddress = k.address(meaning, "meaning.address", parseGraphAddress, "meaning://github.com/<org>/<repository>?ref=<40 hex>", needPin)
+	out.MeaningFile = k.text(field{parent: meaning, key: "file", label: "meaning.file", required: true, rule: "manifest-meaning", hint: "write the path of the file of the graph, in the graph's repository, that binds the model", problem: pathProblem})
+	out.GraphAddress = k.text(field{parent: graph, key: "address", label: "meaning.graph.address", rule: "manifest-meaning", hint: "write the graph's meaning:// address without a pin, or leave it out", problem: graphAddressProblem})
+	out.LicenceModel = k.text(field{parent: licences, key: "model", label: "licences.model", rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0, or leave it out", problem: licenceProblem})
+	out.LicenceMeaning = k.text(field{parent: licences, key: "meaning", label: "licences.meaning", rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0, or leave it out", problem: licenceProblem})
+	if p := m.Field("recordsets_partial"); p != nil {
+		if p.Kind != kindBool {
+			c.add("manifest-form", p.Line, "recordsets_partial must be true or false, got %s", describe(p))
 		}
-	}
-	if p := m.Field("recordsets_partial"); p != nil && p.Kind != kindBool {
-		c.add("manifest-form", p.Line, "recordsets_partial must be true or false, got %s", describe(p))
+		out.RecordsetsPartial = found(p, p.Kind == kindBool, p.Text == "true")
 	}
 }
 
-// recordsets judges the list of recordset names: a non-empty list of text.
+// recordsets judges the list of recordset names: a non-empty list of text, each
+// name once.
 func (k *manifestChecker) recordsets() {
 	list := k.m.Field("recordsets")
 	good := list != nil && list.Kind == kindSeq && len(list.Items) > 0
@@ -305,9 +429,18 @@ func (k *manifestChecker) recordsets() {
 	}
 	if !good {
 		k.c.add("manifest-recordsets", where(k.m, "recordsets"), "recordsets must be a non-empty list of names: write recordsets: with one name per line, each a ModelSpec entity")
+		k.out.Recordsets = found(list, false, []string(nil))
 		return
 	}
-	for _, item := range list.Items {
-		k.out.Recordsets = append(k.out.Recordsets, item.Text)
+	names := make([]string, len(list.Items))
+	seen := map[string]bool{}
+	for i, item := range list.Items {
+		names[i] = item.Text
+		if seen[item.Text] {
+			good = false
+			k.c.add("manifest-recordsets", item.Line, "recordsets lists %s twice: list each name once", rules.Quote(item.Text))
+		}
+		seen[item.Text] = true
 	}
+	k.out.Recordsets = found(list, good, names)
 }

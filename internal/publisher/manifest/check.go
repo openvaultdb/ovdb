@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -15,6 +16,18 @@ const (
 	// Directory is the OVDB Directory's own rules for OVDB.md and a manifest.
 	Directory Profile = iota
 )
+
+// known reports whether the profile is one this package judges by. An unknown
+// profile is never judged by another's rules: it is a finding, because the next
+// profile is the stricter one.
+func (p Profile) known() bool { return p == Directory }
+
+// RuleProfile is the rule of the finding for an unknown profile.
+const RuleProfile = "profile-unknown"
+
+func unknownProfile(profile Profile) []Finding {
+	return []Finding{{Rule: RuleProfile, Severity: SeverityError, Document: "profile", Message: fmt.Sprintf("profile %d is not one this package knows: nothing was judged", int(profile))}}
+}
 
 // MaxDocumentBytes bounds each document, OVDB.md and a manifest, before it is
 // parsed. The JavaScript references read files of up to many megabytes; no
@@ -32,28 +45,42 @@ type Result struct {
 // OK reports whether nothing is wrong.
 func (r Result) OK() bool { return len(r.Findings) == 0 }
 
+// maxListed is how many publish entries a message names.
+const maxListed = 5
+
 // Check judges OVDB.md and the manifest that the Directory's record names by its
-// path, which OVDB.md must list.
+// path, which OVDB.md must list. Its findings are at most MaxFindings in all,
+// whatever the documents, then the RuleCapped notice when some were left out.
 func Check(ovdbMd []byte, manifestPath string, manifest []byte, profile Profile) Result {
-	md, findings := CheckOVDBMd(ovdbMd, profile)
-	if md.Valid && !md.Lists(manifestPath) {
-		c := &collector{document: "OVDB.md"}
-		c.add("ovdbmd-unlisted", md.PublishLine, "OVDB.md does not list %s in publish (it lists %s); the publisher has not opted this manifest in: add %s to publish", rules.Quote("./"+manifestPath), listed(md.Publish), rules.Quote("./"+manifestPath))
-		findings = append(findings, c.result()...)
+	if !profile.known() {
+		return Result{Profile: profile, Findings: unknownProfile(profile)}
 	}
-	m, more := CheckManifest(manifest, manifestPath, profile)
-	return Result{Profile: profile, Findings: append(findings, more...), OVDBMd: md, Manifest: m}
+	b := newBudget()
+	md, findings := checkOVDBMd(ovdbMd, b)
+	if md.Read && md.Publish.Usable() && !md.Lists(manifestPath) {
+		c := newCollector("OVDB.md", b)
+		c.add("ovdbmd-unlisted", md.Publish.Line, "OVDB.md does not list %s in publish (it lists %s); the publisher has not opted this manifest in: add %s to publish", rules.Quote("./"+manifestPath), listed(md.Entries), rules.Quote("./"+manifestPath))
+		findings = append(findings, c.findings...)
+	}
+	m, more := checkManifest(manifest, manifestPath, b)
+	findings = append(append(findings, more...), b.notice(manifestPath)...)
+	return Result{Profile: profile, Findings: findings, OVDBMd: md, Manifest: m}
 }
 
+// listed names the first few entries, and how many more there are.
 func listed(paths []string) string {
 	if len(paths) == 0 {
 		return "nothing"
 	}
-	shown := make([]string, len(paths))
-	for i, p := range paths {
-		shown[i] = rules.Quote("./" + p)
+	shown := make([]string, 0, maxListed)
+	for _, p := range paths[:min(len(paths), maxListed)] {
+		shown = append(shown, rules.Quote("./"+p))
 	}
-	return strings.Join(shown, ", ")
+	out := strings.Join(shown, ", ")
+	if len(paths) > maxListed {
+		out += fmt.Sprintf(" and %d more", len(paths)-maxListed)
+	}
+	return out
 }
 
 // readDocument reads a document with the strict reader, after the size bound. It
