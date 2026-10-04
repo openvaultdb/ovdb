@@ -236,6 +236,8 @@ func goldensJobProblems(doc map[string]any, node string) []string {
 		"node --test internal/publisher/references.test.mjs",
 		"node internal/publisher/rules/testdata/reference/generate.mjs --check",
 		"node internal/publisher/manifest/testdata/reference/generate.mjs --check",
+		"node internal/publisher/repo/testdata/reference/generate.mjs --check",
+		"OVDB_REAL_GIT=1 go test -count=1 -run RealGit ./internal/publisher/repo/",
 	} {
 		if count("run", run) != 1 {
 			problems = append(problems, fmt.Sprintf("the job does not have exactly one step that runs %q", run))
@@ -262,7 +264,7 @@ func TestWorkflowChecksTheGoldens(t *testing.T) {
 		t.Errorf("ci.yml: %v", problems)
 	}
 	// The same judgment, on workflows that a text search would pass.
-	good := "on:\n  push: {branches: [main]}\n  pull_request:\njobs:\n  publisher-goldens:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/setup-node@v5\n        with: {node-version: '" + node + "'}\n      - run: node --test internal/publisher/references.test.mjs\n      - run: node internal/publisher/rules/testdata/reference/generate.mjs --check\n      - run: node internal/publisher/manifest/testdata/reference/generate.mjs --check\n"
+	good := "on:\n  push: {branches: [main]}\n  pull_request:\njobs:\n  publisher-goldens:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/setup-node@v5\n        with: {node-version: '" + node + "'}\n      - run: node --test internal/publisher/references.test.mjs\n      - run: node internal/publisher/rules/testdata/reference/generate.mjs --check\n      - run: node internal/publisher/manifest/testdata/reference/generate.mjs --check\n      - run: node internal/publisher/repo/testdata/reference/generate.mjs --check\n      - run: OVDB_REAL_GIT=1 go test -count=1 -run RealGit ./internal/publisher/repo/\n"
 	if problems := goldensJobProblems(parseWorkflow(t, []byte(good)), node); len(problems) > 0 {
 		t.Fatalf("a good job is refused: %v", problems)
 	}
