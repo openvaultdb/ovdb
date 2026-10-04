@@ -16,6 +16,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/preview"
+	"github.com/openvaultdb/ovdb/internal/publisher/checkcmd"
 )
 
 // appVersion is this build's bare semver, resolved once in main() from
@@ -54,6 +55,10 @@ func main() {
 	// Agent-facing commands fail with the shared error envelope, printed by
 	// cli.Render; every other error keeps fang's output.
 	fangOpts = append(fangOpts, fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
+		// A refused repository is already reported by `publisher check`'s own output; only the exit code (1) is left to say.
+		if errors.Is(err, checkcmd.ErrRefused) {
+			return
+		}
 		if !cli.Render(err, os.Args[1:], os.Stdout, w) {
 			fang.DefaultErrorHandler(w, styles, err)
 		}
@@ -95,6 +100,7 @@ func addRootCommands(root *cobra.Command, currentVersion string) *cli.App {
 		newSelfUpdateCmd(currentVersion),
 		newInstallCmd(),
 		newUpgradeCmd(currentVersion),
+		newPublisherCmd(),
 	)
 	app.AddCommands(root)
 	// Only the unfinished bare-command TUI remains behind the preview gate.

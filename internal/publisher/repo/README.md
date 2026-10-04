@@ -1,8 +1,7 @@
 # internal/publisher/repo
 
-Judges a repository as far as the presence of files goes, for the future
-`ovdb publisher check` (slice 3c; nothing here is wired into the command, and the
-shipped binary links none of `internal/publisher`). It reads one commit, at HEAD,
+Judges a repository: the presence of files and what they say, for `ovdb publisher check`
+(package `internal/publisher/checkcmd`, which the shipped binary links). It reads one commit, at HEAD,
 as committed and never the working tree, through a `Reader`, and hands OVDB.md and
 the manifests to package `manifest`. The reference is the Chinook checker
 (`datatug/chinookdb@79e7bb0b1d6f0666dce465874990dec64348331f`,

@@ -224,6 +224,7 @@ func goldensSteps(node string) []any {
 		run("node internal/publisher/repo/testdata/reference/generate.mjs --check"),
 		map[string]any{"uses": "actions/setup-go@v7", "with": map[string]any{"go-version": "1.27.0", "cache": true}},
 		run("OVDB_REAL_GIT=1 go test -count=1 -v -run RealGit ./internal/publisher/repo/"),
+		run("OVDB_REAL_GIT=1 go test -count=1 -v -run PublisherCheckEndToEnd ."),
 	}
 }
 

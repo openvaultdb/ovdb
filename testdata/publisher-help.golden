@@ -1,0 +1,14 @@
+
+  Check what you publish to the OVDB Directory
+
+  USAGE
+
+    ovdb publisher [command] [--flags]
+
+  COMMANDS
+
+    check [path] [--flags]  Check a Git repository as the OVDB Directory will read it (offline, at HEAD)
+
+  FLAGS
+
+    -h --help               Help for publisher

@@ -53,7 +53,7 @@ func normalizeHelp(value string) string {
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	return strings.Join(lines, "\n")
+	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
 }
 
 func TestPublicHelpWithoutPreview(t *testing.T) {
@@ -64,6 +64,8 @@ func TestPublicHelpWithoutPreview(t *testing.T) {
 		{"help.golden", []string{"--help"}},
 		{"help.golden", nil},
 		{"status-help.golden", []string{"status", "--help"}},
+		{"publisher-help.golden", []string{"publisher", "--help"}},
+		{"publisher-check-help.golden", []string{"publisher", "check", "--help"}},
 	} {
 		want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
 		if err != nil {
