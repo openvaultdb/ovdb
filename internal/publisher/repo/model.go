@@ -17,6 +17,7 @@ var (
 	errNotObject = errors.New("it must be a JSON object")
 	errTrailing  = errors.New("there is text after the JSON value")
 	errDepth     = errors.New("it is nested too deep")
+	errEntities  = errors.New("it has too many entities")
 )
 
 // modelSpec is what the checker reads of a model file (its lines 408-416): the name of the module and the names of the entities.
@@ -24,6 +25,7 @@ type modelSpec struct {
 	module      string   // module.name when it is a ModelSpec module name (a letter, then letters, digits and _), else ""
 	hasEntities bool     // entities is an object
 	entities    []string // its keys, sorted
+	set         map[string]struct{}
 }
 
 // readModel reads a model file as JSON.parse does and nothing more: the value must be one JSON value and an object (a repeated key is the last of
@@ -65,6 +67,9 @@ func readModel(data []byte) (modelSpec, error) {
 				spec.hasEntities = true
 				return members(dec, func(key string, tok json.Token) error {
 					keys[key] = true
+					if len(keys) > MaxEntities {
+						return errEntities
+					}
 					return consume(dec, tok, 2)
 				})
 			}
@@ -82,8 +87,10 @@ func readModel(data []byte) (modelSpec, error) {
 	if isModulePattern(name) {
 		spec.module = name
 	}
+	spec.set = make(map[string]struct{}, len(keys))
 	for key := range keys {
 		spec.entities = append(spec.entities, key)
+		spec.set[key] = struct{}{}
 	}
 	slices.Sort(spec.entities)
 	return spec, nil

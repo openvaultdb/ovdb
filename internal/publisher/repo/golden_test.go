@@ -199,6 +199,27 @@ func build(t testing.TB, g golden, ops [][]json.RawMessage) *model {
 			n, _ := strconv.Atoi(a[1])
 			text := regexp.MustCompile(`\}\s*$`).ReplaceAllLiteralString(m.text(t, a[0]), ",\"_deep\":"+strings.Repeat("[", n)+strings.Repeat("]", n)+"}\n")
 			m.tracked[a[0]] = Node{Kind: File, Content: []byte(text)}
+		case "entities": // a model file whose entities are e0, e1 ... in base 36,
+			n, _ := strconv.Atoi(a[1])
+			var object map[string]any
+			if err := json.Unmarshal([]byte(m.text(t, a[0])), &object); err != nil {
+				t.Fatalf("%s: %v", a[0], err)
+			}
+			entities := make(map[string]any, n)
+			for i := 0; i < n; i++ {
+				entities["e"+strconv.FormatInt(int64(i), 36)] = map[string]any{}
+			}
+			object["entities"] = entities
+			changed, _ := json.Marshal(object)
+			m.tracked[a[0]] = Node{Kind: File, Content: changed}
+		case "recordsets":
+			n, _ := strconv.Atoi(a[1])
+			var list strings.Builder
+			list.WriteString("recordsets:\n")
+			for i := 0; i < n; i++ {
+				list.WriteString("  - e" + strconv.FormatInt(int64(i), 36) + "\n")
+			}
+			m.tracked[a[0]] = Node{Kind: File, Content: []byte(regexp.MustCompile(`recordsets:\n(  - .*\n)+`).ReplaceAllLiteralString(m.text(t, a[0]), list.String()))}
 		case "break", "break-tree":
 			m.breaks = append(m.breaks, [3]string{name, a[0], a[1]})
 		case "state":
@@ -267,6 +288,8 @@ var stricterKinds = map[string]string{
 	RuleTreeName:       "A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory.",
 	RuleTreeLimit:      "A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound.",
 	RuleManifests:      "OVDB.md lists more than 32 manifests; the checker judges every one.",
+	RuleEntitiesLimit:  "The model file has more than 10000 entities (MaxEntities); the checker compares each recordset with each entity, so 20000 recordsets against 330000 entities took it 6 seconds.",
+	"yaml-encoding":    "The reader refuses a file that is not UTF-8 text (a byte that is not UTF-8, a NUL character); the checker's library reads a file as UTF-8, replaces the bytes it cannot decode and goes on.",
 	RuleModelDepth:     "The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound.",
 	"yaml":             "The reader accepts a subset of YAML and refuses a structure it cannot place (here a flow collection used as a key); the checker's library reads it.",
 	"yaml-anchor":      "The reader refuses anchors and aliases (& and *) and merge keys (<<): it reads a document once, as written, and expanding references is how a small file becomes a large one.",

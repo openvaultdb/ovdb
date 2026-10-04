@@ -22,6 +22,19 @@ const (
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
 	RuleModelAddress  = "repo-model-address"  // the module of model.address is not the model file's
 	RuleRecordsets    = "repo-recordsets"     // recordsets are not the entities of the model
+
+	RuleEntitiesLimit   = "repo-model-entities-limit" // the model file has more than MaxEntities entities
+	RuleRecordsetsLimit = "repo-recordsets-limit"     // the manifest lists more than MaxRecordsets recordsets
+)
+
+// What one check may cost. The checker compares the recordsets of a manifest with the entities of its model by searching a list for each of them, so
+// its time grows with the product of the two: 20,000 recordsets against a model of 330,000 entities (3.8 MiB) took it 6 seconds, and a repository
+// may list 32 manifests. This check compares with sets, so its time is linear, but it holds the same two numbers, far above anything real (the
+// reference model has eleven entities), so that what one check costs in time and memory is bounded by the size of the files it reads and
+// by these. Both are recorded as stricter kinds.
+const (
+	MaxEntities   = 10000
+	MaxRecordsets = 10000
 )
 
 // ownFiles are the files of an own-form manifest that the checker reads, as far as they could be: the model file and the meaning file, read, and
@@ -57,7 +70,10 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	case errors.Is(err, errDepth):
 		c.add(file, RuleModelDepth, 0, "is nested more than %d levels deep, which is more than this check reads", maxJSONDepth)
 		return ""
-	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+	case errors.Is(err, errEntities):
+		c.add(file, RuleEntitiesLimit, 0, "has more than %d entities, which is more than this check reads", MaxEntities)
+		return ""
+	case endsEarly(err):
 		c.add(file, RuleModelJSON, lineAt(data, len(data)), "is not a ModelSpec JSON file: it is empty or ends before the JSON value does")
 		return ""
 	case err != nil:
@@ -76,18 +92,31 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	if address := m.ModelAddress; address.Usable() && spec.module != "" && address.Value.Module != spec.module {
 		c.add(path, RuleModelAddress, address.Line, "model.address names module %s, but %s is module %s: write the address of this repository with that module", rules.Quote(address.Value.Module), rules.Quote(file), rules.Quote(spec.module))
 	}
-	if recordsets := m.Recordsets; recordsets.Usable() && spec.hasEntities {
-		missing := slices.DeleteFunc(slices.Clone(spec.entities), func(e string) bool { return slices.Contains(recordsets.Value, e) })
-		extra := slices.DeleteFunc(slices.Clone(recordsets.Value), func(r string) bool { return slices.Contains(spec.entities, r) })
+	if recordsets := m.Recordsets; recordsets.Usable() && len(recordsets.Value) > MaxRecordsets {
+		c.add(path, RuleRecordsetsLimit, recordsets.Line, "recordsets lists %d names, which is more than the %d this check reads", len(recordsets.Value), MaxRecordsets)
+	} else if recordsets.Usable() && spec.hasEntities {
+		listed := make(map[string]bool, len(recordsets.Value))
+		for _, r := range recordsets.Value {
+			listed[r] = true
+		}
+		missing := slices.DeleteFunc(slices.Clone(spec.entities), func(e string) bool { return listed[e] })
+		extra := slices.DeleteFunc(slices.Clone(recordsets.Value), func(r string) bool { _, ok := spec.set[r]; return ok })
 		slices.Sort(extra)
 		if len(missing) > 0 {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordsets lacks the ModelSpec entities of %s: %s", rules.Quote(file), names(missing))
 		}
 		if len(extra) > 0 {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec entities of %s: %s", rules.Quote(file), names(slices.Compact(extra)))
+			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec entities of %s: %s", rules.Quote(file), names(extra))
 		}
 	}
 	return spec.module
+}
+
+// endsEarly reports whether err says that the data ended before the JSON value did: the decoder says it in three ways (EOF, unexpected EOF, and a syntax
+// error whose text is "unexpected end of JSON input"), by the place it ended in, and they are one fault.
+func endsEarly(err error) bool {
+	var syntax *json.SyntaxError
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &syntax) && syntax.Error() == "unexpected end of JSON input"
 }
 
 // names lists the first few names, quoted, and how many more there are.

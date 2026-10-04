@@ -35,6 +35,8 @@
 //                              is checked, or holds the bytes of another object ("other")
 //   ["break-tree", dir, how]   the same for the tree object of a directory ("" is the top)
 //   ["bytes", path, base64]    a tracked regular file of exactly these bytes
+//   ["entities", path, n]      a model file whose entities are e0, e1 ... in base 36, n of them
+//   ["recordsets", path, n]    a manifest whose recordsets are e0, e1 ... in base 36, n of them
 //   ["nest", path, n]          a JSON file with one more key, _deep, whose value is n arrays inside one another
 //   ["state", name]            the repository is bare, shallow, detached, unborn, not a repository, or is checked in a subdirectory;
 //                              partial-blob and partial-tree are partial clones (--filter=blob:none, --filter=tree:0) whose source is
@@ -127,6 +129,8 @@ const apply = (ops) => {
       case 'break': case 'break-tree': state.breaks.push([op, a, b]); break;
       case 'bytes': putEntry(state.tracked, a, { mode: '100644', text: Buffer.from(b, 'base64') }); break;
       case 'nest': state.tracked.get(a).text = text(a).replace(/\}\s*$/, `,"_deep":${'['.repeat(b)}${']'.repeat(b)}}\n`); break;
+      case 'entities': { const json = JSON.parse(text(a)); json.entities = Object.fromEntries(Array.from({ length: b }, (_, i) => [`e${i.toString(36)}`, {}])); state.tracked.get(a).text = JSON.stringify(json); break; }
+      case 'recordsets': state.tracked.get(a).text = text(a).replace(/recordsets:\n(  - .*\n)+/, `recordsets:\n${Array.from({ length: b }, (_, i) => `  - e${i.toString(36)}\n`).join('')}`); break;
       case 'state': state.location = a; break;
       default: throw new Error(`unknown operation ${op}`);
     }
@@ -232,14 +236,25 @@ const verdict = (dir, repository) => {
   try {
     const { problems } = chinook.reportOvdbManifest(chinook.gitRepoFiles(dir), repository === null ? {} : { repository });
     if (explain !== undefined && current.includes(explain)) console.error(`${current} (${repository === null ? 'plain' : 'with'}): ${problems.join(' | ') || 'nothing'}`);
+    seen.push(...problems);
     return problems.length === 0 ? '1' : '0';
-  } catch (error) { thrown += 1; return '0'; }
+  } catch (error) { thrown += 1; seen.push(`threw: ${error.message}`); return '0'; }
 };
+let seen = []; // the problems of the run in progress
+const observed = []; // what the checker said about each case, for the check of the reasons below
 const cases = [];
 const addCase = (group, name, ops, repository = own) => {
   current = `${group}: ${name}`;
   const [dir, cleanup] = build(apply(ops));
-  try { cases.push({ group, name, ops, repository, plain: verdict(dir, null), with: repository === null ? '-' : verdict(dir, repository) }); } finally { cleanup(); }
+  try {
+    seen = [];
+    const plain = verdict(dir, null);
+    const plainProblems = seen;
+    seen = [];
+    const withRepository = repository === null ? '-' : verdict(dir, repository);
+    observed.push({ label: current, plain, with: withRepository, plainProblems, withProblems: seen });
+    cases.push({ group, name, ops, repository, plain, with: withRepository });
+  } finally { cleanup(); }
 };
 
 const swapCase = (path) => { const parts = path.split('/'); const last = parts.pop(); parts.push(last === last.toLowerCase() ? last.toUpperCase() : last.toLowerCase()); return parts.join('/'); };
@@ -349,7 +364,9 @@ const rawModel = (injection) => asModel(base[modelPath].replace('{', `{${injecti
 const unrelated = (key, value) => asModel(base[modelPath].replace(/\}\s*$/, `,"${key}":${value}}\n`));
 const inMeaning = (extra) => [['edit', meaningPath, 'license: CC0-1.0\n', `license: CC0-1.0\n${extra}\n`]];
 const inManifest = (find, replace) => [['edit', manifestPath, find, replace]];
-const b64 = (text) => Buffer.from(text, 'latin1').toString('base64');
+// A file is bytes from the text to the disk: the text is UTF-8, and the one byte that is not (0xFF) is written where the text has U+E000. No text is ever
+// turned into bytes by a single-byte encoding: that mangled the Cyrillic of the real meaning file (review of #39).
+const b64 = (text) => Buffer.concat(text.split('\ue000').flatMap((part, at) => (at === 0 ? [Buffer.from(part, 'utf8')] : [Buffer.from([0xff]), Buffer.from(part, 'utf8')]))).toString('base64');
 
 // The model file as a ModelSpec file: what is JSON and what is a module and entities.
 for (const [name, text] of Object.entries({
@@ -371,6 +388,7 @@ addCase('model', 'model.name is not the module', inManifest('  address: modelspe
 addCase('model', 'model.name is not a module name, and the file is fine', inManifest('  address: modelspec', '  name: 5x\n  address: modelspec'));
 addCase('model', 'the module of model.address is not the file\'s', inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Other\n'));
 addCase('model', 'the module of model.address in another case', inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Chinook\n'));
+addCase('model', 'model.name and model.address in another case than the file', [...inManifest('  address: modelspec', '  name: Chinook\n  address: modelspec'), ...inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Chinook\n')]);
 addCase('model', 'model.name and model.address both differ from the file', [...inManifest('  address: modelspec', '  name: Other\n  address: modelspec'), ...inManifest('datatug/chinookdb/chinook\n', 'datatug/chinookdb/Other\n')]);
 addCase('recordsets', 'one fewer than the entities', inManifest('  - Track\n', ''));
 addCase('recordsets', 'one more than the entities', inManifest('  - Track\n', '  - Track\n  - Extra\n'));
@@ -416,8 +434,16 @@ for (const [name, ops] of Object.entries({
   'a value of 99 nested arrays (100 levels in all)': [['nest', modelPath, 99]],
   'a value of 100 nested arrays (101 levels in all)': [['nest', modelPath, 100]],
   'a value of 5000 nested arrays': [['nest', modelPath, 5000]],
-  'a byte that is not UTF-8 in an unrelated string': [['bytes', modelPath, b64(base[modelPath].replace(/\}\s*$/, ',"x":"aÿb"}\n'))]],
-  'a byte that is not UTF-8 in the module name': [['bytes', modelPath, b64(base[modelPath].replace('"chinook"', '"chinÿook"'))]],
+  'a byte that is not UTF-8 in an unrelated string': [['bytes', modelPath, b64(base[modelPath].replace(/\}\s*$/, ',"x":"a\ue000b"}\n'))]],
+  'a byte that is not UTF-8 in the module name': [['bytes', modelPath, b64(base[modelPath].replace('"chinook"', '"chin\ue000ook"'))]],
+  'the keys Module, Name and Entities in capitals': asModel(base[modelPath].replace('"module"', '"Module"').replace('"entities"', '"Entities"')),
+  'the key Name in capitals': asModel(base[modelPath].replace('"name": "chinook"', '"Name": "chinook"')),
+  'the key Entities in capitals': asModel(base[modelPath].replace('"entities"', '"Entities"')),
+  'the key Module in capitals': asModel(base[modelPath].replace('"module"', '"Module"')),
+  'nested 98 arrays below module (100 levels in all)': asModel(modelText((m) => { m.module.x = JSON.parse('['.repeat(98) + ']'.repeat(98)); })),
+  'nested 99 arrays below module (101 levels in all)': asModel(modelText((m) => { m.module.x = JSON.parse('['.repeat(99) + ']'.repeat(99)); })),
+  'nested 97 arrays below an entity (100 levels in all)': asModel(modelText((m) => { m.entities[Object.keys(m.entities)[0]].x = JSON.parse('['.repeat(97) + ']'.repeat(97)); })),
+  'nested 98 arrays below an entity (101 levels in all)': asModel(modelText((m) => { m.entities[Object.keys(m.entities)[0]].x = JSON.parse('['.repeat(98) + ']'.repeat(98)); })),
   'a NUL byte in white space': asModel(base[modelPath].replace('{', '{\0')),
 })) addCase('json', name, ops);
 
@@ -445,7 +471,9 @@ for (const [name, ops] of Object.entries({
   'the entry with a trailing slash': withEntry('chinook.modelspec.hcl/'), 'the entry with a trailing /./': withEntry('chinook.modelspec.hcl/./'),
   'the entry with an empty segment': withEntry('.//chinook.modelspec.hcl'), 'the entry with a leading slash': withEntry('/model/chinook.modelspec.hcl'),
   'the entry that leaves the repository': withEntry('../../chinook.modelspec.hcl'), 'the entry that is ..': withEntry('..'), 'the entry that is .': withEntry('.'),
-  'the entry with a space': withEntry('"chinook.modelspec .hcl"'), 'the entry with a glob': withEntry('"*.modelspec.hcl"'), 'the entry with a backslash': withEntry('"model\\chinook.modelspec.hcl"'),
+  'the entry with a space': withEntry('"chinook.modelspec .hcl"'), 'the entry with a glob': withEntry('"*.modelspec.hcl"'), 'the entry with a backslash': withEntry("'model\\chinook.modelspec.hcl'"),
+  'the entry an empty string': withEntry('""'), 'the entry with a space that .. takes away': withEntry('"a b/../chinook.modelspec.hcl"'), 'the entry with a star that .. takes away': withEntry('"a*/../chinook.modelspec.hcl"'),
+  'the entry with a backslash that .. takes away': withEntry("'a\\b/../chinook.modelspec.hcl'"), 'the entry with every character of the spelling': withEntry('d-d_d.d9/../chinook.modelspec.hcl'),
   'the entry in upper case': withEntry('CHINOOK.modelspec.hcl'), 'the entry written in a flow mapping': [['edit', meaningPath, 'models:\n  chinook: chinook.modelspec.hcl\n', 'models: {chinook: chinook.modelspec.hcl}\n']],
   'the entry written in double quotes': withEntry('"chinook.modelspec.hcl"'), 'the entry written in single quotes': withEntry("'chinook.modelspec.hcl'"),
   'models with the entry twice': [['edit', meaningPath, '  chinook: chinook.modelspec.hcl\n', '  chinook: chinook.modelspec.hcl\n  chinook: chinook.modelspec.hcl\n']],
@@ -461,7 +489,7 @@ for (const [name, ops] of Object.entries({
   'a hexadecimal number': inMeaning('x-hex: 0x10'), 'infinity': inMeaning('x-inf: .inf'), 'an integer beyond 2^53': inMeaning('x-big: 9007199254740993'),
   'a bare carriage return': inMeaning('x-cr: a\rb'), 'a C1 control character': inMeaning('x-c1: "\u0085"'), 'half of a surrogate pair': inMeaning('x-esc: "\\ud83c"'),
   'a collection nested 70 levels': inMeaning(`x-deep: ${'['.repeat(70)}${']'.repeat(70)}`), 'a collection nested 40 levels': inMeaning(`x-deep: ${'['.repeat(40)}${']'.repeat(40)}`),
-  'a byte that is not UTF-8': [['bytes', meaningPath, b64(`${meaningText}# aÿb\n`)]], 'a NUL character': [['bytes', meaningPath, b64(`${meaningText}# a\0b\n`)]],
+  'a byte that is not UTF-8': [['bytes', meaningPath, b64(`${meaningText}# a\ue000b\n`)]], 'a NUL character': [['bytes', meaningPath, b64(`${meaningText}# a\0b\n`)]],
   'a byte order mark': asMeaning(`﻿${meaningText}`), 'CRLF line endings': asMeaning(meaningText.replaceAll('\n', '\r\n')),
   'an explicit key': inMeaning('? x-explicit\n: 1'), 'a flow mapping as a key': inMeaning('{a: 1}: x'), 'a long plain value over two lines': inMeaning('x-plain: one\n  two'),
   'a block scalar': inMeaning('x-block: |\n  one\n  two'), 'a null written with a tilde': inMeaning('x-null: ~'), 'a date': inMeaning('x-date: 2024-01-01'),
@@ -473,6 +501,14 @@ addCase('listed', 'a second own-form manifest whose model.address names another 
 addCase('listed', 'a second own-form manifest whose recordsets differ from the entities', [...second, ['edit', 'two.yaml', '  - Track\n', '']]);
 addCase('listed', 'a second own-form manifest, all there, the same files', second);
 
+// What one check may cost: the entities of a model and the recordsets of a manifest are bounded (MaxEntities, MaxRecordsets, 10000 each); the checker compares them
+// in time that grows with the product of the two.
+const sameNames = (n) => [['entities', modelPath, n], ['recordsets', manifestPath, n]];
+addCase('limits', '10000 entities and the same 10000 recordsets', sameNames(10000));
+addCase('limits', '10001 entities and the same 10001 recordsets', sameNames(10001));
+addCase('limits', '20000 recordsets against 330000 entities', [['entities', modelPath, 330000], ['recordsets', manifestPath, 20000]]);
+addCase('limits', '10001 recordsets against 10000 entities', [['entities', modelPath, 10000], ['recordsets', manifestPath, 10001]]);
+
 // The Directory's own fixture of the same repository, read from its checkout: the whole repository, as another team keeps it.
 const fixtureFile = (file) => readFileSync(join(directoryRoot, 'scripts/fixtures/chinookdb', file), 'utf8');
 const fixture = ['OVDB.md', manifestPath, modelPath, hclPath, meaningPath].map((file) => ['file', file, fixtureFile(file)]);
@@ -481,9 +517,124 @@ addCase('fixtures', 'the Directory\'s fixture, with the repository its manifest 
 
 addCase('fixtures', 'the hoster example alone, with no model files', [['copy', 'hoster.yaml', manifestPath], ['remove', modelPath], ['remove', hclPath], ['remove', meaningPath]], null);
 
+// ---- the reasons ----
+//
+// A golden case is only as good as the reason the checker gives for its verdict: a case named "a byte that is not UTF-8" that the checker refuses
+// because the bytes were mangled on the way, and not because of that byte, says nothing about that byte (the review of #39 found two such cases, and the
+// goldens had them for a release). So every case has an expectation written from its name, and the checker's own messages must bear it out: for a
+// refusal, a problem that matches the text; for a case that both accept, no problem at all. A case that no line names fails, and every mismatch is
+// listed before the run fails.
+const tracked = /must be a tracked regular file/;
+const expectations = [
+  [/^base:/, null],
+  // The places of the five files that a manifest and the checker name.
+  [/^place:OVDB\.md: (missing|different-case)$/, /OVDB\.md is missing from the repository root/],
+  [/^place:[^:]+: (executable|case-collision)$/, null],
+  [/^place:/, tracked],
+  [/^tree:/, null],
+  [/^limits: 20000 recordsets against 330000 entities$/, /recordsets lacks/],
+  [/^limits: 10001 recordsets against 10000 entities$/, /recordsets names things/],
+  [/^limits:/, null],
+  [/^fixtures:/, null],
+  [/^worktree: only the working tree has a valid manifest/, /deployment\.engine is required/],
+  [/^worktree: only the working tree has a broken manifest/, null],
+  [/^worktree: only the index has OVDB\.md/, /OVDB\.md must be a tracked regular file/],
+  [/^state: (bare)$/, /cannot be read at HEAD/],
+  [/^state: (unborn|not-a-repository|alternates-gone)$/, /git could not read HEAD/],
+  [/^state:/, null],
+  [/^repository: (the repository of the manifest|not given)$/, null],
+  [/^repository: publisher\.repository is not a repository/, /publisher\.repository must be/],
+  [/^repository: /, { plain: null, with: /publisher\.repository must be/ }],
+  [/^listed: the repository, two manifests/, { plain: null, with: /publisher\.repository must be/ }],
+  [/^listed: (two manifests|32 manifests|33 manifests|a second own-form manifest, all there.*)$/, null],
+  [/^listed: the second is (missing|a directory|a symlink)$/, /publish entry \.\/hoster\.yaml must be a tracked regular file/],
+  [/^listed: the second is invalid/, /deployment\.engine is required/],
+  [/^listed: both are invalid/, /is not a mapping/],
+  [/^listed: a second own-form manifest names a file that is not there/, /model\.modelspec names model\/other\.modelspec\.json, which must be a tracked/],
+  [/^listed: a second own-form manifest names a file that is a directory/, /meaning\.file names model\/elsewhere\.meaning\.yaml, which must be a tracked/],
+  [/^listed: a second own-form manifest whose model\.address/, /model\.address must be/],
+  [/^listed: a second own-form manifest whose recordsets/, /recordsets lacks/],
+  // The documents.
+  [/^document: manifest: (not a mapping|empty)$/, /is not a mapping/],
+  [/^document: manifest: not YAML$/, /is not valid YAML/],
+  [/^document: manifest: unknown key$/, /unknown keys: extra/],
+  [/^document: manifest: http url$/, /url must be https/],
+  [/^document: manifest: upper-case id$/, /id must be lower-case/],
+  [/^document: manifest: no publisher\.repository$/, /publisher\.repository is required/],
+  [/^document: OVDB\.md: no front matter$/, /has no YAML frontmatter/],
+  [/^document: OVDB\.md: ovdb 2$/, /ovdb must be 1/],
+  [/^document: OVDB\.md: empty publish$/, /publish must list at least one/],
+  [/^document: OVDB\.md: unknown key$/, /unknown frontmatter keys/],
+  [/^document: OVDB\.md: lists a (missing manifest|directory)$/, /publish entry .* must be a tracked regular file/],
+  [/^document: OVDB\.md: lists a manifest twice$/, /twice/],
+  [/^document: OVDB\.md: lists a path that goes up$/, /must be an explicit file path/],
+  [/^document: /, null],
+  // The objects of the repository that git cannot give.
+  [/^object: OVDB\.md: /, /OVDB\.md cannot be read at HEAD/],
+  [/^object: the manifest: /, /ovdb\.yaml cannot be read at HEAD/],
+  [/^object: the model file of a shallow clone: /, /chinook\.modelspec\.json cannot be read at HEAD/],
+  [/^object: the model file: /, /chinook\.modelspec\.json cannot be read at HEAD/],
+  [/^object: the meaning file: /, /chinook\.meaning\.yaml cannot be read at HEAD/],
+  [/^object: the tree of the directory of the model files: /, tracked],
+  [/^object: the top tree: /, /OVDB\.md is missing from the repository root/],
+  [/^object: the model file holds the bytes of another object/, /is not a ModelSpec JSON file/],
+  [/^object: the meaning file holds the bytes of another object/, /is not a MeaningGraph file/],
+  [/^object: the hcl file, which the checker does not read: /, null],
+  [/^object: a model file (larger than this check reads|of 3 MiB)$/, null],
+  // The model file.
+  [/^model: (empty|only white space|not JSON|a JSON array|null|a number|a string)$/, /is not a ModelSpec JSON file/],
+  [/^model: (an empty object|no module|module |module\.name )/, /has no module\.name/],
+  [/^model: (no entities|entities an array|entities null)$/, /has no entities/],
+  [/^model: (entities empty|one entity fewer)$/, /recordsets names things/],
+  [/^model: (one entity more|an entity called __proto__ that recordsets lack)$/, /recordsets lacks/],
+  [/^model: (another module|the module of model\.address)/, /model\.address must be/],
+  [/^model: model\.name is not a module name/, /model\.name, when given, must be/],
+  [/^model: model\.name is not the module$/, /model\.name is Other/],
+  [/^model: model\.name and model\.address in another case/, /model\.name is Chinook, but .* is module chinook/],
+  [/^model: model\.name and model\.address both differ/, /model\.name is Other/],
+  [/^model: /, null],
+  // JSON the way JSON.parse reads it.
+  [/^json: a repeated module(\.name)?: the last is wrong$/, /model\.address must be/],
+  [/^json: a repeated entities: the last is wrong$/, /recordsets lacks/],
+  [/^json: (a lone surrogate in the module name|a byte that is not UTF-8 in the module name|the keys Module, Name and Entities in capitals|the key Name in capitals|the key Module in capitals)$/, /has no module\.name/],
+  [/^json: the key Entities in capitals$/, /has no entities/],
+  [/^json: (a number with a leading zero|a number that is a plus|a number with a trailing dot|a BOM at the start|text after the value|a second value after the first|a form feed between tokens|a comment|single quotes|a trailing comma|a raw tab in a string|a raw line break in a string|an invalid escape|NaN|a NUL byte in white space)$/, /is not a ModelSpec JSON file/],
+  [/^json: /, null],
+  // The recordsets.
+  [/^recordsets: (one fewer than the entities|one fewer and one more|in another case)$/, /recordsets lacks/],
+  [/^recordsets: (one more than the entities|the entities of a model without Track, and Track listed|many more than the entities)$/, /recordsets names things/],
+  [/^recordsets: a name twice$/, /recordsets lists a name twice/],
+  // The meaning file.
+  [/^meaning: (empty|only comments|only white space|a list|a string|a number|null)$/, /is not a MeaningGraph file: it must be a mapping/],
+  [/^meaning: (not YAML|id written twice|models with the entry twice)$/, /is not valid YAML/],
+  [/^meaning: (a mapping with nothing in it|id of another graph|id missing|id a number|id null|id in another case|a graph id that is digits, and a number in the file)$/, /meaning\.graph\.id is/],
+  [/^meaning: licen[cs]e/, /licences\.meaning is/],
+  [/^meaning: (models missing|models a list|models null|models for another module|the entry a number|the entry null|the entry blank|the entry a list|the entry an empty string)$/, /has no models: entry/],
+  [/^meaning: (the entry another file|the entry in upper case|the entry that is \.|a hcl file that is not the entry)$/, /but the meaning file's models: entry/],
+  [/^meaning: the entry (with a trailing slash|with a trailing \/\.\/|with an empty segment|with a leading slash|that leaves the repository|that is \.\.|with a space|with a glob|with a backslash|with a space that|with a star that|with a backslash that)/, /models must name/],
+  [/^meaning: /, null],
+  // The YAML the reader is stricter about: the checker's library reads all of it but a second document.
+  [/^yaml: a second document$/, /is not valid YAML/],
+  [/^yaml: /, null],
+];
+const reasonProblems = [];
+for (const o of observed) {
+  const line = expectations.find(([pattern]) => pattern.test(o.label));
+  if (line === undefined) { reasonProblems.push(`${o.label}: no expectation names this case`); continue; }
+  const [, expect] = line;
+  const want = expect !== null && typeof expect === 'object' && !(expect instanceof RegExp) ? expect : { plain: expect, with: expect };
+  for (const [run, expected, verdictOfRun, problems] of [['plain', want.plain, o.plain, o.plainProblems], ['with --repository', want.with, o.with, o.withProblems]]) {
+    if (verdictOfRun === '-') continue;
+    if (expected === null) { if (verdictOfRun !== '1') reasonProblems.push(`${o.label} (${run}): the checker should accept this case and says: ${problems.join(' | ').slice(0, 160)}`); continue; }
+    if (verdictOfRun !== '0') reasonProblems.push(`${o.label} (${run}): the checker should refuse this case, as ${expected}, and accepts it`);
+    else if (!problems.some((p) => expected.test(p))) reasonProblems.push(`${o.label} (${run}): the checker refuses this case, but not as ${expected}: ${problems.join(' | ').slice(0, 160)}`);
+  }
+}
+if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s) whose verdict does not come from the reason their name states:\n${reasonProblems.join('\n')}`); process.exit(1); }
 // ---- the golden ----
 
 const counts = { cases: cases.length, accepted: cases.filter((c) => c.plain === '1').length, acceptedWithRepository: cases.filter((c) => c.with === '1').length };
+if (argValue('--reasons') !== undefined) for (const o of observed) console.error(`${o.label} | ${o.plain}${o.with} | ${(o.plainProblems[0] ?? '').slice(0, 90)} | ${(o.withProblems[0] ?? '').slice(0, 90)}`);
 const golden = `${JSON.stringify({
   format: 'ovdb-publisher-repository/1',
   reference: `${pins.chinookdb.repository}@${pins.chinookdb.commit}`,

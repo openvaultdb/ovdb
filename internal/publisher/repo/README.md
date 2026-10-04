@@ -167,12 +167,31 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-317 cases: 108 accepted by the checker, 99 accepted with `--repository`; 279 agree with Go, 38
-are stricter in Go, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
-(5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 36 model files, 37 JSON
-differences, 52 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
-states, 7 recordsets, 7 `--repository`, 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
+335 cases: 117 accepted by the checker, 108 accepted with `--repository`; 292 agree with Go, 43
+are stricter in Go, in 24 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
+(5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 37 model files, 45 JSON
+differences, 57 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
+
+Every case is held to the reason its name states, not only to a verdict: when the generator runs, each case has an
+expectation written from its name (a case about a byte that is not UTF-8 is accepted by the checker, which reads the file
+as UTF-8 and goes on; a case about a recordset that is not an entity is refused with a message about recordsets), and the
+checker's own messages must bear it out, or the generator fails and lists every case that does not. The files of the cases are
+bytes from the generator to the disk (a text is UTF-8; the one byte that is not is written as U+E000 in the source of the
+case and as 0xFF in the file): the first golden of this check had two cases that the checker refused only because the bytes had been
+mangled on the way, so they showed nothing about the bytes.
+
+What one check may cost is bounded. The checker compares the recordsets of a manifest with the entities of the model by
+searching a list for each of them, so its time grows with the product: 20,000 recordsets against a model of 330,000 entities
+(3.8 MiB) took it 6.3 seconds, and a repository may list 32 manifests. This check compares with sets, so its time is
+linear, and it holds two limits on top, each far above anything real (the Chinook model has eleven entities): a model file of
+more than `MaxEntities` (10,000) entities is refused with `repo-model-entities-limit`, a stricter kind, and a manifest of more
+than `MaxRecordsets` (10,000) recordsets is refused with `repo-recordsets-limit` and its recordsets are not compared. The second
+is not a kind of its own in the table below: the checker accepts a manifest only when its recordsets are the entities of its
+model, and a model of more than 10,000 entities is refused first, so no repository that the checker accepts has more recordsets
+than the limit; it is there so that the work does not grow with the manifest. Both are tested: the worst case above is refused
+at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entities are checked in well under the 20 seconds the test allows.
 
 ### Recorded differences: where Go is stricter
 
@@ -180,7 +199,8 @@ states, 7 recordsets, 7 `--repository`, 3 working tree, 3 fixtures (the Director
 | `repo-case-collision` | 7 | Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts. |
 | `repo-file-size` | 1 | A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB. |
 | `repo-manifests-limit` | 1 | OVDB.md lists more than 32 manifests; the checker judges every one. |
-| `repo-model-depth` | 2 | The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound. |
+| `repo-model-depth` | 4 | The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound. |
+| `repo-model-entities-limit` | 1 | The model file has more than 10000 entities (MaxEntities); the checker compares each recordset with each entity, so 20000 recordsets against 330000 entities took it 6 seconds. |
 | `repo-partial-clone` | 2 | A partial clone (--filter=blob:none or --filter=tree:0) that lacks an object the commit needs: the checker's git fetches the object from the remote, which this check never does (a repository that a remote can make run a command must not be asked to); the message says to check a full clone or to fetch the files first. |
 | `repo-subdirectory` | 1 | The directory is inside a repository and not its top; the checker reads it as if it were the top, with a note, and the Directory reads OVDB.md at the top. |
 | `repo-tree-limit` | 1 | A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound. |
@@ -190,6 +210,7 @@ states, 7 recordsets, 7 `--repository`, 3 working tree, 3 fixtures (the Director
 | `yaml-character` | 1 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the checker's library reads them into a string. |
 | `yaml-directive` | 1 | The reader refuses a %YAML or %TAG directive; the checker's library follows it. |
 | `yaml-documents` | 1 | The reader refuses a document end marker (`...`) and a second document; the checker's library reads the first document and ignores what follows. |
+| `yaml-encoding` | 2 | The reader refuses a file that is not UTF-8 text (a byte that is not UTF-8, a NUL character); the checker's library reads a file as UTF-8, replaces the bytes it cannot decode and goes on. |
 | `yaml-escape` | 1 | The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\ud83c); the checker's library accepts it. |
 | `yaml-key` | 1 | The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the checker's library accepts it as a key. |
 | `yaml-limit` | 1 | The reader refuses collections nested more than 64 levels deep (63 is read); the checker's library reads any depth. |
