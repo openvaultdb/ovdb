@@ -18,13 +18,31 @@ export const remoteUrl = (name) => `https://github.com/${references[name].reposi
 
 const run = (cwd, command, args) => execFileSync(command, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' }).trim();
 
-// What a checkout must be before a generator imports code from it: at the pinned commit, with no change to a tracked file and no
-// file of its own that is not a dependency. The generators run what they import, and the goldens are stamped with the pinned commit,
-// so a checkout that differs from it would write goldens that no commit explains.
+// What a checkout must be before a generator imports code from it: at the pinned commit, every tracked file as that commit has it, no file of its
+// own, and no node_modules but the root one, which the generators install or link themselves. The generators run what they import, and the goldens
+// are stamped with the pinned commit, so a checkout that differs from it would write goldens that no commit explains.
+//
+// `git status` is not enough: a file marked assume-unchanged (or skip-worktree) is not reported, and a directory that .gitignore names (a
+// scripts/node_modules/yaml, which Node resolves before the root one) is not an untracked file. So each tracked file is hashed and compared with
+// the blob that the commit has (git ls-tree), and ignored files and directories are listed too.
 export function assertAsCommitted(dir, repository, commit) {
   if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}`);
-  if (run(dir, 'git', ['status', '--porcelain', '--untracked-files=no'])) throw new Error(`${dir} has local changes; the references are read as committed`);
-  const strays = run(dir, 'git', ['ls-files', '--others', '--exclude-standard']).split('\n').filter((file) => file && !file.startsWith('node_modules/'));
+  const tracked = run(dir, 'git', ['ls-tree', '-r', '-z', 'HEAD']).split('\0').filter(Boolean).map((entry) => {
+    const [meta, path] = [entry.slice(0, entry.indexOf('\t')), entry.slice(entry.indexOf('\t') + 1)];
+    const [mode, type, blob] = meta.split(' ');
+    return { mode, type, blob, path };
+  }).filter((entry) => entry.type === 'blob'); // a submodule is not a file
+  if (tracked.some(({ path }) => path.includes('\n'))) throw new Error(`${dir} has a tracked file with a line break in its name`);
+  let hashes;
+  try {
+    hashes = execFileSync('git', ['hash-object', '--stdin-paths'], { cwd: dir, input: `${tracked.map(({ path }) => path).join('\n')}\n`, stdio: ['pipe', 'pipe', 'ignore'], encoding: 'utf8' }).split('\n').filter(Boolean);
+  } catch {
+    throw new Error(`${dir} lacks a file that ${repository}@${commit} has; the references are read as committed`);
+  }
+  const changed = tracked.filter((entry, at) => hashes[at] !== entry.blob).map(({ path }) => path);
+  if (changed.length > 0) throw new Error(`${dir} has local changes (${changed.slice(0, 3).join(', ')}); the references are read as committed`);
+  const others = (...flags) => run(dir, 'git', ['ls-files', '--others', '--exclude-standard', '--directory', ...flags]).split('\n').filter((file) => file && file !== 'node_modules/');
+  const strays = [...others(), ...others('--ignored')];
   if (strays.length > 0) throw new Error(`${dir} has files that are not in ${repository}@${commit}: ${strays.slice(0, 3).join(', ')}; the references are read as committed`);
 }
 
@@ -67,9 +85,9 @@ export function checkoutReference(name, { explicit, cacheRoot = process.env.OVDB
   } catch (error) {
     throw new Error(`${error.message} (remove ${dir} to fetch it again)`);
   }
-  if (name === 'directory') {
-    rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
-    run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
-  }
+  // The root node_modules is not part of the commit: whatever a kept cache had is removed, and what the generators need is installed (the Directory's
+  // yaml, from its lock file) or linked (by the generator of package manifest, for the Chinook checkout) again.
+  rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
+  if (name === 'directory') run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
   return dir;
 }
