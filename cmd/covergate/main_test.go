@@ -13,9 +13,9 @@ import (
 // runMain calls main with the seams replaced and returns the exit code it asked for.
 func runMain(t *testing.T, argv []string, profile string, tree fs.FS) int {
 	t.Helper()
-	oldExit, oldArgs, oldOpen, oldRoot, oldFlags := exit, args, open, root, goflags
-	t.Cleanup(func() { exit, args, open, root, goflags = oldExit, oldArgs, oldOpen, oldRoot, oldFlags })
-	goflags = func() string { return "" }
+	oldExit, oldArgs, oldOpen, oldRoot, oldEnv := exit, args, open, root, goenv
+	t.Cleanup(func() { exit, args, open, root, goenv = oldExit, oldArgs, oldOpen, oldRoot, oldEnv })
+	goenv = func(string) (string, error) { return "", nil }
 	code := -1
 	exit = func(c int) { code = c }
 	args = func() []string { return argv }
@@ -43,9 +43,19 @@ func TestMainExitCodes(t *testing.T) {
 
 // The defaults read the real process: its arguments, files and working directory.
 func TestDefaultSeams(t *testing.T) {
-	t.Setenv("GOFLAGS", "-count=1")
-	if got := goflags(); got != "-count=1" {
-		t.Errorf("goflags() = %q", got)
+	// The go tool is asked, not the environment: its GOENV file (what `go env -w` writes) holds settings the environment does not show.
+	envFile := filepath.Join(t.TempDir(), "env")
+	if err := os.WriteFile(envFile, []byte("GOFLAGS=-modfile=/elsewhere/alt.mod\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOENV", envFile)
+	t.Setenv("GOFLAGS", "")
+	if got, err := goenv("GOFLAGS"); err != nil || got != "-modfile=/elsewhere/alt.mod" {
+		t.Errorf("goenv(GOFLAGS) = %q, %v", got, err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if _, err := goenv("GOFLAGS"); err == nil {
+		t.Error("goenv without a go tool did not fail")
 	}
 	if got := args(); len(got) != len(os.Args)-1 {
 		t.Errorf("args() = %v", got)

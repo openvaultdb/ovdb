@@ -11,6 +11,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/covergate"
 )
@@ -22,10 +24,13 @@ var (
 	open = func(name string) (io.ReadCloser, error) { return os.Open(name) }
 	// root is the module's file tree, read for the packages to gate.
 	root = func() fs.FS { return os.DirFS(".") }
-	// goflags is the GOFLAGS the profile was made under: the gate refuses the ones that change what is built.
-	goflags = func() string { return os.Getenv("GOFLAGS") }
+	// goenv asks the go tool for a setting, as `go env NAME` says it: the environment of this process is not all that the go tool reads (it reads its GOENV file too).
+	goenv = func(name string) (string, error) {
+		out, err := exec.Command("go", "env", name).Output()
+		return strings.TrimSpace(string(out)), err
+	}
 )
 
 func main() {
-	exit(covergate.Run(args(), os.Stdout, os.Stderr, open, root(), goflags()))
+	exit(covergate.Run(args(), os.Stdout, os.Stderr, open, root(), goenv))
 }
