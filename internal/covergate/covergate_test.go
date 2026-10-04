@@ -1,0 +1,274 @@
+package covergate
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"io/fs"
+	"strings"
+	"testing"
+	"testing/fstest"
+	"testing/iotest"
+)
+
+const module = "example.test/m"
+
+func file(src string) *fstest.MapFile { return &fstest.MapFile{Data: []byte(src)} }
+
+// tree is a module with one package for each way the gate judges one.
+func tree() fstest.MapFS {
+	return fstest.MapFS{
+		"go.mod":                      file("module example.test/m\n\ngo 1.27.0\n"),
+		"good/good.go":                file("package good\n\nfunc Add(a, b int) int { return a + b }\n"),
+		"good/good_test.go":           file("package good\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) { _ = Add(1, 2) }\n"),
+		"good/sub/sub.go":             file("package sub\n\nfunc F() int { return 1 }\n"),
+		"good/notes.txt":              file("not Go"),
+		"other/other.go":              file("package other\n\nfunc F() int { return 1 }\n"),
+		"empty/doc.go":                file("// Package empty has no statement.\npackage empty\n\ntype T struct{}\n\nfunc (T) M() {}\n"),
+		"tagged/tagged.go":            file("//go:build linux\n\npackage tagged\n\nfunc F() int { return 1 }\n"),
+		"tagged/old.go":               file("// +build linux\n\npackage tagged\n\nfunc G() int { return 1 }\n"),
+		"osfile/osfile_linux.go":      file("package osfile\n\nfunc F() int { return 1 }\n"),
+		"osfile/osfile_amd64_test.go": file("package osfile\n"),
+		"plain/linux.go":              file("package plain\n\nfunc F() int { return 1 }\n"),
+		"plain/word_test.go":          file("package plain\n"),
+		"testmain/t.go":               file("package testmain\n\nfunc F() int { return 1 }\n"),
+		"testmain/main_test.go":       file("package testmain\n\nimport \"testing\"\n\nfunc TestMain(m *testing.M) { m.Run() }\n"),
+		"method/m.go":                 file("package method\n\nfunc F() int { return 1 }\n"),
+		"method/m_test.go":            file("package method\n\ntype S struct{}\n\nfunc (S) TestMain() {}\n"),
+		"bad/bad.go":                  file("this is not Go"),
+		"nogo/readme.txt":             file("nothing"),
+	}
+}
+
+func TestParse(t *testing.T) {
+	profile := "mode: atomic\n" +
+		module + "/good/good.go:3.30,3.50 1 1\n" +
+		module + "/good/good.go:5.1,6.2 2 0\n" +
+		"\n" +
+		module + "/good/good.go:5.1,6.2 2 3\n" + // the same block from a second test binary
+		module + "/other/other.go:3.1,3.9 4 0\n"
+	blocks, err := Parse(strings.NewReader(profile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Block{
+		{module + "/good/good.go:3.30,3.50", 1, true},
+		{module + "/good/good.go:5.1,6.2", 2, true},
+		{module + "/other/other.go:3.1,3.9", 4, false},
+	}
+	if len(blocks) != len(want) {
+		t.Fatalf("blocks = %+v", blocks)
+	}
+	for i := range want {
+		if blocks[i] != want[i] {
+			t.Errorf("block %d = %+v, want %+v", i, blocks[i], want[i])
+		}
+	}
+	if got := blocks[0].Dir(); got != module+"/good" {
+		t.Errorf("Dir = %q", got)
+	}
+	// Without a mode line, and with only blocks.
+	if blocks, err := Parse(strings.NewReader("a/b.go:1.1,2.2 1 0\n")); err != nil || len(blocks) != 1 {
+		t.Errorf("Parse without mode = %v, %v", blocks, err)
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	for name, profile := range map[string]string{
+		"too few fields":          "a/b.go:1.1,2.2 1\n",
+		"too many fields":         "a/b.go:1.1,2.2 1 0 9\n",
+		"no file separator":       "ab 1 0\n",
+		"statements not a number": "a/b.go:1.1,2.2 x 0\n",
+		"negative statements":     "a/b.go:1.1,2.2 -1 0\n",
+		"count not a number":      "a/b.go:1.1,2.2 1 x\n",
+		"negative count":          "a/b.go:1.1,2.2 1 -1\n",
+		"a line over the limit":   strings.Repeat("a", 2<<20),
+	} {
+		if _, err := Parse(strings.NewReader(profile)); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	if _, err := Parse(iotest.ErrReader(errors.New("disk"))); err == nil || !strings.Contains(err.Error(), "disk") {
+		t.Errorf("a failing reader gives %v", err)
+	}
+}
+
+func TestNameConstraint(t *testing.T) {
+	for name, want := range map[string]string{
+		"x_linux.go": "linux", "x_linux_test.go": "linux", "x_amd64.go": "amd64", "x_linux_arm64.go": "arm64", "x_windows_test.go": "windows", "x_wasip1.go": "wasip1",
+		"linux.go": "", "amd64_test.go": "", "x.go": "", "x_test.go": "", "x_foo.go": "", "x_linuxish.go": "", "x_linux_foo.go": "",
+	} {
+		if got := nameConstraint(name); got != want {
+			t.Errorf("nameConstraint(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestLoadPackage(t *testing.T) {
+	fsys := tree()
+	for _, c := range []struct {
+		dir                    string
+		statements             bool
+		testMains, constraints int
+	}{
+		{"good", true, 0, 0}, {"empty", false, 0, 0}, {"tagged", true, 0, 2}, {"osfile", true, 0, 2}, {"plain", true, 0, 0}, {"testmain", true, 1, 0}, {"method", true, 0, 0},
+	} {
+		pkg, err := LoadPackage(fsys, module, c.dir)
+		if err != nil {
+			t.Fatalf("%s: %v", c.dir, err)
+		}
+		if pkg.Path != module+"/"+c.dir || pkg.Dir != c.dir || pkg.HasStatements != c.statements || len(pkg.TestMains) != c.testMains || len(pkg.Constraints) != c.constraints {
+			t.Errorf("%s = %+v", c.dir, pkg)
+		}
+	}
+	if pkg, err := LoadPackage(fstest.MapFS{"a.go": file("package main\n\nfunc main() {}\n")}, module, "."); err != nil || pkg.Path != module || pkg.HasStatements {
+		t.Errorf("the module root = %+v, %v", pkg, err)
+	}
+	for _, dir := range []string{"bad", "nogo", "missing"} {
+		if _, err := LoadPackage(fsys, module, dir); err == nil {
+			t.Errorf("%s: no error", dir)
+		}
+	}
+	if _, err := LoadPackage(failingFS{fsys, "good/good.go"}, module, "good"); err == nil {
+		t.Error("an unreadable file gives no error")
+	}
+}
+
+// failingFS cannot open one file.
+type failingFS struct {
+	fs.FS
+	name string
+}
+
+func (f failingFS) Open(name string) (fs.File, error) {
+	if name == f.name {
+		return nil, errors.New("unreadable")
+	}
+	return f.FS.Open(name)
+}
+
+func TestCheck(t *testing.T) {
+	good := Package{Dir: "good", Path: module + "/good", HasStatements: true}
+	covered := []Block{{module + "/good/good.go:1.1,2.2", 3, true}, {module + "/good/good.go:4.1,5.2", 0, false}}
+	if r := Check([]Package{good}, covered); !r.OK() || r.Covered != 3 || r.Total != 3 {
+		t.Errorf("covered = %+v", r)
+	}
+	// Blocks of packages that are not given are not judged.
+	if r := Check([]Package{good}, append(slicesClone(covered), Block{module + "/other/o.go:1.1,2.2", 9, false})); !r.OK() || r.Total != 3 {
+		t.Errorf("an unlisted package is judged: %+v", r)
+	}
+	r := Check([]Package{good}, []Block{{module + "/good/good.go:1.1,2.2", 3, true}, {module + "/good/good.go:7.1,8.2", 2, false}})
+	if r.OK() || r.Covered != 3 || r.Total != 5 || len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "uncovered: "+module+"/good/good.go:7.1,8.2 (2 statements)") {
+		t.Errorf("uncovered = %+v", r)
+	}
+	r = Check([]Package{good, {Dir: "other", Path: module + "/other", HasStatements: true}}, covered)
+	if r.OK() || len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "package "+module+"/other has statements and none of them is in the cover profile") {
+		t.Errorf("a missing package = %+v", r)
+	}
+	r = Check([]Package{{Dir: "e", Path: module + "/e"}}, nil)
+	if r.OK() || len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "nothing was measured") {
+		t.Errorf("an empty profile = %+v", r)
+	}
+	r = Check([]Package{{Dir: "good", Path: module + "/good", HasStatements: true, TestMains: []string{"good/main_test.go"}, Constraints: []string{"good/x_linux.go: the file name carries a GOOS or GOARCH build constraint (linux)"}}}, covered)
+	if r.OK() || len(r.Problems) != 2 || !strings.Contains(strings.Join(r.Problems, "\n"), "declares TestMain") || !strings.Contains(strings.Join(r.Problems, "\n"), "build constraint") {
+		t.Errorf("TestMain and constraints = %+v", r)
+	}
+}
+
+func slicesClone(blocks []Block) []Block { return append([]Block(nil), blocks...) }
+
+type closer struct{ io.Reader }
+
+func (closer) Close() error { return nil }
+
+func opener(files map[string]string) func(string) (io.ReadCloser, error) {
+	return func(name string) (io.ReadCloser, error) {
+		text, ok := files[name]
+		if !ok {
+			return nil, errors.New("no such file: " + name)
+		}
+		return closer{strings.NewReader(text)}, nil
+	}
+}
+
+func run(t *testing.T, profile string, fsys fs.FS, args ...string) (int, string, string) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := Run(args, &stdout, &stderr, opener(map[string]string{"cover.out": profile}), fsys)
+	return code, stdout.String(), stderr.String()
+}
+
+const goodProfile = "mode: atomic\n" + module + "/good/good.go:3.30,3.50 1 1\n"
+
+func TestRun(t *testing.T) {
+	code, stdout, stderr := run(t, goodProfile, tree(), "cover.out", "./good")
+	if code != 0 || stdout != "statements covered: 1 of 1, in 1 packages\n" || stderr != "" {
+		t.Errorf("good: %d %q %q", code, stdout, stderr)
+	}
+	// Import path, directory and the module root name the same packages.
+	if code, _, _ := run(t, goodProfile, tree(), "cover.out", module+"/good"); code != 0 {
+		t.Errorf("an import path: %d", code)
+	}
+	if code, _, _ := run(t, goodProfile, tree(), "cover.out", "good"); code != 0 {
+		t.Errorf("a bare directory: %d", code)
+	}
+	root := fstest.MapFS{"go.mod": file("module example.test/m\n"), "m.go": file("package m\n\nfunc F() int { return 1 }\n")}
+	if code, _, _ := run(t, "mode: set\n"+module+"/m.go:3.1,3.9 1 1\n", root, "cover.out", module); code != 0 {
+		t.Errorf("the module root: %d", code)
+	}
+	if code, _, _ := run(t, "mode: set\n"+module+"/m.go:3.1,3.9 1 1\n", root, "cover.out", "."); code != 0 {
+		t.Errorf("a dot: %d", code)
+	}
+
+	code, stdout, stderr = run(t, goodProfile+module+"/good/good.go:9.1,9.9 2 0\n", tree(), "cover.out", "./good")
+	if code != 1 || !strings.Contains(stdout, "1 of 3") || !strings.Contains(stderr, "uncovered:") || !strings.Contains(stderr, "1 problem(s)") {
+		t.Errorf("uncovered: %d %q %q", code, stdout, stderr)
+	}
+	code, _, stderr = run(t, goodProfile, tree(), "cover.out", "./good", "./other")
+	if code != 1 || !strings.Contains(stderr, "package "+module+"/other has statements") {
+		t.Errorf("a package missing from the profile: %d %q", code, stderr)
+	}
+	code, _, stderr = run(t, goodProfile, tree(), "cover.out", "./good", "./testmain", "./tagged")
+	if code != 1 || !strings.Contains(stderr, "declares TestMain") || !strings.Contains(stderr, "//go:build linux") {
+		t.Errorf("TestMain and constraints: %d %q", code, stderr)
+	}
+
+	for name, c := range map[string]struct {
+		profile string
+		fsys    fs.FS
+		args    []string
+	}{
+		"no arguments":               {goodProfile, tree(), nil},
+		"no package":                 {goodProfile, tree(), []string{"cover.out"}},
+		"a missing profile":          {goodProfile, tree(), []string{"nope.out", "./good"}},
+		"a bad profile":              {"garbage\n", tree(), []string{"cover.out", "./good"}},
+		"no go.mod":                  {goodProfile, fstest.MapFS{}, []string{"cover.out", "./good"}},
+		"no module line":             {goodProfile, fstest.MapFS{"go.mod": file("go 1.27\n")}, []string{"cover.out", "./good"}},
+		"a pattern":                  {goodProfile, tree(), []string{"cover.out", "./good/..."}},
+		"outside":                    {goodProfile, tree(), []string{"cover.out", "../x"}},
+		"an absolute path":           {goodProfile, tree(), []string{"cover.out", "/good"}},
+		"a backslash":                {goodProfile, tree(), []string{"cover.out", `good\sub`}},
+		"a trailing slash":           {goodProfile, tree(), []string{"cover.out", "good/"}},
+		"given twice":                {goodProfile, tree(), []string{"cover.out", "./good", "good"}},
+		"a missing package":          {goodProfile, tree(), []string{"cover.out", "./missing"}},
+		"a directory without Go":     {goodProfile, tree(), []string{"cover.out", "./nogo"}},
+		"a file that does not parse": {goodProfile, tree(), []string{"cover.out", "./bad"}},
+	} {
+		if code, _, stderr := run(t, c.profile, c.fsys, c.args...); code != 2 || stderr == "" {
+			t.Errorf("%s: exit %d, %q", name, code, stderr)
+		}
+	}
+}
+
+func TestPackageDir(t *testing.T) {
+	for arg, want := range map[string]string{"./a/b": "a/b", "a/b": "a/b", module + "/a/b": "a/b", module: ".", "./" + module + "/a": "a", ".": ".", "./.": "."} {
+		if got, err := packageDir(arg, module); err != nil || got != want {
+			t.Errorf("packageDir(%q) = %q, %v, want %q", arg, got, err, want)
+		}
+	}
+	for _, arg := range []string{"", "./", "..", "../a", "a/../b", "a//b", "a/", "/a", "a/...", "./...", `a\b`, "a/."} {
+		if got, err := packageDir(arg, module); err == nil {
+			t.Errorf("packageDir(%q) = %q, want an error", arg, got)
+		}
+	}
+}
