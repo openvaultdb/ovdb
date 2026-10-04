@@ -205,4 +205,4 @@ jobs:
       - name: go test with coverage (publisher check packages)
         run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./internal/covergate/... ./cmd/covergate/...
       - name: Every statement of exactly those packages is covered
-        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/rules ./internal/covergate ./cmd/covergate
+        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/manifest ./internal/publisher/rules ./internal/covergate ./cmd/covergate
