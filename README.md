@@ -109,6 +109,12 @@ confirmed. Built on `github.com/strongo/cli-helpers/cliinstall`, whose
 compiled-in catalog and host → target relevance texts are the single source
 every other fleet CLI's own `install ovdb` also resolves from.
 
+`ovdb install --all` lists every CLI in the catalogue (`sneat` and `specscore`
+among them), not only those relevant to ovdb, and any of them can be installed
+by name. `--dir` places a CLI in a directory of your choice, except the
+directories an operating system package manager, Homebrew or Snap owns
+(`/usr/bin` is refused, for example).
+
 ```sh
 ovdb install
 ovdb install --all --format json
