@@ -1,7 +1,8 @@
 // Command chain reads documents and says, for each, whether the strict YAML reader refuses it and, if so, the lines of the reader that led
-// to the refusal. It is run by reader_places_test.go, through `go run -overlay`, with the reader's source instrumented in a temporary
-// copy (the overlay): every SyntaxError carries the lines of yaml.go and yaml_flow.go that were running, innermost first. It is not part
-// of any package that is built or gated (the go tool does not look in testdata), and the shipped binary does not contain it.
+// to the refusal. It is run by reader_places_test.go through `go run -modfile`: the test copies the reader's module into a temporary
+// directory, instruments it there, and builds this program against the copy with a go.mod of its own that replaces the module by the copy.
+// Every SyntaxError then carries the lines of yaml.go and yaml_flow.go that were running, innermost first. It is not part of any package
+// that is built or gated (the go tool does not look in testdata), and the shipped binary does not contain it.
 //
 // Input: a JSON array of base64 strings, the bytes of the documents. Output: a JSON array of {Rule, Chain}, with an empty Rule when the
 // document is read.

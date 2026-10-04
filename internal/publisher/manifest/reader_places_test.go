@@ -344,7 +344,49 @@ func zzChain() string {
 
 type readerRefusal struct{ Rule, Chain string }
 
-var readerReplace = regexp.MustCompile(`(?m)^replace\s+` + regexp.QuoteMeta(readerModule) + `\b.*\n`)
+// workspaceProblem says what to do when a go.work is in effect (the value of `go env GOWORK`): the test builds the reader through a go.mod of its own
+// (-modfile), which the go tool does not allow in workspace mode, and a workspace may replace the reader in a way that go.mod does not show.
+func workspaceProblem(gowork string) string {
+	if gowork == "" || gowork == "off" {
+		return ""
+	}
+	return fmt.Sprintf("a go.work is in effect (%s): this test instruments the reader through a go.mod of its own, which a workspace does not allow; run it with GOWORK=off (and with the reader replaced in go.mod, not in the workspace), or without the go.work", gowork)
+}
+
+// replacedModfile writes, into dir, a go.mod and a go.sum that are those of the module (mod and sum are their contents) but for the reader, which
+// they replace by the directory copyDir; and returns the path of the go.mod. Every replacement of the reader that the module has is dropped first,
+// in whatever form (a line, a block, with or without a version): the go tool's own parser says what they are, and two replacements of one module
+// are "conflicting replacements".
+func replacedModfile(t testing.TB, dir string, mod, sum []byte, copyDir string) string {
+	t.Helper()
+	modfile := filepath.Join(dir, "go.mod")
+	if err := os.WriteFile(modfile, mod, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.sum"), sum, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Replace []struct {
+			Old struct{ Path, Version string }
+		}
+	}
+	if err := json.Unmarshal(runGo(t, dir, nil, "mod", "edit", "-json", modfile), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"mod", "edit"}
+	for _, r := range parsed.Replace {
+		if r.Old.Path == readerModule {
+			drop := r.Old.Path
+			if r.Old.Version != "" {
+				drop += "@" + r.Old.Version
+			}
+			args = append(args, "-dropreplace="+drop)
+		}
+	}
+	runGo(t, dir, nil, append(args, "-replace="+readerModule+"="+filepath.ToSlash(copyDir), modfile)...)
+	return modfile
+}
 
 // readerChains runs the documents through the reader of dir (package meaning of the module that go builds), instrumented, and returns for each
 // the rule that refused it and the chain of lines (empty when the document is read). The go tool cannot instrument a file of the module cache
@@ -352,6 +394,9 @@ var readerReplace = regexp.MustCompile(`(?m)^replace\s+` + regexp.QuoteMeta(read
 // against the copy by a go.mod of its own (-modfile) that replaces the module; the module of this repository is not touched.
 func readerChains(t testing.TB, dir string, inputs [][]byte) []readerRefusal {
 	t.Helper()
+	if problem := workspaceProblem(strings.TrimSpace(string(runGo(t, ".", nil, "env", "GOWORK")))); problem != "" {
+		t.Fatal(problem)
+	}
 	tmp := t.TempDir()
 	copyDir := filepath.Join(tmp, "reader")
 	if err := os.CopyFS(copyDir, os.DirFS(filepath.Join(dir, "..", ".."))); err != nil {
@@ -382,14 +427,7 @@ func readerChains(t testing.TB, dir string, inputs [][]byte) []readerRefusal {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modfile := filepath.Join(tmp, "go.mod")
-	replaced := append(readerReplace.ReplaceAll(mod, nil), fmt.Sprintf("\nreplace %s => %s\n", readerModule, copyDir)...)
-	if err := os.WriteFile(modfile, replaced, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tmp, "go.sum"), sum, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	modfile := replacedModfile(t, tmp, mod, sum, copyDir)
 	encoded := make([]string, len(inputs))
 	for i, in := range inputs {
 		encoded[i] = base64.StdEncoding.EncodeToString(in)
@@ -611,13 +649,7 @@ func TestReaderSourceFollowsReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modfile := filepath.Join(t.TempDir(), "go.mod")
-	if err := os.WriteFile(modfile, append(mod, fmt.Sprintf("\nreplace %s => %s\n", readerModule, copyDir)...), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(modfile), "go.sum"), sum, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	modfile := replacedModfile(t, t.TempDir(), mod, sum, copyDir)
 	dir := readerSourceDir(t, modfile)
 	if want := filepath.Join(copyDir, "pkg", "meaning"); dir != want {
 		t.Fatalf("with a replace, the reader is read from %s, want %s", dir, want)
@@ -628,5 +660,50 @@ func TestReaderSourceFollowsReplace(t *testing.T) {
 	}
 	if errs := placeErrors(t, real); len(errs) != 0 {
 		t.Errorf("the table is not that of the reader that is built: %v", errs)
+	}
+}
+
+// replacedModfile drops the replacements of the reader that a go.mod has, in whatever form, and puts its own: the false failure of the review ("conflicting
+// replacements" with a block-form replace, although the reader is the same).
+func TestReplacedModfileHandlesEveryFormOfReplace(t *testing.T) {
+	base, err := os.ReadFile("../../../go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := os.ReadFile("../../../go.sum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := readerSourceDir(t, "")
+	copyDir := filepath.Join(t.TempDir(), "cli")
+	if err := os.CopyFS(copyDir, os.DirFS(filepath.Join(real, "..", ".."))); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	for name, extra := range map[string]string{
+		"none":          "",
+		"a line":        "\nreplace " + readerModule + " => " + filepath.ToSlash(other) + "\n",
+		"a block":       "\nreplace (\n\t" + readerModule + " => " + filepath.ToSlash(other) + "\n)\n",
+		"with version":  "\nreplace " + readerModule + " v0.2.0 => " + filepath.ToSlash(other) + "\n",
+		"block version": "\nreplace (\n\t" + readerModule + " v0.2.0 => " + filepath.ToSlash(other) + "\n\tgithub.com/example/unrelated => github.com/example/other v1.0.0\n)\n",
+	} {
+		modfile := replacedModfile(t, t.TempDir(), append(slices.Clone(base), extra...), sum, copyDir)
+		if dir := readerSourceDir(t, modfile); dir != filepath.Join(copyDir, "pkg", "meaning") {
+			t.Errorf("%s: the reader is read from %s", name, dir)
+		}
+		if got, _ := os.ReadFile(modfile); name == "block version" && !strings.Contains(string(got), "github.com/example/unrelated") {
+			t.Errorf("%s: a replacement of another module was dropped:\n%s", name, got)
+		}
+	}
+}
+
+func TestWorkspaceProblem(t *testing.T) {
+	for _, off := range []string{"", "off"} {
+		if got := workspaceProblem(off); got != "" {
+			t.Errorf("workspaceProblem(%q) = %q", off, got)
+		}
+	}
+	if got := workspaceProblem("/src/go.work"); !strings.Contains(got, "GOWORK=off") || !strings.Contains(got, "/src/go.work") {
+		t.Errorf("workspaceProblem = %q: it must say what to do", got)
 	}
 }
