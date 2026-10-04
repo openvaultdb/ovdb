@@ -33,6 +33,7 @@ const verdictsPath = join(here, 'directory.verdicts.json');
 const factsPath = join(here, 'directory.facts.json');
 const publisherVerdictsPath = join(here, 'publisher.verdicts.json');
 const publisherFactsPath = join(here, 'publisher.facts.json');
+const valuesPath = join(here, 'values.json');
 const digestsPath = join(here, 'digests.json');
 
 const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
@@ -1066,6 +1067,47 @@ for (const [url, repository] of [['https://github.com/data', 'https://github.com
     place('yaml_flow.go:354', [chinookYaml, text.replace(publisher, flow('? name'))]);
     place('yaml.go:628@flow key', [chinookYaml, text.replace(publisher, flow(`name${' '.repeat(1100)}`))]);
   }
+  // The inputs of the third review (the places whose cells said "none" and were not): a backslash before a real tab, a sequence at its key's indent
+  // with a tab after the dash, a byte order mark then a one-line flow mapping, and for the Directory profile an unknown key (which its rules do not read).
+  hosts('yaml.go:878@block value', 'K: "Chinook\\\tmusic store"');
+  publisherAs('yaml.go:878@flow', (p) => `publisher: {name: "Data\\\tTug", url: ${p.url}, repository: ${p.repository}}\n`);
+  whole('yaml.go:464', (t) => t.replace(/^recordsets:\n( {2}- .*\n)+/m, 'recordsets:\n-\tAlbum\n-\tArtist\n'));
+  whole('yaml.go:464', (t) => t.replace(/^recordsets:\n( {2}- .*\n)+/m, 'recordsets:\n-\tAlbum\n- Artist\n'));
+  mdPlace('yaml.go:464', '---\novdb: 1\npublish:\n-\t./ovdb.yaml\n---\n'); mdPlace('yaml.go:464', '---\novdb: 1\npublish:\n- ./ovdb.yaml\n-\t./b.yaml\n---\n');
+  ownOnly('yaml.go:148', () => ` ${JSON.stringify(ownObject)}\n`, 'bom'); whole('yaml.go:148', () => ` ${JSON.stringify(ownObject)}\n`, 'bom'); whole('yaml.go:148', () => ` ${JSON.stringify(sharedObject)}\n`, 'bom');
+  mdPlace('yaml.go:788@flow value', '---\n{ovdb: 0x1, publish: [./ovdb.yaml]}\n---\n'); mdPlace('yaml.go:788@flow value', '---\n{ovdb: 0o1, publish: [./ovdb.yaml]}\n---\n');
+  for (const line of ['[a]: x', '"\\ud83c": x', '"a": x\n[b]: y']) whole('yaml.go:473', (t) => `${t}${line}\n`);
+  whole('yaml.go:628', (t) => `${t}${'\u00e9'.repeat(600)}: x\n`); whole('yaml.go:628', (t) => `${t}"${'\u00e9'.repeat(600)}": x\n`);
+  whole('yaml.go:661', (t) => `${t}extra:\n  - -\tx\n`); whole('yaml.go:661', (t) => `${t}extra:\n  - ?\tx\n`);
+  whole('yaml.go:735', (t) => `${t}extra: a\n  : x\n`);
+  whole('yaml.go:825@flow', (t) => `${t}extra:\n  - [a]: b\n`); whole('yaml.go:825@flow', (t) => `${t}extra:\n  - {a}: b\n`);
+  for (const entry of ['? x', ': x', '-: x']) whole('yaml_flow.go:210', (t) => `${t}extra: [a, ${entry}]\n`);
+  // The values that both readers read: scalars in every spelling that the reader reads, on an extra key, in the manifests and in OVDB.md (the
+  // comparison of what the reader and the yaml package read, over every document that both read, is in values_test.go).
+  {
+    const scalars = [
+      '-0', '+0', '0', '+1', '-1', '1_000', '.5', '5.', '1e3', '1E3', '1e-3', '-1.5e+2', '0.1', '00012', '0b11', '0777', '0.30000000000000004', '9007199254740992', '-9007199254740992', '1.7976931348623157e308', '5e-324', '4.9e-324', '123456789012345678', '1.0', '1.50', '-.5',
+      'Yes', 'No', 'yes', 'no', 'on', 'off', 'On', 'y', 'n', 'Y', 'N', '~', 'Null', 'NULL', 'nulL', 'True', 'TRUE', 'tRue', 'False', 'FALSE', 'false', 'true',
+      '2001-12-14', '2001-12-14t21:59:43.10-05:00', '12:30:45', '1:30', '190:20:30', '0x', '0o', '1e', '.', '-', '+', '..', '...a', '-a', '- ', '?a', ':a', '.e1', 'e1', '1.', '1.e3', '+.5', '+.inf',
+      'plain text', 'plain  with   spaces', 'a#b', 'a #b', 'a:b', 'a:  b', 'caf\u00e9', '\u65e5\u672c\u8a9e', '\ud83d\ude00 emoji', 'a\u00a0b', 'a\u200bb', 'a\ufeffb', 'tab\there', 'it\'s', 'say "hi"', '\\', 'back\\slash',
+      "'single'", "'it''s'", "''", "'a\\nb'", "'  padded  '", '"double"', '""', '"a\\nb"', '"a\\tb"', '"a\\\\b"', '"a\\"b"', '"\\x41"', '"\\u00e9"', '"\\U0001F600"', '"\\ud83d\\ude00"', '"\\N\\_\\L\\P"', '"\\e\\0\\a\\b\\v\\f\\r"', '"\\/"', '"\\ "', '"  padded  "', '"a # b"', '"a: b"', '"-"', '"~"', '"null"', '"1"', '"true"',
+      '|\n  literal\n  text', '|\n  literal\n\n  with blank\n', '|-\n  literal\n  text', '|\n    deep\n  \n    deeper', '|\n  a\n   b\n  c', '|\n  trailing   \n  spaces', '|\n  # not a comment',
+      '>\n  folded\n  text', '>-\n  folded\n  text', '>\n  one\n\n  two', '>\n  a\n   indented\n  b', '>\n  first\n  second\n\n\n  third', '>-\n  with trailing blank\n\n', '>\n\n  leading blank',
+      'multi\n  line\n  plain', 'multi\n  line\n\n  plain with blank', 'multi\n\n\n  line', '[]', '{}', '[a]', '[a, b]', '[ a , b ]', '[a, [b, [c]]]', '{a: b}', '{a: b, c: d}', '{a: [b, c], d: {e: f}}', '["a", \'b\', c]', '{"a": 1, b: "two"}', '[1, 2.5, true, null, ~, "s"]', '[a,\n  b]', '{a: 1,\n  b: 2}', '[ ]', '{ }', '[a, ]',
+      '\n  - a\n  - b', '\n  - a\n  - - b\n    - c', '\n  - k: v\n    l: w\n  - m: x', '\n  k: v\n  l: w', '\n  k:\n    n: v', '\n  k: [a, b]\n  l: {c: d}', '',
+    ];
+    for (const name of [chinookYaml, hosterYaml]) {
+      scalars.forEach((v, i) => {
+        const value = v.startsWith('\n') ? v : v === '' ? '' : ` ${v}`;
+        place('values', [name, bases[name].replace(/^title:.*$/m, (line) => `${line}\nextra:${value}`)]);
+        if (i % 3 === 0) place('values', [name, bases[name].replace(/^title:.*$/m, `title:${v.startsWith('\n') ? ' x' : v === '' ? ' x' : ` ${v}`}`)]);
+      });
+    }
+    for (const v of scalars) {
+      if (v.startsWith('\n') || v === '') continue;
+      mdPlace('values', `---\novdb: 1\npublish: [./ovdb.yaml]\nextra: ${v}\n---\n`);
+    }
+  }
   // OVDB.md front matter, the same reader (OVDB.md allows ovdb and publish only)
   mdPlace('yaml.go:696', '---\novdb: 1\npublish: [./ovdb.yaml]\n---\n'.replace('ovdb: 1', 'ovdb: 1\nx: a b,\n  *c* d'));
   mdPlace('yaml.go:864@block value', '---\novdb: 1\nx: "a\n  b"\npublish: [./ovdb.yaml]\n---\n');
@@ -1229,22 +1271,47 @@ const publisherFactsText = [
   '  "md": [', publisherLists.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ]',
   '}', '',
 ].join('\n');
+const sha = (data) => createHash('sha256').update(data).digest('hex');
+// The values that the `yaml` package reads from each document (what the Directory's code and the Chinook checker get from parse): for each
+// document, a digest of every value of it in a canonical form, which the Go test makes of what the Go reader reads and compares, wherever both
+// read the document. The form: null `n`, a boolean `b0` or `b1`, a number `f` and the 16 hex digits of its IEEE double, a string `s`, its length in
+// bytes of UTF-8 and `:` and its text, a sequence `q`, its length and `[` the values `]`, a mapping `m`, its number of keys and `{` each key (as a
+// string) and its value, the keys in the order of their bytes `}`. A document that the package refuses has sixteen dashes.
+const canonical = (value) => {
+  if (value === null || value === undefined) return 'n';
+  if (typeof value === 'boolean') return value ? 'b1' : 'b0';
+  if (typeof value === 'number') { const view = new DataView(new ArrayBuffer(8)); view.setFloat64(0, value); return `f${view.getBigUint64(0).toString(16).padStart(16, '0')}`; }
+  if (typeof value === 'string') return `s${Buffer.byteLength(value)}:${value}`;
+  if (Array.isArray(value)) return `q${value.length}[${value.map(canonical).join('')}]`;
+  const keys = Object.keys(value).sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  return `m${keys.length}{${keys.map((key) => `${canonical(key)}${canonical(value[key])}`).join('')}}`;
+};
+const valueDigest = (text) => {
+  if (text === null) return '-'.repeat(16);
+  try { return sha(canonical(parseYaml(text))).slice(0, 16); } catch { return '-'.repeat(16); }
+};
+const frontMatterOf = (text) => text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] ?? null;
+const valuesText = `${JSON.stringify({
+  format: 'ovdb-publisher-values/1', generatedBy: meta.generatedBy, references: meta.references,
+  manifest: manifestBuffers.map((buffer) => valueDigest(decoded(buffer))).join(''),
+  md: mdBuffers.map((buffer) => valueDigest(frontMatterOf(decoded(buffer)))).join(''),
+}, null, 1)}\n`;
 // A digest of every committed golden of both slices, so that a hand edit of any of them fails `go test` until the
 // generator is run again (the digests of the rules golden are read from the committed file, which its own
 // generator writes: run that one first when the rules change).
 const rulesGolden = join(here, '../../../rules/testdata/reference/matrix.golden.json');
-const sha = (data) => createHash('sha256').update(data).digest('hex');
 const digestText = `${JSON.stringify({
   'manifest/testdata/reference/corpus.json': sha(corpusText),
   'manifest/testdata/reference/directory.verdicts.json': sha(verdictText),
   'manifest/testdata/reference/directory.facts.json': sha(factsText),
   'manifest/testdata/reference/publisher.verdicts.json': sha(publisherVerdictText),
   'manifest/testdata/reference/publisher.facts.json': sha(publisherFactsText),
+  'manifest/testdata/reference/values.json': sha(valuesText),
   'rules/testdata/reference/matrix.golden.json': sha(readFileSync(rulesGolden)),
 }, null, 1)}\n`;
 
 if (thrown > 0) console.error(`note: the reference threw on ${thrown} document(s); they are recorded as refused`);
-const targets = [[corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [digestsPath, digestText]];
+const targets = [[corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [valuesPath, valuesText], [digestsPath, digestText]];
 if (process.argv.includes('--check')) {
   if (targets.some(([path, text]) => readFileSync(path, 'utf8') !== text)) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
   console.log(`the goldens are up to date (${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents)`);

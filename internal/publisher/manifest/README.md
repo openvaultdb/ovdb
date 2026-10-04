@@ -289,7 +289,7 @@ verdict on each document (`directory.verdicts.json`), and the values its own cod
 derives for every field of the table above from each accepted manifest
 (`directory.facts.json`, as the difference from the facts of the document's base).
 `go test` reads them, applies the Go functions, starts no process and needs no
-network. The corpus is **6831 manifests and 505 OVDB.md documents** (981
+network. The corpus is **7285 manifests and 658 OVDB.md documents** (1025
 KiB), stored as patches of whole lines against a few base documents (the real
 Chinook manifest and `OVDB.md`, the hoster example, the Directory's own fixture,
 JSON spellings of the manifests), with flags for CRLF, a byte-order mark, invalid
@@ -329,15 +329,15 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **6591 agree, 745 stricter, 0 accepted by Go where the
+On the corpus: **7145 agree, 798 stricter, 0 accepted by Go where the
 Directory refuses**.
 
-On the facts: 1817 manifests and 124 OVDB.md documents have their facts compared.
+On the facts: 2177 manifests and 267 OVDB.md documents have their facts compared.
 
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 5003 manifests, 3186 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 5403 manifests, 3226 of them refused.
 
 ## The proof, Publisher profile
 
@@ -348,7 +348,7 @@ reference of the profile refuses**. The reference is the Chinook checker of
 each case is run on a repository: held in memory through the `files` object that the
 checker's own tests use for their hundreds of cases (`problem`, `read`, `kind`), and
 again on a real throwaway repository (`git init`, the files, `git commit`, the checker's
-own `gitRepoFiles`) for a sample of 306 runs, one directory of its own each, removed
+own `gitRepoFiles`) for a sample of 366 runs, one directory of its own each, removed
 afterwards. The script fails if the two ever differ.
 
 What the checker refuses falls in two groups, found by running each case on four
@@ -361,20 +361,20 @@ repository holds only `OVDB.md` and the manifest; the *wrong* one has well forme
 that disagree with the manifest; the *broken* one has files that are not JSON and not YAML.
 What these refuse and the consistent one does not **needs other files** and is
 slice 3's. An `OVDB.md` case lists the real Chinook manifest under each entry, so that only
-`OVDB.md` can be wrong. Of the 1300 manifests and 126 OVDB.md documents that the
+`OVDB.md` can be wrong. Of the 1372 manifests and 130 OVDB.md documents that the
 checker accepts, these classes of refusal would follow from files (manifests, OVDB.md
 documents):
 
-- a tracked regular file (708 manifests, 126 OVDB.md documents)
-- model.address against the model file (698 manifests, 126 OVDB.md documents)
+- a tracked regular file (744 manifests, 130 OVDB.md documents)
+- model.address against the model file (734 manifests, 130 OVDB.md documents)
 - model.name against the model file (5 manifests, 0 OVDB.md documents)
-- recordsets against the model (708 manifests, 126 OVDB.md documents)
-- the meaning file against the manifest (708 manifests, 126 OVDB.md documents)
-- the model file: JSON, module and entities (708 manifests, 126 OVDB.md documents)
+- recordsets against the model (744 manifests, 130 OVDB.md documents)
+- the meaning file against the manifest (744 manifests, 130 OVDB.md documents)
+- the model file: JSON, module and entities (744 manifests, 130 OVDB.md documents)
 
-The corpus is the one of the Directory profile, **6831 manifests and 505
-OVDB.md documents**, judged again by this reference (it accepts 1300 manifests and
-126 OVDB.md documents and refuses 5531 and 379), with the rows aimed at what
+The corpus is the one of the Directory profile, **7285 manifests and 658
+OVDB.md documents**, judged again by this reference (it accepts 1372 manifests and
+130 OVDB.md documents and refuses 5913 and 528), with the rows aimed at what
 only this profile refuses: every manifest edit of the checker's own test suite that
 applies on its own (the single-field edits of `scripts/test-model.mjs`, with bodies of
 several lines too), each licence id in and out of the list and in other letter case in
@@ -386,13 +386,13 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **6862 agree, 474 stricter, 0 accepted by Go where the Chinook
-checker refuses**. The facts: under the Publisher profile, 848 manifests and 104
+On the corpus: **7453 agree, 490 stricter, 0 accepted by Go where the Chinook
+checker refuses**. The facts: under the Publisher profile, 908 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 5014 manifests, 356 OVDB.md documents and 5765 pairs (of 7841) that the
+every one of the 5108 manifests, 366 OVDB.md documents and 5879 pairs (of 8601) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -425,137 +425,160 @@ it has none there: see the table of places.
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
 | `url-length` | 5 | 9 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
-| `yaml` | 70 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
+| `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
-| `yaml-character` | 22 | 12 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
+| `yaml-character` | 25 | 12 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
 | `yaml-directive` | 6 | 6 | The reader refuses a %YAML or %TAG directive; the reference follows it. |
 | `yaml-documents` | 10 | 10 | The reader refuses a document end marker (`...`) and a second document; the reference reads the first document and ignores what follows. |
-| `yaml-encoding` | 12 | 8 | The reader refuses a file that is not UTF-8 text (a Latin-1 byte, a NUL character); the reference, which reads a file as UTF-8, replaces the bytes it cannot decode and goes on. |
-| `yaml-escape` | 34 | 14 | The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\ud83c); the reference accepts it. |
-| `yaml-key` | 46 | 8 | The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the reference accepts it as a key. |
+| `yaml-encoding` | 16 | 12 | The reader refuses a file that is not UTF-8 text (a Latin-1 byte, a NUL character); the reference, which reads a file as UTF-8, replaces the bytes it cannot decode and goes on. |
+| `yaml-escape` | 40 | 18 | The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\ud83c); the reference accepts it. |
+| `yaml-key` | 50 | 8 | The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the reference accepts it as a key. |
 | `yaml-limit` | 14 | 0 | The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth. |
 | `yaml-line-ending` | 8 | 4 | The reader refuses a carriage return that is not part of CRLF; the reference reads it as a line break. |
-| `yaml-number` | 68 | 4 | The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers. |
-| `yaml-tab` | 82 | 68 | The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation). |
+| `yaml-number` | 76 | 6 | The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers. |
+| `yaml-tab` | 92 | 74 | The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation). |
 | `yaml-tag` | 104 | 94 | The reader refuses tags (!, !!), which the reference resolves; it reads plain values only. |
-| `yaml-unsupported` | 165 | 113 | The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both. |
+| `yaml-unsupported` | 167 | 113 | The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both. |
 
 ### The places of the reader
 
 Every line of the reader (`yaml.go` and `yaml_flow.go` of `meaninggraph/cli`, at the version of `go.mod`) that makes a refusal is a row here, and,
 where a function that several places call makes it (`resolvePlain` for numbers, `scanQuoted` and `unescape` for quoted values, `keyProblem`), one row
 for each caller that an allowed key can reach (the quoted value of a block key is not one: `splitKey` drops the error, and the line is then no key
-line). `TestReaderPlaces` reads the reader's source from the module cache and fails if a line that makes a refusal is not a row, or a row is not
-such a line, so the table is complete for the version in use, and a new version fails it until it is read again. The wrapper of this package,
-`parseYAML`, makes no refusal of its own, it rewords the reader's messages; the bound on a document's size (`document-size`) is checked in
-`check.go`, before the reader runs.
+line). `TestReaderPlaces` reads the reader's source from the module that go builds (`go list -m -json`, which follows a `replace`; with the reader replaced
+by a copy that has one more refusing line, `TestReaderSourceFollowsReplace` shows the table found out of date) and fails if a line that makes a
+refusal is not a row, or a row is not such a line, so the table is complete for the version in use, and a new version fails it until it is read
+again. The wrapper of this package, `parseYAML`, makes no refusal of its own, it rewords the reader's messages; the bound on a document's size
+(`document-size`) is checked in `check.go`, before the reader runs.
 
-Each place has documents in the corpus, the family `reader place: <id>`: the real Chinook manifest (and the hoster example, and OVDB.md) with one
-line replaced, and the same as an extra unknown key, which only the Directory accepts. In a cell, the first number is the number of documents that
-reach the place, that the profile's reference accepts and that the reader refuses (the kind is real there); the second is the number that both
-refuse. A profile with no document of the first kind at a place says why, in a form that the test checks: `evidence` means that the reference
-refuses every document of the corpus that reaches the place, which the second number shows (a search, not a proof: a document that shows otherwise
-belongs in the corpus); `proof` is a claim that the test computes: the reader's bound on the size of a file (8 MiB) lies above this package's
-(256 KiB), and a manifest that the Publisher profile accepts nests collections at most as deep as the longest path of `allowedKeys` plus one, far
-below 64.
+A refusal belongs to the row of the line that made it and of the caller of that line, not to a family of the corpus and not to a fragment of its message.
+The test copies the reader's module into a temporary directory, changes the one line of `yaml.go` that makes a `SyntaxError` so that the error carries the
+lines of the reader that were running (the function that does it is in a file of its own, nothing moves), builds `testdata/chain` against the copy with
+`go run -modfile` (the go tool does not let an overlay replace a file of the module cache, so a copy and a `replace` it is), and runs the whole corpus
+through it: the reader that is built, instrumented in a copy; the repository's `go.mod` and sources are not touched, the shipped binary does not contain
+any of it, and it needs the go tool and nothing from the network. The innermost line of a chain that is a row is the place; a row with a caller after `@`
+is the place when the chain goes through the line of that caller, and the row of the same line without a caller when it does not. A refusal that
+reaches no row, or a caller that has none, fails the test.
+
+In the corpus each place has documents aimed at it, the family `reader place: <id>`: the real Chinook manifest (and the hoster example, and OVDB.md) with
+one line replaced, and the same as an extra unknown key, which only the Directory accepts. The count of a place is of all the documents of the corpus that
+the reader refuses there, whatever family they are from. In a cell, the first number is the number of those documents that the profile's reference accepts
+(the kind is real there); the second is the number that it refuses too. A profile with no document of the first kind at a place says why, in a form that
+the test checks: `evidence` means that the reference refuses every document of the corpus that the reader refuses at the place, which the second number
+shows (a search, not a proof: a document that shows otherwise fails the test, and the search found fifteen such documents for the first version of this
+table, all now in the corpus); `proof` is a claim that the test computes: the reader's bound on the size of a file (8 MiB) lies above this package's
+(256 KiB), and a manifest that the Publisher profile accepts nests collections at most as deep as the longest path of `allowedKeys` plus one, far below 64.
 
 | Place | Rule | Directory | Publisher | Why a profile has none |
 | --- | --- | --- | --- | --- |
 | `yaml.go:124` | yaml-limit | 0 / 0 | 0 / 0 | both profiles: proof: size |
-| `yaml.go:148` | yaml-encoding | 0 / 2 | 0 / 2 | both profiles: evidence: the reference counts the mark as a column and refuses too |
-| `yaml.go:171` | yaml-encoding | 6 / 0 | 4 / 2 | both profiles have documents |
-| `yaml.go:173` | yaml-encoding | 4 / 2 | 2 / 4 | both profiles have documents |
-| `yaml.go:178` | yaml-line-ending | 4 / 0 | 2 / 2 | both profiles have documents |
-| `yaml.go:182` | yaml-character | 12 / 0 | 6 / 6 | both profiles have documents |
-| `yaml.go:295` | yaml-tab | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml.go:320` | yaml-limit | 4 / 4 | 0 / 8 | Publisher: proof: depth |
-| `yaml.go:332` | yaml-directive | 2 / 2 | 2 / 2 | both profiles have documents |
+| `yaml.go:148` | yaml-encoding | 4 / 2 | 4 / 2 | both profiles have documents |
+| `yaml.go:171` | yaml-encoding | 8 / 0 | 6 / 2 | both profiles have documents |
+| `yaml.go:173` | yaml-encoding | 4 / 8 | 2 / 10 | both profiles have documents |
+| `yaml.go:178` | yaml-line-ending | 8 / 15 | 4 / 19 | both profiles have documents |
+| `yaml.go:182` | yaml-character | 25 / 208 | 12 / 221 | both profiles have documents |
+| `yaml.go:295` | yaml-tab | 8 / 58 | 4 / 62 | both profiles have documents |
+| `yaml.go:320` | yaml-limit | 2 / 2 | 0 / 4 | Publisher: proof: depth |
+| `yaml.go:332` | yaml-directive | 6 / 2 | 6 / 2 | both profiles have documents |
 | `yaml.go:341` | yaml-tab | 4 / 0 | 4 / 0 | both profiles have documents |
 | `yaml.go:345` | yaml-documents | 4 / 2 | 4 / 2 | both profiles have documents |
-| `yaml.go:352` | yaml-documents | 4 / 2 | 4 / 2 | both profiles have documents |
-| `yaml.go:365` | yaml | 0 / 4 | 0 / 4 | both profiles: evidence: the reference refuses the same layouts |
+| `yaml.go:352` | yaml-documents | 6 / 4 | 6 / 4 | both profiles have documents |
+| `yaml.go:365` | yaml | 0 / 9 | 0 / 9 | both profiles: evidence: the reference refuses the same layouts |
 | `yaml.go:399` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml.go:436` | yaml-tab | 4 / 0 | 2 / 2 | both profiles have documents |
-| `yaml.go:462` | yaml | 0 / 4 | 0 / 4 | both profiles: evidence: the reference refuses the same layouts |
-| `yaml.go:464` | yaml-tab | 0 / 2 | 0 / 2 | both profiles: evidence: the reference refuses a dash where a key belongs |
-| `yaml.go:466` | yaml | 0 / 4 | 0 / 4 | both profiles: evidence: the reference refuses a dash where a key belongs |
-| `yaml.go:473` | yaml | 0 / 4 | 0 / 4 | both profiles: evidence: the reference refuses a line that is no entry |
-| `yaml.go:476` | yaml-duplicate-key | 0 / 2 | 0 / 2 | both profiles: evidence: a repeated key is an error of the reference too |
+| `yaml.go:436` | yaml-tab | 2 / 0 | 2 / 0 | both profiles have documents |
+| `yaml.go:462` | yaml | 0 / 118 | 0 / 118 | both profiles: evidence: the reference refuses the same layouts |
+| `yaml.go:464` | yaml-tab | 7 / 2 | 5 / 4 | both profiles have documents |
+| `yaml.go:466` | yaml | 0 / 6 | 0 / 6 | both profiles: evidence: the reference refuses a dash where a key belongs |
+| `yaml.go:473` | yaml | 8 / 118 | 0 / 126 | Publisher: evidence: the reference refuses a line that is no entry |
+| `yaml.go:476` | yaml-duplicate-key | 0 / 109 | 0 / 109 | both profiles: evidence: a repeated key is an error of the reference too |
 | `yaml.go:509` | yaml | 0 / 2 | 0 / 2 | both profiles: evidence: the reference refuses the same layouts |
-| `yaml.go:511` | yaml-tab | 4 / 0 | 4 / 0 | both profiles have documents |
+| `yaml.go:511` | yaml-tab | 5 / 0 | 5 / 0 | both profiles have documents |
 | `yaml.go:557` | yaml-tab | 4 / 0 | 2 / 2 | both profiles have documents |
 | `yaml.go:563` | yaml-tab | 4 / 0 | 2 / 2 | both profiles have documents |
 | `yaml.go:571` | yaml-anchor | 4 / 4 | 2 / 6 | both profiles have documents |
 | `yaml.go:573` | yaml-tag | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml.go:578` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml.go:586` | yaml-tab | 4 / 0 | 2 / 2 | both profiles have documents |
-| `yaml.go:594` | yaml-key | 16 / 0 | 0 / 16 | Publisher: evidence: no key that the checker allows reads as a number, a boolean or null, and it refuses the others |
-| `yaml.go:628` | yaml-key | 0 / 8 | 0 / 8 | both profiles: evidence: the reference refuses a block key over 1024 characters too |
+| `yaml.go:578` | yaml-unsupported | 64 / 0 | 58 / 6 | both profiles have documents |
+| `yaml.go:586` | yaml-tab | 46 / 0 | 44 / 2 | both profiles have documents |
+| `yaml.go:594` | yaml-key | 24 / 0 | 0 / 24 | Publisher: evidence: no key that the checker allows reads as a number, a boolean or null, and it refuses the others |
+| `yaml.go:628` | yaml-key | 4 / 8 | 0 / 12 | Publisher: evidence: the reference refuses a block key over 1024 characters too |
 | `yaml.go:628@flow key` | yaml-key | 5 / 0 | 3 / 2 | both profiles have documents |
 | `yaml.go:630` | yaml-anchor | 4 / 0 | 0 / 4 | Publisher: evidence: << is not a key that the checker allows |
 | `yaml.go:630@flow key` | yaml-anchor | 2 / 2 | 0 / 4 | Publisher: evidence: << is not a key that the checker allows |
 | `yaml.go:643` | yaml-tab | 4 / 0 | 2 / 2 | both profiles have documents |
-| `yaml.go:646` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml.go:654` | yaml-anchor | 4 / 4 | 2 / 6 | both profiles have documents |
-| `yaml.go:656` | yaml-tag | 8 / 0 | 4 / 4 | both profiles have documents |
+| `yaml.go:646` | yaml-unsupported | 10 / 0 | 6 / 4 | both profiles have documents |
+| `yaml.go:654` | yaml-anchor | 52 / 44 | 50 / 46 | both profiles have documents |
+| `yaml.go:656` | yaml-tag | 90 / 0 | 86 / 4 | both profiles have documents |
 | `yaml.go:658` | yaml | 0 / 24 | 0 / 24 | both profiles: evidence: the reference refuses a value that starts so |
-| `yaml.go:661` | yaml-tab | 0 / 12 | 0 / 12 | both profiles: evidence: the reference refuses a value that starts so |
-| `yaml.go:664` | yaml | 0 / 16 | 0 / 16 | both profiles: evidence: the reference refuses a value that starts so |
+| `yaml.go:661` | yaml-tab | 4 / 12 | 0 / 16 | Publisher: evidence: the reference refuses a value that starts so |
+| `yaml.go:664` | yaml | 0 / 24 | 0 / 24 | both profiles: evidence: the reference refuses a value that starts so |
 | `yaml.go:696` | yaml | 64 / 0 | 33 / 31 | both profiles have documents |
-| `yaml.go:735` | yaml | 0 / 12 | 0 / 12 | both profiles: evidence: the reference refuses a colon and a space in a plain value |
+| `yaml.go:735` | yaml | 2 / 84 | 0 / 86 | Publisher: evidence: the reference refuses a colon and a space in a plain value |
 | `yaml.go:784@block key` | yaml-number | 2 / 0 | 0 / 2 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:784@block value` | yaml-number | 2 / 3 | 0 / 5 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
+| `yaml.go:784@block value` | yaml-number | 7 / 3 | 0 / 10 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:784@flow key` | yaml-number | 2 / 0 | 0 / 2 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:784@flow value` | yaml-number | 2 / 3 | 0 / 5 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:788@block key` | yaml-number | 4 / 0 | 0 / 4 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:788@block value` | yaml-number | 6 / 6 | 2 / 10 | both profiles have documents |
+| `yaml.go:788@block key` | yaml-number | 6 / 0 | 0 / 6 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
+| `yaml.go:788@block value` | yaml-number | 12 / 44 | 4 / 52 | both profiles have documents |
 | `yaml.go:788@flow key` | yaml-number | 4 / 0 | 0 / 4 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:788@flow value` | yaml-number | 4 / 6 | 0 / 10 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:790@block key` | yaml-number | 4 / 0 | 0 / 4 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:790@block value` | yaml-number | 4 / 6 | 0 / 10 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
+| `yaml.go:788@flow value` | yaml-number | 6 / 6 | 2 / 10 | both profiles have documents |
+| `yaml.go:790@block key` | yaml-number | 6 / 0 | 0 / 6 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
+| `yaml.go:790@block value` | yaml-number | 13 / 44 | 0 / 57 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:790@flow key` | yaml-number | 4 / 0 | 0 / 4 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:790@flow value` | yaml-number | 4 / 6 | 0 / 10 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:794@block key` | yaml-number | 2 / 0 | 0 / 2 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:794@block value` | yaml-number | 2 / 3 | 0 / 5 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:794@flow key` | yaml-number | 2 / 0 | 0 / 2 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
 | `yaml.go:794@flow value` | yaml-number | 2 / 3 | 0 / 5 | Publisher: evidence: no key that the checker allows takes a number, and OVDB.md allows only ovdb: 1 |
-| `yaml.go:825@block scalar header` | yaml | 0 / 8 | 0 / 8 | both profiles: evidence: the reference refuses text after the end of a value |
-| `yaml.go:825@flow` | yaml | 0 / 8 | 0 / 8 | both profiles: evidence: the reference refuses text after the end of a value |
+| `yaml.go:825@block scalar header` | yaml | 0 / 10 | 0 / 10 | both profiles: evidence: the reference refuses text after the end of a value |
+| `yaml.go:825@flow` | yaml | 2 / 8 | 0 / 10 | Publisher: evidence: the reference refuses text after the end of a value |
 | `yaml.go:825@quoted value` | yaml | 0 / 12 | 0 / 12 | both profiles: evidence: the reference refuses text after the end of a value |
-| `yaml.go:864@block value` | yaml-unsupported | 9 / 0 | 4 / 5 | both profiles have documents |
-| `yaml.go:864@flow` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml.go:871@block value` | yaml-unsupported | 4 / 0 | 2 / 2 | both profiles have documents |
+| `yaml.go:864@block value` | yaml-unsupported | 19 / 0 | 14 / 5 | both profiles have documents |
+| `yaml.go:864@flow` | yaml-unsupported | 9 / 4 | 5 / 8 | both profiles have documents |
+| `yaml.go:871@block value` | yaml-unsupported | 6 / 0 | 4 / 2 | both profiles have documents |
 | `yaml.go:871@flow` | yaml-unsupported | 6 / 0 | 2 / 4 | both profiles have documents |
-| `yaml.go:878@block value` | yaml-escape | 0 / 8 | 0 / 8 | both profiles: evidence: the reference refuses an escape that YAML does not have |
-| `yaml.go:878@flow` | yaml-escape | 0 / 12 | 0 / 12 | both profiles: evidence: the reference refuses an escape that YAML does not have |
+| `yaml.go:878@block value` | yaml-escape | 4 / 10 | 2 / 12 | both profiles have documents |
+| `yaml.go:878@flow` | yaml-escape | 2 / 12 | 2 / 12 | both profiles have documents |
 | `yaml.go:882@block value` | yaml-escape | 0 / 8 | 0 / 8 | both profiles: evidence: the reference refuses an escape without its digits |
 | `yaml.go:882@flow` | yaml-escape | 0 / 12 | 0 / 12 | both profiles: evidence: the reference refuses an escape without its digits |
-| `yaml.go:892@block value` | yaml-escape | 8 / 0 | 4 / 4 | both profiles have documents |
+| `yaml.go:892@block value` | yaml-escape | 12 / 0 | 6 / 6 | both profiles have documents |
 | `yaml.go:892@flow` | yaml-escape | 12 / 0 | 4 / 8 | both profiles have documents |
 | `yaml.go:897@block value` | yaml-escape | 4 / 8 | 2 / 10 | both profiles have documents |
 | `yaml.go:897@flow` | yaml-escape | 6 / 12 | 2 / 16 | both profiles have documents |
 | `yaml_flow.go:14` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
 | `yaml_flow.go:20` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
-| `yaml_flow.go:51` | yaml-unsupported | 8 / 0 | 4 / 4 | both profiles have documents |
+| `yaml_flow.go:51` | yaml-unsupported | 8 / 2 | 4 / 6 | both profiles have documents |
 | `yaml_flow.go:169` | yaml | 0 / 4 | 0 / 4 | both profiles: evidence: the reference refuses a collection that is not closed |
 | `yaml_flow.go:178` | yaml-unsupported | 2 / 0 | 2 / 0 | both profiles have documents |
 | `yaml_flow.go:182` | yaml | 0 / 2 | 0 / 2 | both profiles: evidence: the reference refuses a continuation that is not indented |
 | `yaml_flow.go:186` | yaml-unsupported | 2 / 0 | 2 / 0 | both profiles have documents |
 | `yaml_flow.go:202` | yaml-anchor | 2 / 0 | 2 / 0 | both profiles have documents |
 | `yaml_flow.go:204` | yaml-tag | 2 / 0 | 2 / 0 | both profiles have documents |
-| `yaml_flow.go:206` | yaml | 0 / 4 | 0 / 4 | both profiles: evidence: the reference refuses an empty entry and the others |
-| `yaml_flow.go:210` | yaml | 0 / 6 | 0 / 6 | both profiles: evidence: the reference refuses a value that starts so |
+| `yaml_flow.go:206` | yaml | 0 / 8 | 0 / 8 | both profiles: evidence: the reference refuses an empty entry and the others |
+| `yaml_flow.go:210` | yaml | 6 / 6 | 0 / 12 | Publisher: evidence: the reference refuses a value that starts so |
 | `yaml_flow.go:240` | yaml-tab | 4 / 0 | 4 / 0 | both profiles have documents |
 | `yaml_flow.go:254` | yaml-unsupported | 4 / 1 | 4 / 1 | both profiles have documents |
-| `yaml_flow.go:256` | yaml | 0 / 6 | 0 / 6 | both profiles: evidence: the reference refuses text after a value |
-| `yaml_flow.go:261` | yaml-limit | 4 / 4 | 0 / 8 | Publisher: proof: depth |
+| `yaml_flow.go:256` | yaml | 0 / 10 | 0 / 10 | both profiles: evidence: the reference refuses text after a value |
+| `yaml_flow.go:261` | yaml-limit | 12 / 6 | 0 / 18 | Publisher: proof: depth |
 | `yaml_flow.go:286` | yaml-unsupported | 4 / 6 | 0 / 10 | Publisher: evidence: recordsets and publish are lists of text, so the checker refuses a pair in them |
 | `yaml_flow.go:306` | yaml-duplicate-key | 0 / 6 | 0 / 6 | both profiles: evidence: a repeated key is an error of the reference too |
-| `yaml_flow.go:310` | yaml-unsupported | 7 / 35 | 0 / 42 | Publisher: evidence: the checker refuses a null (a key with no value) for every key it allows |
+| `yaml_flow.go:310` | yaml-unsupported | 9 / 35 | 0 / 44 | Publisher: evidence: the checker refuses a null (a key with no value) for every key it allows |
 | `yaml_flow.go:342` | yaml-anchor | 4 / 2 | 2 / 4 | both profiles have documents |
 | `yaml_flow.go:344` | yaml-tag | 4 / 2 | 2 / 4 | both profiles have documents |
-| `yaml_flow.go:346` | yaml | 4 / 34 | 0 / 38 | Publisher: evidence: no key that the checker allows starts with these characters |
+| `yaml_flow.go:346` | yaml | 4 / 36 | 0 / 40 | Publisher: evidence: no key that the checker allows starts with these characters |
 | `yaml_flow.go:354` | yaml-key | 17 / 12 | 5 / 24 | both profiles have documents |
+
+### The values that both readers read
+
+Where the Go reader and the `yaml` package (which the references use, with its default options) both read a document, do they read the same values? The verdicts
+are compared by the tests above, and the facts that the rules use; `TestValuesAgreeWithTheYamlPackage` compares every value of every document of the corpus,
+the free text of `title` and `description` and every key that no rule reads included. `values.json` holds, for each document, a digest of what the `yaml`
+package reads (`generate.mjs` makes it in a canonical form: null, a boolean, a number as the 16 hex digits of its IEEE double, a string with its length in bytes,
+a sequence, a mapping with its keys in byte order); the test makes the digest of what the reader reads and compares them. The corpus has a family of
+scalars for it (numbers in many spellings, the booleans and nulls of YAML 1.1 and 1.2, strings and escapes, block scalars with their indents and blank lines,
+plain values over several lines, flow collections, nested block collections), in the manifests and in OVDB.md. Result: 5907 documents are read by both, 5902
+of them with the same values, and 5 that differ only in the integer -0: the `yaml` package reads `-0` as the number -0 and the Go reader as 0 (its integers
+are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
+reads 0 that the yaml package refuses.
 
 ### Recorded differences: the Publisher profile's own
 
@@ -609,8 +632,9 @@ node internal/publisher/manifest/testdata/reference/generate.mjs --check  # fail
 
 It needs Node 24 or later, git, npm and network access (`go test` needs none): it
 fetches the two references at their pinned commits into a directory that only this run can write, made for the
-run and removed when it ends (`OVDB_REFERENCE_CACHE=<dir>` keeps a cache instead: it is reused only if it is as committed, a changed
-tracked file or an extra file refuses it, and its `yaml` is installed again; `node --test internal/publisher/references.test.mjs` shows
+run and removed when it ends (`OVDB_REFERENCE_CACHE=<dir>` keeps a cache instead: it is reused only if it is as committed: every tracked file is hashed and compared with the blob of the commit (so an edit that
+`git status` does not show, `assume-unchanged`, is found), and an untracked or ignored file, or a `node_modules` below the root, refuses it; the root
+`node_modules` is removed and the `yaml` of the Directory installed again; `node --test internal/publisher/references.test.mjs` shows
 it on a repository of its own). The
 locations are one constant, `internal/publisher/references.mjs`, shared with the
 generator of package `rules`; `npm ci --omit=dev --ignore-scripts` runs in the
@@ -620,6 +644,10 @@ takes about a minute, most of it for the real repositories. `--directory <dir>` 
 moves, change `references.mjs`, regenerate, and read the diff of the goldens and of the
 tables above. The digests of the rules golden are read from its committed file: run
 `internal/publisher/rules/testdata/reference/generate.mjs` first when the rules change.
+
+The job `publisher-goldens` of `.github/workflows/ci.yml` runs both generators with `--check` and `node --test internal/publisher/references.test.mjs`, with Node
+24.20.0 (the version that the goldens record, so that a new Node is a change of the workflow and a regeneration together), on every pull request and push to
+main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoScheduledWorkflows`).
 
 ## What remains for slice 3
 
@@ -631,9 +659,4 @@ tables above. The digests of the rules golden are read from its committed file: 
   `Manifest` and `OVDBMd`: `ModelAddress.Value.Module`, `ModelName`, `PublisherRepository`,
   `ModelSpec`, `ModelHCL`, `MeaningFile`, `GraphID`, `LicenceMeaning`, `Recordsets`,
   `OVDBMd.Entries`.
-- A CI job that runs both `generate.mjs --check` with Node, fetching the references by
-  commit, and fails closed (nothing runs them in CI today; `go test` needs no network
-  and reads the goldens). One of the two reference repositories is about to move
-  organisations: the generators take each reference's location from `references.mjs`,
-  so that is one edit.
 - The Directory's own record and registry checks stay with the Directory.

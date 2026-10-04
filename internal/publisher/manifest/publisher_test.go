@@ -270,3 +270,30 @@ func TestDuplicateEntryDoesNotHideUnlisted(t *testing.T) {
 		}
 	}
 }
+
+// Three premises that code of the Publisher profile relies on, pinned: the mutants that remove that code cannot change a verdict, so a test of the
+// premise is what keeps the code honest (the independent review of slice 2b named the four mutants; the fourth, demote, lost its test of presence
+// because demote is called on usable facts only).
+func TestPublisherPremises(t *testing.T) {
+	// 1. A recordset page with two placeholders is refused before the expansion is judged (so replacing one or all of them is the same).
+	twice := edit(t, ownManifest, "collections/{name}", "collections/{name}/{name}")
+	for _, profile := range []Profile{Directory, Publisher} {
+		m, findings := CheckManifest([]byte(twice), "ovdb.yaml", profile)
+		if !slices.Contains(rulesOf(findings), "manifest-url") || m.RecordsetPage.Usable() {
+			t.Errorf("%v: a template with two {name} is %+v, findings %v", profile, m.RecordsetPage, findings)
+		}
+	}
+	// 2. A discovery document on another host is one finding, the Directory's, whatever its path: the Publisher profile does not add a second one for the
+	// path (the rule of the path is judged only for the host of url).
+	other := edit(t, ownManifest, "https://chinookdb.com/.well-known/openvaultdb", "https://other.example.com/.well-known/other")
+	_, findings := CheckManifest([]byte(other), "ovdb.yaml", Publisher)
+	if len(findings) != 1 || findings[0].Rule != "manifest-discovery" || !strings.Contains(findings[0].Message, "same origin") {
+		t.Errorf("a discovery on another host and at another path: %v", findings)
+	}
+	// 3. The owner of publisher.url is judged by the characters of a GitHub name: the URL rule lets a tilde through, the owner is not one.
+	tilde := edit(t, ownManifest, "url: https://github.com/datatug\n", "url: https://github.com/data~tug\n")
+	m, findings := CheckManifest([]byte(tilde), "ovdb.yaml", Publisher)
+	if !m.PublisherURL.Unusable() || len(findings) == 0 || findings[0].Rule != "manifest-publisher" || findings[0].Line != 23 {
+		t.Errorf("an owner with a tilde: %+v, %v", m.PublisherURL, findings)
+	}
+}
