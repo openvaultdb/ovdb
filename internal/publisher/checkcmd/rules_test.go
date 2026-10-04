@@ -1,6 +1,7 @@
 package checkcmd
 
 import (
+	"bytes"
 	uicopy "github.com/openvaultdb/ovdb/copy"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
@@ -21,6 +22,7 @@ import (
 func TestEveryFindingIsRaisedWithAStableRuleAndAMessage(t *testing.T) {
 	stable := regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*-?$`)
 	calls := 0
+	ids := map[string]bool{}
 	for _, pkg := range []string{"manifest", "repo"} {
 		files, _ := filepath.Glob(filepath.Join("..", pkg, "*.go"))
 		for _, file := range files {
@@ -55,6 +57,7 @@ func TestEveryFindingIsRaisedWithAStableRuleAndAMessage(t *testing.T) {
 					if i >= 2 && text == "" {
 						t.Errorf("%s: a finding with an empty message", file)
 					} else if i < 2 && strings.Contains(text, "-") && !strings.ContainsAny(text, " .") {
+						ids[text] = true
 						if !stable.MatchString(text) {
 							t.Errorf("%s: rule id %q is not lower-case words joined by hyphens", file, text)
 						}
@@ -62,6 +65,20 @@ func TestEveryFindingIsRaisedWithAStableRuleAndAMessage(t *testing.T) {
 				}
 				return true
 			})
+		}
+	}
+	// The longest message a rule can write (manifest.MaxMessageBytes) ends with its last word in the text form, whichever rule it is: the advice is last.
+	if len(ids) < 25 {
+		t.Errorf("only %d rule ids found", len(ids))
+	}
+	word := " LASTWORD"
+	message := strings.Repeat("x", manifest.MaxMessageBytes-len(word)) + word
+	for id := range ids {
+		var out bytes.Buffer
+		doc := Document{Findings: []Finding{{Rule: id, Severity: "error", Path: "p", Message: message}}, Summary: Summary{Errors: 1}, Commit: "abc"}
+		command{deps(nil)}.writeHuman(&out, doc)
+		if !strings.Contains(out.String(), "\n  "+message+"\n") {
+			t.Errorf("rule %q: the longest message is cut in the text form: %q", id, out.String())
 		}
 	}
 	if calls < 50 {

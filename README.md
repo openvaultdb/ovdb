@@ -292,14 +292,18 @@ handed you, unless you have looked at its `.git/config`.
 | an unknown flag, more than one path, a path that does not exist or is not a directory | 2 | usage error on standard error |
 | `git` is not installed (or not on the `PATH`) | 2 | error on standard error |
 | `git` is older than 2.45 | 2 | error on standard error |
+| a `git` call that does not finish in 30 seconds | 2 | error on standard error |
+| the result cannot be written to standard output (a closed or full pipe) | 2 | error on standard error (a pass that printed nothing is not a pass) |
 
-The rule: a wrong flag or path is the caller's mistake, and a machine that cannot run `git` gives no verdict about the
-repository: both are `2`. Everything about the repository itself, "not a repository" and "no commit yet" included, is a
+The rule: a wrong flag or path is the caller's mistake, and a machine whose `git` cannot be run, is too old, or does not finish gives
+no verdict about the repository, and a result that cannot be delivered is not a verdict: all are `2`. Everything about the repository itself, "not a repository" and "no commit yet" included, is a
 verdict: `1`. With `--json` a `2` is the same error envelope the other commands print (`{"schema":1,"error":{...}}`) on standard output.
 
 **The output for people** is one block for each finding, in the order the check reports them: the file and line where
-there is one, the rule id in brackets, and what is wrong and what to write; then one summary line.
+there is one, the rule id in brackets, and the whole message the rule wrote (what is wrong and what to write); then one
+summary line. A repository with a problem:
 
+<!-- publisher-check-golden: refused.txt -->
 ```text
 ovdb.yaml:59  [repo-recordsets]
   recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Track"
@@ -310,32 +314,49 @@ ovdb.yaml:59  [repo-recordsets]
 Refused: 2 problems at commit 98ff05b4119c. Fix them, commit, and run the check again.
 ```
 
-and, when there is nothing wrong:
+and one with nothing wrong:
 
+<!-- publisher-check-golden: accepted.txt -->
 ```text
 OK: commit 79e7bb0b1d6f, 1 manifest listed in OVDB.md, no problems.
-This is the check the OVDB Directory makes of OVDB.md and the manifests. It also reads your hosted repository, so a pass here does not mean it will accept it.
+This applies the OVDB Directory's rules for OVDB.md and the manifests, and the stricter rules a publisher's own check uses. The Directory also reads your hosted repository, so a pass here is not its acceptance.
 ```
+
+When the repository cannot be read at all there is no commit to show, and the summary says what was found instead: a
+repository with no commit yet, a bare one, a directory below the top of its repository, a directory that is not a
+repository, or objects git cannot read. When the check reports its most findings (100), it says how many more were left
+out, and they are not counted among the problems.
 
 Nothing that comes from the repository (a file name, a manifest value, git's own message) reaches the terminal as it is: every
 character that is not printable ASCII is shown as an escape (`\x1b`, `\u00e9`), so a hostile file name cannot
-move the cursor or retitle the window. The output is plain text, with no colour, whether or not it is a terminal
-(`NO_COLOR` has nothing to turn off), and its lines are not wrapped. It is bounded: at most 100 findings and a line that says
-how many more were left out, each message at most 400 bytes; the largest output is under 150 KiB as text and
-under 1 MiB as JSON (`TestTheLargestOutputIsBounded`).
+move the cursor or retitle the window; a file name is cut at 200 bytes, a message is shown whole. The output is plain text, with
+no colour, whether or not it is a terminal (`NO_COLOR` has nothing to turn off), and its lines are not wrapped. It is bounded: at
+most 100 findings, each message at most 400 bytes; the largest output is under 150 KiB as text and under 1 MiB as JSON
+(`TestTheLargestOutputIsBounded`).
 
-**The JSON document** (`--json`), the same `schema` as every `ovdb` document, on standard output, always one line:
+**The JSON document** (`--json`), the same `schema` as every `ovdb` document, on standard output, always one line. For the
+repository above:
 
+<!-- publisher-check-golden: refused.json -->
 ```json
-{"schema":1,"command":"publisher check","commit":"79e7bb0b1d6f0666dce465874990dec64348331f","profile":"publisher","ok":false,"manifests":1,"findings":[{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets lacks the ModelSpec entities of \"model/chinook.modelspec.json\": \"Track\""}],"summary":{"errors":1}}
+{"schema":1,"command":"publisher check","commit":"98ff05b4119c5985cade0f961ecdb25e8b1277b6","profile":"publisher","ok":false,"manifests":1,"findings":[{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets lacks the ModelSpec entities of \"model/chinook.modelspec.json\": \"Track\""},{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets names things that are not ModelSpec entities of \"model/chinook.modelspec.json\": \"Tracks\""}],"summary":{"errors":2,"capped":false,"omitted":0}}
+```
+
+and for one with nothing wrong:
+
+<!-- publisher-check-golden: accepted.json -->
+```json
+{"schema":1,"command":"publisher check","commit":"79e7bb0b1d6f0666dce465874990dec64348331f","profile":"publisher","ok":true,"manifests":1,"findings":[],"summary":{"errors":0,"capped":false,"omitted":0}}
 ```
 
 `commit` is the commit that was judged, `""` when none could be read. `profile` is `publisher`. `manifests` is the number of
 manifests `OVDB.md` lists. Each finding has a stable `rule` (match on that, never on the message), a `severity` (`error`
 is the only one), the `path` of the file it is about (`"repository"` when it is about the repository as a whole, `"OVDB.md"` for
-`OVDB.md`), the `line` (0 when there is none) and the `message`. `ok` is true when there are no findings, and `summary.errors`
-counts them. A new field may be added to this document without a new `schema`; a field is never removed or changed without one.
-The documents are pinned by golden files in `internal/publisher/checkcmd/testdata`.
+`OVDB.md`), the `line` (0 when there is none) and the `message`. `ok` is true when there are no findings. `summary.errors`
+counts the findings; `summary.capped` is true when the check left findings out, `summary.omitted` says how many, and the last
+finding is then the notice `findings-capped`, which is not counted. A new field may be added to this document without a new
+`schema`; a field is never removed or changed without one. The documents are pinned by golden files in
+`internal/publisher/checkcmd/testdata`, and a test holds the examples above to them.
 
 **In CI**, with no token (the release assets are public); pin the version, and check the download against `checksums.txt`:
 
@@ -351,6 +372,10 @@ The documents are pinned by golden files in `internal/publisher/checkcmd/testdat
           tar -xzf "${asset}" ovdb
           ./ovdb publisher check --repository "https://github.com/${GITHUB_REPOSITORY}"
 ```
+
+`--repository` is compared with `publisher.repository` as written, letter case included, and `${GITHUB_REPOSITORY}` is spelled as GitHub spells
+the repository: if its name has capital letters, write `publisher.repository` the same way, or leave `--repository` out. The finding says both
+spellings (`the manifest has ..., --repository is ...`).
 
 The step fails the job on exit code `1` or `2`. On a pull request `actions/checkout` checks out the merge commit, which
 is what is checked. The runner's `git` must be 2.45 or newer (the `ubuntu-latest` image's is).

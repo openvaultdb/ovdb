@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -38,6 +39,9 @@ type Deps struct {
 	Usage      func(cmd *cobra.Command, reason string) error
 	Unrunnable func(message, reason, next string) error
 	JSON       func(v any) []byte
+	// WriteFailed makes the error for a result that could not be written to standard output (a closed or full pipe): exit code 2, the check could not
+	// deliver what it was asked for, and a pass that printed nothing must not look like one.
+	WriteFailed func(reason string) error
 }
 
 // Real is the real command's seams for the machine (git and the file system); the caller adds the catalogue and the error envelope.
@@ -103,16 +107,51 @@ func (c command) flagError(cmd *cobra.Command, err error) error {
 	return c.Usage(cmd, safe(err.Error()))
 }
 
-// pinned remembers the commit that Head gave and the error it gave, so the command can say which commit it judged and why it could not.
+// pinned remembers the commit that Head gave, and the first error that says git could not be run or is too old, from any call: such an error gives no
+// verdict about the repository (git that is missing, that is older than the check needs, or that did not finish in time).
 type pinned struct {
 	repo.Reader
-	commit string
-	err    error
+	commit     string
+	unrunnable error
+}
+
+func (p *pinned) note(err error) error {
+	if p.unrunnable == nil && (errors.Is(err, repo.ErrCannotRun) || errors.Is(err, repo.ErrOldGit)) {
+		p.unrunnable = err
+	}
+	return err
 }
 
 func (p *pinned) Head() (string, error) {
-	p.commit, p.err = p.Reader.Head()
-	return p.commit, p.err
+	commit, err := p.Reader.Head()
+	if err == nil && p.commit == "" {
+		p.commit = commit
+	}
+	return commit, p.note(err)
+}
+
+func (p *pinned) Entries(dir string) ([]repo.Entry, error) {
+	entries, err := p.Reader.Entries(dir)
+	return entries, p.note(err)
+}
+
+func (p *pinned) Blob(path string, limit int) ([]byte, error) {
+	data, err := p.Reader.Blob(path, limit)
+	return data, p.note(err)
+}
+
+// errWriter remembers the first error of a write.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) Write(p []byte) (int, error) {
+	n, err := e.w.Write(p)
+	if err != nil && e.err == nil {
+		e.err = err
+	}
+	return n, err
 }
 
 func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository, jsonOut bool) error {
@@ -135,16 +174,20 @@ func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository,
 	}
 	reader := &pinned{Reader: c.Open(dir)}
 	result := repo.Check(reader, opts)
-	// Git that cannot be run, or is too old, gives no verdict about the repository: the check could not run as asked, which is exit code 2.
-	if errors.Is(reader.err, repo.ErrCannotRun) || errors.Is(reader.err, repo.ErrOldGit) {
-		return c.Unrunnable(c.T("publisher.env.failed", nil), safe(reader.err.Error()), c.T("publisher.env.next", nil))
+	// Git that cannot be run, that is too old or that did not finish gives no verdict about the repository: the check could not run as asked, which is exit
+	// code 2.
+	if reader.unrunnable != nil {
+		return c.Unrunnable(c.T("publisher.env.failed", nil), safe(reader.unrunnable.Error()), c.T("publisher.env.next", nil))
 	}
 	doc := newDocument(reader.commit, result)
-	out := cmd.OutOrStdout()
+	out := &errWriter{w: cmd.OutOrStdout()}
 	if jsonOut {
 		_, _ = out.Write(c.JSON(doc))
 	} else {
 		c.writeHuman(out, doc)
+	}
+	if out.err != nil {
+		return c.WriteFailed(safe(out.err.Error()))
 	}
 	if !result.OK() {
 		return ErrRefused
@@ -181,15 +224,28 @@ type Finding struct {
 }
 
 // Summary counts the findings of each severity.
+//
+// Errors counts the findings, not the notice that says more were left out. Capped is true when the check left findings out (at most manifest.MaxFindings
+// are reported) and Omitted says how many.
 type Summary struct {
-	Errors int `json:"errors"`
+	Errors  int  `json:"errors"`
+	Capped  bool `json:"capped"`
+	Omitted int  `json:"omitted"`
 }
+
+var omittedCount = regexp.MustCompile(`^([0-9]+) more findings are not shown`)
 
 func newDocument(commit string, r manifest.Result) Document {
 	doc := Document{Schema: 1, Command: "publisher check", Commit: commit, Profile: "publisher", OK: r.OK(), Manifests: len(r.OVDBMd.Entries), Findings: []Finding{}}
 	for _, f := range r.Findings {
 		doc.Findings = append(doc.Findings, Finding{Rule: f.Rule, Severity: string(f.Severity), Path: f.Document, Line: f.Line, Message: f.Message})
-		if f.Severity == manifest.SeverityError {
+		switch {
+		case f.Rule == manifest.RuleCapped:
+			doc.Summary.Capped = true
+			if m := omittedCount.FindStringSubmatch(f.Message); m != nil {
+				doc.Summary.Omitted, _ = strconv.Atoi(m[1])
+			}
+		case f.Severity == manifest.SeverityError:
 			doc.Summary.Errors++
 		}
 	}
@@ -199,11 +255,15 @@ func newDocument(commit string, r manifest.Result) Document {
 // writeHuman prints the findings, one block each in the order repo.Check returns them, and the summary.
 func (c command) writeHuman(w io.Writer, doc Document) {
 	for _, f := range doc.Findings {
+		if f.Rule == manifest.RuleCapped {
+			continue // the summary says it
+		}
 		where := safe(f.Path)
 		if f.Line > 0 {
 			where += ":" + strconv.Itoa(f.Line)
 		}
-		message := safe(f.Message)
+		// The whole message a rule wrote (the rules bound it, and put what to do last), escaped; only a message longer than the rules allow is cut.
+		message := safeN(f.Message, manifest.MaxMessageBytes)
 		if message == "" {
 			message = c.T("publisher.finding.no_message", nil)
 		}
@@ -211,12 +271,13 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 		say(w, "  "+message)
 		say(w, "")
 	}
-	params := map[string]string{"commit": shortCommit(doc.Commit), "count": strconv.Itoa(doc.Summary.Errors), "manifests": strconv.Itoa(doc.Manifests)}
+	params := map[string]string{"commit": shortCommit(doc.Commit), "count": strconv.Itoa(doc.Summary.Errors), "manifests": strconv.Itoa(doc.Manifests),
+		"omitted": strconv.Itoa(doc.Summary.Omitted), "max": strconv.Itoa(manifest.MaxFindings)}
 	switch {
-	case !doc.OK && doc.Commit == "" && doc.Summary.Errors == 1:
-		say(w, c.T("publisher.check.refused_nocommit_one", params))
 	case !doc.OK && doc.Commit == "":
-		say(w, c.T("publisher.check.refused_nocommit_many", params))
+		say(w, c.noCommitSummary(doc, params))
+	case !doc.OK && doc.Summary.Capped:
+		say(w, c.T("publisher.check.refused_capped", params))
 	case !doc.OK && doc.Summary.Errors == 1:
 		say(w, c.T("publisher.check.refused_one", params))
 	case !doc.OK:
@@ -230,6 +291,28 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 	}
 }
 
+// noCommitSummary is the summary of a refusal that has no commit id to show: it says what was found instead, by the rule of the finding that made the
+// repository unreadable.
+func (c command) noCommitSummary(doc Document, params map[string]string) string {
+	rule := ""
+	if len(doc.Findings) > 0 {
+		rule = doc.Findings[0].Rule
+	}
+	switch rule {
+	case "repo-no-commit":
+		return c.T("publisher.check.state.no_commit", params)
+	case "repo-bare":
+		return c.T("publisher.check.state.bare", params)
+	case "repo-subdirectory":
+		return c.T("publisher.check.state.subdirectory", params)
+	case "repo-unreadable":
+		return c.T("publisher.check.state.unreadable", params)
+	case "repo-object-missing", "repo-object-corrupt", "repo-alternates", "repo-partial-clone":
+		return c.T("publisher.check.state.damaged", params)
+	}
+	return c.T("publisher.check.state.other", params)
+}
+
 func say(w io.Writer, text string) { _, _ = io.WriteString(w, text+"\n") }
 
 func shortCommit(commit string) string {
@@ -241,8 +324,10 @@ func shortCommit(commit string) string {
 
 // safe makes a string from a repository, a command line or a message printable: printable ASCII stays, every other character is shown as an escape
 // (\x1b, \u00e9), and a long one is cut. Nothing that came from outside reaches the terminal otherwise.
-func safe(s string) string {
-	const limit = 200
+func safe(s string) string { return safeN(s, 200) }
+
+// safeN is safe with the length at which a string is cut (and the cut shown by "...").
+func safeN(s string, limit int) string {
 	cut := len(s) > limit
 	if cut {
 		s = s[:limit]

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -58,6 +59,9 @@ func deps(reader repo.Reader) Deps {
 		Unrunnable: func(message, reason, next string) error {
 			return exitcode.Usage(envelope.New(envelope.DependencyMissing, message).WithReason(reason).WithNext(envelope.Next{Label: next}))
 		},
+		WriteFailed: func(reason string) error {
+			return exitcode.Usage(envelope.New(envelope.Internal, uicopy.T("publisher.write.failed", nil)).WithReason(reason))
+		},
 	}
 }
 
@@ -91,7 +95,7 @@ func execute(t *testing.T, d Deps, args ...string) (stdout string, err error) {
 func TestAnAcceptedRepository(t *testing.T) {
 	out, err := execute(t, deps(chinook(t)), "check", "repo")
 	want := "OK: commit " + strings.Repeat("0", 0)
-	if err != nil || !strings.HasPrefix(out, want) || !strings.Contains(out, "1 manifest listed in OVDB.md, no problems.\n") || !strings.Contains(out, "so a pass here does not mean it will accept it.") {
+	if err != nil || !strings.HasPrefix(out, want) || !strings.Contains(out, "1 manifest listed in OVDB.md, no problems.\n") || !strings.Contains(out, "so a pass here is not its acceptance.") {
 		t.Errorf("err %v, output %q", err, out)
 	}
 	if strings.Contains(out, "manifests listed") {
@@ -109,10 +113,78 @@ func (p pinnedMemory) Head() (string, error) {
 	return "79e7bb0b1d6f0666dce465874990dec64348331f", nil
 }
 
+// commitMemory is a Memory with a commit id of its own.
+type commitMemory struct {
+	*repo.Memory
+	commit string
+}
+
+func (c commitMemory) Head() (string, error) {
+	if _, err := c.Memory.Head(); err != nil {
+		return "", err
+	}
+	return c.commit, nil
+}
+
+const refusedCommit = "98ff05b4119c5985cade0f961ecdb25e8b1277b6"
+
+// renamedRecordset is the Chinook repository with one recordset renamed: two findings.
+func renamedRecordset(t testing.TB) *repo.Memory {
+	m := chinook(t)
+	m.Nodes["ovdb.yaml"] = repo.Node{Kind: repo.File, Content: bytes.ReplaceAll(m.Nodes["ovdb.yaml"].Content, []byte("  - Track\n"), []byte("  - Tracks\n"))}
+	return m
+}
+
+// The text form is pinned too: the README shows these two files (TestTheREADMEShowsTheGoldenFiles).
+func TestTheTextFormIsPinnedByGoldenFiles(t *testing.T) {
+	for name, c := range map[string]struct {
+		reader repo.Reader
+		code   int
+	}{
+		"accepted": {pinnedMemory{chinook(t)}, 0},
+		"refused":  {commitMemory{renamedRecordset(t), refusedCommit}, 1},
+	} {
+		out, err := execute(t, deps(c.reader), "check", "repo")
+		if exitCode(err) != c.code {
+			t.Errorf("%s: exit %d", name, exitCode(err))
+		}
+		golden := filepath.Join("testdata", name+".txt")
+		if os.Getenv("OVDB_UPDATE_GOLDEN") != "" {
+			if err := os.WriteFile(golden, []byte(out), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if want, err := os.ReadFile(golden); err != nil || out != string(want) {
+			t.Errorf("%s: the text differs from %s:\n got %q\nwant %q", name, golden, out, want)
+		}
+	}
+}
+
+// The README's examples are copies of the golden files, byte for byte: each is a fenced block that follows its marker comment.
+func TestTheREADMEShowsTheGoldenFiles(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"accepted.txt", "refused.txt", "accepted.json", "refused.json"} {
+		marker := "<!-- publisher-check-golden: " + name + " -->\n"
+		_, after, found := strings.Cut(string(readme), marker)
+		if !found {
+			t.Errorf("README has no marker for %s", name)
+			continue
+		}
+		_, block, _ := strings.Cut(after, "\n") // the fence line
+		block, _, _ = strings.Cut(block, "```")
+		want, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil || block != string(want) {
+			t.Errorf("README example %s differs from the golden file:\n got %q\nwant %q", name, block, want)
+		}
+	}
+}
+
 func TestTheDocumentsArePinnedByGoldenFiles(t *testing.T) {
 	good := pinnedMemory{chinook(t)}
-	refused := chinook(t)
-	refused.Nodes["ovdb.yaml"] = repo.Node{Kind: repo.File, Content: bytes.ReplaceAll(refused.Nodes["ovdb.yaml"].Content, []byte("  - Track\n"), []byte("  - Tracks\n"))}
+	refused := renamedRecordset(t)
 	hostile := chinook(t)
 	hostile.Nodes["evil\x1b[31m\nname\u00e9\xff"] = repo.Node{Kind: repo.File}
 	for name, c := range map[string]struct {
@@ -122,7 +194,7 @@ func TestTheDocumentsArePinnedByGoldenFiles(t *testing.T) {
 	}{
 		"accepted":     {good, []string{"check", "repo", "--json"}, 0},
 		"accepted-url": {good, []string{"check", "repo", "--json", "--repository", "https://github.com/datatug/chinookdb"}, 0},
-		"refused":      {pinnedMemory{refused}, []string{"check", "repo", "--json"}, 1},
+		"refused":      {commitMemory{refused, refusedCommit}, []string{"check", "repo", "--json"}, 1},
 		"hostile":      {pinnedMemory{hostile}, []string{"check", "repo", "--json"}, 1},
 		"no-commit":    {&repo.Memory{Err: repo.ErrNoCommit}, []string{"check", "repo", "--json"}, 1},
 	} {
@@ -169,14 +241,155 @@ func TestOneProblemIsToldInTheSingular(t *testing.T) {
 	if exitCode(err) != 1 || !strings.Contains(out, "Refused: 1 problem at commit 79e7bb0b1d6f. Fix it,") {
 		t.Errorf("err %v, output %q", err, out)
 	}
-	out, err = execute(t, deps(&repo.Memory{Err: repo.ErrNoCommit}), "check", "repo")
-	if exitCode(err) != 1 || !strings.Contains(out, "Refused: 1 problem, and there is no commit to check.") {
-		t.Errorf("err %v, output %q", err, out)
+}
+
+// Each state that leaves no commit id to show has a summary that is true of it, and says what was found instead of a commit.
+func TestEveryStateWithoutACommitHasATrueSummary(t *testing.T) {
+	for name, c := range map[string]struct {
+		err  error
+		want string
+	}{
+		"no commit yet":         {repo.ErrNoCommit, "Refused: this repository has no commit yet. Commit OVDB.md and the manifests it lists, then run the check again.\n"},
+		"a bare repository":     {repo.ErrBare, "Refused: this is a bare repository, and the check reads a working tree. Run it in a clone, then run the check again.\n"},
+		"a subdirectory":        {repo.ErrSubdirectory, "Refused: this directory is inside a repository, not at its top. Run the check at the top of the repository.\n"},
+		"not a repository":      {errors.New("fatal: not a git repository"), "Refused: git could not read a repository here. Give the directory of a Git repository.\n"},
+		"a damaged commit":      {repo.ErrObjectCorrupt, "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.\n"},
+		"a missing commit":      {repo.ErrObjectMissing, "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.\n"},
+		"borrowed objects gone": {repo.ErrAlternates, "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.\n"},
+		"a partial clone":       {repo.ErrPartialClone, "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.\n"},
+	} {
+		out, err := execute(t, deps(&repo.Memory{Err: c.err}), "check", "repo")
+		if exitCode(err) != 1 || !strings.HasSuffix(out, c.want) {
+			t.Errorf("%s: exit %d, output %q", name, exitCode(err), out)
+		}
+		if strings.Contains(out, "no commit to check") || strings.Contains(out, "commit, and run") {
+			t.Errorf("%s: the summary talks of a commit that is not the matter: %q", name, out)
+		}
 	}
-	out, err = execute(t, deps(&repo.Memory{Err: errors.New("fatal: x")}), "check", "repo")
-	_ = err
-	if strings.Contains(out, "Refused: 1 problem at commit") {
+}
+
+// At the cap the notice is not a problem: the count is of findings, and the text and the JSON say that more were left out.
+func TestAtTheCapTheNoticeIsNotCounted(t *testing.T) {
+	m := chinook(t)
+	entries := make([]string, 400)
+	for i := range entries {
+		entries[i] = "../x"
+	}
+	m.Nodes["OVDB.md"] = repo.Node{Kind: repo.File, Content: []byte("---\novdb: 1\npublish: [" + strings.Join(entries, ", ") + "]\n---\n")}
+	out, err := execute(t, deps(pinnedMemory{m}), "check", "repo")
+	want := "Refused: 100 problems shown at commit 79e7bb0b1d6f, and 300 more are not shown (at most 100 are reported). Fix them, commit, and run the check again.\n"
+	if exitCode(err) != 1 || !strings.HasSuffix(out, want) || strings.Contains(out, "findings-capped") || strings.Count(out, "[ovdbmd-") != 100 {
+		t.Errorf("exit %d, output ends %q", exitCode(err), out[max(0, len(out)-300):])
+	}
+	out, _ = execute(t, deps(pinnedMemory{m}), "check", "repo", "--json")
+	var doc Document
+	if err := json.Unmarshal([]byte(out), &doc); err != nil || doc.Summary != (Summary{Errors: 100, Capped: true, Omitted: 300}) || len(doc.Findings) != 101 || doc.Findings[100].Rule != manifest.RuleCapped {
+		t.Errorf("summary %+v, %d findings, %v", doc.Summary, len(doc.Findings), err)
+	}
+	// Not capped: the fields say so.
+	out, _ = execute(t, deps(pinnedMemory{renamedRecordset(t)}), "check", "repo", "--json")
+	if !strings.HasSuffix(out, `"summary":{"errors":2,"capped":false,"omitted":0}}`+"\n") {
 		t.Errorf("output %q", out)
+	}
+}
+
+// The text form shows the whole message a rule wrote: the advice at its end is not lost.
+func TestTheTextFormShowsTheWholeMessage(t *testing.T) {
+	out, _ := execute(t, deps(&repo.Memory{Err: repo.ErrPartialClone}), "check", "repo")
+	if !strings.Contains(out, "(git checkout fetches them)\n") {
+		t.Errorf("the advice of a partial clone is cut: %q", out)
+	}
+	// A refusal of a kind no rule gives a summary for is told by the fallback.
+	var other bytes.Buffer
+	command{deps(nil)}.writeHuman(&other, Document{Findings: []Finding{{Rule: "x-y", Message: "m"}}, Summary: Summary{Errors: 1}})
+	if !strings.HasSuffix(other.String(), "Refused: the repository could not be read. The problem above says why.\n") {
+		t.Errorf("output %q", other.String())
+	}
+	// A message of the longest length the rules allow, for a finding of any shape, ends with its own last word.
+	m := chinook(t)
+	m.Nodes["model/chinook.meaning.yaml"] = repo.Node{Kind: repo.File, Content: bytes.ReplaceAll(m.Nodes["model/chinook.meaning.yaml"].Content, []byte("  chinook: chinook.modelspec.hcl"), []byte(`  chinook: "a b"`))}
+	r := repo.Check(m, repo.Options{Profile: manifest.Publisher})
+	long := 0
+	for _, f := range r.Findings {
+		long = max(long, len(f.Message))
+	}
+	out, _ = execute(t, deps(pinnedMemory{m}), "check", "repo")
+	for _, f := range r.Findings {
+		if !strings.Contains(out, "\n  "+f.Message+"\n") {
+			t.Errorf("the message is not shown whole: %q (output %q)", f.Message, out)
+		}
+	}
+	if long < 200 {
+		t.Errorf("the longest message is %d bytes: the test does not reach past the old cut", long)
+	}
+}
+
+// Git that did not finish, or is too old, in any call, is "could not run": exit 2, and nothing printed about the repository.
+type scripted struct{ failOn string }
+
+func (s scripted) Run(args []string, limit int) ([]byte, error) {
+	if args[0] == "-c" { // the flags every call has
+		args = args[2:]
+	}
+	switch args[0] {
+	case "ls-tree":
+		if s.failOn == "ls-tree" {
+			return nil, fmt.Errorf("%w: git did not finish in 30s", repo.ErrCannotRun)
+		}
+		return []byte("100644 blob " + strings.Repeat("b", 40) + "\tOVDB.md\x00"), nil
+	case "version":
+		return []byte("git version 2.50.0\n"), nil
+	case "rev-parse":
+		if args[1] == "--is-bare-repository" {
+			return []byte("false\n\n"), nil
+		}
+		return []byte(strings.Repeat("a", 40) + "\n"), nil
+	}
+	if args[0] == s.failOn {
+		return nil, fmt.Errorf("%w: git did not finish in 30s", repo.ErrCannotRun)
+	}
+	return nil, errors.New("not scripted")
+}
+
+func TestGitThatDoesNotFinishIsCouldNotRun(t *testing.T) {
+	for _, call := range []string{"ls-tree", "cat-file"} {
+		out, err := execute(t, deps(repo.NewGit(scripted{failOn: call})), "check", "repo")
+		if exitCode(err) != 2 || out != "" || !strings.Contains(err.Error(), "git did not finish in 30s") || errors.Is(err, ErrRefused) {
+			t.Errorf("%s: exit %d, output %q, err %v", call, exitCode(err), out, err)
+		}
+	}
+	// The same through a Blob that times out after the tree was listed.
+	m := chinook(t)
+	out, err := execute(t, deps(blobFails{m}), "check", "repo")
+	if exitCode(err) != 2 || out != "" {
+		t.Errorf("blob: exit %d, output %q, err %v", exitCode(err), out, err)
+	}
+}
+
+type blobFails struct{ *repo.Memory }
+
+func (blobFails) Blob(string, int) ([]byte, error) {
+	return nil, fmt.Errorf("%w: git did not finish in 30s", repo.ErrCannotRun)
+}
+
+// A result that cannot be written is not a pass: exit 2, however the check went, in both forms.
+type brokenPipe struct{}
+
+func (brokenPipe) Write([]byte) (int, error) { return 0, errors.New("write |1: broken pipe") }
+
+func TestAResultThatCannotBeWrittenIsAnError(t *testing.T) {
+	for _, args := range [][]string{{"check", "repo"}, {"check", "repo", "--json"}} {
+		for name, reader := range map[string]repo.Reader{"a pass": chinook(t), "a refusal": renamedRecordset(t)} {
+			cmd := NewCmd(deps(reader))
+			cmd.SetOut(brokenPipe{})
+			cmd.SetErr(&bytes.Buffer{})
+			cmd.SetArgs(args)
+			cmd.SilenceUsage, cmd.SilenceErrors = true, true
+			err := cmd.Execute()
+			if exitCode(err) != 2 || errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "Couldn't write the result") || !strings.Contains(err.Error(), "broken pipe") {
+				t.Errorf("%s %v: exit %d, err %v", name, args, exitCode(err), err)
+			}
+		}
 	}
 }
 
@@ -238,7 +451,7 @@ func TestTheGroupWithoutACommandShowsItsHelp(t *testing.T) {
 // Nothing from the repository or the command line reaches the output unescaped.
 func TestAHostileNameIsShownHarmlessly(t *testing.T) {
 	hostile := chinook(t)
-	hostile.Nodes["a\x1b]0;title\x07\r\nb\u202e\x00"] = repo.Node{Kind: repo.File}
+	hostile.Nodes["a\x1b]0;title\x07\r\nb\u202e\x00\x7f"] = repo.Node{Kind: repo.File}
 	out, _ := execute(t, deps(pinnedMemory{hostile}), "check", "repo")
 	for _, r := range strings.TrimSuffix(out, "\n") {
 		if r != '\n' && (r < 0x20 || r > 0x7e) {
@@ -255,6 +468,9 @@ func TestAHostileNameIsShownHarmlessly(t *testing.T) {
 	}
 	if got := safe(strings.Repeat("x", 300)); len(got) != 203 || !strings.HasSuffix(got, "...") {
 		t.Errorf("safe of a long string: %q", got)
+	}
+	if got := safe("a\x7fb\x1fc\x80"); got != `a\x7fb\x1fc\x80` {
+		t.Errorf("DEL and the controls: %q", got)
 	}
 	if got := safe("\U0001F600 \xff"); got != `\U0001f600 \xff` {
 		t.Errorf("safe = %q", got)
@@ -335,12 +551,10 @@ func TestEverySummaryLine(t *testing.T) {
 		doc  Document
 		want string
 	}{
-		"ok one":          {Document{OK: true, Commit: "abcdef0123456789", Manifests: 1}, "OK: commit abcdef012345, 1 manifest listed in OVDB.md, no problems.\n"},
-		"ok many":         {Document{OK: true, Commit: "abc", Manifests: 2}, "OK: commit abc, 2 manifests listed in OVDB.md, no problems.\n"},
-		"refused one":     {Document{Commit: "abc", Summary: Summary{Errors: 1}}, "Refused: 1 problem at commit abc. Fix it, commit, and run the check again.\n"},
-		"refused many":    {Document{Commit: "abc", Summary: Summary{Errors: 3}}, "Refused: 3 problems at commit abc. Fix them, commit, and run the check again.\n"},
-		"no commit, one":  {Document{Summary: Summary{Errors: 1}}, "Refused: 1 problem, and there is no commit to check. Fix it, commit, and run the check again.\n"},
-		"no commit, many": {Document{Summary: Summary{Errors: 2}}, "Refused: 2 problems, and there is no commit to check. Fix them, commit, and run the check again.\n"},
+		"ok one":       {Document{OK: true, Commit: "abcdef0123456789", Manifests: 1}, "OK: commit abcdef012345, 1 manifest listed in OVDB.md, no problems.\n"},
+		"ok many":      {Document{OK: true, Commit: "abc", Manifests: 2}, "OK: commit abc, 2 manifests listed in OVDB.md, no problems.\n"},
+		"refused one":  {Document{Commit: "abc", Summary: Summary{Errors: 1}}, "Refused: 1 problem at commit abc. Fix it, commit, and run the check again.\n"},
+		"refused many": {Document{Commit: "abc", Summary: Summary{Errors: 3}}, "Refused: 3 problems at commit abc. Fix them, commit, and run the check again.\n"},
 	} {
 		var out bytes.Buffer
 		command{deps(nil)}.writeHuman(&out, c.doc)

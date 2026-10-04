@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,5 +31,20 @@ func TestPublisherIsInTheRootHelp(t *testing.T) {
 	help, _, code := runOVDB(t, nil, "--help")
 	if code != 0 || !strings.Contains(help, "publisher [command]") {
 		t.Errorf("exit %d:\n%s", code, help)
+	}
+}
+
+// A refused repository is exit 1 with the findings on standard output and nothing on standard error: main's error handler stays silent for it, which
+// fang's own would not. A directory that is not a repository is refused by any git that can be run, so no repository is needed.
+func TestPublisherCheckRefusalIsSilentOnStderr(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	stdout, stderr, code := runOVDB(t, nil, "publisher", "check", t.TempDir())
+	if code == 2 && strings.Contains(stderr, "older than 2.45") {
+		t.Skip("git is older than 2.45")
+	}
+	if code != 1 || stderr != "" || !strings.Contains(stdout, "[repo-unreadable]") || !strings.Contains(stdout, "Refused: git could not read a repository here.") {
+		t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 }

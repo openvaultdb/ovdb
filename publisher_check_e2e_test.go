@@ -87,13 +87,13 @@ func TestPublisherCheckEndToEnd(t *testing.T) {
 
 	sub("an accepted repository, for people", func(t *testing.T) {
 		stdout, stderr, code := runOVDB(t, nil, "publisher", "check", good)
-		if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "OK: commit "+head[:12]+", 1 manifest listed in OVDB.md, no problems.\n") || !strings.Contains(stdout, "does not mean it will accept it") {
+		if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "OK: commit "+head[:12]+", 1 manifest listed in OVDB.md, no problems.\n") || !strings.Contains(stdout, "is not its acceptance") {
 			t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 		}
 	})
 	sub("an accepted repository, as JSON, with --repository", func(t *testing.T) {
 		stdout, stderr, code := runOVDB(t, nil, "publisher", "check", good, "--json", "--repository", "https://github.com/datatug/chinookdb")
-		want := `{"schema":1,"command":"publisher check","commit":"` + head + `","profile":"publisher","ok":true,"manifests":1,"findings":[],"summary":{"errors":0}}` + "\n"
+		want := `{"schema":1,"command":"publisher check","commit":"` + head + `","profile":"publisher","ok":true,"manifests":1,"findings":[],"summary":{"errors":0,"capped":false,"omitted":0}}` + "\n"
 		if code != 0 || stderr != "" || stdout != want {
 			t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 		}
@@ -137,20 +137,30 @@ func TestPublisherCheckEndToEnd(t *testing.T) {
 	sub("not a Git repository, and no commit yet", func(t *testing.T) {
 		plain := t.TempDir()
 		stdout, _, code := runOVDB(t, nil, "publisher", "check", plain)
-		if code != 1 || !strings.Contains(stdout, "[repo-unreadable]") || !strings.Contains(stdout, "there is no commit to check") {
+		if code != 1 || !strings.Contains(stdout, "[repo-unreadable]") || !strings.Contains(stdout, "Refused: git could not read a repository here.") {
 			t.Errorf("not a repository: exit %d, stdout %q", code, stdout)
 		}
 		empty := t.TempDir()
 		gitIn(t, empty, "init", "--quiet", "-b", "main")
 		stdout, _, code = runOVDB(t, nil, "publisher", "check", empty)
-		if code != 1 || !strings.Contains(stdout, "[repo-no-commit]") {
+		if code != 1 || !strings.Contains(stdout, "[repo-no-commit]") || !strings.Contains(stdout, "Refused: this repository has no commit yet.") {
 			t.Errorf("no commit: exit %d, stdout %q", code, stdout)
+		}
+		bare := filepath.Join(t.TempDir(), "bare.git")
+		gitIn(t, filepath.Dir(bare), "clone", "--quiet", "--bare", good, bare)
+		stdout, _, code = runOVDB(t, nil, "publisher", "check", bare)
+		if code != 1 || !strings.Contains(stdout, "[repo-bare]") || !strings.Contains(stdout, "Refused: this is a bare repository") {
+			t.Errorf("bare: exit %d, stdout %q", code, stdout)
+		}
+		stdout, _, code = runOVDB(t, nil, "publisher", "check", filepath.Join(good, "model"))
+		if code != 1 || !strings.Contains(stdout, "[repo-subdirectory]") || !strings.Contains(stdout, "Refused: this directory is inside a repository, not at its top.") {
+			t.Errorf("subdirectory: exit %d, stdout %q", code, stdout)
 		}
 	})
 	sub("git is missing", func(t *testing.T) {
 		bin := t.TempDir() // no git in it
 		stdout, stderr, code := runOVDB(t, []string{"PATH=" + bin}, "publisher", "check", good)
-		if code != 2 || stdout != "" || !strings.Contains(stderr, "Couldn't run the check") || !strings.Contains(stderr, "git could not be run") {
+		if code != 2 || stdout != "" || !strings.Contains(stderr, "Couldn't run the check") || !strings.Contains(stderr, "git could not be run") || strings.Contains(stderr, `\"`) {
 			t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
 		}
 		stdout, _, code = runOVDB(t, []string{"PATH=" + bin}, "publisher", "check", good, "--json")

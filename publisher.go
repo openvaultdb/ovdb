@@ -24,5 +24,8 @@ func newPublisherCmd() *cobra.Command {
 	d.Unrunnable = func(message, reason, next string) error {
 		return exitcode.Usage(envelope.New(envelope.DependencyMissing, message).WithReason(reason).WithNext(envelope.Next{Label: next}))
 	}
+	d.WriteFailed = func(reason string) error {
+		return exitcode.Usage(envelope.New(envelope.Internal, uicopy.T("publisher.write.failed", nil)).WithReason(reason).WithNext(envelope.Next{Label: uicopy.T("publisher.write.next", nil)}))
+	}
 	return checkcmd.NewCmd(d)
 }

@@ -701,10 +701,17 @@
   "publisher.env.next": "Install git 2.45 or newer and put it on your PATH, then run the check again",
   "publisher.check.ok_one": "OK: commit {commit}, {manifests} manifest listed in OVDB.md, no problems.",
   "publisher.check.ok_many": "OK: commit {commit}, {manifests} manifests listed in OVDB.md, no problems.",
-  "publisher.check.ok_note": "This is the check the OVDB Directory makes of OVDB.md and the manifests. It also reads your hosted repository, so a pass here does not mean it will accept it.",
+  "publisher.check.ok_note": "This applies the OVDB Directory's rules for OVDB.md and the manifests, and the stricter rules a publisher's own check uses. The Directory also reads your hosted repository, so a pass here is not its acceptance.",
   "publisher.check.refused_one": "Refused: 1 problem at commit {commit}. Fix it, commit, and run the check again.",
   "publisher.check.refused_many": "Refused: {count} problems at commit {commit}. Fix them, commit, and run the check again.",
-  "publisher.check.refused_nocommit_one": "Refused: 1 problem, and there is no commit to check. Fix it, commit, and run the check again.",
-  "publisher.check.refused_nocommit_many": "Refused: {count} problems, and there is no commit to check. Fix them, commit, and run the check again.",
-  "publisher.finding.no_message": "(no description: this is a bug in ovdb, please report the rule id)"
+  "publisher.finding.no_message": "(no description: this is a bug in ovdb, please report the rule id)",
+  "publisher.check.refused_capped": "Refused: {count} problems shown at commit {commit}, and {omitted} more are not shown (at most {max} are reported). Fix them, commit, and run the check again.",
+  "publisher.check.state.no_commit": "Refused: this repository has no commit yet. Commit OVDB.md and the manifests it lists, then run the check again.",
+  "publisher.check.state.bare": "Refused: this is a bare repository, and the check reads a working tree. Run it in a clone, then run the check again.",
+  "publisher.check.state.subdirectory": "Refused: this directory is inside a repository, not at its top. Run the check at the top of the repository.",
+  "publisher.check.state.unreadable": "Refused: git could not read a repository here. Give the directory of a Git repository.",
+  "publisher.check.state.damaged": "Refused: git could not read the commit's objects from this repository. Run the check in a complete clone.",
+  "publisher.check.state.other": "Refused: the repository could not be read. The problem above says why.",
+  "publisher.write.failed": "Couldn't write the result",
+  "publisher.write.next": "Check where standard output goes (a closed or full pipe, a file that cannot be written), then run the check again"
 }
