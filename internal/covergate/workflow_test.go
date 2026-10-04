@@ -45,13 +45,17 @@ func gatedInWorkflow(t *testing.T, fsys fs.FS) []string {
 	return pkgs
 }
 
-// packagesWithGo returns the directories below dir that hold a Go file.
+// packagesWithGo returns the directories below dir that hold a Go file, as the go tool counts packages: a directory named testdata is not
+// looked into (internal/publisher/manifest/testdata/chain is a program that a test builds, not a package of the module).
 func packagesWithGo(t *testing.T, fsys fs.FS, dir string) []string {
 	t.Helper()
 	var found []string
 	err := fs.WalkDir(fsys, dir, func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if entry.IsDir() && entry.Name() == "testdata" {
+			return fs.SkipDir
 		}
 		if !entry.IsDir() && strings.HasSuffix(p, ".go") && !slices.Contains(found, path.Dir(p)) {
 			found = append(found, path.Dir(p))
@@ -147,5 +151,51 @@ func TestWorkflowTestsIgnoreLineEndings(t *testing.T) {
 	}
 	if testStep := regexp.MustCompile(`run: go test [^\n]*-coverprofile="\$RUNNER_TEMP/publisher-cover\.out" ([^\n]*)`).FindStringSubmatch(workflow(t, crlf)); testStep == nil || strings.Contains(testStep[1], "\r") {
 		t.Errorf("the test step with CRLF: %q", testStep)
+	}
+}
+
+// The job that checks the goldens runs both generators with --check and the test of the checkout rule, with the Node that made the goldens.
+func TestWorkflowChecksTheGoldens(t *testing.T) {
+	text := workflow(t, moduleRoot())
+	for _, want := range []string{
+		"run: node --test internal/publisher/references.test.mjs",
+		"run: node internal/publisher/rules/testdata/reference/generate.mjs --check",
+		"run: node internal/publisher/manifest/testdata/reference/generate.mjs --check",
+	} {
+		if strings.Count(text, want) != 1 {
+			t.Errorf("ci.yml does not have exactly one step %q", want)
+		}
+	}
+	raw, err := fs.ReadFile(moduleRoot(), "internal/publisher/manifest/testdata/reference/corpus.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := regexp.MustCompile(`"node":\s*"v([0-9.]+)"`).FindSubmatch(raw)
+	if recorded == nil {
+		t.Fatal("the corpus does not record the Node that made it")
+	}
+	if want := "node-version: '" + string(recorded[1]) + "'"; strings.Count(text, want) != 1 {
+		t.Errorf("ci.yml does not run the goldens job with the Node that made them (%s)", want)
+	}
+}
+
+// No workflow runs on a schedule: what runs in CI runs because of a change.
+func TestNoScheduledWorkflows(t *testing.T) {
+	entries, err := fs.ReadDir(moduleRoot(), ".github/workflows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no workflows")
+	}
+	schedule := regexp.MustCompile(`(?m)^\s*(schedule\s*:|-?\s*cron\s*:)`)
+	for _, entry := range entries {
+		raw, err := fs.ReadFile(moduleRoot(), ".github/workflows/"+entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if schedule.Match(raw) {
+			t.Errorf("%s has a schedule", entry.Name())
+		}
 	}
 }
