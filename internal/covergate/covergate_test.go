@@ -404,7 +404,24 @@ func TestTestdataImportCannotHideAnUntestedBranch(t *testing.T) {
 		t.Errorf("a test file imports a testdata path, which is not counted: %d %q", code, stderr)
 	}
 	pkg, err := LoadPackage(tree(), module, "hidden")
-	if err != nil || len(pkg.Imports) != 1 {
+	if err != nil || len(pkg.Imports) != 1 || pkg.Imports[0].Path != module+"/hidden/testdata/inner" {
 		t.Errorf("LoadPackage = %+v, %v", pkg, err)
+	}
+}
+
+// The next bypass of the review of slice 3b-1: the same function in an ordinary package of the module that is not in the list. A gated
+// package may import, from the module, only gated packages.
+func TestAGatedPackageMayImportOnlyGatedPackages(t *testing.T) {
+	fsys := tree()
+	fsys["ungated/u.go"] = &fstest.MapFile{Data: []byte("package ungated\n\nfunc U(b bool) int {\n\tif b {\n\t\treturn 1\n\t}\n\treturn 0\n}\n")}
+	fsys["gate/g.go"] = &fstest.MapFile{Data: []byte("package gate\n\nimport \"" + module + "/ungated\"\n\nfunc G() int { return ungated.U(false) }\n")}
+	fsys["gate/h.go"] = &fstest.MapFile{Data: []byte("package gate\n\nimport \"" + module + "/seen\"\n\nfunc H() int { return seen.S() }\n")}
+	profile := "mode: set\n" + module + "/gate/g.go:5.16,5.40 1 1\n" + module + "/gate/h.go:5.16,5.40 1 1\n" + module + "/seen/s.go:3.16,3.26 1 1\n"
+	code, stdout, stderr := run(t, profile, fsys, "cover.out", "./gate", "./seen")
+	if code != 1 || !strings.Contains(stdout, "of") || !strings.Contains(stderr, "gate/g.go imports "+module+"/ungated, a package of this module that is not one of the gated packages") || strings.Contains(stderr, "h.go imports") {
+		t.Errorf("Run = %d %q %q", code, stdout, stderr)
+	}
+	if code, _, stderr := run(t, profile, fsys, "cover.out", "./gate", "./seen", "./ungated"); code == 0 || strings.Contains(stderr, "not one of the gated") {
+		t.Errorf("with the package gated the import is allowed (it then has no profile entry): %d %q", code, stderr)
 	}
 }

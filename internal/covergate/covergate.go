@@ -103,6 +103,9 @@ func Parse(r io.Reader) ([]Block, error) {
 	return blocks, nil
 }
 
+// Import is an import of a package of the module, and the file that has it.
+type Import struct{ File, Path string }
+
 // Package is a package of the module as the gate reads it from the file tree.
 type Package struct {
 	Dir           string   // relative to the module root, "." for the root
@@ -112,7 +115,7 @@ type Package struct {
 	TestMains     []string // test files that declare TestMain
 	Constraints   []string // one message per build constraint, GOOS/GOARCH file name or import "C"
 	Directives    []string // one message per //line or /*line*/ directive, which renames the blocks of a profile
-	Imports       []string // one message per import of a testdata path by a non-test file, which the cover profile does not count
+	Imports       []Import // the imports of this module by the non-test files: Check holds each to the list of gated packages
 }
 
 // The gate reads every .go file of the package directory, whatever its name or
@@ -133,17 +136,15 @@ type Package struct {
 // in any position that Go honours is seen and the same text inside a string
 // literal is not.
 //
-// A non-test file of a gated package may not import a path with a testdata
-// element either. The go tool never lists such a directory as a package of the
-// module (`./...` skips it, and so does the gate's list of packages), but an
-// import by its path builds it, and its statements are in no list that the gate
-// reads: a function with an untested branch there, called from a gated file,
-// would pass. Test files may import one (their code is not counted), and the
-// rule is that narrow because it is what the go tool itself leaves out of a
-// package list: every other package of the module that a gated file imports is
-// one that the list can name, and the test of the workflow holds the list to the
-// packages below the gated roots.
-//
+// A non-test file of a gated package may import, from this module, only a gated
+// package: a package of the list the gate was given. Any other package of the
+// module (one outside the gated roots, or a testdata directory, which the go tool
+// never lists as a package) has statements that no profile entry the gate reads
+// covers, and a function with an untested branch there, called from a gated file,
+// would pass. Test files may import any (their code is not counted). Today every
+// gated package imports only gated ones (manifest and repo import rules and manifest,
+// cmd/covergate imports internal/covergate), so the rule needs no exception.
+
 // Those rules name the causes that are known. The file-set rule closes the
 // class: every non-test file of a gated package that has a statement must have
 // a block in the cover profile, so a file that the build left out for any other
@@ -221,8 +222,8 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 			}
 		} else {
 			for _, spec := range parsed.Imports {
-				if imported, _ := strconv.Unquote(spec.Path.Value); slices.Contains(strings.Split(imported, "/"), "testdata") { // the parser has checked the literal
-					pkg.Imports = append(pkg.Imports, fmt.Sprintf("%s imports %s: a testdata directory is not a package of the module as the go tool lists them, so the gate cannot see its statements; no non-test file of a gated package may import one", file, imported))
+				if imported, _ := strconv.Unquote(spec.Path.Value); imported == module || strings.HasPrefix(imported, module+"/") { // the parser has checked the literal
+					pkg.Imports = append(pkg.Imports, Import{File: file, Path: imported})
 				}
 			}
 		}
@@ -355,7 +356,11 @@ func Check(pkgs []Package, blocks []Block) Result {
 			result.Problems = append(result.Problems, fmt.Sprintf("%s: a Go file with a build constraint can be left out of a test run and so out of the coverage profile, where the gate cannot see it; no file of a gated package may have one", constraint))
 		}
 		result.Problems = append(result.Problems, pkg.Directives...)
-		result.Problems = append(result.Problems, pkg.Imports...)
+		for _, imp := range pkg.Imports {
+			if _, gated := byPath[imp.Path]; !gated {
+				result.Problems = append(result.Problems, fmt.Sprintf("%s imports %s, a package of this module that is not one of the gated packages: the gate cannot see its statements, so an untested branch there would pass; gate it, or do not import it from a gated package (a testdata directory is never a package of the list)", imp.File, imp.Path))
+			}
+		}
 		for _, file := range pkg.TestMains {
 			result.Problems = append(result.Problems, fmt.Sprintf("%s declares TestMain, which can hide a failing test (it may run the tests and exit 0); no gated package may have one", file))
 		}

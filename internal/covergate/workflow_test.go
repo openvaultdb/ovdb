@@ -216,6 +216,19 @@ func goldensJobProblems(doc map[string]any, node string) []string {
 		return append(problems, "there is no job publisher-goldens")
 	}
 	steps, _ := job["steps"].([]any)
+	// A job or a step that can be switched off, or whose failure is ignored, checks nothing.
+	for _, key := range []string{"if", "continue-on-error"} {
+		if _, ok := job[key]; ok {
+			problems = append(problems, "the job has "+key+": it must always run, and fail the workflow when a step fails")
+		}
+		for i, step := range steps {
+			if step, _ := step.(map[string]any); step != nil {
+				if _, ok := step[key]; ok {
+					problems = append(problems, fmt.Sprintf("step %d of the job has %s: it must always run, and fail the workflow when it fails", i+1, key))
+				}
+			}
+		}
+	}
 	count := func(key, value string) int {
 		n := 0
 		for _, step := range steps {
@@ -269,12 +282,16 @@ func TestWorkflowChecksTheGoldens(t *testing.T) {
 		t.Fatalf("a good job is refused: %v", problems)
 	}
 	for name, bad := range map[string]string{
-		"the job commented out":      good[:strings.Index(good, "  publisher-goldens:")] + "# " + strings.ReplaceAll(strings.TrimSuffix(good[strings.Index(good, "  publisher-goldens:"):], "\n"), "\n", "\n# ") + "\n",
-		"a command commented out":    strings.Replace(good, "      - run: node internal/publisher/rules", "      # - run: node internal/publisher/rules", 1),
-		"a command twice":            good + "      - run: node --test internal/publisher/references.test.mjs\n",
-		"another Node":               strings.Replace(good, node, "22.0.0", 1),
-		"no pull request":            strings.Replace(good, "  pull_request:\n", "", 1),
-		"the job under another name": strings.Replace(good, "publisher-goldens:", "goldens:", 1),
+		"the job commented out":        good[:strings.Index(good, "  publisher-goldens:")] + "# " + strings.ReplaceAll(strings.TrimSuffix(good[strings.Index(good, "  publisher-goldens:"):], "\n"), "\n", "\n# ") + "\n",
+		"a command commented out":      strings.Replace(good, "      - run: node internal/publisher/rules", "      # - run: node internal/publisher/rules", 1),
+		"a command twice":              good + "      - run: node --test internal/publisher/references.test.mjs\n",
+		"another Node":                 strings.Replace(good, node, "22.0.0", 1),
+		"no pull request":              strings.Replace(good, "  pull_request:\n", "", 1),
+		"the job under another name":   strings.Replace(good, "publisher-goldens:", "goldens:", 1),
+		"if false on the job":          strings.Replace(good, "    runs-on: ubuntu-latest\n", "    if: false\n    runs-on: ubuntu-latest\n", 1),
+		"continue-on-error on the job": strings.Replace(good, "    runs-on: ubuntu-latest\n", "    continue-on-error: true\n    runs-on: ubuntu-latest\n", 1),
+		"if false on a step":           strings.Replace(good, "      - run: node internal/publisher/rules", "      - if: false\n        run: node internal/publisher/rules", 1),
+		"continue-on-error on a step":  strings.Replace(good, "      - run: node --test", "      - continue-on-error: true\n        run: node --test", 1),
 	} {
 		if len(goldensJobProblems(parseWorkflow(t, []byte(bad)), node)) == 0 {
 			t.Errorf("%s: the job is accepted", name)
