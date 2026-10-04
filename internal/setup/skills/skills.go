@@ -61,8 +61,13 @@ const (
 	StateUpdateAvailable = "update_available"
 	// StateChanged is an OVDB-installed copy the person edited since.
 	StateChanged = "changed"
-	// StateNotOVDB is a folder of the same name OVDB didn't install.
+	// StateNotOVDB is a folder of the same name OVDB didn't install and
+	// can't take over: it isn't this skill, or holds files the skill doesn't.
 	StateNotOVDB = "not_ovdb"
+	// StateAdoptable is a folder of the same name OVDB didn't install that is
+	// this skill already (its SKILL.md names it, and it holds nothing the
+	// skill doesn't): installing takes it over, keeping a backup of it.
+	StateAdoptable = "adoptable"
 )
 
 // Publisher is the skillsync publisher of the CLI and of every bundle.
@@ -189,6 +194,26 @@ type Document struct {
 	Next   []envelope.Next `json:"next"`
 }
 
+// AdoptableParam is the query parameter of GET /api/local/v1/skills with which
+// a client says it understands the state "adoptable". Without it the server
+// reports such a target as not_ovdb, the state every version before adoption
+// knows for a folder OVDB did not install: a client built before adoption
+// existed has no text for the new state.
+const AdoptableParam = "adoptable"
+
+// WithoutAdoptable is d as a client that does not know the state "adoptable"
+// is told it: an adoptable target is another's folder.
+func (d Document) WithoutAdoptable() Document {
+	for i := range d.Skills {
+		for j := range d.Skills[i].Targets {
+			if d.Skills[i].Targets[j].State == StateAdoptable {
+				d.Skills[i].Targets[j].State = StateNotOVDB
+			}
+		}
+	}
+	return d
+}
+
 // Harness is the cobracmd harness named by id or one of its aliases.
 func Harness(id string) (cobracmd.Harness, bool) { return harnessByID(id) }
 
@@ -230,19 +255,34 @@ func stateOf(skillsDir string, d Definition) string {
 		return StateNotOVDB
 	}
 	for _, change := range report.Changes {
-		if change.Name != d.Dir {
-			continue
+		if change.Name == d.Dir {
+			return stateFor(change)
 		}
-		switch {
-		case change.Action == skillsync.Updated:
-			return StateUpdateAvailable
-		case change.Action == skillsync.Unchanged:
-			return StateInstalled
-		case change.Action == skillsync.Conflict && change.Reason == modifiedTarget:
+	}
+	return StateNotOVDB
+}
+
+// stateFor is the state of a skill from what skillsync would do to it.
+// Every skillsync action is named here, so a new one is a decision made in
+// this switch (and in copy/en.json's skills.result.<action>), not a fall
+// through; TestEverySkillsyncActionIsHandled holds the list to the library.
+// Anything not named is StateNotOVDB, which never installs over it.
+func stateFor(change skillsync.Change) string {
+	switch change.Action {
+	case skillsync.Updated:
+		return StateUpdateAvailable
+	case skillsync.Unchanged:
+		return StateInstalled
+	case skillsync.Added:
+		return StateNotInstalled
+	case skillsync.Adopted:
+		return StateAdoptable
+	case skillsync.Conflict:
+		if change.Reason == modifiedTarget {
 			return StateChanged
-		case change.Action == skillsync.Added:
-			return StateNotInstalled
 		}
+	case skillsync.Removed:
+		// Never planned for an embedded bundle that lists the skill.
 	}
 	return StateNotOVDB
 }
@@ -250,6 +290,10 @@ func stateOf(skillsDir string, d Definition) string {
 // modifiedTarget is skillsync's conflict reason for an owned skill whose
 // files changed since it installed them.
 const modifiedTarget = "modified target"
+
+// unmanagedTarget is skillsync's conflict reason (until v0.21.0, its whole
+// reason; later versions append what was found) for a folder it does not own.
+const unmanagedTarget = "unmanaged target"
 
 // Targets are the harnesses shown for d: every one found, plus Claude Code and
 // Codex, in cobracmd.DefaultHarnesses order.
@@ -356,14 +400,24 @@ type InstallRequest struct {
 	// ReplaceChanged replaces a copy the person edited since OVDB installed
 	// it; only after they agreed to lose those edits.
 	ReplaceChanged bool `json:"replace_changed,omitempty"`
+	// Adopt takes over a folder that was already there and already is this
+	// skill, keeping a backup of it; only after the person agreed to that.
+	// Without it such a folder is refused and left untouched, which is what
+	// every client built before adoption existed (v0.21.0) expects: the server
+	// never sends one a state or result it did not ask for.
+	Adopt bool `json:"adopt,omitempty"`
 }
 
 // Outcome is what installing did in one target.
 type Outcome struct {
 	Target
-	// Result is added, updated, unchanged or conflict (skillsync's actions).
+	// Result is one of skillsync's actions: added, updated, unchanged,
+	// adopted, conflict (removed is never planned for an install).
 	Result string `json:"result"`
 	Reason string `json:"reason,omitempty"`
+	// BackupPath is where the copy that was already there is kept after
+	// Result adopted; empty for every other result and for a dry run.
+	BackupPath string `json:"backup_path,omitempty"`
 }
 
 // InstallDocument is the body of POST /api/local/v1/skills/install and the
@@ -614,7 +668,7 @@ func (b Build) config(d Definition) (skillsync.Config, error) {
 // target and only d's bundle (capability 21). Targets must already be checked.
 // Every target is attempted; a failure in any makes the whole install fail,
 // naming each outcome.
-func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged bool) (InstallDocument, error) {
+func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged, adopt bool) (InstallDocument, error) {
 	doc := InstallDocument{Schema: envelope.Schema, Skill: d.ID, Dir: d.Dir, Name: uicopy.T(d.nameKey, nil), DryRun: dryRun, AlreadyUpToDate: true}
 	cfg, err := b.config(d)
 	if err != nil {
@@ -628,9 +682,22 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			// Owned by this skill's plugin and edited since: the person agreed
 			// to replace it, so it goes and a fresh copy is installed.
 			if err := os.RemoveAll(outcome.Dir); err != nil {
-				return doc, envelope.New(envelope.StorageUnavailable, installFailed(d)).
+				failure := envelope.New(envelope.StorageUnavailable, installFailed(d)).
 					WithReason(uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": redact.String(err.Error())}))
+				return withOutcomes(doc, failure, nil, dryRun, adopt)
 			}
+		}
+		if outcome.State == StateAdoptable && !adopt {
+			// Nobody asked for adoption: this is the refusal every version
+			// before adoption answers for such a folder, and nothing is touched.
+			// skillsync has no option to turn adoption off, so this reads the
+			// state a moment before Sync does.
+			outcome.State = StateNotOVDB
+			outcome.Result, outcome.Reason = string(skillsync.Conflict), unmanagedTarget
+			failures = append(failures, uicopy.T("skills.install.target_conflict", map[string]string{"path": outcome.Dir}))
+			doc.AlreadyUpToDate = false
+			doc.Outcomes = append(doc.Outcomes, outcome)
+			continue
 		}
 		report, err := skillsync.Sync(ctx, cfg, skillsync.Options{Dir: t.SkillsDir, DryRun: dryRun})
 		switch {
@@ -642,7 +709,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			outcome.Result = string(skillsync.Unchanged)
 			for _, change := range report.Changes {
 				if change.Name == d.Dir {
-					outcome.Result, outcome.Reason = string(change.Action), change.Reason
+					outcome.Result, outcome.Reason, outcome.BackupPath = string(change.Action), change.Reason, change.BackupPath
 				}
 			}
 			switch {
@@ -671,7 +738,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			next = append(next, envelope.Next{Label: uicopy.T("skills.next.replace_changed", nil), Command: "ovdb skills install " + d.ID + " --replace-changed"})
 		}
 		next = append(next, envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
-		return doc, envelope.New(code, installFailed(d)).WithReason(strings.Join(failures, " ")).WithNext(next...)
+		return withOutcomes(doc, envelope.New(code, installFailed(d)).WithNext(next...), failures, dryRun, adopt)
 	}
 	if dryRun {
 		// Nothing was installed: the next step is the install it previewed.
@@ -687,10 +754,62 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			command += " --replace-changed"
 		}
 		doc.Next = []envelope.Next{{Label: uicopy.T("skills.next.install_previewed", nil), Command: command}}
-		return doc, nil
+		return withOutcomes(doc, nil, nil, dryRun, adopt)
 	}
 	doc.Next = installedNext(d)
-	return doc, nil
+	return withOutcomes(doc, nil, nil, dryRun, adopt)
+}
+
+// withOutcomes finishes an install: a client that did not ask for adoption is
+// never shown the state "adoptable"; and a failure that left some targets
+// changed (or, in a dry run, would) says which, in its reason and in its
+// targets, since the person is otherwise told only that the install failed.
+// failure is nil for a success, which is returned with doc unchanged but for
+// that state.
+func withOutcomes(doc InstallDocument, failure *envelope.Error, failures []string, dryRun, adopt bool) (InstallDocument, error) {
+	if !adopt {
+		for i := range doc.Outcomes {
+			if doc.Outcomes[i].State == StateAdoptable {
+				doc.Outcomes[i].State = StateNotOVDB
+			}
+		}
+	}
+	if failure == nil {
+		return doc, nil
+	}
+	notes := changeNotes(doc.Outcomes, dryRun)
+	if failure.Reason != "" {
+		failures = append([]string{failure.Reason}, failures...)
+	}
+	failure.Reason = strings.Join(append(failures, notes...), " ")
+	if len(notes) > 0 {
+		_ = failure.WithTargets(doc.Outcomes)
+	}
+	return doc, failure
+}
+
+// changeNotes says, for each target a failed install did change (or would,
+// in a dry run), what happened to it and, for an adopted folder, where the
+// copy that was there is kept.
+func changeNotes(outcomes []Outcome, dryRun bool) []string {
+	var notes []string
+	for _, o := range outcomes {
+		switch o.Result {
+		case string(skillsync.Added), string(skillsync.Updated), string(skillsync.Removed), string(skillsync.Adopted):
+		default:
+			continue
+		}
+		key := "skills.install.partial_done"
+		if dryRun {
+			key = "skills.install.partial_planned"
+		}
+		note := uicopy.T(key, map[string]string{"name": o.Name, "path": o.Dir, "result": ResultTextFor(o.Result, dryRun)})
+		if o.Result == string(skillsync.Adopted) {
+			note += " " + AdoptedBackupText(dryRun, o)
+		}
+		notes = append(notes, note)
+	}
+	return notes
 }
 
 func installedNext(d Definition) []envelope.Next {

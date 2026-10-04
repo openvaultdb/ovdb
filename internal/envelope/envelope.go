@@ -94,6 +94,12 @@ type Error struct {
 	Message string `json:"message"`
 	Reason  string `json:"reason,omitempty"`
 	Next    []Next `json:"next"`
+	// Targets is what a command that failed for some of its targets did to
+	// the others (skills install: the outcomes of the folders that did
+	// change), as the same list its success document carries. It is absent
+	// when nothing changed, so a failure that touched nothing is the
+	// document it always was.
+	Targets json.RawMessage `json:"targets,omitempty"`
 }
 
 // New returns an Error with code and message and an empty next list.
@@ -104,6 +110,13 @@ func New(code Code, message string) *Error {
 // WithReason sets the "Why" line and returns e for chaining.
 func (e *Error) WithReason(reason string) *Error {
 	e.Reason = reason
+	return e
+}
+
+// WithTargets sets the outcomes of the targets that did change before the
+// failure; v is marshalled as the success document's list would be.
+func (e *Error) WithTargets(v any) *Error {
+	e.Targets = bytes.TrimSpace(Marshal(v))
 	return e
 }
 

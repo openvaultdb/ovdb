@@ -59,7 +59,30 @@ ovdb --help
   executable `brew upgrade --cask ovdb` manager) comes from ovdb's own entry
   in `cli-helpers`' compiled-in `cliinstall` catalog
   (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
-  fleet CLI's own `install ovdb` also resolves releases from.
+  fleet CLI's own `install ovdb` also resolves releases from. A copy of
+  `ovdb` inside a directory the operating system's package manager owns
+  counts as managed by the system package manager: `self-update` and
+  `upgrade` do not replace it in place, they say how to update it, and
+  `--format json` carries that as `hint` (`upgrade_hint` with `--check`).
+  The directories are the library's own list for each operating system:
+  - macOS: `/usr/bin`, `/usr/sbin`, `/usr/libexec`, `/bin`, `/sbin`, `/System`, `/nix/store`, `/run/current-system`
+  - Linux: `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/lib64`, `/usr/libexec`, `/usr/share`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/nix/store`, `/run/current-system`
+  - Windows: `%SystemRoot%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`
+
+  A copy anywhere else (`/usr/local/bin`, `~/go/bin`, `~/bin`, a Homebrew
+  directory, ...) is classified as before. On Windows `ovdb` is published as a
+  zip, so a copy unzipped under `%ProgramFiles%` is classified as managed too,
+  and the hint it prints ("Windows Update, or the installer (MSI/EXE) that
+  originally placed it there") does not describe it: update such a copy by
+  downloading the new zip from the releases page and replacing the files.
+- **`ovdb skills`** — list the AI agent skills and where each AI agent keeps
+  them (`skills list`), and install one for the agents found on this computer
+  (`skills install <openvaultdb|todo-demo>`, which asks first). A folder of
+  that name that is already there and already is the skill (its `SKILL.md`
+  names it and it holds no file the skill doesn't ship) is adopted: `ovdb`
+  takes it over after keeping a backup of your copy, and says where. A folder
+  that is anything else is left as it is. See
+  [AI agent skills](#ai-agent-skills) below.
 - **`ovdb install`** — list, show details for, and install fleet CLIs
   relevant to ovdb (`ingitdb`, `datatug`); see
   [Installing related CLIs](#installing-related-clis) below.
@@ -95,6 +118,12 @@ confirmed. Built on `github.com/strongo/cli-helpers/cliinstall`, whose
 compiled-in catalog and host → target relevance texts are the single source
 every other fleet CLI's own `install ovdb` also resolves from.
 
+`ovdb install --all` lists every CLI in the catalogue (`sneat` and `specscore`
+among them), not only those relevant to ovdb, and any of them can be installed
+by name. `--dir` places a CLI in a directory of your choice, except the
+directories an operating system package manager, Homebrew or Snap owns
+(`/usr/bin` is refused, for example).
+
 ```sh
 ovdb install
 ovdb install --all --format json
@@ -122,6 +151,47 @@ ovdb upgrade --all --check --format json
 ovdb upgrade --all --dry-run
 ovdb upgrade ovdb --check   # identical outcome to `ovdb self-update --check`
 ```
+
+### AI agent skills
+
+`ovdb skills install <skill>` installs into each AI agent found (or the ones
+named with `--harness`, or one folder with `--dir`). A skill folder that is
+already there, was not installed by `ovdb` and already is the skill (its
+`SKILL.md` names it and it holds no file the skill does not ship; its other
+bytes may differ) is **adopted**: `ovdb` keeps a backup of it in
+`.cli-helpers-skills-adopted-backup` inside that agent's skills folder, puts
+the skill there, and manages it from then on. The question before an install
+says which folders are taken over. The terminal UI and the web console offer
+such a folder unticked.
+
+For scripts and API clients (`--json` is the body of the local API):
+
+- `skills list --json` and `GET /api/local/v1/skills?adoptable=1` report such
+  a target as `"state":"adoptable"` (not installed). Without
+  `?adoptable=1` the API reports `"state":"not_ovdb"`, the state every version
+  before adoption knows for a folder `ovdb` did not install.
+- `skills install` and `POST /api/local/v1/skills/install` adopt only when the
+  request says `"adopt":true` (the CLI sends it when its plan has a folder to
+  take over, after you agreed; the console when you ticked such an agent). A
+  request without it is answered as it was before adoption: `already_exists`
+  (exit 1, HTTP 409), nothing touched. Two narrow cases remain until the
+  skills library can switch adoption off: a folder that becomes adoptable in
+  the instant between `ovdb`'s check and the install, and a skills folder in
+  which an earlier install was interrupted (a leftover
+  `.cli-helpers-skills-recovery.json`). In both, the folder can be taken
+  over, with a backup, by a request that did not ask; `ovdb` v0.21.0 and
+  older then stop with an error after printing "Installed".
+- A script that runs `ovdb skills install <skill> --yes` on such a folder
+  used to get exit 1 with `already_exists`. It now takes the folder over,
+  keeps a backup and exits 0: `--yes` is the consent, there is no separate
+  flag.
+- An adoption is a success: exit 0, HTTP 201, `"result":"adopted"`, and
+  `"backup_path"` on that target (absent in a dry run, which reports the
+  plan).
+- An install that fails for some targets still reports the ones that did
+  change: the failure's `reason` says which and where a backup is, and the
+  error carries them as `targets`, the same list a success has. The code and
+  exit status are the failure's.
 
 ### Read-only servers
 

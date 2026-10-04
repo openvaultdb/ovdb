@@ -18,11 +18,18 @@ import (
 // TestNewInstallCmdRegistration and TestOvdbCatalogEntryMatchesGoreleaser
 // (catalog_identity_test.go) catch, never a runtime state a user sees.
 func newInstallCmd() *cobra.Command {
-	return cobracmd.New(cobracmd.CommandOptions{
+	return cobracmd.New(installOptions())
+}
+
+// installOptions are what `ovdb install` is built from. Tests start from
+// them and replace only the Env and ConfigureRelease seams, so what they run
+// is ovdb's own wiring against no real PATH, filesystem or network.
+func installOptions() cobracmd.CommandOptions {
+	return cobracmd.CommandOptions{
 		Short:  "List and install fleet CLIs relevant to ovdb",
 		Errors: installErrors{},
 		HostID: ovdbCatalogID,
-	})
+	}
 }
 
 // installErrors implements cobracmd.ErrorMapper for ovdb's own two-code

@@ -126,14 +126,15 @@ func (s *skillsScreen) openConsent(id string) {
 		skill := s.document.Skills[i]
 		s.consent, s.cursor, s.selected = &skill, 0, map[string]bool{}
 		for _, target := range skill.Targets {
-			// A copy the person changed is replaced only when they tick it.
-			s.selected[target.Harness] = selectable(target) && target.State != skills.StateChanged
+			// A copy the person changed is replaced, and one that was already
+			// there is taken over, only when they tick it.
+			s.selected[target.Harness] = selectable(target) && target.State != skills.StateChanged && target.State != skills.StateAdoptable
 		}
 	}
 }
 
 // selectable reports whether target can be chosen: a found agent whose
-// folder of this name, if any, OVDB installed.
+// folder of this name, if any, OVDB installed or can take over.
 func selectable(target skills.Target) bool {
 	return target.Detected && target.State != skills.StateNotOVDB
 }
@@ -244,7 +245,7 @@ func newSkillResult(document skills.InstallDocument) resultScreen {
 	}
 	var lines []string
 	for _, outcome := range document.Outcomes {
-		lines = append(lines, uicopy.T("skills.result.line", map[string]string{"name": outcome.Name, "path": outcome.Dir}))
+		lines = append(lines, skills.ResultLine(outcome))
 	}
 	return resultScreen{title: uicopy.T(title, map[string]string{"name": document.Name}), lines: lines, next: document.Next}
 }
@@ -277,12 +278,12 @@ func (m Model) viewSkills() string {
 		installed := uicopy.T("skills.list.not_installed", nil)
 		var names, updates []string
 		for _, target := range skill.Targets {
-			switch target.State {
-			case skills.StateInstalled:
+			switch {
+			case !target.Installed:
+			case target.State == skills.StateInstalled:
 				names = append(names, target.Name)
-			case skills.StateNotInstalled:
 			default:
-				updates = append(updates, target.Name+" ("+uicopy.T("skills.state."+target.State, nil)+")")
+				updates = append(updates, target.Name+" ("+skills.StateText(target.State)+")")
 			}
 		}
 		if all := append(names, updates...); len(all) > 0 {
@@ -326,8 +327,8 @@ func (m Model) viewConsent() string {
 		}
 		b.WriteString(style.Render(cursor + box + target.Name))
 		b.WriteString("\n")
-		if target.State == skills.StateChanged || target.State == skills.StateUpdateAvailable {
-			b.WriteString(mutedStyle.Render(indentWrap("      ", uicopy.T("skills.consent."+target.State, nil), width)))
+		if note := skills.ConsentText(target.State); note != "" {
+			b.WriteString(mutedStyle.Render(indentWrap("      ", note, width)))
 			b.WriteString("\n")
 		}
 		b.WriteString(indentWrap("      ", target.Dir, width))
