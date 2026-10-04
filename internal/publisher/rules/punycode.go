@@ -2,19 +2,30 @@ package rules
 
 import "strings"
 
-// Punycode (RFC 3492), only as far as the host rule needs it. A host label that
-// starts with xn-- is accepted only when its text after the prefix is the
-// canonical punycode of a label whose letters are Latin-1 lower-case letters
-// and ASCII letters, digits and hyphens, with at least one Latin-1 letter.
+// Punycode (RFC 3492), only as far as the host rule needs it: a decoder. A host
+// label that starts with xn-- is accepted only when the text after the prefix
+// is valid punycode that decodes to a label of ASCII letters, digits and hyphens
+// and Latin-1 lower-case letters (U+00E0 to U+00FF without the division sign),
+// with at least one Latin-1 letter, that does not begin or end with a hyphen and
+// does not have hyphens in its third and fourth positions (which includes
+// beginning with xn--: UTS #46 refuses such a label when hyphens are not
+// checked, as the WHATWG parser does not check them).
 //
 // Why so little. The WHATWG parser that the references use runs full UTS #46
-// processing on such a label: a label that is not valid punycode, or decodes to
-// a code point that UTS #46 maps or disallows, makes the whole URL fail, and
-// which code points those are changes with every Unicode release. Go has no
-// copy of those tables and this package takes none. Latin-1 lower-case letters
-// have been valid in every version, so a label made of them, and written the
-// way an encoder writes it, is one the parser takes unchanged. Every other
-// punycode label is refused (a recorded difference; see README.md).
+// processing on such a label: a code point that UTS #46 maps or disallows makes
+// the whole URL fail, and which code points those are changes with every Unicode
+// release. Go has no copy of those tables and this package takes none.
+// Latin-1 lower-case letters have been valid in every version, so a label made
+// of them is one the parser takes unchanged. Every other punycode label is
+// refused (a recorded difference; see README.md). The Node version of the
+// references accepts any xn-- label as written, even one that is not punycode,
+// so no verdict here depends on what a Node version happens to do.
+//
+// There is no check that re-encoding the decoded label gives the label back. It
+// was there once and decided nothing: no lower-case body of one to five bytes
+// (every one was tried) decodes to a label that spells differently when
+// encoded, so nothing that the host loop lets through has a second spelling.
+// The encoder is kept in the tests, which build labels with it.
 const (
 	punyBase        = 36
 	punyTMin        = 1
@@ -38,35 +49,46 @@ func latin1Letter(r rune) bool { return r >= 0xE0 && r <= 0xFF && r != 0xF7 }
 type punycodeMode int
 
 const (
-	punyLatin1     punycodeMode = iota // the rule: canonical punycode of Latin-1 letters
-	punyWellFormed                     // canonical punycode of any code points
-	punyUnchecked                      // any xn-- label, as the references take it
+	punyLatin1      punycodeMode = iota // the rule
+	punyAllowNested                     // without the rule on hyphens in positions 3 and 4
+	punyWellFormed                      // valid punycode of any text
+	punyUnchecked                       // any xn-- label, as the references take it
 )
 
-// punycodeLabel reports whether label (which starts with xn--) is acceptable.
-func punycodeLabel(label string, mode punycodeMode) bool {
+// punycodeVerdict is what the rule says about an xn-- label.
+type punycodeVerdict int
+
+const (
+	punyAccepted punycodeVerdict = iota
+	punyInvalid                  // not valid punycode for a host name
+	punyForeign                  // valid, but with letters beyond Latin-1
+)
+
+// punycodeLabel judges label, which starts with xn--.
+func punycodeLabel(label string, mode punycodeMode) punycodeVerdict {
 	if mode == punyUnchecked {
-		return true
+		return punyAccepted
 	}
-	body := strings.TrimPrefix(label, "xn--")
-	decoded, ok := decodePunycode(body, mode == punyWellFormed)
-	if !ok || len(decoded) == 0 {
-		return false
+	decoded, ok := decodePunycode(strings.TrimPrefix(label, "xn--"))
+	if !ok || len(decoded) == 0 || decoded[0] == '-' || decoded[len(decoded)-1] == '-' {
+		return punyInvalid
 	}
-	if decoded[0] == '-' || decoded[len(decoded)-1] == '-' {
-		return false
-	}
-	nonASCII := false
+	nonASCII, foreign := false, false
 	for _, r := range decoded {
-		switch {
-		case r < 0x80:
-		case mode == punyWellFormed || latin1Letter(r):
+		if r >= 0x80 {
 			nonASCII = true
-		default:
-			return false
+			foreign = foreign || !latin1Letter(r)
 		}
 	}
-	return nonASCII && encodePunycode(decoded) == body
+	switch {
+	case !nonASCII:
+		return punyInvalid
+	case mode == punyLatin1 && len(decoded) >= 4 && decoded[2] == '-' && decoded[3] == '-':
+		return punyInvalid
+	case foreign && mode != punyWellFormed:
+		return punyForeign
+	}
+	return punyAccepted
 }
 
 func punyDigit(c byte) int {
@@ -99,9 +121,9 @@ func punyAdapt(delta, points int, first bool) int {
 }
 
 // decodePunycode decodes the part of a label after xn--. It refuses a lone
-// leading delimiter, an upper-case digit, a truncated number and a number so
-// large that it can only be a code point beyond Latin-1 (unless anyCode).
-func decodePunycode(s string, anyCode bool) ([]rune, bool) {
+// leading delimiter, a non-ASCII or upper-case character, a truncated number
+// and a number so large that it is no code point.
+func decodePunycode(s string) ([]rune, bool) {
 	var out []rune
 	pos := 0
 	if cut := strings.LastIndexByte(s, '-'); cut >= 0 {
@@ -141,7 +163,7 @@ func decodePunycode(s string, anyCode bool) ([]rune, bool) {
 		points := len(out) + 1
 		bias = punyAdapt(i-oldi, points, oldi == 0)
 		n += i / points
-		if n > 0xFF && !anyCode || n > 0x10FFFF {
+		if n > 0x10FFFF {
 			return nil, false
 		}
 		i %= points
@@ -151,63 +173,4 @@ func decodePunycode(s string, anyCode bool) ([]rune, bool) {
 		i++
 	}
 	return out, true
-}
-
-// encodePunycode is the RFC 3492 encoder. The decoder accepts some spellings
-// that an encoder never writes; the label is accepted only if encoding what it
-// decodes to gives the label back.
-func encodePunycode(input []rune) string {
-	var out []byte
-	for _, r := range input {
-		if r < 0x80 {
-			out = append(out, byte(r))
-		}
-	}
-	basic := len(out)
-	handled := basic
-	if basic > 0 {
-		out = append(out, '-')
-	}
-	n, delta, bias := punyInitialN, 0, punyInitialBias
-	for handled < len(input) {
-		next := 0x110000
-		for _, r := range input {
-			if int(r) >= n && int(r) < next {
-				next = int(r)
-			}
-		}
-		delta += (next - n) * (handled + 1)
-		n = next
-		for _, r := range input {
-			if int(r) < n {
-				delta++
-			}
-			if int(r) != n {
-				continue
-			}
-			q := delta
-			for k := punyBase; ; k += punyBase {
-				t := punyThreshold(k, bias)
-				if q < t {
-					break
-				}
-				out = append(out, punyChar(t+(q-t)%(punyBase-t)))
-				q = (q - t) / (punyBase - t)
-			}
-			out = append(out, punyChar(q))
-			bias = punyAdapt(delta, handled+1, handled == basic)
-			delta = 0
-			handled++
-		}
-		delta++
-		n++
-	}
-	return string(out)
-}
-
-func punyChar(d int) byte {
-	if d < 26 {
-		return byte('a' + d)
-	}
-	return byte('0' + d - 26)
 }

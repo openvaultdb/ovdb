@@ -48,6 +48,9 @@ function checkout(name) {
     dir = resolve(dir);
     if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}`);
     if (run(dir, 'git', ['status', '--porcelain', '--untracked-files=no'])) throw new Error(`${dir} has local changes; the references are read as committed`);
+    if (name === 'directory' && !existsSync(join(dir, 'node_modules', 'yaml'))) {
+      throw new Error(`${dir} has no node_modules/yaml, which the Directory's directory.mjs imports: run \`npm ci --omit=dev --ignore-scripts\` there first`);
+    }
     return dir;
   }
   dir = join(process.env.OVDB_REFERENCE_CACHE ?? join(tmpdir(), 'ovdb-publisher-reference'), `${name}-${commit}`);
@@ -71,6 +74,16 @@ const directory = await load(directoryRoot, 'scripts/lib/directory.mjs');
 const urls = await load(directoryRoot, 'scripts/lib/urls.mjs');
 const gitlib = await load(directoryRoot, 'scripts/lib/git.mjs');
 const chinook = await load(chinookRoot, 'scripts/lib/directory-rules.mjs');
+
+// Two rules are kept inline in directory.mjs, not exported, so the verdicts below compose the same
+// expression. Fail loudly if the pinned file does not hold exactly the text that is copied.
+const directorySource = readFileSync(join(directoryRoot, 'scripts/lib/directory.mjs'), 'utf8');
+for (const expression of [
+  "const isText = (value) => typeof value === 'string' && value.trim() !== '';",
+  "if (!isText(entry) || !entry.startsWith('./') || !isRepositoryPath(entry.slice(2)))",
+]) {
+  if (!directorySource.includes(expression)) throw new Error(`directory.mjs at ${pins.directory.commit} no longer holds \`${expression}\`: the verdicts composed from it in generate.mjs are not the Directory's`);
+}
 
 // ---- the verdicts: true accepts, false refuses, undefined: the reference has no such rule ----
 
@@ -105,6 +118,7 @@ const claimRelation = (address, other) => {
   const problems = directory.claimProblems([claimOf('mine', address), claimOf('other', other)]);
   if (problems.some((problem) => problem.includes(' is claimed by '))) return 'same';
   if (problems.some((problem) => problem.startsWith('mine.yaml: ovdb.yaml: deployment.url ') && problem.includes(' sits under '))) return 'under';
+  if (problems.some((problem) => problem.startsWith('other.yaml: ovdb.yaml: deployment.url ') && problem.includes(' sits under '))) return 'over';
   return 'apart';
 };
 
@@ -137,6 +151,8 @@ const fns = {
   publish: {
     directory: (v) => v.trim() !== '' && v.startsWith('./') && gitlib.isRepositoryPath(v.slice(2)),
   },
+  // directory.mjs's isText, the "is required" test of every text field: not blank by JavaScript's trim().
+  text: { directory: (v) => typeof v === 'string' && v.trim() !== '' },
   engine: {
     directory: (v) => manifestAccepts((m) => { m.deployment.engine = v; }, 'deployment.engine'),
     chinookdb: (v) => chinook.enginePattern.test(v),
@@ -193,7 +209,9 @@ urlSweep('homepage-path', 'homepage', 'https://e.openvaultdb.com/a{C}b');
 urlSweep('homepage-after-end', 'homepage', 'https://e.openvaultdb.com/x{C}');
 // The smaller sweeps of the other rules.
 const smallSweep = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'narrow', template });
+const smallSweepWide = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'wide', template });
 for (const [name, template] of [['id-middle', 'a{C}b'], ['id-first', '{C}a'], ['id-last', 'a{C}'], ['id-alone', '{C}']]) smallSweep(name, 'id', template);
+for (const [name, template] of [['text-alone', '{C}'], ['text-lead', '{C}a'], ['text-trail', 'a{C}'], ['text-between', ' {C} ']]) smallSweepWide(name, 'text', template);
 const forty = 'a'.repeat(40);
 smallSweep('commit-first', 'commit', `{C}${forty.slice(1)}`);
 smallSweep('commit-last', 'commit', `${forty.slice(1)}{C}`);
@@ -342,6 +360,48 @@ const structured = [
 const urlFns = ['url', 'url-template', 'homepage'];
 const urlLike = [...new Set([...structured, ...mined.directory, ...mined.chinookdb])];
 
+// RFC 3492 encoder, only to spell the labels whose decoded text has the shapes a rule is about (the verdicts are the
+// references', never this function's).
+const punycodeEncode = (text) => {
+  const input = [...text].map((c) => c.codePointAt(0));
+  const digit = (d) => String.fromCharCode(d < 26 ? 97 + d : 22 + d);
+  const adapt = (delta, points, first) => {
+    let d = first ? Math.floor(delta / 700) : delta >> 1;
+    d += Math.floor(d / points);
+    let k = 0;
+    while (d > 455) { d = Math.floor(d / 35); k += 36; }
+    return k + Math.floor((36 * d) / (d + 38));
+  };
+  let out = input.filter((c) => c < 0x80).map((c) => String.fromCharCode(c)).join('');
+  const basic = out.length;
+  let handled = basic;
+  if (basic > 0) out += '-';
+  let n = 128; let delta = 0; let bias = 72;
+  while (handled < input.length) {
+    const next = Math.min(...input.filter((c) => c >= n));
+    delta += (next - n) * (handled + 1);
+    n = next;
+    for (const c of input) {
+      if (c < n) delta += 1;
+      if (c !== n) continue;
+      let q = delta;
+      for (let k = 36; ; k += 36) {
+        const t = Math.min(Math.max(k - bias, 1), 26);
+        if (q < t) break;
+        out += digit(t + ((q - t) % (36 - t)));
+        q = Math.floor((q - t) / (36 - t));
+      }
+      out += digit(q);
+      bias = adapt(delta, handled + 1, handled === basic);
+      delta = 0;
+      handled += 1;
+    }
+    delta += 1;
+    n += 1;
+  }
+  return out;
+};
+
 // Latin-1 and other letters as punycode, spelled by Node's own encoder: the labels that the references really see.
 const punycodeCases = [];
 const idn = (text) => { const ascii = domainToASCII(text); return ascii && ascii.startsWith('xn--') ? ascii : null; };
@@ -352,7 +412,22 @@ for (const letter of latin1) {
 for (const first of latin1) for (const second of latin1) { const ascii = idn(`${first}${second}`); if (ascii && (first.charCodeAt(0) * 31 + second.charCodeAt(0)) % 23 === 0) punycodeCases.push(ascii); }
 for (let code = 0x100; code <= 0xffff; code += code < 0x600 ? 7 : 251) { const ascii = idn(`a${String.fromCharCode(code)}b`); if (ascii) punycodeCases.push(ascii); }
 for (const text of ['bücher', 'münchen', 'ñandú', 'çà', 'ÿ', 'ß', 'straße', 'ǆ', 'ω', 'я', '日本', 'ａ', 'a\u0308', 'u\u0308', 'ü\u0308', '\u0308a', 'a\u200db', 'a\u200cb', 'a\u00adb', 'à-', '-à', 'à.à', 'Ü', 'ÀB', 'aß', 'ǰ', 'ŉ', 'ſ', 'ĸ']) { const ascii = idn(text); if (ascii) punycodeCases.push(ascii); }
+// Labels whose decoded text begins with xn-- or has hyphens in its third and fourth positions, with Latin-1 and other
+// letters, and the hyphen shapes around them.
+const nestedCases = ['xn--ü', 'xn--a', 'xn--', 'ab--ü', 'ab--c-ü', 'a--ü', 'ü--a', 'ü-a', '-ü', 'ü-', 'xn--ł', 'ab--ł', 'xn--я', 'abc--ü', 'a-b-ü'];
+for (const letter of latin1) for (const shape of [`xn--${letter}`, `ab--${letter}`, `a--${letter}`, `${letter}--ab`, `${letter}a--b`, `x${letter}--b`]) nestedCases.push(shape);
+for (const text of nestedCases) punycodeCases.push(`xn--${punycodeEncode(text)}`);
+// Spelled as the review of this slice found them.
+punycodeCases.push('xn--xn---3na', 'xn--xn--a-esa');
 const punycodeInputs = [...new Set(punycodeCases)].flatMap((ascii) => [`https://${ascii}.${b}/x`, `https://a.${ascii}/x`]);
+
+const textList = {
+  fns: ['text'],
+  cases: [
+    '', ' ', 'a', ' a ', '\t\n\v\f\r ', '\u0085', '\ufeff', '\u180e', '\u200b', '\u200c', '\u200d', '\u2060', '\u00a0', '\u00a0x', '\u1680', '\u2000', '\u200a', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000',
+    ' \ufeff\u3000\n', '\ufeff\u0085', '\u0085 ', '0', '-', '\u0000', '\u00ad', 'é', '\ud800', ' \ud800', 'a\u0085',
+  ].map((input) => [input, verdicts(['text'], input)]),
+};
 
 const urlList = { fns: urlFns, cases: [...urlLike, ...punycodeInputs].map((input) => [input, verdicts(urlFns, expand(input))]) };
 // A string that no reference accepts as a URL still goes through the repository rule below.
@@ -409,7 +484,7 @@ const claimAddresses = [
   `https://a.${b}:8443/ovdb/dbs/chinook`, `https://a.${b}/ovdb/dbs/chinook?x`, `https://a.${b}/ovdb/dbs/chinook#x`, '', '/', '//', 'a', 'a/', 'a/b', 'A/B/', `https://a.${b}/ovdb/dbs/ch\u0131nook`, `https://a.${b}/ovdb/dbs/\u212aelvin`, `https://a.${b}/ovdb/dbs/kelvin`, `https://a.${b}/ovdb/dbs/kelvin/\u00c0`, `https://a.${b}/ovdb/dbs/kelvin/\u00e0`, `https://a.${b}/\u0130`, `https://a.${b}/i\u0307`,
   rep(`https://a.${b}/`, 'a', 2040), rep(`https://a.${b}/`, 'a', 2040, '/x'), rep(`https://a.${b}/`, 'a', 2100), rep(`https://a.${b}/`, 'a', 2100, '/x'),
 ];
-// relations[i][j] is how addresses[i] stands to addresses[j]: a apart, s same, u under.
+// relations[i][j] is how addresses[i] stands to addresses[j]: a apart, s same, u under, o over.
 const claimList = {
   addresses: claimAddresses,
   relations: claimAddresses.map((address) => claimAddresses.map((other) => claimRelation(expand(address), expand(other))[0]).join('')),
@@ -421,7 +496,7 @@ const countCases = () => {
   let total = 0;
   for (const sweep of sweeps) total += codesOf(sweepRanges[sweep.span]).length;
   for (const product of products) total += product.size;
-  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList]) total += list.cases.length * list.fns.length;
+  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList]) total += list.cases.length * list.fns.length;
   total += claimAddresses.length * claimAddresses.length;
   return total;
 };
@@ -436,7 +511,7 @@ const golden = {
   sweepRanges,
   sweeps,
   products,
-  lists: [urlList, repositoryList, idList, commitList, pathList, engineList],
+  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList],
   claims: claimList,
 };
 

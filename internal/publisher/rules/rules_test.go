@@ -28,6 +28,7 @@ func TestPublicHTTPSURL(t *testing.T) {
 		"https://xn--bcher-kva.de/ovdb", "https://xn--mnchen-3ya.de/x", "https://a.xn--bcher-kva.de/x",
 		"https://" + strings.Repeat("a", 63) + ".com/x", "https://" + strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 61) + "/x",
 		"https://e.openvaultdb.com/...", "https://e.openvaultdb.com/.a", "https://e.openvaultdb.com/a.", "https://x.localx/y", "https://x.arpa.com/y", "https://home.arpa.com/y",
+		"https://" + label("ü-a") + ".io/x", "https://a." + label("a--ü") + "/x",
 		"https://e.openvaultdb.com/" + strings.Repeat("a", MaxURLLength-len("https://e.openvaultdb.com/")),
 	}
 	for _, s := range accepted {
@@ -61,7 +62,11 @@ func TestPublicHTTPSURL(t *testing.T) {
 		{"https://box.home.arpa/x", RuleHostReserved}, {"https://home.arpa/x", RuleHostReserved}, {"https://1.0.0.127.in-addr.arpa/x", RuleHostReserved}, {"https://x.intranet/x", RuleHostReserved}, {"https://x.corp/x", RuleHostReserved},
 		{"https://x.private/x", RuleHostReserved}, {"https://x.svc/x", RuleHostReserved}, {"https://x.home/x", RuleHostReserved}, {"https://x.test/x", RuleHostReserved}, {"https://x.example/x", RuleHostReserved},
 		{"https://x.invalid/x", RuleHostReserved}, {"https://x.onion/x", RuleHostReserved},
-		{"https://xn--/x", RuleHostLabel}, {"https://a.xn--/x", RuleHostLabel}, {"https://xn--a.openvaultdb.com/x", RuleHostPunycode}, {"https://xn--80ak6aa92e.com/x", RuleHostPunycode}, {"https://xn--bcher-kvb.de/x", RuleHostPunycode},
+		{"https://xn--/x", RuleHostLabel}, {"https://a.xn--/x", RuleHostLabel},
+		{"https://xn--a.openvaultdb.com/x", RuleHostIDN}, {"https://xn--80akhbyknj4f.xn--p1ai/ovdb/x", RuleHostIDN}, {"https://xn--80ak6aa92e.com/x", RuleHostIDN}, {"https://xn--bcher-kvb.de/x", RuleHostIDN},
+		{"https://" + label("ł") + ".io/x", RuleHostIDN},
+		{"https://xn--bcher-kv.de/x", RuleHostPunycode}, {"https://xn--abc-.de/x", RuleHostLabel}, {"https://xn--xn---3na.acme.io/x", RuleHostPunycode}, {"https://ab.xn--xn---3na/x", RuleHostPunycode}, {"https://xn--xn--a-esa.acme.io/x", RuleHostPunycode},
+		{"https://" + label("ab--ü") + ".io/x", RuleHostPunycode},
 		{"https://" + host + "/a/./b", RulePathDotSegment}, {"https://" + host + "/a/../b", RulePathDotSegment}, {"https://" + host + "/.", RulePathDotSegment}, {"https://" + host + "/..", RulePathDotSegment}, {"https://" + host + "/a/.", RulePathDotSegment},
 		{"https://" + host + "/a//b", RulePathEmptySeg}, {"https://" + host + "//a", RulePathEmptySeg}, {"https://" + host + "//", RulePathEmptySeg},
 		{"https://" + host + "/a b", RuleCharacter}, {"https://" + host + "/a\"b", RulePathCharacter}, {"https://" + host + "/a'b", RulePathCharacter}, {"https://" + host + "/a&b", RulePathCharacter}, {"https://" + host + "/{name}", RulePathCharacter},
@@ -269,7 +274,7 @@ func TestCompare(t *testing.T) {
 	}{
 		{base, base, Same}, {base, strings.ToUpper(base), Same}, {base + "/", base, Same}, {base + "//", base + "/", Same}, {base, base + "///", Same},
 		{base + "/x", base, Under}, {base + "/x/y", base + "/", Under}, {strings.ToUpper(base) + "/X", base, Under}, {base + "/{name}", base, Under},
-		{base, base + "/x", Apart}, {base + "2", base, Apart}, {base + "2/x", base, Apart}, {"https://b.openvaultdb.com/ovdb/dbs/chinook", base, Apart},
+		{base, base + "/x", Over}, {base + "/", base + "/x/y", Over}, {base, "https://b.openvaultdb.com/ovdb/dbs/chinook2", Apart}, {base + "2", base, Apart}, {base + "2/x", base, Apart}, {"https://b.openvaultdb.com/ovdb/dbs/chinook", base, Apart},
 		{"https://a.openvaultdb.com", "https://a.openvaultdb.com/", Same}, {"https://a.openvaultdb.com/x", "https://a.openvaultdb.com/", Under}, {"/x", "", Under}, {"", "", Same}, {"", "x", Apart}, {"a", "ab", Apart},
 		{base + "/\u00e0", base, Incomparable}, {base, base + "/\u212aelvin", Incomparable}, {base + strings.Repeat("a", MaxClaimLength), base, Incomparable}, {base, base + strings.Repeat("a", MaxClaimLength), Incomparable},
 	} {
@@ -285,5 +290,120 @@ func TestCompare(t *testing.T) {
 	}
 	if form, ok := ClaimedForm(strings.Repeat("a", MaxClaimLength)); !ok || len(form) != MaxClaimLength {
 		t.Errorf("ClaimedForm at the bound = %d bytes, %v", len(form), ok)
+	}
+}
+
+func TestRelationConflicts(t *testing.T) {
+	var unset Relation
+	if unset != Incomparable || !unset.Conflicts() {
+		t.Errorf("the zero Relation is %d and conflicts = %v: it must read as a conflict", unset, unset.Conflicts())
+	}
+	for r, want := range map[Relation]bool{Incomparable: true, Apart: false, Same: true, Under: true, Over: true} {
+		if got := r.Conflicts(); got != want {
+			t.Errorf("Relation(%d).Conflicts() = %v, want %v", r, got, want)
+		}
+	}
+	const base = "https://a.openvaultdb.com/ovdb/dbs/chinook"
+	if !Compare(base, base+"/x").Conflicts() || !Compare(base+"/x", base).Conflicts() || !Compare(base, base).Conflicts() || !Compare(base, base+"/à").Conflicts() || Compare(base, base+"2").Conflicts() {
+		t.Error("Compare does not report the conflicts of the claims")
+	}
+}
+
+func TestParseURLParts(t *testing.T) {
+	u, err := ParsePublicHTTPSURL("https://cloud.openvaultdb.com/ovdb/dbs/chinook")
+	if err != nil || u != (URL{Host: "cloud.openvaultdb.com", Path: "/ovdb/dbs/chinook", Placeholder: -1}) {
+		t.Errorf("ParsePublicHTTPSURL = %+v, %v", u, err)
+	}
+	u, err = ParsePublicHTTPSURL("https://acme.io/")
+	if err != nil || u.Host != "acme.io" || u.Path != "/" {
+		t.Errorf("ParsePublicHTTPSURL of a bare path = %+v, %v", u, err)
+	}
+	u, err = ParsePublicHTTPSURLTemplate("https://cloud.openvaultdb.com/c/{name}/x")
+	if err != nil || u != (URL{Host: "cloud.openvaultdb.com", Path: "/c/{name}/x", Placeholder: 3}) || u.Path[u.Placeholder:u.Placeholder+len("{name}")] != "{name}" {
+		t.Errorf("ParsePublicHTTPSURLTemplate = %+v, %v", u, err)
+	}
+	if u, err := ParsePublicHTTPSURLTemplate("https://acme.io/{name}"); err != nil || u.Placeholder != 1 {
+		t.Errorf("a template at the start of the path = %+v, %v", u, err)
+	}
+	for _, s := range []string{"http://acme.io/", "https://acme.io", "https://acme.io/{name}"} {
+		if u, err := ParsePublicHTTPSURL(s); err == nil || u != (URL{}) {
+			t.Errorf("ParsePublicHTTPSURL(%q) = %+v, %v", s, u, err)
+		}
+	}
+	if u, err := ParsePublicHTTPSURLTemplate("https://acme.io/x"); err == nil || u != (URL{}) {
+		t.Errorf("a template without {name} = %+v, %v", u, err)
+	}
+	// The verdict functions agree with the parts.
+	if PublicHTTPSURL("https://acme.io/x") != nil || PublicHTTPSURLTemplate("https://acme.io/{name}") != nil || PublicHTTPSURL("https://acme.io") == nil {
+		t.Error("the verdict functions disagree with the parsers")
+	}
+}
+
+func TestShow(t *testing.T) {
+	for in, want := range map[string]string{
+		"abc": `"abc"`, "a\nb": `"a\nb"`, "\x1b[2J": `"\x1b[2J"`, "\u00e9": `"\u00e9"`, "\xff": `"\xff"`, "\u0085": `"\u0085"`, "\u202e": `"\u202e"`, "": `""`,
+		strings.Repeat("a", maxShown):      `"` + strings.Repeat("a", maxShown) + `"`,
+		strings.Repeat("a", maxShown+1):    `"` + strings.Repeat("a", maxShown) + `"...`,
+		strings.Repeat("\u00e9", 30):       `"` + strings.Repeat(`\u00e9`, 20) + `"...`,
+		strings.Repeat("a", 39) + "\u00e9": `"` + strings.Repeat("a", 39) + `\xc3"...`,
+	} {
+		if got := show(in); got != want {
+			t.Errorf("show(%q) = %s, want %s", in, got, want)
+		}
+	}
+}
+
+func printableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+// No message holds a control character, and none repeats more than a short,
+// quoted piece of the input: the forged log line of the review, escape bytes and
+// long inputs among the cases.
+func TestMessagesHoldNoRawInput(t *testing.T) {
+	inputs := []string{
+		"a\n::error file=x::forged://y", "\x1b[2J\x1b[31mred://x", "\r\nhttps://x", "https://" + host + "/\n::notice::x", "ftp://" + strings.Repeat("é", 300) + "/x",
+		"https://" + strings.Repeat("x\n", 50) + ".com/", "https://" + label("ł") + "\u0085.io/x", "https://a\x00b.io/x", "\u202ehttps://x", strings.Repeat("a", 5000),
+		"https://" + strings.Repeat("a", 64) + ".com/x", "https://xn--" + strings.Repeat("9", 40) + ".com/x", "https://" + host + "/" + strings.Repeat("\x1b", 100),
+		"https://-" + strings.Repeat("a", 80) + ".com/x", "https://" + strings.Repeat("a", 80) + ".local/x", "https://" + strings.Repeat("1", 60) + ".1/x",
+	}
+	for _, in := range inputs {
+		for _, check := range []func(string) error{PublicHTTPSURL, PublicHTTPSURLTemplate, Homepage} {
+			err := check(in)
+			if err == nil {
+				continue
+			}
+			if msg := err.Error(); !printableASCII(msg) || len(msg) > 400 {
+				t.Errorf("%s: the message %q holds a control or non-ASCII character, or is %d bytes", shorten(in), msg, len(msg))
+			}
+		}
+	}
+	err := PublicHTTPSURL("a\n::error file=x::forged://y")
+	if strings.Contains(err.Error(), "\n") || strings.Contains(err.Error(), "::error") && !strings.Contains(err.Error(), `"`) {
+		t.Errorf("the forged line gets through: %q", err)
+	}
+}
+
+func TestIsBlank(t *testing.T) {
+	for _, s := range []string{"", " ", "\t\n\v\f\r ", "\u00a0", "\u1680", "\u2000", "\u2005", "\u200a", "\u2028", "\u2029", "\u202f", "\u205f", "\u3000", "\ufeff", " \ufeff\u3000\n"} {
+		if !IsBlank(s) {
+			t.Errorf("IsBlank(%q) = false", s)
+		}
+	}
+	// Not blank in JavaScript: U+0085 (which strings.TrimSpace strips), U+180E, the
+	// zero-width characters, and anything with a letter or an invalid byte.
+	for _, s := range []string{"a", " a ", "\u0085", "\u180e", "\u200b", "\u200c", "\u200d", "\u2060", "\u00ad", "\ufffe", "\xff", " \xff", "0", "\u0000"} {
+		if IsBlank(s) {
+			t.Errorf("IsBlank(%q) = true", s)
+		}
+	}
+	// strings.TrimSpace is not the same rule, which is why this function exists.
+	if strings.TrimSpace("\ufeff") == "" || strings.TrimSpace("\u0085") != "" {
+		t.Error("strings.TrimSpace changed: update the note in text.go")
 	}
 }

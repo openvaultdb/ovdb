@@ -23,10 +23,17 @@ later changes and calls these functions.
 | `IsPublishEntry` | An entry of an OVDB.md `publish` list: the explicit form `./` followed by an `IsRepositoryPath`. |
 | `IsEngine` | `^[A-Za-z][A-Za-z0-9_.+-]{0,39}$`. |
 | `IsLicenceID` | The shape of an SPDX licence id, `^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$`; it does not know which ids SPDX has assigned. |
-| `Compare`, `ClaimedForm` | How one claimed address stands to another: `Same` when they are equal, `Under` when the first sits under the second at a path-segment boundary (`/dbs/chinook2` is not under `/dbs/chinook`), `Apart` otherwise, all case-insensitively with trailing slashes set aside. |
+| `IsBlank` | Whether a text is empty or only white space **as JavaScript's `trim()` sees it** (it strips U+FEFF and not U+0085; Go's `strings.TrimSpace` does the reverse). Every "is required" check must use it, never `strings.TrimSpace`. |
+| `Compare`, `ClaimedForm` | How one claimed address stands to another: `Same` when they are equal, `Under` when the first sits under the second at a path-segment boundary (`/dbs/chinook2` is not under `/dbs/chinook`), `Over` when the second sits under the first, `Apart` otherwise, all case-insensitively with trailing slashes set aside. A caller asks `Relation.Conflicts()` (true for everything but `Apart`, and for `Incomparable`, which is also the zero value), and never compares with `Same` or `Under` itself. |
 
 A refused URL comes back as a `*Problem` with a stable `Rule` (match on that,
-never on the message) and a detail in words.
+never on the message) and a detail in words. `ParsePublicHTTPSURL` and
+`ParsePublicHTTPSURLTemplate` also return the parts of an accepted URL (`Host`,
+`Path`, and for a template the offset of `{name}` in the path), so a rule that
+looks at the host or the path never splits the text again. A piece of the input
+reaches a message only through one function that cuts it to 40 bytes, quotes it
+and escapes it to printable ASCII, so no message holds a control character or a
+line break (a forged log line); a test holds every refusal of the matrix to that.
 
 ### Limits on input
 
@@ -71,7 +78,7 @@ imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
 v24.20.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **1231605** verdicts:
+network. The matrix is **1497310** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a
@@ -88,7 +95,12 @@ network. The matrix is **1231605** verdicts:
   `//`, dot segments, trailing dots, upper-case hosts, numeric last labels,
   punycode labels spelled by Node's own encoder, reserved suffixes, templates,
   and the length of every limit and one over;
-- every pair of a list of claimed addresses, for `Compare`.
+- every character U+0000 to U+FFFF alone, led, trailed and between spaces, for the
+  blank-text check, and every white-space and format character in a list;
+- `xn--` labels whose decoded text begins with `xn--` or has hyphens in its third
+  and fourth positions, with every Latin-1 letter;
+- every pair of a list of claimed addresses, for `Compare` (apart, same, under
+  and over, as the Directory's own claim check reports them in each direction).
 
 `TestReferenceMatrix` fails if any Go function accepts where a reference
 refuses, if a Go function is stricter in a way that is not recorded below, or if
@@ -104,11 +116,12 @@ with the one limit named taken away, Go accepts the same input.
 | Kind | Cases | Why |
 | --- | --- | --- |
 | `url-length` | 5 | A URL over 2048 bytes. The references have no bound; a published URL is text that people and tools read, and an unbounded input is a way to make a check slow. |
-| `punycode-other-text` | 3425 | An `xn--` label that is canonical punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. |
-| `punycode-malformed` | 1932 | An `xn--` label that is not punycode of any text (truncated, ASCII only, a number too large). Node's URL parser takes such labels as written; a hostile publisher could use one to name a host no client can resolve the same way. |
+| `punycode-decoded-hyphens` | 504 | An `xn--` label that is valid punycode of Latin-1 letters but decodes to text that begins with `xn--` or has hyphens in its third and fourth positions. As UTS #46 reads it (15.1 on), such a label is invalid when hyphens are not checked, so a later Node may refuse it; Node v24.20.0 accepts it. One comparison makes the rule independent of the Node version. |
+| `punycode-other-text` | 4997 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says that internationalised host names are not accepted here yet and to use an ASCII host name; whether to accept more is a product decision. |
+| `punycode-malformed` | 1940 | An `xn--` label that is not punycode of any text (truncated, ASCII only, a number too large). Node's URL parser takes such labels as written; a hostile publisher could use one to name a host no client can resolve the same way. The message says it is not valid punycode and to write the host name in ASCII. |
 | `repository-length` | 4 | A repository URL over 255 bytes. The references have no bound; GitHub names are far shorter. |
 | `path-length` | 3 | A path inside a repository over 1024 bytes. The references have no bound. |
-| `claim-incomparable` | 640 | `Compare` of an address that is not ASCII or is over 2048 bytes. JavaScript folds case by Unicode rules (U+212A KELVIN SIGN lowers to `k`), which this package does not copy; addresses that reach a comparison have already passed `PublicHTTPSURL`, so this never happens to a valid one, and a conflict check must treat `Incomparable` as a conflict. |
+| `claim-incomparable` | 640 | `Compare` of an address that is not ASCII or is over 2048 bytes. JavaScript folds case by Unicode rules (U+212A KELVIN SIGN lowers to `k`), which this package does not copy; addresses that reach a comparison have already passed `PublicHTTPSURL`, so this never happens to a valid one, and `Incomparable.Conflicts()` is true. |
 
 The references agree with each other on every verdict of the matrix: where the
 Chinook port has drifted from the Directory it is in message text only.
@@ -129,7 +142,10 @@ was made from other ones); to use clones you already have, pass `--directory
 kept small by storing, for the exhaustive families, only the accepted
 characters or strings (or the refused ones, when fewer). The test also fails
 when this README states another size, count, commit or Node version than the
-golden.
+golden. The generator also asserts that the two rules the Directory keeps inline
+(the `isText` test and the publish-entry expression) are still in `directory.mjs`
+at the pinned commit as copied, and says to run `npm ci` in a `--directory`
+clone that has no `yaml`.
 
 ## Fuzzing
 
@@ -151,8 +167,17 @@ by a gate scoped to them, `cmd/covergate` (the exact gate of
 module as a whole cannot be gated this way: some of its packages have a
 `TestMain`, and some have files for one operating system, and the gate refuses
 both. The list is in `.github/workflows/ci.yml` (job `publisher-coverage`), and
-a test keeps it equal to the packages under `internal/publisher` plus the gate.
-To run it locally:
+a test keeps it equal to every package below `internal/publisher`,
+`internal/covergate` and `cmd/covergate`.
+
+The gate also refuses whatever lets the build leave a file out of the profile:
+a build constraint in any spelling that Go reads (`//go:build`, `// +build`,
+`//+build`, extra spaces or a tab, judged by `go/build/constraint` on the header
+before the package clause), a GOOS or GOARCH file name, and `import "C"` (left
+out when cgo is off). And it closes the class by a file-set rule: every
+non-test file of a gated package that has a statement must have a block in the
+profile, so a file left out for any other reason fails the gate by name. To run
+it locally:
 
 ```sh
 go test -covermode=atomic -coverprofile=/tmp/cover.out ./internal/publisher/... ./internal/covergate/... ./cmd/covergate/...

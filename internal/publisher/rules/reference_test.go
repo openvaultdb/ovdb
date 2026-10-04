@@ -122,6 +122,12 @@ var goFns = map[string]func(string) bool{
 	"publish":      IsPublishEntry,
 	"engine":       IsEngine,
 	"licence":      IsLicenceID,
+	"text":         func(s string) bool { return !IsBlank(s) },
+}
+
+// goErrs are the URL functions again, for the message of a refusal.
+var goErrs = map[string]func(string) error{
+	"url": PublicHTTPSURL, "url-template": PublicHTTPSURLTemplate, "homepage": Homepage,
 }
 
 // A difference is lifted when the same input, with the one limit that the
@@ -156,6 +162,7 @@ func urlLift(o options) func(fn, s string) bool {
 // must be needed by at least one case.
 var differences = []difference{
 	{"url-length", urlFn, urlLift(options{maxLen: unbounded})},
+	{"punycode-decoded-hyphens", urlFn, urlLift(options{puny: punyAllowNested})},
 	{"punycode-other-text", urlFn, urlLift(options{puny: punyWellFormed})},
 	{"punycode-malformed", urlFn, urlLift(options{puny: punyUnchecked})},
 	{"repository-length", func(fn string) bool { return fn == "repository" }, func(_, s string) bool { _, ok := repositoryKey(s, unbounded); return ok }},
@@ -186,6 +193,7 @@ type tally struct {
 	example      map[string]string
 	violations   []string
 	unexplained  []string
+	badMessages  []string
 }
 
 func newTally() *tally {
@@ -222,10 +230,32 @@ func (ty *tally) judge(fn, s string, goAccepts bool, verdicts string) {
 		}
 	case !goAccepts && refusing == 0:
 		ty.recordStricter(fn, s)
+		ty.checkMessage(fn, s)
 	default:
 		ty.agree++
 		if goAccepts {
 			ty.agreeAccept++
+		} else {
+			ty.checkMessage(fn, s)
+		}
+	}
+}
+
+// checkMessage holds the message of every refusal of the matrix to the rule that
+// no message has a control character, an escape or a line break, and none is
+// long: input reaches it only through show.
+func (ty *tally) checkMessage(fn, s string) {
+	check := goErrs[fn]
+	if check == nil {
+		return
+	}
+	err := check(s)
+	if err == nil {
+		return
+	}
+	if msg := err.Error(); !printableASCII(msg) || len(msg) > 400 {
+		if len(ty.badMessages) < 20 {
+			ty.badMessages = append(ty.badMessages, fmt.Sprintf("%s of %s: message %s", fn, shorten(s), shorten(msg)))
 		}
 	}
 }
@@ -237,10 +267,13 @@ func (ty *tally) recordStricter(fn, s string) {
 			explained = append(explained, d.kind)
 		}
 	}
-	// A label that is canonical punycode of other text is "beyond Latin-1",
-	// whatever else lifts it too.
-	if slices.Contains(explained, "punycode-other-text") {
-		explained = slices.DeleteFunc(explained, func(kind string) bool { return kind == "punycode-malformed" })
+	// The narrowest kind explains a case: a label that only the hyphen rule
+	// refuses is that kind, whatever else would lift it too; one that is valid
+	// punycode of other text is "other text", not "malformed".
+	for _, narrower := range [][2]string{{"punycode-decoded-hyphens", "punycode-other-text"}, {"punycode-decoded-hyphens", "punycode-malformed"}, {"punycode-other-text", "punycode-malformed"}} {
+		if slices.Contains(explained, narrower[0]) {
+			explained = slices.DeleteFunc(explained, func(kind string) bool { return kind == narrower[1] })
+		}
 	}
 	if len(explained) != 1 {
 		ty.unexplained = append(ty.unexplained, fmt.Sprintf("%s refuses %s, which a reference accepts, and %d recorded differences explain it: %v", fn, shorten(s), len(explained), explained))
@@ -401,7 +434,7 @@ func TestReferenceMatrix(t *testing.T) {
 	}
 
 	// The claims: the relation of every pair of addresses.
-	relations := map[byte]Relation{'a': Apart, 's': Same, 'u': Under}
+	relations := map[byte]Relation{'a': Apart, 's': Same, 'u': Under, 'o': Over}
 	for i, row := range golden.Claims.Relations {
 		for j := 0; j < len(row); j++ {
 			ty.total++
@@ -436,6 +469,9 @@ func TestReferenceMatrix(t *testing.T) {
 		t.Error(line)
 	}
 	for _, line := range ty.unexplained {
+		t.Error(line)
+	}
+	for _, line := range ty.badMessages {
 		t.Error(line)
 	}
 	stricterTotal := 0

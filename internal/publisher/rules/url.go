@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -27,7 +28,8 @@ const (
 	RuleHostSingleLabel Rule = "host-single"     // a host of one label
 	RuleHostNumeric     Rule = "host-numeric"    // a host that is, or could be read as, an IP address
 	RuleHostReserved    Rule = "host-reserved"   // a local, internal or reserved name
-	RuleHostPunycode    Rule = "host-punycode"   // an xn-- label that is not a well-formed Latin-1 label
+	RuleHostPunycode    Rule = "host-punycode"   // an xn-- label that is not valid punycode for a host name
+	RuleHostIDN         Rule = "host-idn"        // an xn-- label of letters this tool does not accept yet
 	RuleNoPath          Rule = "no-path"         // no path: write https://host/
 	RulePathCharacter   Rule = "path-character"  // a character outside A-Z a-z 0-9 . _ ~ / and - in the path
 	RulePathEmptySeg    Rule = "path-empty"      // //
@@ -47,6 +49,25 @@ func (p *Problem) Error() string { return p.Detail }
 
 func problem(rule Rule, format string, args ...any) *Problem {
 	return &Problem{Rule: rule, Detail: fmt.Sprintf(format, args...)}
+}
+
+// maxShown is the most bytes of an input that a message repeats.
+const maxShown = 40
+
+// show is the one way a piece of input goes into a message: cut to maxShown
+// bytes, quoted, and escaped to printable ASCII, so that no message holds a
+// control character, an escape sequence, a line break (a forged log line or
+// workflow command) or more than a short piece of what was given.
+func show(s string) string {
+	cut := len(s) > maxShown
+	if cut {
+		s = s[:maxShown]
+	}
+	quoted := strconv.QuoteToASCII(s)
+	if cut {
+		quoted += "..."
+	}
+	return quoted
 }
 
 // placeholder is the one literal a template URL may hold, in its path.
@@ -86,13 +107,39 @@ func defaults(template bool) options {
 // resolves to: a public-looking name can resolve to a private address, which
 // only the party that connects can check.
 func PublicHTTPSURL(s string) error {
-	return asError(checkURL(s, defaults(false)))
+	_, err := ParsePublicHTTPSURL(s)
+	return err
+}
+
+// URL is an accepted URL in its parts, so that the rules that look at a host or
+// a path (the marker of a canonical url, the same-origin rule, a publisher url)
+// never split the text again. The scheme is always https and there is no port,
+// userinfo, query or fragment.
+type URL struct {
+	Host        string // lower-case labels joined by dots
+	Path        string // starts with /; for a template, {name} as written
+	Placeholder int    // for a template, the offset of {name} in Path; otherwise -1
+}
+
+// ParsePublicHTTPSURL is [PublicHTTPSURL] that returns the parts of an accepted
+// URL.
+func ParsePublicHTTPSURL(s string) (URL, error) {
+	u, p := readURL(s, defaults(false))
+	return u, asError(p)
+}
+
+// ParsePublicHTTPSURLTemplate is [PublicHTTPSURLTemplate] that returns the parts
+// of an accepted URL.
+func ParsePublicHTTPSURLTemplate(s string) (URL, error) {
+	u, p := readURL(s, defaults(true))
+	return u, asError(p)
 }
 
 // PublicHTTPSURLTemplate is [PublicHTTPSURL] for a template: the literal
 // {name} must appear exactly once, in the path.
 func PublicHTTPSURLTemplate(s string) error {
-	return asError(checkURL(s, defaults(true)))
+	_, err := ParsePublicHTTPSURLTemplate(s)
+	return err
 }
 
 // Homepage reports why s is not a manifest's homepage: a public https URL of at
@@ -131,28 +178,38 @@ var reservedLabels = map[string]bool{
 // arpa, so the table above already refuses it, and it is kept for the message.
 const homeArpa = "home.arpa"
 
-// checkURL is the reader. It looks at each byte once, from the left, in three
+// checkURL is [readURL] for a caller that wants only the verdict.
+func checkURL(s string, o options) *Problem {
+	_, p := readURL(s, o)
+	return p
+}
+
+// readURL is the reader. It looks at each byte once, from the left, in three
 // stretches: the scheme (a fixed prefix), the host up to the first slash, and
 // the path to the end.
-func checkURL(s string, o options) *Problem {
+func readURL(s string, o options) (URL, *Problem) {
 	if len(s) > o.maxLen {
-		return problem(RuleLength, "is longer than %d characters", o.maxLen)
+		return URL{}, problem(RuleLength, "is longer than %d characters", o.maxLen)
 	}
 	rest, ok := strings.CutPrefix(s, scheme)
 	if !ok {
-		return notHTTPS(s)
+		return URL{}, notHTTPS(s)
 	}
 	pathStart, p := scanHost(rest, o)
 	if p != nil {
-		return p
+		return URL{}, p
 	}
-	return scanPath(rest, pathStart, o)
+	at, p := scanPath(rest, pathStart, o)
+	if p != nil {
+		return URL{}, p
+	}
+	return URL{Host: rest[:pathStart], Path: rest[pathStart:], Placeholder: at}, nil
 }
 
 // notHTTPS says why s does not start with https://. It runs only on a refusal.
 func notHTTPS(s string) *Problem {
 	if name, _, found := strings.Cut(s, "://"); found && name != "" {
-		return problem(RuleScheme, "must be https, not %s", name)
+		return problem(RuleScheme, "must be https, not %s", show(name))
 	}
 	return problem(RuleNotURL, "is not a URL: write https://host/path")
 }
@@ -173,7 +230,7 @@ func badByte(c byte, where string, plain Rule) *Problem {
 	case c == '%':
 		return problem(RulePercent, "must not contain a percent escape (write the character itself, or leave it out)")
 	}
-	return problem(plain, "%s may not contain %q", where, string(rune(c)))
+	return problem(plain, "%s may not contain %s", where, show(string([]byte{c})))
 }
 
 // scanHost reads the host at the start of rest, up to the first slash, and
@@ -226,29 +283,35 @@ func scanHost(rest string, o options) (int, *Problem) {
 		return 0, p
 	}
 	if labels < 2 {
-		return 0, problem(RuleHostSingleLabel, "host %s is a single-label name, not a public host", lastLabel)
+		return 0, problem(RuleHostSingleLabel, "host %s is a single-label name, not a public host", show(lastLabel))
 	}
 	if numericLabel(lastLabel) {
-		return 0, problem(RuleHostNumeric, "host %s is an IP address, or could be read as one; a public mapping names a host", rest[:i])
+		return 0, problem(RuleHostNumeric, "host %s is an IP address, or could be read as one; a public mapping names a host", show(rest[:i]))
 	}
 	if reservedLabels[lastLabel] || prevLabel+"."+lastLabel == homeArpa {
-		return 0, problem(RuleHostReserved, "host %s is a local, internal or reserved name, not a public host", rest[:i])
+		return 0, problem(RuleHostReserved, "host %s is a local, internal or reserved name, not a public host", show(rest[:i]))
 	}
 	return i, nil
 }
 
 // checkLabel checks one label of a host: 1 to 63 bytes, no hyphen at either
-// end, and an xn-- label only when it is well-formed punycode.
+// end, and an xn-- label only when it is accepted punycode.
 func checkLabel(label string, o options) *Problem {
 	switch {
 	case label == "":
 		return problem(RuleHostLabel, "host has an empty label (a leading, doubled or trailing dot)")
 	case len(label) > MaxLabelLength:
-		return problem(RuleHostLabel, "host label %q is longer than %d characters", label, MaxLabelLength)
+		return problem(RuleHostLabel, "host label %s is longer than %d characters", show(label), MaxLabelLength)
 	case label[0] == '-' || label[len(label)-1] == '-':
-		return problem(RuleHostLabel, "host label %q starts or ends with a hyphen", label)
-	case strings.HasPrefix(label, "xn--") && !punycodeLabel(label, o.puny):
-		return problem(RuleHostPunycode, "host label %q is not the canonical punycode of Latin-1 letters", label)
+		return problem(RuleHostLabel, "host label %s starts or ends with a hyphen", show(label))
+	case !strings.HasPrefix(label, "xn--"):
+		return nil
+	}
+	switch punycodeLabel(label, o.puny) {
+	case punyInvalid:
+		return problem(RuleHostPunycode, "host label %s is not valid punycode for a host name (or it decodes to text that begins with xn-- or has hyphens in positions 3 and 4); write the host name in ASCII letters, digits and hyphens", show(label))
+	case punyForeign:
+		return problem(RuleHostIDN, "host label %s is an internationalised name: only Latin-1 letters are accepted in one, and internationalised host names are not accepted here yet; use an ASCII host name", show(label))
 	}
 	return nil
 }
@@ -275,12 +338,14 @@ func numericLabel(label string) bool {
 	return digits || (prefixed && hex)
 }
 
-// scanPath reads the path of rest, which starts at the slash at index start.
-func scanPath(rest string, start int, o options) *Problem {
+// scanPath reads the path of rest, which starts at the slash at index start. It
+// returns the offset in the path of {name} (-1 when there is none).
+func scanPath(rest string, start int, o options) (int, *Problem) {
 	var (
 		segLen       = 0
 		dotsOnly     = true
 		placeholders = 0
+		offset       = -1
 	)
 	endSegment := func() *Problem {
 		if segLen > 0 && dotsOnly && segLen <= 2 {
@@ -294,10 +359,10 @@ func scanPath(rest string, start int, o options) *Problem {
 		switch {
 		case c == '/':
 			if segLen == 0 {
-				return problem(RulePathEmptySeg, "has an empty path segment (//)")
+				return 0, problem(RulePathEmptySeg, "has an empty path segment (//)")
 			}
 			if p := endSegment(); p != nil {
-				return p
+				return 0, p
 			}
 		case c == '.':
 			segLen++
@@ -306,21 +371,22 @@ func scanPath(rest string, start int, o options) *Problem {
 			dotsOnly = false
 		case c == '{' && o.template && strings.HasPrefix(rest[i:], placeholder):
 			placeholders++
+			offset = i - start
 			if placeholders > 1 {
-				return problem(RulePlaceholder, "must contain %s exactly once", placeholder)
+				return 0, problem(RulePlaceholder, "must contain %s exactly once", placeholder)
 			}
 			i += len(placeholder) - 1
 			segLen += len("name")
 			dotsOnly = false
 		default:
-			return badByte(c, "path", RulePathCharacter)
+			return 0, badByte(c, "path", RulePathCharacter)
 		}
 	}
 	if p := endSegment(); p != nil {
-		return p
+		return 0, p
 	}
 	if o.template && placeholders != 1 {
-		return problem(RulePlaceholder, "must contain %s exactly once", placeholder)
+		return 0, problem(RulePlaceholder, "must contain %s exactly once", placeholder)
 	}
-	return nil
+	return offset, nil
 }

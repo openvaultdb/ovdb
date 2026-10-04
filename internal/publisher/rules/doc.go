@@ -18,6 +18,13 @@
 // parser that the JavaScript relies on disagree on hosts whose last label is
 // numeric, on punycode, on backslashes and on control characters.
 //
+// Two traps for the code that uses this package. A text field is "required"
+// when it is not blank by JavaScript's trim(), which is not Go's
+// strings.TrimSpace (it strips U+FEFF and not U+0085, Go the reverse): use
+// [IsBlank], never strings.TrimSpace, for those checks. And claims conflict
+// when [Relation.Conflicts] says so; never compare a [Relation] with Same or
+// Under by hand, because an address that cannot be compared is a conflict.
+//
 // Limits on input are part of the rules: an input longer than the bound of its
 // function is refused (or, for [Compare], reported as [Incomparable]) without
 // being read further.

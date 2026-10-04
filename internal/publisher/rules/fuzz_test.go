@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // The fuzz targets run their seeds with `go test` and fuzz only when asked:
@@ -44,7 +45,22 @@ func FuzzPublicHTTPSURL(f *testing.F) {
 				if !errors.As(err, &p) || p.Rule == "" || p.Detail == "" {
 					t.Fatalf("%q: the refusal %v is not a described *Problem", s, err)
 				}
+				if !printableASCII(p.Detail) || len(p.Detail) > 400 {
+					t.Fatalf("%q: the message %q holds a control or non-ASCII character, or is long", s, p.Detail)
+				}
 				continue
+			}
+			var parts URL
+			if template {
+				parts, _ = ParsePublicHTTPSURLTemplate(s)
+			} else {
+				parts, _ = ParsePublicHTTPSURL(s)
+			}
+			if "https://"+parts.Host+parts.Path != s || strings.HasPrefix(parts.Path, "/") == false {
+				t.Fatalf("%q is accepted with the parts %+v, which do not make it again", s, parts)
+			}
+			if template != (parts.Placeholder >= 0) || template && !strings.HasPrefix(parts.Path[parts.Placeholder:], placeholder) {
+				t.Fatalf("%q is accepted with the placeholder at %d of %q", s, parts.Placeholder, parts.Path)
 			}
 			probe := s
 			if template {
@@ -57,6 +73,9 @@ func FuzzPublicHTTPSURL(f *testing.F) {
 		}
 		if err := Homepage(s); err == nil && len(s) > MaxHomepageLength {
 			t.Fatalf("%q is accepted as a homepage of %d bytes", s, len(s))
+		}
+		if blank := IsBlank(s); blank && strings.TrimFunc(s, func(r rune) bool { return r == 0xFEFF || unicode.IsSpace(r) && r != 0x85 && r != 0x180e }) != "" {
+			t.Fatalf("%q is blank but has text", s)
 		}
 	})
 }

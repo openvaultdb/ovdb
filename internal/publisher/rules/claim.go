@@ -1,11 +1,17 @@
 package rules
 
-// Relation is how one claimed address stands to another.
+// Relation is how one claimed address stands to another. Its zero value is
+// [Incomparable], not "apart": a Relation that nobody set, or that a caller did
+// not think about, is read as a conflict. Callers that look for conflicts use
+// [Relation.Conflicts] and never compare with Same or Under themselves.
 type Relation int
 
 const (
+	// Incomparable means an address is not plain ASCII or is longer than
+	// MaxClaimLength, so it cannot be compared faithfully. It is a conflict.
+	Incomparable Relation = iota
 	// Apart means the two addresses are different and neither is under the other.
-	Apart Relation = iota
+	Apart
 	// Same means the addresses are the same once case and trailing slashes are
 	// set aside.
 	Same
@@ -13,11 +19,13 @@ const (
 	// by a slash is a prefix of the first, so the boundary is a path segment
 	// (/dbs/chinook2 is not under /dbs/chinook).
 	Under
-	// Incomparable means an address is not plain ASCII or is longer than
-	// MaxClaimLength, so it cannot be compared faithfully. A caller that looks
-	// for conflicts treats it as one.
-	Incomparable
+	// Over means the second address sits under the first.
+	Over
 )
+
+// Conflicts reports whether two claims in this relation conflict: they are the
+// same, one is under the other, or they cannot be compared. Only Apart does not.
+func (r Relation) Conflicts() bool { return r != Apart }
 
 // ClaimedForm is the form of an address that claims are compared in: ASCII
 // lower case, trailing slashes removed. It returns false for an address that is
@@ -47,7 +55,7 @@ func ClaimedForm(address string) (string, bool) {
 }
 
 // Compare says how address stands to other, case-insensitively and with
-// trailing slashes set aside.
+// trailing slashes set aside. Use Conflicts on the result.
 func Compare(address, other string) Relation {
 	a, okA := ClaimedForm(address)
 	b, okB := ClaimedForm(other)
@@ -58,6 +66,8 @@ func Compare(address, other string) Relation {
 		return Same
 	case len(a) > len(b) && a[:len(b)] == b && a[len(b)] == '/':
 		return Under
+	case len(b) > len(a) && b[:len(a)] == a && b[len(a)] == '/':
+		return Over
 	}
 	return Apart
 }
