@@ -21,6 +21,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/cli"
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/porttest"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 	"github.com/openvaultdb/ovdb/internal/telemetry"
 )
@@ -174,13 +175,11 @@ func (e *env) apiBody(method, path, body string) string {
 	return string(answer)
 }
 
+// freePort is a port leased to this test until it ends (internal/porttest);
+// see the runtime tests' helper of the same name.
 func freePort(t *testing.T) int {
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
+	t.Helper()
+	return porttest.Lease(t)
 }
 
 func decodeError(t *testing.T, r result, code envelope.Code) *envelope.Error {

@@ -12,15 +12,34 @@ import { ovdbEnv } from './ovdb'
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
+// The server is the real ovdb binary, started below on a port named in the
+// environment, and restarted on it by several journeys, so the port must be
+// known beforehand and stay free while the server is down. A port from
+// listen(0) is not: it comes from the range the operating system also gives to
+// every other bind(0) and to the source side of every connection the browser
+// makes, and is released until the server binds it. These come from a range
+// below the ephemeral range of Linux (32768-60999), macOS and Windows
+// (49152-65535); the same range, with a lease per test, is internal/porttest's.
+const firstPort = 20000
+const portCount = 4000
+
+// listens reports whether host:port can be bound; a host the machine does not
+// have (no IPv6) counts as free.
+function listens(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
     const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      server.close(() => resolve(typeof address === 'object' && address ? address.port : 0))
-    })
+    server.once('error', (error: NodeJS.ErrnoException) => resolve(error.code !== 'EADDRINUSE' && error.code !== 'EACCES'))
+    server.listen(port, host, () => server.close(() => resolve(true)))
   })
+}
+
+async function freePort(): Promise<number> {
+  const start = Math.floor(Math.random() * portCount)
+  for (let i = 0; i < portCount; i++) {
+    const port = firstPort + ((start + i) % portCount)
+    if ((await listens(port, '127.0.0.1')) && (await listens(port, '::1'))) return port
+  }
+  throw new Error(`no free port in ${firstPort}-${firstPort + portCount - 1} for the e2e server`)
 }
 
 export default async function globalSetup() {

@@ -12,7 +12,7 @@ package main
 //   - first-run-onboarding#ac:named-commands-public-without-gate
 //
 // All tests build the binary once (TestMain) and run every server under a
-// random loopback port, polling /v1/status for readiness and always killing
+// leased loopback port, polling /v1/status for readiness and always killing
 // the process in t.Cleanup.
 import (
 	"bytes"
@@ -26,10 +26,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/openvaultdb/ovdb/internal/porttest"
 )
 
 // ovdbBinPath is the path of the `ovdb` binary built once in TestMain and
@@ -59,23 +62,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// freeLoopbackAddr reserves a free TCP port on 127.0.0.1 by binding and
-// immediately closing a listener, then returns the address for a caller
-// (typically a separately-started process) to bind next. This is
-// best-effort (there is a race between close and the child process's own
-// bind) but is the standard approach for test harnesses that must pick a
-// port for another process's --addr/-l flag.
+// freeLoopbackAddr returns 127.0.0.1 and a TCP port leased to this test until
+// it ends (internal/porttest), for a separately started process to bind next
+// with its --addr/-l flag. Binding :0 and closing the listener instead leaves
+// the number free for every other parallel test to be given in the meantime.
 func freeLoopbackAddr(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve free port: %v", err)
-	}
-	addr := l.Addr().String()
-	if err := l.Close(); err != nil {
-		t.Fatalf("close port probe listener: %v", err)
-	}
-	return addr
+	return net.JoinHostPort("127.0.0.1", strconv.Itoa(porttest.Lease(t)))
 }
 
 // syncBuffer is an io.Writer safe for concurrent use by the child process's

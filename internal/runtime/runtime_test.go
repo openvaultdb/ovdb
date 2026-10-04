@@ -31,6 +31,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/localserver"
 	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/porttest"
 	"github.com/openvaultdb/ovdb/internal/runtime"
 )
 
@@ -113,14 +114,13 @@ func testDirs(t *testing.T) paths.Dirs {
 	}
 }
 
+// freePort is a port leased to this test until it ends (internal/porttest):
+// the server binds it later, in another process, so a port picked by binding
+// :0 and closing it can be given to another parallel test, or used as the
+// source of another test's connection, before it is bound (issue #29).
 func freePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port
+	return porttest.Lease(t)
 }
 
 // stopOnCleanup stops whatever server dirs has and waits for its process,
@@ -459,12 +459,13 @@ func processAlive(process *os.Process) bool {
 // port_in_use instead of serving IPv4 only next to it.
 func TestImpostorOnIPv6LoopbackIsPortInUse(t *testing.T) {
 	t.Parallel()
-	impostor, err := net.Listen("tcp6", "[::1]:0")
+	// The impostor holds a leased port, on [::1] only, for the whole test.
+	port := freePort(t)
+	impostor, err := net.Listen("tcp6", "[::1]:"+strconv.Itoa(port))
 	if err != nil {
 		t.Skipf("IPv6 loopback unavailable: %v", err)
 	}
 	defer func() { _ = impostor.Close() }()
-	port := impostor.Addr().(*net.TCPAddr).Port
 	if dialable(port, "127.0.0.1") {
 		t.Skip("IPv4 port also taken")
 	}
@@ -483,12 +484,13 @@ func TestImpostorOnIPv6LoopbackIsPortInUse(t *testing.T) {
 // AC:error-envelope-shape (runtime half): a non-OVDB program on the port.
 func TestPortHeldByAnotherProgram(t *testing.T) {
 	t.Parallel()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	// The program holds a leased port for the whole test.
+	port := freePort(t)
+	listener, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = listener.Close() }()
-	port := listener.Addr().(*net.TCPAddr).Port
 	dirs := testDirs(t)
 	_, err = runtime.Start(context.Background(), startOptions(dirs, port))
 	e := wantCode(t, err, envelope.PortInUse)
