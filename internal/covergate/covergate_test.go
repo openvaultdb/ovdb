@@ -35,6 +35,18 @@ func tree() fstest.MapFS {
 		"testmain/main_test.go":       file("package testmain\n\nimport \"testing\"\n\nfunc TestMain(m *testing.M) { m.Run() }\n"),
 		"method/m.go":                 file("package method\n\nfunc F() int { return 1 }\n"),
 		"method/m_test.go":            file("package method\n\ntype S struct{}\n\nfunc (S) TestMain() {}\n"),
+		"plus1/p.go":                  file("//+build windows\n\npackage plus1\n\nfunc F() int { return 1 }\n"),
+		"plus2/p.go":                  file("//  +build windows\n\npackage plus2\n\nfunc F() int { return 1 }\n"),
+		"plus3/p.go":                  file("//\t+build windows\n\npackage plus3\n\nfunc F() int { return 1 }\n"),
+		"plus4/p.go":                  file("// Copyright.\n\n//   +build !linux\n\npackage plus4\n\nfunc F() int { return 1 }\n"),
+		"gobuild/p.go":                file("  //go:build ignore\n\npackage gobuild\n\nfunc F() int { return 1 }\n"),
+		"cgo/p.go":                    file("package cgo\n\nimport \"C\"\n\nfunc F() int { return 1 }\n"),
+		"cgo/other.go":                file("package cgo\n\nimport (\n\t\"fmt\"\n\t\"C\"\n)\n\nfunc G() { fmt.Println() }\n"),
+		"afterclause/p.go":            file("package afterclause\n\n//go:build windows\n\nfunc F() int { return 1 }\n"),
+		"commentbody/p.go":            file("package commentbody\n\nvar text = `\n//+build windows\n`\n\nfunc F() int { return len(text) }\n"),
+		"partial/a.go":                file("package partial\n\nfunc A() int { return 1 }\n"),
+		"partial/b.go":                file("package partial\n\nfunc B() int { return 2 }\n"),
+		"partial/c.go":                file("package partial\n\ntype T struct{}\n"),
 		"bad/bad.go":                  file("this is not Go"),
 		"nogo/readme.txt":             file("nothing"),
 	}
@@ -111,7 +123,11 @@ func TestLoadPackage(t *testing.T) {
 		statements             bool
 		testMains, constraints int
 	}{
-		{"good", true, 0, 0}, {"empty", false, 0, 0}, {"tagged", true, 0, 2}, {"osfile", true, 0, 2}, {"plain", true, 0, 0}, {"testmain", true, 1, 0}, {"method", true, 0, 0},
+		{"good", true, 0, 0}, {"empty", false, 0, 0}, {"tagged", true, 0, 2},
+		// every spelling of a constraint that Go reads, as the header of a file
+		{"plus1", true, 0, 1}, {"plus2", true, 0, 1}, {"plus3", true, 0, 1}, {"plus4", true, 0, 1}, {"gobuild", true, 0, 1},
+		// import "C", alone or in a group; and text that Go does not read as a constraint
+		{"cgo", true, 0, 2}, {"afterclause", true, 0, 0}, {"commentbody", true, 0, 0}, {"osfile", true, 0, 2}, {"plain", true, 0, 0}, {"testmain", true, 1, 0}, {"method", true, 0, 0},
 	} {
 		pkg, err := LoadPackage(fsys, module, c.dir)
 		if err != nil {
@@ -172,6 +188,36 @@ func TestCheck(t *testing.T) {
 	r = Check([]Package{{Dir: "good", Path: module + "/good", HasStatements: true, TestMains: []string{"good/main_test.go"}, Constraints: []string{"good/x_linux.go: the file name carries a GOOS or GOARCH build constraint (linux)"}}}, covered)
 	if r.OK() || len(r.Problems) != 2 || !strings.Contains(strings.Join(r.Problems, "\n"), "declares TestMain") || !strings.Contains(strings.Join(r.Problems, "\n"), "build constraint") {
 		t.Errorf("TestMain and constraints = %+v", r)
+	}
+}
+
+// A file of a gated package that has a statement but no block in the profile was
+// left out by the build, for whatever reason; the gate names it. A file without a
+// statement, and a package that is missing altogether (reported once, as a
+// package), do not add to it.
+func TestFileSetRule(t *testing.T) {
+	pkg, err := LoadPackage(tree(), module, "partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{module + "/partial/a.go", module + "/partial/b.go"}; len(pkg.Files) != 2 || pkg.Files[0] != want[0] || pkg.Files[1] != want[1] {
+		t.Fatalf("Files = %v, want %v", pkg.Files, want)
+	}
+	only := []Block{{module + "/partial/a.go:3.16,3.28", 1, true}}
+	r := Check([]Package{pkg}, only)
+	if r.OK() || len(r.Problems) != 1 || !strings.Contains(r.Problems[0], "file "+module+"/partial/b.go has statements and none of them is in the cover profile") {
+		t.Errorf("a file left out = %+v", r)
+	}
+	both := append(slicesClone(only), Block{module + "/partial/b.go:3.16,3.28", 1, true})
+	if r := Check([]Package{pkg}, both); !r.OK() {
+		t.Errorf("every file counted = %+v", r)
+	}
+	if r := Check([]Package{pkg}, nil); len(r.Problems) != 2 || strings.Contains(strings.Join(r.Problems, "\n"), "file "+module) {
+		t.Errorf("a package missing altogether is reported as a package only: %+v", r)
+	}
+	code, _, stderr := run(t, "mode: set\n"+module+"/partial/a.go:3.16,3.28 1 1\n", tree(), "cover.out", "./partial")
+	if code != 1 || !strings.Contains(stderr, module+"/partial/b.go") {
+		t.Errorf("Run: %d %q", code, stderr)
 	}
 }
 

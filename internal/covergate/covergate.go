@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"io"
@@ -93,18 +94,25 @@ type Package struct {
 	Dir           string   // relative to the module root, "." for the root
 	Path          string   // import path
 	HasStatements bool     // a non-test file has a block with a statement: what the cover tool counts
+	Files         []string // the non-test files with a statement, as import paths: each must be in the profile
 	TestMains     []string // test files that declare TestMain
-	Constraints   []string // one message per build constraint or GOOS/GOARCH file name
+	Constraints   []string // one message per build constraint, GOOS/GOARCH file name or import "C"
 }
 
 // The gate reads every .go file of the package directory, whatever its name or
 // constraint, because go/build lists only the files that this platform and
 // these tags would build: a TestMain behind //go:build race, or in a file named
 // x_linux_test.go, would run only on the platform or with the tag that is not
-// the gate's. So a TestMain is refused in any file, and so is any build
-// constraint (a //go:build or // +build line, or a GOOS or GOARCH file name): a
-// file with one can be left out of a test run, and so out of the profile, where
-// the gate cannot see it.
+// the gate's. So a TestMain is refused in any file, and so is anything that can
+// make the build leave a file out: a build constraint in any spelling that Go
+// reads (decided by go/build/constraint on the lines that Go itself reads, the
+// header before the package clause), a GOOS or GOARCH file name, and import "C"
+// (left out when cgo is off).
+//
+// Those rules name the causes that are known. The file-set rule closes the
+// class: every non-test file of a gated package that has a statement must have
+// a block in the cover profile, so a file that the build left out for any other
+// reason fails the gate by name too, whatever the reason.
 //
 // A TestMain runs the tests itself, so it can run them and then exit 0, and every
 // test of the package can fail with the run green: the gate counts statements
@@ -163,10 +171,11 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 		if suffix := nameConstraint(name); suffix != "" {
 			pkg.Constraints = append(pkg.Constraints, fmt.Sprintf("%s: the file name carries a GOOS or GOARCH build constraint (%s)", file, suffix))
 		}
-		for _, text := range strings.Split(string(src), "\n") {
-			if text = strings.TrimSpace(text); strings.HasPrefix(text, "//go:build") || strings.HasPrefix(text, "// +build") {
-				pkg.Constraints = append(pkg.Constraints, fmt.Sprintf("%s: %s", file, text))
-			}
+		for _, line := range headerConstraints(src, parsed) {
+			pkg.Constraints = append(pkg.Constraints, fmt.Sprintf("%s: %s", file, line))
+		}
+		if importsC(parsed) {
+			pkg.Constraints = append(pkg.Constraints, fmt.Sprintf(`%s: imports "C", so the build leaves it out when cgo is off`, file))
 		}
 		if strings.HasSuffix(name, "_test.go") {
 			if declaresTestMain(parsed) {
@@ -174,12 +183,41 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 			}
 		} else if hasStatement(parsed) {
 			pkg.HasStatements = true
+			pkg.Files = append(pkg.Files, path.Join(pkg.Path, name))
 		}
 	}
 	if files == 0 {
 		return Package{}, fmt.Errorf("%s has no Go files", dir)
 	}
 	return pkg, nil
+}
+
+// headerConstraints returns the build constraint lines of the file as Go reads
+// them: the //go:build and // +build lines of the header, which is everything
+// before the package clause. go/build/constraint decides what a constraint line
+// is, so the spellings that Go accepts (//+build, // +build with more spaces or
+// a tab) are all seen.
+func headerConstraints(src []byte, file *ast.File) []string {
+	var found []string
+	header := string(src[:min(int(file.Package)-1, len(src))]) // token.Pos of a file made with a fresh FileSet is its offset + 1
+	for _, line := range strings.Split(header, "\n") {
+		line = strings.TrimSpace(line)
+		if constraint.IsGoBuild(line) || constraint.IsPlusBuild(line) {
+			found = append(found, line)
+		}
+	}
+	return found
+}
+
+// importsC reports whether the file imports "C": cgo, which a build with
+// CGO_ENABLED=0 leaves out without a word.
+func importsC(file *ast.File) bool {
+	for _, spec := range file.Imports {
+		if spec.Path.Value == `"C"` {
+			return true
+		}
+	}
+	return false
 }
 
 func declaresTestMain(file *ast.File) bool {
@@ -218,7 +256,8 @@ func (r Result) OK() bool { return len(r.Problems) == 0 }
 // for exactly the packages it is given.
 func Check(pkgs []Package, blocks []Block) Result {
 	var result Result
-	inProfile := map[string]int{} // statements per package in the profile
+	inProfile := map[string]int{}       // statements per package in the profile
+	filesInProfile := map[string]bool{} // files with a statement in the profile
 	byPath := map[string]Package{}
 	for _, pkg := range pkgs {
 		byPath[pkg.Path] = pkg
@@ -229,6 +268,10 @@ func Check(pkgs []Package, blocks []Block) Result {
 			continue
 		}
 		inProfile[dir] += block.Statements
+		if block.Statements > 0 {
+			file, _, _ := strings.Cut(block.Location, ":")
+			filesInProfile[file] = true
+		}
 		result.Total += block.Statements
 		if block.Hit {
 			result.Covered += block.Statements
@@ -245,6 +288,11 @@ func Check(pkgs []Package, blocks []Block) Result {
 		}
 		if pkg.HasStatements && inProfile[pkg.Path] == 0 {
 			result.Problems = append(result.Problems, fmt.Sprintf("package %s has statements and none of them is in the cover profile (its tests were not run, or the profile was written without it)", pkg.Path))
+		}
+		for _, file := range pkg.Files {
+			if !filesInProfile[file] && inProfile[pkg.Path] > 0 {
+				result.Problems = append(result.Problems, fmt.Sprintf("file %s has statements and none of them is in the cover profile: the build left it out (a constraint, a file name, cgo, or anything else); the gate counts only what was built", file))
+			}
 		}
 	}
 	if result.Total == 0 {

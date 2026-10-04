@@ -8,20 +8,28 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // moduleRoot is the repository, two levels above this package.
 func moduleRoot() fs.FS { return os.DirFS("../..") }
 
-// gatedInWorkflow reads the packages that .github/workflows/ci.yml gates.
-func gatedInWorkflow(t *testing.T, fsys fs.FS) []string {
+// workflow reads ci.yml with its line endings made LF: a checkout with CRLF
+// (the default of Git for Windows) must not change what the tests below see.
+func workflow(t *testing.T, fsys fs.FS) string {
 	t.Helper()
 	text, err := fs.ReadFile(fsys, ".github/workflows/ci.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return strings.ReplaceAll(string(text), "\r\n", "\n")
+}
+
+// gatedInWorkflow reads the packages that .github/workflows/ci.yml gates.
+func gatedInWorkflow(t *testing.T, fsys fs.FS) []string {
+	t.Helper()
 	var lines []string
-	for _, line := range strings.Split(string(text), "\n") {
+	for _, line := range strings.Split(workflow(t, fsys), "\n") {
 		if strings.Contains(line, "run: go run ./cmd/covergate ") {
 			lines = append(lines, line)
 		}
@@ -56,19 +64,31 @@ func packagesWithGo(t *testing.T, fsys fs.FS, dir string) []string {
 	return found
 }
 
+// gatedRoots are the directories that the gate's list names packages in: every
+// package below them is gated.
+var gatedRoots = []string{"internal/publisher", "internal/covergate", "cmd/covergate"}
+
 // The gate takes a list, and the list is in the workflow. This keeps it equal to
-// the packages the publisher check is made of, so that a package added under
-// internal/publisher is gated from its first commit (and a first commit that
-// cannot meet the gate fails here, before the workflow runs), and none is gated
-// by accident.
+// every package below the directories that it names, so that a package added
+// under internal/publisher, internal/covergate or cmd/covergate is gated from its
+// first commit (and a first commit that cannot meet the gate fails here, before
+// the workflow runs), and no other package is gated by accident.
 func TestWorkflowGatesTheCheckPackages(t *testing.T) {
 	fsys := moduleRoot()
-	want := append(packagesWithGo(t, fsys, "internal/publisher"), "internal/covergate", "cmd/covergate")
+	var want []string
+	for _, root := range gatedRoots {
+		want = append(want, packagesWithGo(t, fsys, root)...)
+	}
 	got := gatedInWorkflow(t, fsys)
 	slices.Sort(want)
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
-		t.Errorf("ci.yml gates %v; the publisher check packages and the gate are %v", got, want)
+		t.Errorf("ci.yml gates %v; the packages below %v are %v", got, gatedRoots, want)
+	}
+	for _, pkg := range got {
+		if !slices.ContainsFunc(gatedRoots, func(root string) bool { return pkg == root || strings.HasPrefix(pkg, root+"/") }) {
+			t.Errorf("%s is gated but is below none of %v", pkg, gatedRoots)
+		}
 	}
 	if !slices.Contains(got, "internal/covergate") {
 		t.Error("the gate's own package is not gated")
@@ -99,18 +119,33 @@ func TestGatedPackagesMeetTheGate(t *testing.T) {
 
 // The step that runs the tests writes the profile that the next step reads.
 func TestWorkflowRunsTheTestsOfTheSamePackages(t *testing.T) {
-	text, err := fs.ReadFile(moduleRoot(), ".github/workflows/ci.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	testStep := regexp.MustCompile(`run: go test [^\n]*-coverprofile="\$RUNNER_TEMP/publisher-cover\.out" ([^\n]*)`).FindStringSubmatch(string(text))
+	text := workflow(t, moduleRoot())
+	testStep := regexp.MustCompile(`run: go test [^\n]*-coverprofile="\$RUNNER_TEMP/publisher-cover\.out" ([^\n]*)`).FindStringSubmatch(text)
 	if testStep == nil {
 		t.Fatal("ci.yml has no go test step that writes the publisher cover profile")
 	}
 	if got, want := testStep[1], "./internal/publisher/... ./internal/covergate/... ./cmd/covergate/..."; got != want {
 		t.Errorf("the test step runs %q, want %q", got, want)
 	}
-	if !strings.Contains(string(text), `./cmd/covergate "$RUNNER_TEMP/publisher-cover.out"`) {
+	if !strings.Contains(text, `./cmd/covergate "$RUNNER_TEMP/publisher-cover.out"`) {
 		t.Error("the gate reads another profile than the test step writes")
+	}
+}
+
+// The tests above give the same answers when ci.yml has CRLF line endings.
+func TestWorkflowTestsIgnoreLineEndings(t *testing.T) {
+	text, err := fs.ReadFile(moduleRoot(), ".github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlf := fstest.MapFS{".github/workflows/ci.yml": {Data: []byte(strings.ReplaceAll(strings.ReplaceAll(string(text), "\r\n", "\n"), "\n", "\r\n"))}}
+	if got, want := gatedInWorkflow(t, crlf), gatedInWorkflow(t, moduleRoot()); !slices.Equal(got, want) {
+		t.Errorf("with CRLF the gated packages are %q, with LF %q", got, want)
+	}
+	if strings.Contains(workflow(t, crlf), "\r") {
+		t.Error("workflow() keeps a carriage return")
+	}
+	if testStep := regexp.MustCompile(`run: go test [^\n]*-coverprofile="\$RUNNER_TEMP/publisher-cover\.out" ([^\n]*)`).FindStringSubmatch(workflow(t, crlf)); testStep == nil || strings.Contains(testStep[1], "\r") {
+		t.Errorf("the test step with CRLF: %q", testStep)
 	}
 }
