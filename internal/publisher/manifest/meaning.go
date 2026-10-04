@@ -72,5 +72,5 @@ func (c *collector) modelsEntry(root *Node, w MeaningWants) {
 // entrySpelling is the checker's /^[A-Za-z0-9_.\/-]+$/ without a leading slash, an empty segment or, because JavaScript's path.join keeps
 // the trailing slash that Go's drops, a trailing slash.
 func entrySpelling(s string) bool {
-	return s != "" && !strings.HasPrefix(s, "/") && !strings.HasSuffix(s, "/") && !strings.Contains(s, "//") && allChars(s, func(c byte) bool { return c == '.' || c == '/' || c == '-' || c == '_' || isAlnum(c) })
+	return !strings.HasPrefix(s, "/") && !strings.HasSuffix(s, "/") && !strings.Contains(s, "//") && allChars(s, func(c byte) bool { return c == '.' || c == '/' || c == '-' || c == '_' || isAlnum(c) })
 }

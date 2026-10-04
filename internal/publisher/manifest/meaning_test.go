@@ -101,3 +101,24 @@ func TestMeaningSharesTheBudget(t *testing.T) {
 		t.Errorf("notice %v", n)
 	}
 }
+
+// entrySpelling is /^[A-Za-z0-9_.\/-]+$/ with no leading slash, trailing slash or empty segment: each character of the set is accepted, and the empty
+// entry and each character outside it is not.
+func TestEntrySpelling(t *testing.T) {
+	for _, s := range []string{"a", "Z", "0", "9", "_", "-", ".", "a/b", "a-b", "a_b", "a.b", "d-d_d.d9/../x.hcl", "A-Za-z0-9_.-"} {
+		if !entrySpelling(s) {
+			t.Errorf("%q is refused", s)
+		}
+	}
+	for _, s := range []string{"", "/", "/a", "a/", "a//b", "a b", "a*", "a\\b", "a:b", "a@b", "a~b", "a+b", "a\x00b", "\u00e9", "a`b", "a{", "a[", "a\u00ff"} {
+		if entrySpelling(s) {
+			t.Errorf("%q is accepted", s)
+		}
+	}
+	// The characters next to the ranges of letters and digits are not letters and digits.
+	for _, c := range []byte("/:@[`{") {
+		if c != '/' && entrySpelling("a"+string(c)) {
+			t.Errorf("%q is accepted", c)
+		}
+	}
+}
