@@ -59,7 +59,14 @@ ovdb --help
   executable `brew upgrade --cask ovdb` manager) comes from ovdb's own entry
   in `cli-helpers`' compiled-in `cliinstall` catalog
   (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
-  fleet CLI's own `install ovdb` also resolves releases from.
+  fleet CLI's own `install ovdb` also resolves releases from. A copy of
+  `ovdb` inside a directory the operating system's package manager owns
+  (`/usr/bin`, `/usr/sbin`, `/bin`, `/nix/store`, ... on macOS and Linux;
+  `%SystemRoot%` and `%ProgramFiles%` on Windows) counts as managed by the
+  system package manager: `self-update` and `upgrade` do not replace it in
+  place, they say how to update it, and `--format json` carries that as
+  `hint` (`upgrade_hint` with `--check`). `/usr/local/bin`, `~/go/bin` and
+  other directories you placed it in stay replaceable.
 - **`ovdb skills`** — list the AI agent skills and where each AI agent keeps
   them (`skills list`), and install one for the agents found on this computer
   (`skills install <openvaultdb|todo-demo>`, which asks first). A folder of
