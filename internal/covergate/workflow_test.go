@@ -1,14 +1,19 @@
 package covergate
 
 import (
+	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"gopkg.in/yaml.v3"
 )
 
 // moduleRoot is the repository, two levels above this package.
@@ -154,18 +159,96 @@ func TestWorkflowTestsIgnoreLineEndings(t *testing.T) {
 	}
 }
 
-// The job that checks the goldens runs both generators with --check and the test of the checkout rule, with the Node that made the goldens.
-func TestWorkflowChecksTheGoldens(t *testing.T) {
-	text := workflow(t, moduleRoot())
-	for _, want := range []string{
-		"run: node --test internal/publisher/references.test.mjs",
-		"run: node internal/publisher/rules/testdata/reference/generate.mjs --check",
-		"run: node internal/publisher/manifest/testdata/reference/generate.mjs --check",
-	} {
-		if strings.Count(text, want) != 1 {
-			t.Errorf("ci.yml does not have exactly one step %q", want)
+// parseWorkflow reads a workflow as YAML. The tests below ask what the workflow says, not what its text has: a flow-form `on: {schedule: ...}`,
+// quoted keys, and a job that is commented out are all the same to a parser and different to a regular expression.
+func parseWorkflow(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("a workflow is not YAML: %v", err)
+	}
+	return doc
+}
+
+// triggers are the events a workflow runs on: the keys of `on` (YAML 1.1 reads the key `on` as true, yaml.v3 as the string, both are taken),
+// whether it is a string, a list or a mapping.
+func triggers(doc map[string]any) map[string]any {
+	on, found := doc["on"]
+	if !found {
+		on = doc[strconv.FormatBool(true)]
+	}
+	out := map[string]any{}
+	switch on := on.(type) {
+	case string:
+		out[on] = nil
+	case []any:
+		for _, event := range on {
+			out[fmt.Sprint(event)] = nil
+		}
+	case map[string]any:
+		maps.Copy(out, on)
+	case map[any]any:
+		for key, value := range on {
+			out[fmt.Sprint(key)] = value
 		}
 	}
+	return out
+}
+
+// scheduled reports whether a workflow runs on a schedule.
+func scheduled(doc map[string]any) bool {
+	_, yes := triggers(doc)["schedule"]
+	return yes
+}
+
+// goldensJobProblems says what is wrong with the job that checks the goldens in a workflow: it must be there, run on pull requests and pushes, and
+// have, once, the setup of Node with the version that made the goldens, and each of the three commands.
+func goldensJobProblems(doc map[string]any, node string) []string {
+	var problems []string
+	for _, event := range []string{"pull_request", "push"} {
+		if _, ok := triggers(doc)[event]; !ok {
+			problems = append(problems, "the workflow does not run on "+event)
+		}
+	}
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs["publisher-goldens"].(map[string]any)
+	if job == nil {
+		return append(problems, "there is no job publisher-goldens")
+	}
+	steps, _ := job["steps"].([]any)
+	count := func(key, value string) int {
+		n := 0
+		for _, step := range steps {
+			switch step := step.(type) {
+			case map[string]any:
+				if key == "node-version" {
+					if with, _ := step["with"].(map[string]any); with != nil && fmt.Sprint(with[key]) == value && fmt.Sprint(step["uses"]) != "" {
+						n++
+					}
+				} else if step[key] == value {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	for _, run := range []string{
+		"node --test internal/publisher/references.test.mjs",
+		"node internal/publisher/rules/testdata/reference/generate.mjs --check",
+		"node internal/publisher/manifest/testdata/reference/generate.mjs --check",
+	} {
+		if count("run", run) != 1 {
+			problems = append(problems, fmt.Sprintf("the job does not have exactly one step that runs %q", run))
+		}
+	}
+	if count("node-version", node) != 1 {
+		problems = append(problems, "the job does not set up Node "+node+", the version that made the goldens")
+	}
+	return problems
+}
+
+// The job that checks the goldens runs both generators with --check and the test of the checkout rule, with the Node that made the goldens.
+func TestWorkflowChecksTheGoldens(t *testing.T) {
 	raw, err := fs.ReadFile(moduleRoot(), "internal/publisher/manifest/testdata/reference/corpus.json")
 	if err != nil {
 		t.Fatal(err)
@@ -174,8 +257,26 @@ func TestWorkflowChecksTheGoldens(t *testing.T) {
 	if recorded == nil {
 		t.Fatal("the corpus does not record the Node that made it")
 	}
-	if want := "node-version: '" + string(recorded[1]) + "'"; strings.Count(text, want) != 1 {
-		t.Errorf("ci.yml does not run the goldens job with the Node that made them (%s)", want)
+	node := string(recorded[1])
+	if problems := goldensJobProblems(parseWorkflow(t, []byte(workflow(t, moduleRoot()))), node); len(problems) > 0 {
+		t.Errorf("ci.yml: %v", problems)
+	}
+	// The same judgment, on workflows that a text search would pass.
+	good := "on:\n  push: {branches: [main]}\n  pull_request:\njobs:\n  publisher-goldens:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/setup-node@v5\n        with: {node-version: '" + node + "'}\n      - run: node --test internal/publisher/references.test.mjs\n      - run: node internal/publisher/rules/testdata/reference/generate.mjs --check\n      - run: node internal/publisher/manifest/testdata/reference/generate.mjs --check\n"
+	if problems := goldensJobProblems(parseWorkflow(t, []byte(good)), node); len(problems) > 0 {
+		t.Fatalf("a good job is refused: %v", problems)
+	}
+	for name, bad := range map[string]string{
+		"the job commented out":      good[:strings.Index(good, "  publisher-goldens:")] + "# " + strings.ReplaceAll(strings.TrimSuffix(good[strings.Index(good, "  publisher-goldens:"):], "\n"), "\n", "\n# ") + "\n",
+		"a command commented out":    strings.Replace(good, "      - run: node internal/publisher/rules", "      # - run: node internal/publisher/rules", 1),
+		"a command twice":            good + "      - run: node --test internal/publisher/references.test.mjs\n",
+		"another Node":               strings.Replace(good, node, "22.0.0", 1),
+		"no pull request":            strings.Replace(good, "  pull_request:\n", "", 1),
+		"the job under another name": strings.Replace(good, "publisher-goldens:", "goldens:", 1),
+	} {
+		if len(goldensJobProblems(parseWorkflow(t, []byte(bad)), node)) == 0 {
+			t.Errorf("%s: the job is accepted", name)
+		}
 	}
 }
 
@@ -188,14 +289,34 @@ func TestNoScheduledWorkflows(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("no workflows")
 	}
-	schedule := regexp.MustCompile(`(?m)^\s*(schedule\s*:|-?\s*cron\s*:)`)
 	for _, entry := range entries {
 		raw, err := fs.ReadFile(moduleRoot(), ".github/workflows/"+entry.Name())
 		if err != nil {
 			t.Fatal(err)
 		}
-		if schedule.Match(raw) {
+		if scheduled(parseWorkflow(t, raw)) {
 			t.Errorf("%s has a schedule", entry.Name())
+		}
+	}
+	// The forms that a search of the text for `schedule:` does not see.
+	for name, text := range map[string]string{
+		"a block mapping":      "on:\n  schedule:\n    - cron: '0 0 * * *'\n",
+		"a flow mapping":       "on: {push: {branches: [main]}, schedule: [{cron: '0 0 * * *'}]}\n",
+		"quoted keys":          "'on':\n  \"schedule\":\n    - 'cron': '0 0 * * *'\n",
+		"the key as a boolean": "true:\n  schedule: [{cron: x}]\n",
+	} {
+		if got := scheduled(parseWorkflow(t, []byte(text+"jobs: {}\n"))); !got {
+			t.Errorf("%s: not seen as scheduled", name)
+		}
+	}
+	for name, text := range map[string]string{
+		"a string":            "on: push\njobs: {}\n",
+		"a list":              "on: [push, pull_request]\njobs: {}\n",
+		"a comment":           "on:\n  push:\n# schedule:\n#   - cron: x\n",
+		"a step that says it": "on: push\njobs:\n  a:\n    steps:\n      - run: echo schedule\n",
+	} {
+		if scheduled(parseWorkflow(t, []byte(text))) {
+			t.Errorf("%s: scheduled", name)
 		}
 	}
 }
