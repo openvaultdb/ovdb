@@ -26,6 +26,8 @@ type OVDBMd struct {
 	// first-seen order, whether or not the others are usable: what the Directory
 	// holds as the manifests that OVDB.md lists. Lists asks it.
 	Entries []string
+	// EntryLines are the lines where the Entries are written, one for each.
+	EntryLines []int
 	// Repeated are the usable entries that publish writes more than once, in
 	// first-seen order. The Directory profile accepts a repeated entry.
 	Repeated []string
@@ -142,6 +144,7 @@ func checkOVDBMd(doc []byte, b *budget, profile Profile) (OVDBMd, []Finding) {
 		case !seen[path]:
 			seen[path] = true
 			md.Entries = append(md.Entries, path)
+			md.EntryLines = append(md.EntryLines, entry.Line+1)
 		default:
 			if !repeated[path] {
 				repeated[path] = true

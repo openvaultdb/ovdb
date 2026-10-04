@@ -193,3 +193,11 @@ go run ./cmd/covergate /tmp/cover.out ./internal/publisher/exitcode ./internal/p
 
 `ovdb publisher check` is not a CLI, TUI, web and API feature of a running
 database, so it stays outside `internal/parity`.
+
+### Decision: internationalised host names (2026-10-04)
+
+Internationalised host names are refused for now: a host is accepted only when it is ASCII, or
+spells Latin-1 letters through `xn--` (what the matrix above shows `rules` accepts, and nothing
+more). The Unicode tables that UTS #46 needs change with every release and Go has no copy; until
+there is a reason to carry them, a publisher writes the ASCII host name. Accepting more is a
+product decision, and the kinds `punycode-other-text` and `punycode-malformed` are its record.

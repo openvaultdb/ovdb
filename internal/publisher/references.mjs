@@ -16,34 +16,60 @@ export const references = {
 // The URL a reference is fetched from.
 export const remoteUrl = (name) => `https://github.com/${references[name].repository}.git`;
 
-const run = (cwd, command, args) => execFileSync(command, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' }).trim();
+// Git as the checks use it: the environment of the caller is not trusted (a GIT_DIR, a GIT_INDEX_FILE, a GIT_ALTERNATE_OBJECT_DIRECTORIES or a config
+// in the home directory could point it anywhere), replace objects are off (`git replace` makes a commit show another tree), and no global or system
+// config is read.
+const gitEnv = () => {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  return { ...env, GIT_NO_REPLACE_OBJECTS: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+};
+const run = (cwd, command, args, input) => execFileSync(command, args, { cwd, env: command === 'git' ? gitEnv() : process.env, input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'inherit'], encoding: 'utf8' }).trim();
+const runRaw = (cwd, args, input) => execFileSync('git', args, { cwd, env: gitEnv(), input, stdio: ['pipe', 'pipe', 'ignore'], encoding: 'utf8' });
 
-// What a checkout must be before a generator imports code from it: at the pinned commit, every tracked file as that commit has it, no file of its
-// own, and no node_modules but the root one, which the generators install or link themselves. The generators run what they import, and the goldens
+// The keys of the local config of a checkout that `git init` and `git fetch` make: nothing else is allowed. A key such as filter.*.clean, core.fsmonitor,
+// core.sparseCheckout or core.worktree changes what git reports about the files, and a checkout that has one is not one that this run made.
+const freshConfigKeys = /^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)|extensions\.(objectformat|compatobjectformat|refstorage))$/;
+
+// What a checkout must be before a generator imports code from it: at the pinned commit, every tracked file the bytes that the commit has, no file of
+// its own, and no node_modules but the root one, which the generators install or link themselves. The generators run what they import, and the goldens
 // are stamped with the pinned commit, so a checkout that differs from it would write goldens that no commit explains.
 //
-// `git status` is not enough: a file marked assume-unchanged (or skip-worktree) is not reported, and a directory that .gitignore names (a
-// scripts/node_modules/yaml, which Node resolves before the root one) is not an untracked file. So each tracked file is hashed and compared with
-// the blob that the commit has (git ls-tree), and ignored files and directories are listed too.
+// It does not trust the state of the checkout's .git: `git status` does not report a file marked assume-unchanged or skip-worktree, nor a file that a
+// clean filter (config and attributes) makes look unchanged, nor a directory that .gitignore or .git/info/exclude names (a scripts/node_modules/yaml,
+// which Node resolves before the root one), and `git replace` makes the pinned commit show another tree. So: replace objects are off; every tracked
+// file is hashed raw (no filters) and compared with the blob that the commit's tree has; the index is compared with the tree, entry by entry (a file
+// added with `git add -f` is an entry that the tree does not have); every untracked file is listed with no exclude pattern applied; and the local
+// config may hold only the keys that a fresh clone has. This guards against a mistake and against a hidden edit of the working tree; it does not
+// defend against someone who rewrites the object store, and that is why a run fetches its references fresh and keeps none (checkoutReference).
 export function assertAsCommitted(dir, repository, commit) {
   if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}`);
-  const tracked = run(dir, 'git', ['ls-tree', '-r', '-z', 'HEAD']).split('\0').filter(Boolean).map((entry) => {
-    const [meta, path] = [entry.slice(0, entry.indexOf('\t')), entry.slice(entry.indexOf('\t') + 1)];
-    const [mode, type, blob] = meta.split(' ');
-    return { mode, type, blob, path };
-  }).filter((entry) => entry.type === 'blob'); // a submodule is not a file
-  if (tracked.some(({ path }) => path.includes('\n'))) throw new Error(`${dir} has a tracked file with a line break in its name`);
+  const entries = (text, pattern) => text.split('\0').filter(Boolean).map((entry) => entry.match(pattern)?.groups ?? { malformed: entry });
+  const tree = entries(runRaw(dir, ['ls-tree', '-r', '-z', 'HEAD']), /^(?<mode>\d+) (?<type>\w+) (?<blob>[0-9a-f]+)\t(?<path>[^]*)$/);
+  const index = entries(runRaw(dir, ['ls-files', '-s', '-z']), /^(?<mode>\d+) (?<blob>[0-9a-f]+) (?<stage>\d)\t(?<path>[^]*)$/);
+  if (tree.some((entry) => entry.malformed) || index.some((entry) => entry.malformed)) throw new Error(`${dir}: git's listing of the checkout is not what this check reads`);
+  const key = (entry) => `${entry.mode} ${entry.blob} ${entry.path}`;
+  const inTree = new Set(tree.map(key));
+  const odd = [...index.filter((entry) => entry.stage !== '0' || !inTree.has(key(entry))).map((entry) => entry.path), ...tree.filter((entry) => !index.some((i) => key(i) === key(entry))).map((entry) => entry.path)];
+  if (odd.length > 0) throw new Error(`${dir} has an index that is not the commit's tree (${odd.slice(0, 3).join(', ')}); the references are read as committed`);
+  const files = tree.filter((entry) => entry.type === 'blob'); // a submodule is not a file
+  if (files.some(({ path }) => path.includes('\n'))) throw new Error(`${dir} has a tracked file with a line break in its name`);
   let hashes;
   try {
-    hashes = execFileSync('git', ['hash-object', '--stdin-paths'], { cwd: dir, input: `${tracked.map(({ path }) => path).join('\n')}\n`, stdio: ['pipe', 'pipe', 'ignore'], encoding: 'utf8' }).split('\n').filter(Boolean);
+    hashes = runRaw(dir, ['hash-object', '--no-filters', '--stdin-paths'], `${files.map(({ path }) => path).join('\n')}\n`).split('\n').filter(Boolean);
   } catch {
     throw new Error(`${dir} lacks a file that ${repository}@${commit} has; the references are read as committed`);
   }
-  const changed = tracked.filter((entry, at) => hashes[at] !== entry.blob).map(({ path }) => path);
+  const changed = files.filter((entry, at) => hashes[at] !== entry.blob).map(({ path }) => path);
   if (changed.length > 0) throw new Error(`${dir} has local changes (${changed.slice(0, 3).join(', ')}); the references are read as committed`);
-  const others = (...flags) => run(dir, 'git', ['ls-files', '--others', '--exclude-standard', '--directory', ...flags]).split('\n').filter((file) => file && file !== 'node_modules/');
-  const strays = [...others(), ...others('--ignored')];
+  const strays = runRaw(dir, ['ls-files', '--others', '--directory', '-z']).split('\0').filter((file) => file && file !== 'node_modules/');
   if (strays.length > 0) throw new Error(`${dir} has files that are not in ${repository}@${commit}: ${strays.slice(0, 3).join(', ')}; the references are read as committed`);
+  const config = runRaw(dir, ['config', '--local', '--list', '-z']).split('\0').filter(Boolean).map((entry) => entry.split('\n')[0]);
+  const foreign = config.filter((name) => !freshConfigKeys.test(name));
+  if (foreign.length > 0) throw new Error(`${dir} has local git config that a fresh clone does not have (${foreign.slice(0, 3).join(', ')}); the references are read as committed`);
+  // extensions.worktreeConfig is refused above (it is not a key of a fresh clone), and so is the file it makes git read: a config.worktree can
+  // set core.worktree to another directory, and `git config --local --list` does not show it.
+  const gitDir = runRaw(dir, ['rev-parse', '--absolute-git-dir']).trim();
+  if (existsSync(join(gitDir, 'config.worktree'))) throw new Error(`${dir} has a config.worktree, which a fresh clone does not have; the references are read as committed`);
 }
 
 let privateRoot; // one directory for the run, made when the first reference is fetched
@@ -57,13 +83,13 @@ const privateDirectory = () => {
 };
 
 // checkoutReference returns a directory that holds the reference `name` as committed at its pinned commit.
-//   explicit  a clone the user has (--directory, --chinookdb): checked, not changed.
-//   cacheRoot a cache the user keeps (OVDB_REFERENCE_CACHE): reused only if it is as committed (it is refused otherwise: remove it), and its
-//             dependencies are installed again, since they are not part of the commit.
-//   neither   a fresh private directory, fetched for this run and removed when it ends.
-// The Directory's one dependency (yaml) is installed from its own lock file, in the last two cases. `pin` and `remote` are for the test of this
-// function, which fetches from a repository of its own.
-export function checkoutReference(name, { explicit, cacheRoot = process.env.OVDB_REFERENCE_CACHE, pin = references[name], remote = remoteUrl(name) } = {}) {
+//   explicit  a clone the user has (--directory, --chinookdb): checked by assertAsCommitted, not changed.
+//   otherwise a fresh private directory, fetched for this run and removed when it ends. No checkout is kept between runs: a kept one is state
+//             that the run did not make, and what assertAsCommitted can see of it is less than what could have been done to it (the object store),
+//             so the way not to trust it is not to have it; the price is the fetch of two small repositories (seconds).
+// The Directory's one dependency (yaml) is installed from its own lock file into a fetched checkout. `pin`, `remote` and `parent` (where the fresh
+// directory is made) are for the test of this function, which fetches from a repository of its own.
+export function checkoutReference(name, { explicit, parent, pin = references[name], remote = remoteUrl(name) } = {}) {
   const { repository, commit } = pin;
   if (explicit) {
     const dir = resolve(explicit);
@@ -73,21 +99,13 @@ export function checkoutReference(name, { explicit, cacheRoot = process.env.OVDB
     }
     return dir;
   }
-  const dir = join(cacheRoot ? resolve(cacheRoot) : privateDirectory(), `${name}-${commit}`);
-  if (!existsSync(join(dir, '.git'))) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    run(dir, 'git', ['init', '--quiet']);
-    run(dir, 'git', ['fetch', '--quiet', '--depth', '1', remote, commit]);
-    run(dir, 'git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD']);
-  }
-  try {
-    assertAsCommitted(dir, repository, commit);
-  } catch (error) {
-    throw new Error(`${error.message} (remove ${dir} to fetch it again)`);
-  }
-  // The root node_modules is not part of the commit: whatever a kept cache had is removed, and what the generators need is installed (the Directory's
-  // yaml, from its lock file) or linked (by the generator of package manifest, for the Chinook checkout) again.
-  rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
+  const dir = join(parent ?? privateDirectory(), `${name}-${commit}`);
+  if (existsSync(dir)) throw new Error(`${dir} exists: a reference is fetched fresh, never reused`);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  run(dir, 'git', ['init', '--quiet']);
+  run(dir, 'git', ['fetch', '--quiet', '--depth', '1', remote, commit]);
+  run(dir, 'git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD']);
+  assertAsCommitted(dir, repository, commit);
   if (name === 'directory') run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
   return dir;
 }

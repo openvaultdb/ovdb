@@ -58,6 +58,10 @@ func tree() fstest.MapFS {
 		"linecomment/p.go":            file("package linecomment\n\n// the line a.go:1 is not a directive\n//lineage is not one either\n//line\nfunc F() int { return 1 }\n"),
 		"linetab/p.go":                file("package linetab\n\n//line\tx.go:1\nfunc F() int { return 1 }\n\nfunc G() int { /*line\ty.go:7*/ return 2 }\n"),
 		"bom/p.go":                    file("\xef\xbb\xbf//go:build windows\n\npackage bom\n\nconst C = 1\n"),
+		"hidden/h.go":                 file("package hidden\n\nimport \"example.test/m/hidden/testdata/inner\"\n\nfunc F(x int) int { return inner.G(x) }\n"),
+		"hidden/testdata/inner/i.go":  file("package inner\n\nfunc G(x int) int {\n\tif x > 0 {\n\t\treturn x\n\t}\n\treturn -x\n}\n"),
+		"seen/s.go":                   file("package seen\n\nfunc F() int { return 1 }\n"),
+		"seen/s_test.go":              file("package seen\n\nimport (\n\t\"testing\"\n\n\t\"example.test/m/hidden/testdata/inner\"\n)\n\nfunc TestG(t *testing.T) { _ = inner.G(1) }\n"),
 		"bad/bad.go":                  file("this is not Go"),
 		"nogo/readme.txt":             file("nothing"),
 	}
@@ -384,5 +388,40 @@ func TestPackageDir(t *testing.T) {
 		if got, err := packageDir(arg, module); err == nil {
 			t.Errorf("packageDir(%q) = %q, want an error", arg, got)
 		}
+	}
+}
+
+// The reproduction of the review of slice 3a: a function with an untested branch in a testdata directory, called from a gated file, is in no list
+// that the gate reads (the go tool does not list a testdata directory as a package), so with every statement of the gated package covered the gate
+// passed. A non-test file of a gated package may not import a testdata path; a test file may.
+func TestTestdataImportCannotHideAnUntestedBranch(t *testing.T) {
+	profile := "mode: set\n" + module + "/hidden/h.go:5.23,5.43 1 1\n"
+	code, stdout, stderr := run(t, profile, tree(), "cover.out", "./hidden")
+	if code != 1 || !strings.Contains(stdout, "1 of 1") || !strings.Contains(stderr, "hidden/h.go imports example.test/m/hidden/testdata/inner") {
+		t.Errorf("Run = %d %q %q: every statement counts as covered, and the gate must refuse the import", code, stdout, stderr)
+	}
+	if code, _, stderr := run(t, "mode: set\n"+module+"/seen/s.go:3.16,3.26 1 1\n", tree(), "cover.out", "./seen"); code != 0 {
+		t.Errorf("a test file imports a testdata path, which is not counted: %d %q", code, stderr)
+	}
+	pkg, err := LoadPackage(tree(), module, "hidden")
+	if err != nil || len(pkg.Imports) != 1 || pkg.Imports[0].Path != module+"/hidden/testdata/inner" {
+		t.Errorf("LoadPackage = %+v, %v", pkg, err)
+	}
+}
+
+// The next bypass of the review of slice 3b-1: the same function in an ordinary package of the module that is not in the list. A gated
+// package may import, from the module, only gated packages.
+func TestAGatedPackageMayImportOnlyGatedPackages(t *testing.T) {
+	fsys := tree()
+	fsys["ungated/u.go"] = &fstest.MapFile{Data: []byte("package ungated\n\nfunc U(b bool) int {\n\tif b {\n\t\treturn 1\n\t}\n\treturn 0\n}\n")}
+	fsys["gate/g.go"] = &fstest.MapFile{Data: []byte("package gate\n\nimport \"" + module + "/ungated\"\n\nfunc G() int { return ungated.U(false) }\n")}
+	fsys["gate/h.go"] = &fstest.MapFile{Data: []byte("package gate\n\nimport \"" + module + "/seen\"\n\nfunc H() int { return seen.S() }\n")}
+	profile := "mode: set\n" + module + "/gate/g.go:5.16,5.40 1 1\n" + module + "/gate/h.go:5.16,5.40 1 1\n" + module + "/seen/s.go:3.16,3.26 1 1\n"
+	code, stdout, stderr := run(t, profile, fsys, "cover.out", "./gate", "./seen")
+	if code != 1 || !strings.Contains(stdout, "of") || !strings.Contains(stderr, "gate/g.go imports "+module+"/ungated, a package of this module that is not one of the gated packages") || strings.Contains(stderr, "h.go imports") {
+		t.Errorf("Run = %d %q %q", code, stdout, stderr)
+	}
+	if code, _, stderr := run(t, profile, fsys, "cover.out", "./gate", "./seen", "./ungated"); code == 0 || strings.Contains(stderr, "not one of the gated") {
+		t.Errorf("with the package gated the import is allowed (it then has no profile entry): %d %q", code, stderr)
 	}
 }

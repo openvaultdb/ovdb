@@ -202,8 +202,9 @@ checker that make it (the generator fails if a line no longer holds its rule, an
 holds this table to the generator's list). Who decides it: `documents`, the two
 documents alone, so the Publisher profile makes it here with the rule of its own named;
 `files`, a file at HEAD (a model, a meaning file, a manifest that OVDB.md lists), and
-`input`, something the caller gives (the `--repository` option), both left to slice 3, which
-reads them; the facts it needs are already here.
+`input`, something the caller gives (the `--repository` option). Package `repo` (slice 3b-1) makes the
+ones about the presence and readability of files and the `--repository` option, each by the rules of
+its README; the ones that need the content of the model file or the meaning file are slice 3b-2's.
 
 | Rule | Who | Rule of Go | Lines |
 | --- | --- | --- | --- |
@@ -227,21 +228,21 @@ reads them; the facts it needs are already here.
 | every recordset page the template makes is a public https URL | documents | `manifest-recordsets` | ovdb-manifest.mjs 528, 529, 530, 531 |
 | OVDB.md has no key but ovdb and publish | documents | `ovdbmd-keys` | ovdb-manifest.mjs 198, 199 |
 | publish lists each manifest once | documents | `ovdbmd-duplicate` | ovdb-manifest.mjs 216, 217 |
-| the repository can be read at HEAD (it is a git repository with a commit) | files | slice 3 | ovdb-manifest.mjs 186, 187 |
-| OVDB.md is a tracked regular file | files | slice 3 | ovdb-manifest.mjs 188, 189 |
-| OVDB.md can be read (and is not over 16 MB) | files | slice 3 | ovdb-manifest.mjs 194 |
-| every manifest that OVDB.md lists is a tracked regular file | files | slice 3 | ovdb-manifest.mjs 221, 222, 223 |
-| every manifest that OVDB.md lists can be read (and is not over 16 MB) | files | slice 3 | ovdb-manifest.mjs 244, 246 |
-| every manifest that OVDB.md lists is checked | files | slice 3 | ovdb-manifest.mjs 226 |
-| every file a manifest names is a tracked regular file | files | slice 3 | ovdb-manifest.mjs 391, 392 |
-| every file a manifest names can be read (and is not over 16 MB) | files | slice 3 | ovdb-manifest.mjs 345, 347 |
-| the model file is JSON with a module name and entities | files | slice 3 | ovdb-manifest.mjs 408, 410, 413, 415 |
-| own form: model.name is the module of the model file | files | slice 3 | ovdb-manifest.mjs 420 |
-| own form: the module of model.address is the model file's | files | slice 3 | ovdb-manifest.mjs 427, 429 |
-| the meaning file is YAML whose id and license are the manifest's | files | slice 3 | ovdb-manifest.mjs 448, 451, 453, 455 |
-| the meaning file's models: entry for the module is model.hcl | files | slice 3 | ovdb-manifest.mjs 459, 461, 467, 468 |
-| own form: recordsets are exactly the model's entities | files | slice 3 | ovdb-manifest.mjs 535, 538, 539 |
-| publisher.repository is the repository the check is run in (the --repository option) | input | slice 3 | ovdb-manifest.mjs 309 |
+| the repository can be read at HEAD (it is a git repository with a commit) | files | package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version` | ovdb-manifest.mjs 186, 187 |
+| OVDB.md is a tracked regular file | files | package repo: `repo-ovdbmd` | ovdb-manifest.mjs 188, 189 |
+| OVDB.md can be read (and is not over 16 MB) | files | package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 194 |
+| every manifest that OVDB.md lists is a tracked regular file | files | package repo: `repo-manifest` | ovdb-manifest.mjs 221, 222, 223 |
+| every manifest that OVDB.md lists can be read (and is not over 16 MB) | files | package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 244, 246 |
+| every manifest that OVDB.md lists is checked | files | package repo: `manifest.Judge` | ovdb-manifest.mjs 226 |
+| every file a manifest names is a tracked regular file | files | package repo: `repo-file` | ovdb-manifest.mjs 391, 392 |
+| every file a manifest names can be read (and is not over 16 MB) | files | package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 345, 347 |
+| the model file is JSON with a module name and entities | files | slice 3b-2 | ovdb-manifest.mjs 408, 410, 413, 415 |
+| own form: model.name is the module of the model file | files | slice 3b-2 | ovdb-manifest.mjs 420 |
+| own form: the module of model.address is the model file's | files | slice 3b-2 | ovdb-manifest.mjs 427, 429 |
+| the meaning file is YAML whose id and license are the manifest's | files | slice 3b-2 | ovdb-manifest.mjs 448, 451, 453, 455 |
+| the meaning file's models: entry for the module is model.hcl | files | slice 3b-2 | ovdb-manifest.mjs 459, 461, 467, 468 |
+| own form: recordsets are exactly the model's entities | files | slice 3b-2 | ovdb-manifest.mjs 535, 538, 539 |
+| publisher.repository is the repository the check is run in (the --repository option) | input | package repo: `repo-repository` | ovdb-manifest.mjs 309 |
 
 Not judged, whatever the profile: that the named files are tracked regular files at HEAD
 and of a size, and anything read through a registry. A required text is checked with
@@ -632,15 +633,15 @@ node internal/publisher/manifest/testdata/reference/generate.mjs --check  # fail
 
 It needs Node 24 or later, git, npm and network access (`go test` needs none): it
 fetches the two references at their pinned commits into a directory that only this run can write, made for the
-run and removed when it ends (`OVDB_REFERENCE_CACHE=<dir>` keeps a cache instead: it is reused only if it is as committed: every tracked file is hashed and compared with the blob of the commit (so an edit that
-`git status` does not show, `assume-unchanged`, is found), and an untracked or ignored file, or a `node_modules` below the root, refuses it; the root
-`node_modules` is removed and the `yaml` of the Directory installed again; `node --test internal/publisher/references.test.mjs` shows
-it on a repository of its own). The
-locations are one constant, `internal/publisher/references.mjs`, shared with the
-generator of package `rules`; `npm ci --omit=dev --ignore-scripts` runs in the
-Directory's for the `yaml` package, which the Chinook checkout borrows by a link. It
-takes about a minute, most of it for the real repositories. `--directory <dir>` and
-`--chinookdb <dir>` use clones you already have, at the pinned commits. When a reference
+run and removed when it ends: no checkout is kept between runs (a kept one is state that the run did not make, and what a check can see of it is
+less than what could have been done to its object store, so the way not to trust it is not to have it). The locations are one constant,
+`internal/publisher/references.mjs`, shared with the generator of package `rules`; `npm ci --omit=dev --ignore-scripts` runs in the
+Directory's for the `yaml` package, which the Chinook checkout borrows by a link. A clone that you pass (`--directory <dir>`, `--chinookdb <dir>`) is
+checked, not changed: the checkout must be as committed, which is read without trusting its `.git` (replace objects off, the caller's `GIT_*` variables
+and the global config ignored; every tracked file hashed raw and compared with the commit's blob; the index compared with the tree; every untracked file
+listed with no exclude pattern; local config limited to the keys of a fresh clone, so no `extensions.worktreeConfig`, and no `config.worktree` file), against a mistake and a hidden edit of the working tree, not against
+someone who rewrites the object store, and not against an edit inside the `node_modules/yaml` of the clone: a clone you pass is trusted code (it runs, with the checker, in your Node), so pass only one you made. `node --test internal/publisher/references.test.mjs` shows each case on a repository of its own. It
+takes about a minute, most of it for the real repositories. When a reference
 moves, change `references.mjs`, regenerate, and read the diff of the goldens and of the
 tables above. The digests of the rules golden are read from its committed file: run
 `internal/publisher/rules/testdata/reference/generate.mjs` first when the rules change.
@@ -649,14 +650,14 @@ The job `publisher-goldens` of `.github/workflows/ci.yml` runs both generators w
 24.20.0 (the version that the goldens record, so that a new Node is a change of the workflow and a regeneration together), on every pull request and push to
 main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoScheduledWorkflows`).
 
-## What remains for slice 3
+## What remains
 
-- The command itself, `ovdb publisher check`: read the repository at HEAD, hand the two
-  documents to `Check` with `Publisher`, and add what only files decide: the rules of
-  the table above marked `files` and `input` (tracked regular files, the model and the
-  meaning file against the manifest, the recordsets against the model's entities, the
-  `--repository` option, every other manifest `OVDB.md` lists). The facts it needs are
-  `Manifest` and `OVDBMd`: `ModelAddress.Value.Module`, `ModelName`, `PublisherRepository`,
-  `ModelSpec`, `ModelHCL`, `MeaningFile`, `GraphID`, `LicenceMeaning`, `Recordsets`,
-  `OVDBMd.Entries`.
+- Slice 3b-1 made the rules that need only the presence and the readability of files, and the
+  `--repository` option, in package `repo` (its README lists them and the checker's lines). What is
+  left of the table above (marked slice 3b-2) needs the content of the model file and the meaning
+  file: the model against the manifest (module, entities, `model.name`, `model.address`), the meaning
+  file against the manifest (id, licence, `models:` entry) and the recordsets against the entities.
+  The facts it needs are `Manifest` and `OVDBMd`: `ModelAddress.Value.Module`, `ModelName`,
+  `ModelSpec`, `MeaningFile`, `GraphID`, `LicenceMeaning`, `Recordsets`.
+- The command itself, `ovdb publisher check` (slice 3c).
 - The Directory's own record and registry checks stay with the Directory.
