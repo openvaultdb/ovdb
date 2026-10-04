@@ -38,13 +38,12 @@ var allowedKeys = []struct {
 	{"licences", []string{"licences"}, []string{"model", "meaning", "data"}},
 }
 
-// demote makes a present fact not usable, with no value.
+// demote makes a usable fact present and not usable, with no value. It is called on usable facts only (every call is under a Usable test), so
+// it does not look at whether the fact is present.
 func demote[T any](f *Fact[T]) {
-	if f.Present {
-		f.Valid = false
-		var zero T
-		f.Value = zero
-	}
+	f.Valid = false
+	var zero T
+	f.Value = zero
 }
 
 // publisher judges the manifest by the rules that the Publisher profile adds.
@@ -220,7 +219,8 @@ func (k *manifestChecker) recordsetNames() {
 		return
 	}
 	for _, name := range f.Value {
-		page := strings.Replace(k.out.RecordsetPage.Value, "{name}", name, 1)
+		// The template has one {name}: the Directory's rule refuses a template with two, and the page is not usable then.
+		page := strings.ReplaceAll(k.out.RecordsetPage.Value, "{name}", name)
 		if _, err := rules.ParsePublicHTTPSURL(page); err != nil {
 			k.c.add("manifest-recordsets", f.Line, "the recordset page of %s, %s, %s", rules.Quote(name), rules.Quote(page), err.Error())
 			demote(f)
