@@ -22,8 +22,10 @@ import (
 // variables, returning stdout, stderr and the exit code.
 func runOVDB(t *testing.T, env []string, args ...string) (string, string, int) {
 	t.Helper()
-	cmd := exec.Command(ovdbBinPath, args...)
-	for _, kv := range os.Environ() {
+	cmd := ovdbCommand(args...)
+	inherited := cmd.Env
+	cmd.Env = nil
+	for _, kv := range inherited {
 		if !strings.HasPrefix(kv, "OVDB_") {
 			cmd.Env = append(cmd.Env, kv)
 		}

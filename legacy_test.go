@@ -47,6 +47,11 @@ func TestMain(m *testing.M) {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
+	if stubBin, err = installOpenerStubs(dir); err != nil {
+		fmt.Fprintln(os.Stderr, "legacy_test: opener stubs:", err)
+		os.Exit(1)
+	}
+
 	ovdbBinPath = filepath.Join(dir, "ovdb")
 	if runtime.GOOS == "windows" {
 		ovdbBinPath += ".exe"
@@ -107,9 +112,9 @@ type runningServer struct {
 // started without --auth).
 func startServer(t *testing.T, dir, addr string, args []string, env []string, readyBearer string) *runningServer {
 	t.Helper()
-	cmd := exec.Command(ovdbBinPath, args...)
+	cmd := ovdbCommand(args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(cmd.Env, env...)
 	out := &syncBuffer{}
 	cmd.Stdout = out
 	cmd.Stderr = out
@@ -379,7 +384,7 @@ func TestLegacyServeHostHeaderAndRootAreUnchanged(t *testing.T) {
 func TestLegacyServeBareNoDatabasesError(t *testing.T) {
 	dir := t.TempDir()
 	addr := freeLoopbackAddr(t)
-	cmd := exec.Command(ovdbBinPath, "serve", "--addr", addr)
+	cmd := ovdbCommand("serve", "--addr", addr)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -465,7 +470,7 @@ func TestLegacyAuthTokenLifecycle(t *testing.T) {
 // stdout alone.
 func runCLI(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command(ovdbBinPath, args...)
+	cmd := ovdbCommand(args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

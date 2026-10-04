@@ -40,6 +40,17 @@ func Command(goos, url string) (name string, args []string) {
 	}
 }
 
+// RefuseInTest panics when called from a test binary, and does nothing in any
+// other binary. Every path that can start the real opener calls it first:
+// Opener.Open without a fake Start, and the opener `ovdb cloud login` hands to
+// the device-login flow (its own, in another package, so it cannot go through
+// Opener).
+func RefuseInTest(url string) {
+	if testing.Testing() {
+		panic("browser: a test reached the real browser opener for " + url + "; inject a fake opener (cli.App.OpenBrowser, the TUI's opener, Opener.Start or cloudDependencies.openBrowser)")
+	}
+}
+
 // Open launches the default browser at url and returns without waiting for it.
 //
 // A test binary must never get here with the real Start: on a desktop that
@@ -50,8 +61,8 @@ func Command(goos, url string) (name string, args []string) {
 // fake (cli.App.OpenBrowser, the TUI's opener, or Opener.Start). testing.Testing
 // is false in every binary a person runs.
 func (o Opener) Open(url string) error {
-	if o.Start == nil && testing.Testing() {
-		panic("browser: a test reached the real browser opener for " + url + "; inject a fake opener (cli.App.OpenBrowser, the TUI's opener or Opener.Start)")
+	if o.Start == nil {
+		RefuseInTest(url)
 	}
 	goos, getenv, lookPath, start := o.GOOS, o.Getenv, o.LookPath, o.Start
 	if goos == "" {
