@@ -562,6 +562,15 @@ for (const name of [chinookYaml, hosterYaml]) {
   add('reader', '# café', 'latin1'); add('reader', '# café');
   add('reader', 'extra: a\rb'); add('reader', 'extra: x', 'crlf');
   addManifest('size', name, text, 'pad=262144'); addManifest('size', name, text, 'pad=262145'); addManifest('size', name, text, 'pad=1048576');
+  // Nesting: the reader refuses a collection nested 64 deep (63 is read), which the reference reads to any depth.
+  for (const depth of [62, 63, 64, 65, 100]) add('reader', `x: ${'['.repeat(depth)}${']'.repeat(depth)}`);
+  // A long string as a YAML tool writes it back: a double-quoted value folded over several lines, from the real manifest.
+  for (const width of [40, 60, 80]) {
+    const written = stringifyYaml(parseYaml(text), { defaultStringType: 'QUOTE_DOUBLE', lineWidth: width });
+    addManifest('multi-line quoted', name, written);
+    addManifest('multi-line quoted', name, written.replaceAll('\n', '\r\n'), 'crlf');
+  }
+  addManifest('multi-line quoted', name, stringifyYaml(parseYaml(text), { defaultStringType: 'QUOTE_SINGLE', lineWidth: 40 }));
   addManifest('reader', name, text.replace(/^title:.*$/m, 'title: Chinook\rmusic'));
   addManifest('reader', name, text.replace(/^title:.*$/m, 'title: "Chinook \\ud83c store"'));
 }

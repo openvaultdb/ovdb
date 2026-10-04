@@ -237,7 +237,8 @@ var stricterKinds = map[string]string{
 	"yaml-number":       "The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers.",
 	"yaml-tab":          "The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation).",
 	"yaml-tag":          "The reader refuses tags (!, !!), which the reference resolves; it reads plain values only.",
-	"yaml-unsupported":  "The reader refuses constructs outside its subset, such as explicit keys (`? key`).",
+	"yaml-limit":        "The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth.",
+	"yaml-unsupported":  "The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both.",
 }
 
 // kindOf names the kind of a refusal that the reference does not make.

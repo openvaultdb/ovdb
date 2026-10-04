@@ -38,7 +38,9 @@ type syntaxError = meaning.SyntaxError
 // a Null node. A refused document is an error that errors.As reaches as a
 // *syntaxError. The reader is written for meaning files, and one of its messages
 // says so; every message that names the kind of document is reworded here, for
-// the documents of this package (a manifest, or the front matter of OVDB.md).
+// the documents of this package (a manifest, or the front matter of OVDB.md). A quoted
+// value over more than one line, which YAML tools write for any long string, is
+// refused by the reader (meaninggraph/cli#7); the message says to write >- or |-.
 func parseYAML(data []byte) (*Node, error) {
 	node, err := meaning.ParseYAML(data)
 	var syntax *meaning.SyntaxError
@@ -47,7 +49,11 @@ func parseYAML(data []byte) (*Node, error) {
 		reworded.Message = strings.NewReplacer(
 			"a meaning file is one document, optionally started by a --- line", "write one document (it may start with a --- line)",
 			"a meaning file", "a document",
+			" (use a block scalar, > or |, for longer text)", "",
 		).Replace(syntax.Message)
+		if strings.Contains(reworded.Message, "must fit on one line") {
+			reworded.Message += ": write the value as a block scalar, >- or |- (the - keeps a newline from being added at its end), which a YAML tool does not fold; see meaninggraph/cli#7"
+		}
 		return node, &reworded
 	}
 	return node, err

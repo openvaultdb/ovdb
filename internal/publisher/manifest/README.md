@@ -223,7 +223,7 @@ verdict on each document (`directory.verdicts.json`), and the values its own cod
 derives for every field of the table above from each accepted manifest
 (`directory.facts.json`, as the difference from the facts of the document's base).
 `go test` reads them, applies the Go functions, starts no process and needs no
-network. The corpus is **4388 manifests and 425 OVDB.md documents** (511
+network. The corpus is **4410 manifests and 425 OVDB.md documents** (530
 KiB), stored as patches of whole lines against a few base documents (the real
 Chinook manifest and `OVDB.md`, the hoster example, the Directory's own fixture,
 JSON spellings of the manifests), with flags for CRLF, a byte-order mark, invalid
@@ -262,17 +262,21 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **4498 agree, 315 stricter, 0 accepted by Go where the
+On the corpus: **4508 agree, 327 stricter, 0 accepted by Go where the
 Directory refuses**.
 
-On the facts: 907 manifests and 85 OVDB.md documents have their facts compared.
+On the facts: 911 manifests and 85 OVDB.md documents have their facts compared.
 
 ### Recorded differences: where Go is stricter
 
 Go may refuse what the JavaScript accepts. Each kind is the rule of the first
 finding Go makes (a length refusal is named by what is long), with its number of
 documents in the corpus; a document counts only if the Directory accepts it, so each
-kind is real. None is an ordinary manifest.
+kind is real. Most are not ordinary manifests (a lone surrogate escape, a byte that is
+not UTF-8, nesting 64 deep); the exception is `yaml-unsupported`: a manifest that a YAML
+tool has written back, with a long string folded over several lines in a quoted value,
+is refused until the reader reads it (meaninggraph/cli#7), and the message tells the
+publisher to write the value as a block scalar, `>-` or `|-`.
 
 | Kind | Documents | Why |
 | --- | --- | --- |
@@ -291,11 +295,12 @@ kind is real. None is an ordinary manifest.
 | `yaml-encoding` | 2 | The reader refuses a file that is not UTF-8 text (a Latin-1 byte, a NUL character); the reference, which reads a file as UTF-8, replaces the bytes it cannot decode and goes on. |
 | `yaml-escape` | 4 | The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\ud83c); the reference accepts it. |
 | `yaml-key` | 6 | The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the reference accepts it as a key. |
+| `yaml-limit` | 6 | The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth. |
 | `yaml-line-ending` | 4 | The reader refuses a carriage return that is not part of CRLF; the reference reads it as a line break. |
 | `yaml-number` | 14 | The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers. |
 | `yaml-tab` | 42 | The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation). |
 | `yaml-tag` | 82 | The reader refuses tags (!, !!), which the reference resolves; it reads plain values only. |
-| `yaml-unsupported` | 65 | The reader refuses constructs outside its subset, such as explicit keys (`? key`). |
+| `yaml-unsupported` | 71 | The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both. |
 
 ### Regenerate
 
