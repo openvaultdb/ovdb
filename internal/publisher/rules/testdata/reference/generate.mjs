@@ -15,57 +15,30 @@
 //   directory  openvaultdb/directory  scripts/lib/urls.mjs, git.mjs, directory.mjs
 //   chinookdb  datatug/chinookdb      scripts/lib/directory-rules.mjs
 //
-// Their files are fetched at exactly those commits into a cache directory
-// (default: $TMPDIR/ovdb-publisher-reference) and imported as they are; nothing
+// Their files are fetched at exactly those commits into a directory that only
+// this run can write (references.mjs: checkoutReference) and imported as they are; nothing
 // is copied or re-implemented here, except where a reference keeps a rule inline
 // (see `publish` below). The Directory needs its one dependency (yaml), which is
-// installed from its own lock file into the cache. To use clones you already
+// installed from its own lock file. To use clones you already
 // have, pass --directory <dir> and/or --chinookdb <dir>; their HEAD must be the
 // pinned commit.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { domainToASCII, fileURLToPath, pathToFileURL } from 'node:url';
+import { checkoutReference, references as pinnedReferences } from '../../../references.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldenPath = join(here, 'matrix.golden.json');
 
-const pins = {
-  directory: { repository: 'openvaultdb/directory', commit: 'e8db5488db31d3f63865e404acef487c33cf35df' },
-  chinookdb: { repository: 'datatug/chinookdb', commit: '79e7bb0b1d6f0666dce465874990dec64348331f' },
-};
+const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
 
 // ---- the references, at the pinned commits ----
 
 const argValue = (name) => { const at = process.argv.indexOf(name); return at === -1 ? undefined : process.argv[at + 1]; };
 const run = (cwd, command, args) => execFileSync(command, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' }).trim();
 
-function checkout(name) {
-  const { repository, commit } = pins[name];
-  let dir = argValue(`--${name}`);
-  if (dir) {
-    dir = resolve(dir);
-    if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}`);
-    if (run(dir, 'git', ['status', '--porcelain', '--untracked-files=no'])) throw new Error(`${dir} has local changes; the references are read as committed`);
-    if (name === 'directory' && !existsSync(join(dir, 'node_modules', 'yaml'))) {
-      throw new Error(`${dir} has no node_modules/yaml, which the Directory's directory.mjs imports: run \`npm ci --omit=dev --ignore-scripts\` there first`);
-    }
-    return dir;
-  }
-  dir = join(process.env.OVDB_REFERENCE_CACHE ?? join(tmpdir(), 'ovdb-publisher-reference'), `${name}-${commit}`);
-  if (!existsSync(join(dir, '.git'))) {
-    mkdirSync(dir, { recursive: true });
-    run(dir, 'git', ['init', '--quiet']);
-    run(dir, 'git', ['fetch', '--quiet', '--depth', '1', `https://github.com/${repository}.git`, commit]);
-    run(dir, 'git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD']);
-  }
-  if (run(dir, 'git', ['rev-parse', 'HEAD']) !== commit) throw new Error(`${dir} is not at ${repository}@${commit}; remove it`);
-  if (name === 'directory' && !existsSync(join(dir, 'node_modules', 'yaml'))) {
-    run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
-  }
-  return dir;
-}
+const checkout = (name) => checkoutReference(name, { explicit: argValue(`--${name}`) });
 
 const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');

@@ -71,9 +71,12 @@ func where(m *Node, key string) int {
 
 // manifestChecker holds one manifest while it is judged.
 type manifestChecker struct {
-	c   *collector
-	m   *Node
-	out Manifest
+	c       *collector
+	m       *Node
+	out     Manifest
+	profile Profile
+	// The URLs that the checks of a profile compare, as parsed (the zero URL when the field is not usable).
+	canonical, deployed, discovery, page rules.URL
 }
 
 // CheckManifest judges a manifest. path names it in the findings.
@@ -82,11 +85,11 @@ func CheckManifest(doc []byte, path string, profile Profile) (Manifest, []Findin
 		return Manifest{}, unknownProfile(profile)
 	}
 	b := newBudget()
-	m, findings := checkManifest(doc, path, b)
+	m, findings := checkManifest(doc, path, b, profile)
 	return m, append(findings, b.notice(path)...)
 }
 
-func checkManifest(doc []byte, path string, b *budget) (Manifest, []Finding) {
+func checkManifest(doc []byte, path string, b *budget, profile Profile) (Manifest, []Finding) {
 	c := newCollector(path, b)
 	if tooBig(c, doc) {
 		return Manifest{}, c.findings
@@ -99,9 +102,12 @@ func checkManifest(doc []byte, path string, b *budget) (Manifest, []Finding) {
 		c.add("manifest-shape", root.Line, "is not a mapping: write the manifest as keys and values (format, id, title, ...)")
 		return Manifest{}, c.findings
 	}
-	k := &manifestChecker{c: c, m: root}
+	k := &manifestChecker{c: c, m: root, profile: profile}
 	k.out.Read = true
 	k.check()
+	if profile == Publisher {
+		k.publisher()
+	}
 	return k.out, c.findings
 }
 
@@ -263,7 +269,7 @@ func (k *manifestChecker) check() {
 	out.ID, out.Title, out.Description = somewhat("id"), somewhat("title"), somewhat("description")
 
 	canonical, urlFact := k.urlField(m, "url", "url", true, canonicalURL)
-	out.URL = urlFact
+	out.URL, k.canonical = urlFact, canonical
 	if hp := m.Field("homepage"); hp != nil {
 		valid := false
 		if hp.Kind == kindString && hp.Text != "" {
@@ -279,21 +285,25 @@ func (k *manifestChecker) check() {
 	}
 
 	deployment := m.Field("deployment")
-	_, out.DeploymentURL = k.urlField(deployment, "url", "deployment.url", true, publicURL)
+	k.deployed, out.DeploymentURL = k.urlField(deployment, "url", "deployment.url", true, publicURL)
 	out.Engine = k.text(field{parent: deployment, key: "engine", label: "deployment.engine", required: true, rule: "manifest-engine", hint: "write the engine your deployment runs, such as postgres", problem: engineProblem})
 	discovery, discoveryFact := k.urlField(deployment, "discovery", "deployment.discovery", true, publicURL)
-	out.Discovery = discoveryFact
+	out.Discovery, k.discovery = discoveryFact, discovery
 	if urlFact.Valid && discoveryFact.Valid && discovery.Host != canonical.Host {
 		c.add("manifest-discovery", where(deployment, "discovery"), "deployment.discovery must be on the same origin as url (https://%s), not https://%s: serve the discovery document from the canonical host", canonical.Host, discovery.Host)
 	}
-	_, out.RecordsetPage = k.urlField(deployment, "recordset_page", "deployment.recordset_page", false, templateURL)
+	k.page, out.RecordsetPage = k.urlField(deployment, "recordset_page", "deployment.recordset_page", false, templateURL)
 
 	k.model()
 
 	publisher := m.Field("publisher")
 	out.PublisherName = k.text(field{parent: publisher, key: "name", label: "publisher.name", required: true, hint: "write the publisher's name"})
 	_, out.PublisherURL = k.urlField(publisher, "url", "publisher.url", true, publicURL)
-	out.PublisherRepository = k.text(field{parent: publisher, key: "repository", label: "publisher.repository", rule: "manifest-publisher", hint: "write the repository that carries this manifest, or leave publisher.repository out", problem: repositoryURLProblem})
+	repository := field{parent: publisher, key: "repository", label: "publisher.repository", rule: "manifest-publisher", hint: "write the repository that carries this manifest, or leave publisher.repository out", problem: repositoryURLProblem}
+	if k.profile == Publisher { // the Chinook checker requires it
+		repository.required, repository.hint = true, "write the https URL of the repository that carries this manifest"
+	}
+	out.PublisherRepository = k.text(repository)
 
 	licences := m.Field("licences")
 	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
@@ -372,7 +382,7 @@ func (k *manifestChecker) address(parent *Node, label string, parse func(string)
 		} else {
 			c.add("manifest-"+family(label), n.Line, "%s must name a repository on github.com, as github.com/<org>/<repository>, got %s", label, rules.Quote(parsed.Repository))
 		}
-	} else if parsed.Repository != strings.ToLower(parsed.Repository) {
+	} else if parsed.Repository != lowerASCII(parsed.Repository) {
 		valid = false
 		c.add("manifest-"+family(label), n.Line, "%s must be written in lower case (host, organisation and repository; a module name is case-sensitive), got %s", label, rules.Quote(parsed.Repository))
 	}

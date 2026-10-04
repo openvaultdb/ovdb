@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,17 @@ func TestParseYAML(t *testing.T) {
 	var syntax *syntaxError
 	if !errors.As(err, &syntax) || syntax.Line != 1 || syntax.Rule == "" {
 		t.Errorf("an anchor is refused with %v, want a *syntaxError with a line and a rule", err)
+	}
+	// The reader's wording for meaning files is reworded; a quoted value over several lines is told to be a block scalar.
+	for doc, want := range map[string]string{
+		"a: \"x\n  y\"\n":        "write the value as a block scalar, >- or |-",
+		"a: \"x\\\n  y\"\n":      "meaninggraph/cli#7",
+		"---\na: 1\n---\nb: 2\n": "write one document",
+	} {
+		_, err := parseYAML([]byte(doc))
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "meaning file") || strings.Contains(err.Error(), "(use a block scalar") {
+			t.Errorf("parseYAML(%q) = %v, want it to say %q", doc, err, want)
+		}
 	}
 	if kindSeq == kindMap {
 		t.Error("kinds are not distinct")

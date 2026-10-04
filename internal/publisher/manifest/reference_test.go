@@ -52,16 +52,19 @@ type factsFile struct {
 	Fields   []string                  `json:"fields"`
 	Reads    map[string][]int          `json:"reads"`
 	Bases    map[string]map[string]any `json:"bases"`
+	Presence []string                  `json:"presence"`
+	PBases   map[string]string         `json:"presenceBases"`
 	Manifest []map[string]any          `json:"manifest"`
 	Md       [][]string                `json:"md"`
 }
 
 type referenceCase struct {
-	Base     string
-	Document []byte
-	Path     string // OVDB.md cases: the manifest path that must be listed
-	Family   string
-	Verdict  bool
+	Base      string
+	Document  []byte
+	Path      string // OVDB.md cases: the manifest path that must be listed
+	Family    string
+	Verdict   bool // the Directory's
+	Publisher bool // the Chinook checker's
 }
 
 func readGolden(t testing.TB, name string, into any) {
@@ -150,6 +153,11 @@ func loadReference(t testing.TB) (corpus referenceCorpus, verdicts verdictFile, 
 	t.Helper()
 	readGolden(t, "corpus.json", &corpus)
 	readGolden(t, "directory.verdicts.json", &verdicts)
+	var publisher verdictFile
+	readGolden(t, "publisher.verdicts.json", &publisher)
+	if len(publisher.Manifest.Verdicts) != len(verdicts.Manifest.Verdicts) || len(publisher.Md.Verdicts) != len(verdicts.Md.Verdicts) {
+		t.Fatalf("the Directory's and the publisher's verdicts disagree on the number of documents")
+	}
 	for i, raw := range corpus.ManifestRaw {
 		var base, flags string
 		var patch []json.RawMessage
@@ -158,7 +166,7 @@ func loadReference(t testing.TB) (corpus referenceCorpus, verdicts verdictFile, 
 		if _, ok := corpus.Bases[base]; !ok || family < 0 || family >= len(corpus.Families) || i >= len(verdicts.Manifest.Verdicts) {
 			t.Fatalf("manifest case %d names base %q, family %d", i, base, family)
 		}
-		manifests = append(manifests, referenceCase{Base: base, Document: rebuild(t, corpus.Bases[base], patch, flags), Family: corpus.Families[family], Verdict: verdictOf(t, verdicts.Manifest.Verdicts[i])})
+		manifests = append(manifests, referenceCase{Base: base, Document: rebuild(t, corpus.Bases[base], patch, flags), Family: corpus.Families[family], Verdict: verdictOf(t, verdicts.Manifest.Verdicts[i]), Publisher: verdictOf(t, publisher.Manifest.Verdicts[i])})
 	}
 	for i, raw := range corpus.MdRaw {
 		var base, flags, path string
@@ -168,7 +176,7 @@ func loadReference(t testing.TB) (corpus referenceCorpus, verdicts verdictFile, 
 		if _, ok := corpus.Bases[base]; !ok || family < 0 || family >= len(corpus.Families) || i >= len(verdicts.Md.Verdicts) {
 			t.Fatalf("OVDB.md case %d names base %q, family %d", i, base, family)
 		}
-		mds = append(mds, referenceCase{Base: base, Document: rebuild(t, corpus.Bases[base], patch, flags), Path: path, Family: corpus.Families[family], Verdict: verdictOf(t, verdicts.Md.Verdicts[i])})
+		mds = append(mds, referenceCase{Base: base, Document: rebuild(t, corpus.Bases[base], patch, flags), Path: path, Family: corpus.Families[family], Verdict: verdictOf(t, verdicts.Md.Verdicts[i]), Publisher: verdictOf(t, publisher.Md.Verdicts[i])})
 	}
 	if len(manifests) != len(verdicts.Manifest.Verdicts) || len(mds) != len(verdicts.Md.Verdicts) {
 		t.Fatalf("the corpus and the verdicts disagree on the number of documents: %d and %d manifests, %d and %d OVDB.md", len(manifests), len(verdicts.Manifest.Verdicts), len(mds), len(verdicts.Md.Verdicts))
@@ -176,7 +184,7 @@ func loadReference(t testing.TB) (corpus referenceCorpus, verdicts verdictFile, 
 	for _, set := range []struct {
 		verdicts verdictSet
 		name     string
-	}{{verdicts.Manifest, "manifest"}, {verdicts.Md, "OVDB.md"}} {
+	}{{verdicts.Manifest, "manifest"}, {verdicts.Md, "OVDB.md"}, {publisher.Manifest, "publisher manifest"}, {publisher.Md, "publisher OVDB.md"}} {
 		if strings.Count(set.verdicts.Verdicts, "1") != set.verdicts.Accepted || strings.Count(set.verdicts.Verdicts, "0") != set.verdicts.Refused {
 			t.Fatalf("the %s verdicts do not add up to their counts", set.name)
 		}
@@ -197,8 +205,8 @@ func verdictOf(t testing.TB, b byte) bool {
 func TestGoldenDigests(t *testing.T) {
 	var want map[string]string
 	readGolden(t, "digests.json", &want)
-	if len(want) != 4 {
-		t.Fatalf("digests.json holds %d digests, want 4", len(want))
+	if len(want) != 6 {
+		t.Fatalf("digests.json holds %d digests, want 6", len(want))
 	}
 	for name, digest := range want {
 		raw, err := os.ReadFile("../" + name)
@@ -212,12 +220,13 @@ func TestGoldenDigests(t *testing.T) {
 	}
 }
 
-// stricterKinds are the ways in which the Go functions are stricter than the
-// Directory's JavaScript on the corpus, each with the reason; the README of this
-// package lists the same kinds, and a test holds the two together. A refusal of a
-// document that the reference accepts is classified by kindOf, or the test fails;
-// a kind that no document of the corpus shows fails it too.
-var stricterKinds = map[string]string{
+// sharedKinds are the ways in which the Go functions are stricter than the references on the corpus, in either profile, each with the
+// reason; the README lists the same kinds with a count for each profile, and a test holds the two together. They are shared by
+// construction: the reader and the bound on a document's size act before a profile's rules run, and the Directory's rules (the
+// lengths, the punycode rule) run first under the Publisher profile too, so a kind of this list is recorded once and counted for
+// each profile, and cannot be recorded for one and forgotten for the other. Only kinds of rules that one profile alone has are
+// listed apart (publisherKinds). A refusal of a document that a reference accepts is classified by kindOf, or the test fails.
+var sharedKinds = map[string]string{
 	"document-size":     "A document over 262144 bytes (MaxDocumentBytes) is refused before it is read; the references read files of any size.",
 	"length-address":    "An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound.",
 	"length-entry":      "A publish entry whose path after ./ is over 1024 bytes; the references have no bound.",
@@ -225,7 +234,7 @@ var stricterKinds = map[string]string{
 	"length-repository": "A publisher.repository over 255 bytes; the references have no bound.",
 	"punycode":          "A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label.",
 	"url-length":        "A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound.",
-	"yaml":              "The reader accepts a subset of YAML, and a structure it cannot place (a flow collection as a key, as in [a]: x) is refused; the reference reads it.",
+	"yaml":              "The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or \" at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them.",
 	"yaml-anchor":       "The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one.",
 	"yaml-character":    "The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string.",
 	"yaml-directive":    "The reader refuses a %YAML or %TAG directive; the reference follows it.",
@@ -237,13 +246,22 @@ var stricterKinds = map[string]string{
 	"yaml-number":       "The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers.",
 	"yaml-tab":          "The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation).",
 	"yaml-tag":          "The reader refuses tags (!, !!), which the reference resolves; it reads plain values only.",
-	"yaml-unsupported":  "The reader refuses constructs outside its subset, such as explicit keys (`? key`).",
+	"yaml-limit":        "The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth.",
+	"yaml-unsupported":  "The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both.",
+}
+
+// readerKinds are the kinds of sharedKinds that the reader (or the bound checked before it) makes: the rules of its refusals, and
+// document-size. TestReaderKinds holds them to the places of the reader (reader_places_test.go).
+var readerKinds = map[string]bool{
+	"document-size": true, "yaml": true, "yaml-anchor": true, "yaml-character": true, "yaml-directive": true, "yaml-documents": true,
+	"yaml-encoding": true, "yaml-escape": true, "yaml-key": true, "yaml-limit": true, "yaml-line-ending": true, "yaml-number": true,
+	"yaml-tab": true, "yaml-tag": true, "yaml-unsupported": true,
 }
 
 // kindOf names the kind of a refusal that the reference does not make.
 func kindOf(f Finding) string {
 	switch {
-	case f.Rule == "manifest-url" && strings.Contains(f.Message, "longer than"):
+	case strings.Contains(f.Message, "is longer than 2048 characters"):
 		return "url-length"
 	case f.Rule == "document-size":
 		return f.Rule
@@ -253,12 +271,14 @@ func kindOf(f Finding) string {
 		return "length-entry"
 	case strings.Contains(f.Message, "a repository URL is at most"):
 		return "length-repository"
-	case strings.Contains(f.Message, "a licence id is at most"):
-		return "length-licence"
 	case strings.Contains(f.Message, "bytes; at most") || strings.Contains(f.Message, "names a repository of"):
 		return "length-address"
 	case strings.Contains(f.Message, "internationalised name"):
 		return "punycode"
+	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "(in any case), derived from publisher.repository"):
+		return "graph-address-case"
+	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "must be the graph's meaning:// address"):
+		return "graph-address-scheme"
 	}
 	return f.Rule
 }
@@ -290,17 +310,25 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 	return true
 }
 
-func manifestAccepted(doc []byte) (bool, Finding) {
-	_, findings := CheckManifest(doc, "ovdb.yaml", Directory)
+func manifestAccepted(doc []byte) (bool, Finding) { return acceptManifest(Directory, doc) }
+
+func mdAccepted(doc []byte, path string) (bool, Finding) { return acceptMd(Directory, doc, path) }
+
+// acceptManifest says whether a manifest is judged right by a profile, and the first finding if not.
+func acceptManifest(profile Profile, doc []byte) (bool, Finding) {
+	_, findings := CheckManifest(doc, "ovdb.yaml", profile)
 	if len(findings) == 0 {
 		return true, Finding{}
 	}
 	return false, findings[0]
 }
 
-func mdAccepted(doc []byte, path string) (bool, Finding) {
-	md, findings := CheckOVDBMd(doc, Directory)
-	if len(findings) == 0 && md.Lists(path) {
+// acceptMd says whether an OVDB.md is judged right by a profile. The Directory's
+// verdict is about the manifest at path, which it must list; the Chinook checker
+// reads every manifest that OVDB.md lists and has no manifest of its own to find.
+func acceptMd(profile Profile, doc []byte, path string) (bool, Finding) {
+	md, findings := CheckOVDBMd(doc, profile)
+	if len(findings) == 0 && (profile != Directory || md.Lists(path)) {
 		return true, Finding{}
 	}
 	if len(findings) == 0 {
@@ -311,26 +339,93 @@ func mdAccepted(doc []byte, path string) (bool, Finding) {
 
 var readmeRow = regexp.MustCompile("(?m)^\\| `([a-z0-9-]+)` \\| (\\d+) \\| (.+) \\|$")
 
-func TestReferenceDirectory(t *testing.T) {
-	corpus, verdicts, manifests, mds := loadReference(t)
+// referenceSpec is one profile and the reference that judges it.
+type referenceSpec struct {
+	name    string // "Directory" or "Publisher", as the tests and the README call it
+	profile Profile
+	refName string // what the README calls the reference in its totals
+	column  int    // the column of the table of shared kinds that holds this profile's counts
+	golden  string // the verdict file
+	own     map[string]string
+	verdict func(referenceCase) bool
+}
+
+const (
+	sharedHeading = "### Recorded differences: shared by both profiles"
+	ownHeading    = "### Recorded differences: the Publisher profile's own"
+)
+
+var directorySpec = referenceSpec{
+	name: "Directory", profile: Directory, refName: "Directory", column: 0, golden: "directory.verdicts.json",
+	verdict: func(c referenceCase) bool { return c.Verdict },
+}
+
+// readmeKinds are the rows of the table that follows a heading of the README.
+func readmeKinds(t testing.TB, readme, heading string) map[string][2]string {
+	t.Helper()
+	at := strings.Index(readme, heading+"\n")
+	if at < 0 {
+		t.Fatalf("README has no section %q", heading)
+	}
+	section := readme[at+len(heading):]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	if end := strings.Index(section, "\n### "); end >= 0 {
+		section = section[:end]
+	}
+	rows := map[string][2]string{}
+	for _, m := range readmeRow.FindAllStringSubmatch(section, -1) {
+		rows[m[1]] = [2]string{m[2], m[3]}
+	}
+	return rows
+}
+
+var readmeSharedRow = regexp.MustCompile("(?m)^\\| `([a-z0-9-]+)` \\| (\\d+) \\| (\\d+) \\| (.+) \\|$")
+
+// readmeSharedKinds are the rows of the table of the kinds that both profiles share: the counts of each profile, and the reason.
+func readmeSharedKinds(t testing.TB, readme string) map[string][3]string {
+	t.Helper()
+	at := strings.Index(readme, sharedHeading+"\n")
+	if at < 0 {
+		t.Fatalf("README has no section %q", sharedHeading)
+	}
+	section := readme[at+len(sharedHeading):]
+	if end := strings.Index(section, "\n### "); end >= 0 {
+		section = section[:end]
+	}
+	rows := map[string][3]string{}
+	for _, m := range readmeSharedRow.FindAllStringSubmatch(section, -1) {
+		rows[m[1]] = [3]string{m[2], m[3], m[4]}
+	}
+	return rows
+}
+
+func runReference(t *testing.T, spec referenceSpec) {
+	corpus, _, manifests, mds := loadReference(t)
+	var verdicts verdictFile
+	readGolden(t, spec.golden, &verdicts)
 	var total accounting
 	for _, c := range manifests {
-		ok, first := manifestAccepted(c.Document)
+		ok, first := acceptManifest(spec.profile, c.Document)
+		c.Verdict = spec.verdict(c)
 		if !total.record(c, ok, first) {
-			t.Errorf("manifest accepted where the Directory refuses (%s): %q", c.Family, c.Document)
+			t.Errorf("manifest accepted where the %s refuses (%s): %q", spec.refName, c.Family, c.Document)
 		}
-		checkGoFindings(t, c.Document)
+		_, findings := CheckManifest(c.Document, "ovdb.yaml", spec.profile)
+		assertFindings(t, findings)
 	}
 	for _, c := range mds {
-		ok, first := mdAccepted(c.Document, c.Path)
+		ok, first := acceptMd(spec.profile, c.Document, c.Path)
+		c.Verdict = spec.verdict(c)
 		if !total.record(c, ok, first) {
-			t.Errorf("OVDB.md accepted where the Directory refuses (%s, path %q): %q", c.Family, c.Path, c.Document)
+			t.Errorf("OVDB.md accepted where the %s refuses (%s, path %q): %q", spec.refName, c.Family, c.Path, c.Document)
 		}
-		_, findings := CheckOVDBMd(c.Document, Directory)
+		_, findings := CheckOVDBMd(c.Document, spec.profile)
 		assertFindings(t, findings)
 	}
 	if total.looser != 0 {
-		t.Fatalf("%d documents are accepted by Go and refused by the Directory", total.looser)
+		t.Fatalf("%d documents are accepted by Go and refused by the %s", total.looser, spec.refName)
 	}
 
 	// The corpus is as large and as varied as the proof claims.
@@ -343,55 +438,152 @@ func TestReferenceDirectory(t *testing.T) {
 	if corpus.MinedEdits.Applied < 100 || corpus.MinedEdits.Applied > corpus.MinedEdits.Found {
 		t.Errorf("mined edits: %d of %d applied", corpus.MinedEdits.Applied, corpus.MinedEdits.Found)
 	}
-	if verdicts.Profile != "directory" || verdicts.Thrown != 0 {
+	if strings.ToLower(spec.name) != verdicts.Profile || verdicts.Thrown != 0 {
 		t.Errorf("verdicts are of profile %q, and the reference threw on %d documents", verdicts.Profile, verdicts.Thrown)
 	}
 
-	// Every stricter kind is documented, real, and counted in the README.
+	// Every stricter kind is documented, real, and counted in the README: those of both profiles in the table of the shared kinds, with a
+	// count for each profile, and those of this profile alone in a table of its own.
+	known := func(kind string) bool {
+		_, shared := sharedKinds[kind]
+		_, own := spec.own[kind]
+		return shared || own
+	}
 	for kind, count := range total.kinds {
-		if _, ok := stricterKinds[kind]; !ok {
+		if !known(kind) {
 			t.Errorf("a stricter kind %q is not recorded (%d documents, e.g. %s): record it with its reason, or make Go agree", kind, count, total.examples[kind])
 		}
 	}
-	for kind := range stricterKinds {
+	for kind := range spec.own {
 		if total.kinds[kind] == 0 {
 			t.Errorf("the stricter kind %q is recorded but no document of the corpus shows it", kind)
 		}
 	}
+	for kind := range sharedKinds {
+		if total.kinds[kind] != 0 {
+			continue
+		}
+		// A kind of the reader may show none under a profile when each place of the reader that makes it is shown to have none there.
+		places := 0
+		for _, p := range readerPlaces {
+			if !readerKinds[kind] || p.rule != kind {
+				continue
+			}
+			places++
+			none := p.directoryNone
+			if spec.profile == Publisher {
+				none = p.publisherNone
+			}
+			if none == "" {
+				t.Errorf("the shared kind %q shows no document under the %s profile, but its place %s says it has some", kind, spec.name, p.id)
+			}
+		}
+		if places == 0 {
+			t.Errorf("the shared kind %q is recorded but no document of the corpus shows it under the %s profile", kind, spec.name)
+		}
+	}
+	t.Logf("%s: %d documents: agree %d, stricter %d, looser %d (mined edits %d of %d)", spec.name, len(manifests)+len(mds), total.agree, total.stricter, total.looser, corpus.MinedEdits.Applied, corpus.MinedEdits.Found)
+	for _, kind := range slices.Sorted(maps.Keys(total.kinds)) {
+		t.Logf("stricter %-20s %5d  e.g. %s", kind, total.kinds[kind], total.examples[kind])
+	}
 	readme := readReadme(t)
-	rows := map[string]int{}
-	for _, m := range readmeRow.FindAllStringSubmatch(readme, -1) {
-		n, _ := strconv.Atoi(m[2])
-		rows[m[1]] = n
-		if want, ok := stricterKinds[m[1]]; ok && m[3] != want {
-			t.Errorf("README reason of %q differs from the recorded one:\n  README: %s\n  test:   %s", m[1], m[3], want)
+	shared := readmeSharedKinds(t, readme)
+	for kind, row := range shared {
+		n, _ := strconv.Atoi(row[spec.column])
+		if want, ok := sharedKinds[kind]; !ok {
+			t.Errorf("README lists the shared kind %q, which is not recorded in the test", kind)
+		} else if row[2] != want {
+			t.Errorf("README reason of %q differs from the recorded one:\n  README: %s\n  test:   %s", kind, row[2], want)
+		}
+		if total.kinds[kind] != n {
+			t.Errorf("README counts %d documents of the shared kind %q under the %s profile; the corpus shows %d", n, kind, spec.name, total.kinds[kind])
 		}
 	}
-	for kind, count := range total.kinds {
-		if rows[kind] != count {
-			t.Errorf("README counts %d documents of the stricter kind %q; the corpus shows %d", rows[kind], kind, count)
+	for kind := range sharedKinds {
+		if _, ok := shared[kind]; !ok {
+			t.Errorf("README does not list the shared kind %q", kind)
 		}
 	}
-	for kind := range rows {
-		if _, ok := stricterKinds[kind]; !ok {
-			t.Errorf("README lists the stricter kind %q, which is not recorded in the test", kind)
+	if spec.own != nil {
+		own := readmeKinds(t, readme, ownHeading)
+		for kind, row := range own {
+			n, _ := strconv.Atoi(row[0])
+			if want, ok := spec.own[kind]; !ok {
+				t.Errorf("README lists the kind %q of the %s profile, which is not recorded in the test", kind, spec.name)
+			} else if row[1] != want {
+				t.Errorf("README reason of %q differs from the recorded one:\n  README: %s\n  test:   %s", kind, row[1], want)
+			} else if total.kinds[kind] != n {
+				t.Errorf("README counts %d documents of the kind %q; the corpus shows %d", n, kind, total.kinds[kind])
+			}
+		}
+		for kind := range spec.own {
+			if _, ok := own[kind]; !ok {
+				t.Errorf("README does not list the kind %q of the %s profile", kind, spec.name)
+			}
 		}
 	}
+	flat := strings.Join(strings.Fields(readme), " ")
 	for _, want := range []string{
 		pinOf(corpus, "directory"), pinOf(corpus, "chinookdb"),
 		fmt.Sprintf("%d manifests and %d OVDB.md documents", len(manifests), len(mds)),
 		fmt.Sprintf("%d of %d", corpus.MinedEdits.Applied, corpus.MinedEdits.Found),
-		fmt.Sprintf("%d agree", total.agree), fmt.Sprintf("%d stricter", total.stricter),
+		fmt.Sprintf("**%d agree, %d stricter, 0 accepted by Go where the %s refuses**", total.agree, total.stricter, spec.refName),
 	} {
-		if !strings.Contains(readme, want) {
+		if !strings.Contains(flat, want) {
 			t.Errorf("README does not state %q", want)
 		}
 	}
-	t.Logf("%d documents: agree %d, stricter %d, looser %d (mined edits %d of %d)", len(manifests)+len(mds), total.agree, total.stricter, total.looser, corpus.MinedEdits.Applied, corpus.MinedEdits.Found)
-	for _, kind := range slices.Sorted(maps.Keys(total.kinds)) {
-		t.Logf("stricter %-20s %5d  e.g. %s", kind, total.kinds[kind], total.examples[kind])
+}
+
+// publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker through rules that only it has (the
+// others are sharedKinds).
+var publisherKinds = map[string]string{
+	"graph-address-case":   "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
+	"graph-address-scheme": "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
+}
+
+var publisherSpec = referenceSpec{
+	name: "Publisher", profile: Publisher, refName: "Chinook checker", column: 1, golden: "publisher.verdicts.json",
+	own: publisherKinds, verdict: func(c referenceCase) bool { return c.Publisher },
+}
+
+// The kinds of the reader in sharedKinds are the rules of the places of the reader that have documents the references accept (and document-size, which is
+// checked before the reader): the list of kinds cannot drift from the table of places.
+func TestReaderKinds(t *testing.T) {
+	counts := readerPlaceCounts(t)
+	stricter := map[string]bool{"document-size": true}
+	for _, p := range readerPlaces {
+		for _, n := range counts[p.id] {
+			if n.stricter > 0 {
+				stricter[p.rule] = true
+			}
+		}
+	}
+	for kind := range readerKinds {
+		if _, ok := sharedKinds[kind]; !ok {
+			t.Errorf("the reader's kind %q is not recorded in sharedKinds", kind)
+		}
+		if !stricter[kind] {
+			t.Errorf("the reader's kind %q is recorded, but no place of the reader that makes it has a document that a reference accepts", kind)
+		}
+	}
+	for kind := range stricter {
+		if !readerKinds[kind] {
+			t.Errorf("a place of the reader that raises %q has documents that a reference accepts, and the kind is not one of readerKinds", kind)
+		}
+	}
+	for kind := range sharedKinds {
+		if readerKinds[kind] || strings.HasPrefix(kind, "yaml") {
+			if !readerKinds[kind] {
+				t.Errorf("%q is a kind of the reader and is not listed in readerKinds", kind)
+			}
+		}
 	}
 }
+
+func TestReferenceDirectory(t *testing.T) { runReference(t, directorySpec) }
+
+func TestReferencePublisher(t *testing.T) { runReference(t, publisherSpec) }
 
 func readReadme(t testing.TB) string {
 	t.Helper()
@@ -435,12 +627,6 @@ func assertFindings(t testing.TB, findings []Finding) {
 	if len(findings) == MaxFindings+1 && findings[MaxFindings].Rule != RuleCapped {
 		t.Fatalf("%d findings and the last is not the notice", len(findings))
 	}
-}
-
-func checkGoFindings(t testing.TB, doc []byte) {
-	t.Helper()
-	_, findings := CheckManifest(doc, "ovdb.yaml", Directory)
-	assertFindings(t, findings)
 }
 
 // ---- the facts ----
@@ -509,31 +695,35 @@ var readmeField = regexp.MustCompile("(?m)^\\| `([a-z._]+)` \\| directory\\.mjs 
 // Every fact is compared with what the Directory's own code derives from the same
 // document, for every document both accept, and the README's table of the fields
 // the Directory reads is the generator's own list of the lines that read them.
-func TestFactsAgreeWithTheReference(t *testing.T) {
-	_, verdicts, manifests, mds := loadReference(t)
-	var facts factsFile
-	readGolden(t, "directory.facts.json", &facts)
+// compareFacts compares the facts of every document that the profile and its reference
+// both accept with the values that the reference derives, from the facts golden.
+func compareFacts(t *testing.T, spec referenceSpec, golden string) (facts factsFile, compared, comparedMd int) {
+	_, _, manifests, mds := loadReference(t)
+	readGolden(t, golden, &facts)
 
-	accepted, compared := 0, 0
+	accepted := 0
 	for i, c := range manifests {
-		if verdicts.Manifest.Verdicts[i] != '1' {
+		if !spec.verdict(c) {
 			continue
 		}
 		index := accepted
 		accepted++
-		m, findings := CheckManifest(c.Document, "ovdb.yaml", Directory)
+		m, findings := CheckManifest(c.Document, "ovdb.yaml", spec.profile)
 		if len(findings) > 0 {
 			continue
 		}
-		if index >= len(facts.Manifest) || facts.Bases[c.Base] == nil {
-			t.Fatalf("the facts golden has no entry %d, or no base %q", index, c.Base)
+		if index >= len(facts.Manifest) {
+			t.Fatalf("the facts golden has no entry %d", index)
 		}
 		want := maps.Clone(facts.Bases[c.Base])
+		if want == nil {
+			want = map[string]any{}
+		}
 		maps.Copy(want, facts.Manifest[index])
 		wantJSON, _ := json.Marshal(want)
 		gotJSON, _ := json.Marshal(factValues(m))
 		if !bytes.Equal(wantJSON, gotJSON) {
-			t.Fatalf("facts differ from the Directory's for %s document %d:\n%q\n  go:  %s\n  ref: %s", c.Family, i, c.Document, gotJSON, wantJSON)
+			t.Fatalf("facts differ from the %s's for %s document %d:\n%q\n  go:  %s\n  ref: %s", spec.refName, c.Family, i, c.Document, gotJSON, wantJSON)
 		}
 		if !m.Read {
 			t.Fatalf("an accepted manifest was not read: %q", c.Document)
@@ -544,25 +734,38 @@ func TestFactsAgreeWithTheReference(t *testing.T) {
 		t.Fatalf("the facts golden holds %d entries for %d accepted manifests, and %d were compared", len(facts.Manifest), accepted, compared)
 	}
 
-	listed, comparedMd := 0, 0
-	for i, c := range mds {
-		if verdicts.Md.Verdicts[i] != '1' {
+	listed := 0
+	for _, c := range mds {
+		if !spec.verdict(c) {
 			continue
 		}
 		index := listed
 		listed++
-		md, findings := CheckOVDBMd(c.Document, Directory)
+		md, findings := CheckOVDBMd(c.Document, spec.profile)
 		if len(findings) > 0 {
 			continue
 		}
-		if !slices.Equal(md.Entries, facts.Md[index]) || !slices.Equal(md.Publish.Value, facts.Md[index]) || !md.Version.Usable() || md.Version.Value != "1" || !md.Read {
-			t.Fatalf("OVDB.md facts %+v differ from the Directory's set %v for %q", md, facts.Md[index], c.Document)
+		if !slices.Equal(md.Entries, facts.Md[index]) || !slices.Equal(md.Publish.Value, facts.Md[index]) || !md.Version.Usable() || md.Version.Value != "1" || !md.Read || len(md.Repeated) != 0 && spec.profile == Publisher {
+			t.Fatalf("OVDB.md facts %+v differ from the %s's set %v for %q", md, spec.refName, facts.Md[index], c.Document)
 		}
 		comparedMd++
 	}
 	if listed != len(facts.Md) || comparedMd < 80 {
 		t.Fatalf("the facts golden holds %d lists for %d accepted OVDB.md, and %d were compared", len(facts.Md), listed, comparedMd)
 	}
+	return facts, compared, comparedMd
+}
+
+func TestFactsAgreeUnderThePublisherReference(t *testing.T) {
+	_, compared, comparedMd := compareFacts(t, publisherSpec, "publisher.facts.json")
+	t.Logf("publisher facts compared on %d accepted manifests and %d OVDB.md documents", compared, comparedMd)
+	if want := fmt.Sprintf("under the Publisher profile, %d manifests and %d OVDB.md documents have their facts compared", compared, comparedMd); !strings.Contains(strings.Join(strings.Fields(readReadme(t)), " "), want) {
+		t.Errorf("README does not state %q", want)
+	}
+}
+
+func TestFactsAgreeWithTheReference(t *testing.T) {
+	facts, compared, comparedMd := compareFacts(t, directorySpec, "directory.facts.json")
 
 	t.Logf("facts compared on %d accepted manifests and %d OVDB.md documents", compared, comparedMd)
 	readme := readReadme(t)
@@ -607,6 +810,58 @@ func TestFactsAgreeWithTheReference(t *testing.T) {
 	}
 }
 
+// Presence is held for every manifest the Go reader reads, accepted or not: the
+// fields the Directory's parsed manifest has (the key is written) are the facts
+// that are Present, so a written value that is refused is never an absent fact.
+func TestPresenceAgreesWithTheReference(t *testing.T) {
+	_, _, manifests, _ := loadReference(t)
+	var facts factsFile
+	readGolden(t, "directory.facts.json", &facts)
+	if len(facts.Presence) != len(manifests) || len(facts.Fields) < 26 {
+		t.Fatalf("the facts golden holds %d presence masks for %d manifests", len(facts.Presence), len(manifests))
+	}
+	names := facts.Fields[:26]
+	compared, refused := 0, 0
+	for i, c := range manifests {
+		m, findings := CheckManifest(c.Document, "ovdb.yaml", Directory)
+		if !m.Read {
+			continue
+		}
+		mask := facts.Presence[i]
+		if mask == "" {
+			mask = facts.PBases[c.Base]
+		}
+		if mask == "-" {
+			t.Fatalf("Go reads a document that the reference cannot: %q", c.Document)
+		}
+		want, err := strconv.ParseUint(mask, 16, 32)
+		if err != nil {
+			t.Fatalf("presence %q: %v", mask, err)
+		}
+		values := factValues(m)
+		var got uint64
+		for bit, name := range names {
+			if values[name] != nil {
+				got |= 1 << bit
+			}
+		}
+		if got != want {
+			t.Fatalf("%s document %d: the facts that are present are %x, the Directory's parsed manifest has %x (fields %v):\n%q", c.Family, i, got, want, names, c.Document)
+		}
+		if len(findings) > 0 {
+			refused++
+		}
+		compared++
+	}
+	if compared < 3000 || refused < 2000 {
+		t.Fatalf("presence compared on %d manifests, %d of them refused", compared, refused)
+	}
+	t.Logf("presence compared on %d manifests, %d of them refused", compared, refused)
+	if want := fmt.Sprintf("presence of every field is compared on %d manifests, %d of them refused", compared, refused); !strings.Contains(strings.Join(strings.Fields(readReadme(t)), " "), want) {
+		t.Errorf("README does not state %q", want)
+	}
+}
+
 // Check judges a pair as its two documents are judged alone.
 func TestCheckPairAgreesWithTheParts(t *testing.T) {
 	corpus, _, manifests, mds := loadReference(t)
@@ -624,9 +879,131 @@ func TestCheckPairAgreesWithTheParts(t *testing.T) {
 		for _, flags := range []string{"", "crlf", "bom"} {
 			md := rebuild(t, corpus.Bases[pair[0]], []json.RawMessage{json.RawMessage("0"), json.RawMessage("0")}, strings.ReplaceAll(flags, "bom", ""))
 			doc := rebuild(t, corpus.Bases[pair[1]], []json.RawMessage{json.RawMessage("0"), json.RawMessage("0")}, flags)
-			if r := Check(md, "ovdb.yaml", doc, Directory); !r.OK() {
-				t.Errorf("%s with %s (%q): %v", pair[0], pair[1], flags, r.Findings)
+			for _, profile := range []Profile{Directory, Publisher} {
+				if r := Check(md, "ovdb.yaml", doc, profile); !r.OK() {
+					t.Errorf("%s with %s (%q, profile %d): %v", pair[0], pair[1], flags, profile, r.Findings)
+				}
 			}
 		}
+	}
+}
+
+// The Publisher profile refuses every document and every pair that the Directory
+// profile refuses, over the whole corpus of both goldens.
+func TestPublisherRefusesWhatTheDirectoryRefuses(t *testing.T) {
+	corpus, _, manifests, mds := loadReference(t)
+	goodMd := []byte("---\novdb: 1\npublish: [./ovdb.yaml]\n---\n")
+	chinook := []byte(corpus.Bases["chinook-yaml"])
+	// pair holds both profiles to the same three inputs: it counts the pairs the Directory profile refuses.
+	pairs, refusedPairs := 0, 0
+	pair := func(md []byte, path string, manifest []byte) {
+		pairs++
+		if Check(md, path, manifest, Directory).OK() {
+			return
+		}
+		refusedPairs++
+		if Check(md, path, manifest, Publisher).OK() {
+			t.Fatalf("the pair %q, %q, %q is refused by the Directory profile and accepted by the Publisher profile", md, path, manifest)
+		}
+	}
+	refusedManifests, refusedMds := 0, 0
+	for _, c := range manifests {
+		_, d := CheckManifest(c.Document, "ovdb.yaml", Directory)
+		_, p := CheckManifest(c.Document, "ovdb.yaml", Publisher)
+		if len(d) > 0 {
+			refusedManifests++
+			if len(p) == 0 {
+				t.Fatalf("the manifest is refused by the Directory profile and accepted by the Publisher profile (%s): %q", c.Family, c.Document)
+			}
+		}
+		pair(goodMd, "ovdb.yaml", c.Document)
+	}
+	for _, c := range mds {
+		_, d := CheckOVDBMd(c.Document, Directory)
+		_, p := CheckOVDBMd(c.Document, Publisher)
+		if len(d) > 0 {
+			refusedMds++
+			if len(p) == 0 {
+				t.Fatalf("the OVDB.md is refused by the Directory profile and accepted by the Publisher profile (%s): %q", c.Family, c.Document)
+			}
+		}
+		pair(c.Document, c.Path, chinook)
+		pair(c.Document, "ovdb.yaml", chinook)
+	}
+	if refusedManifests < 3000 || refusedMds < 200 || refusedPairs < 3000 {
+		t.Fatalf("only %d manifests, %d OVDB.md documents and %d pairs are refused by the Directory profile", refusedManifests, refusedMds, refusedPairs)
+	}
+	t.Logf("cross-profile: the Directory profile refuses %d manifests, %d OVDB.md documents and %d of %d pairs", refusedManifests, refusedMds, refusedPairs, pairs)
+	want := fmt.Sprintf("the Publisher profile refuses every one of the %d manifests, %d OVDB.md documents and %d pairs (of %d) that the Directory profile refuses", refusedManifests, refusedMds, refusedPairs, pairs)
+	if !strings.Contains(strings.Join(strings.Fields(readReadme(t)), " "), want) {
+		t.Errorf("README does not state %q", want)
+	}
+}
+
+var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)
+
+// The README lists every rule that the Chinook checker adds to the Directory's, who
+// decides it (the two documents, other files, or the caller's input), the rule of
+// Go that makes it, and the lines of the checker: the generator's own table.
+func TestPublisherRulesTable(t *testing.T) {
+	var golden struct {
+		Rules []struct {
+			ID    string `json:"id"`
+			Who   string `json:"who"`
+			Go    string `json:"go"`
+			Lines []int  `json:"lines"`
+		} `json:"rules"`
+		NeedsFiles map[string]map[string]int `json:"needsFiles"`
+	}
+	readGolden(t, "publisher.verdicts.json", &golden)
+	rows := map[string][4]string{}
+	for _, m := range readmeRule.FindAllStringSubmatch(readReadme(t), -1) {
+		rows[m[1]] = [4]string{m[2], m[3], m[4]}
+	}
+	documents, other := 0, 0
+	for _, rule := range golden.Rules {
+		row, ok := rows[rule.ID]
+		goCell := "slice 3"
+		if rule.Go != "" {
+			goCell = "`" + strings.ReplaceAll(rule.Go, ", ", "`, `") + "`"
+		}
+		var lines []string
+		for _, n := range rule.Lines {
+			lines = append(lines, strconv.Itoa(n))
+		}
+		if !ok || row[0] != rule.Who || row[1] != goCell || row[2] != strings.Join(lines, ", ") {
+			t.Errorf("rule %q: README row %v, want %s, %s, %s", rule.ID, row, rule.Who, goCell, strings.Join(lines, ", "))
+		}
+		if rule.Who == "documents" {
+			documents++
+			if rule.Go == "" {
+				t.Errorf("a rule decided by the documents has no rule of Go: %q", rule.ID)
+			}
+		} else {
+			other++
+			if rule.Go != "" {
+				t.Errorf("a rule that needs other files or input has a rule of Go: %q", rule.ID)
+			}
+		}
+	}
+	if len(rows) != len(golden.Rules) || documents < 15 || other < 8 {
+		t.Errorf("README lists %d rules, the generator %d (%d by the documents, %d by other files or input)", len(rows), len(golden.Rules), documents, other)
+	}
+	// What only other files decide, recorded as classes with the number of accepted cases that a repository of wrong or missing files would refuse.
+	classes := map[string]bool{}
+	for _, set := range golden.NeedsFiles {
+		for class := range set {
+			classes[class] = true
+		}
+	}
+	flat := strings.Join(strings.Fields(readReadme(t)), " ")
+	for class := range classes {
+		want := fmt.Sprintf("%s (%d manifests, %d OVDB.md documents)", class, golden.NeedsFiles["manifest"][class], golden.NeedsFiles["md"][class])
+		if !strings.Contains(flat, want) {
+			t.Errorf("README does not state the class of refusals that need other files %q", want)
+		}
+	}
+	if len(classes) < 5 {
+		t.Errorf("only %d classes of refusals need other files", len(classes))
 	}
 }
