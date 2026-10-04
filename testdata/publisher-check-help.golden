@@ -1,0 +1,21 @@
+
+  Check the OVDB.md and the manifests of a Git repository, as committed at HEAD, against the OVDB Directory's rules and
+  the extra rules a publisher's own check holds a repository to.
+
+  It reads the commit with git, never the working tree, so what you changed but did not commit is not checked. It needs
+  git 2.45 or newer, and it never uses the network: nothing is fetched, nothing is sent.
+
+  Exit codes: 0 no problems; 1 the repository is refused (the findings say why); 2 the command could not run as asked (a
+  wrong flag or path, or git is missing or too old).
+
+  The Directory also reads your hosted repository, so a pass here is not the Directory's acceptance.
+
+  USAGE
+
+    ovdb publisher check [path] [--flags]
+
+  FLAGS
+
+    -h --help     Help for check
+    --json        Print the result as a JSON document for a CI job
+    --repository  The repository this one is, as the manifests must say in publisher.repository (https://github.com/<owner>/<repository>)

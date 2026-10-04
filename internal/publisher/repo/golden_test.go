@@ -288,7 +288,7 @@ var stricterKinds = map[string]string{
 	RuleTreeName:       "A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory.",
 	RuleTreeLimit:      "A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound.",
 	RuleManifests:      "OVDB.md lists more than 32 manifests; the checker judges every one.",
-	RuleEntitiesLimit:  "The model file has more than 10000 entities (MaxEntities); the checker compares each recordset with each entity, so 20000 recordsets against 330000 entities took it 6 seconds.",
+	RuleEntitiesLimit:  "The model file has an entities object of more than 10000 entities (MaxEntities); the checker compares each recordset with each entity, so 20000 recordsets against 330000 entities took it 6 seconds.",
 	"yaml-encoding":    "The reader refuses a file that is not UTF-8 text (a byte that is not UTF-8, a NUL character); the checker's library reads a file as UTF-8, replaces the bytes it cannot decode and goes on.",
 	RuleModelDepth:     "The model file nests arrays and objects more than 100 levels deep (the top object is the first level); JSON.parse has no bound.",
 	"yaml":             "The reader accepts a subset of YAML and refuses a structure it cannot place (here a flow collection used as a key); the checker's library reads it.",

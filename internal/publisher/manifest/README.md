@@ -3,8 +3,8 @@
 The pure judge of a publisher's two documents, `OVDB.md` and the manifest
 (`ovdb.yaml`): bytes in, findings and facts out. It is the second piece of
 `ovdb publisher check`, a command that checks what a publisher keeps in their
-repository; **no command uses it yet**, nothing imports it from `main`, and the
-`ovdb` binary does not link it (so nothing in it is visible to a user).
+repository; `ovdb publisher check` (package `internal/publisher/checkcmd`) runs it through
+package `repo`, and the `ovdb` binary links it.
 
 No file, no git, no network: the caller reads the two documents and this package
 says what is wrong with them and what the caller needs to know to go on (the

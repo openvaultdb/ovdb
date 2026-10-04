@@ -1,0 +1,1 @@
+{"schema":1,"command":"publisher check","commit":"","profile":"publisher","ok":false,"manifests":0,"findings":[{"rule":"repo-no-commit","severity":"error","path":"repository","line":0,"message":"cannot be read: the repository has no commit yet: commit OVDB.md and the manifests it lists"}],"summary":{"errors":1,"capped":false,"omitted":0}}

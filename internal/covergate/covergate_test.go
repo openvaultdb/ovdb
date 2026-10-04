@@ -311,13 +311,13 @@ func opener(files map[string]string) func(string) (io.ReadCloser, error) {
 
 func run(t *testing.T, profile string, fsys fs.FS, args ...string) (int, string, string) {
 	t.Helper()
-	return runWith(t, profile, fsys, "", args...)
+	return runWith(t, profile, fsys, nil, args...)
 }
 
-func runWith(t *testing.T, profile string, fsys fs.FS, goflags string, args ...string) (int, string, string) {
+func runWith(t *testing.T, profile string, fsys fs.FS, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := Run(args, &stdout, &stderr, opener(map[string]string{"cover.out": profile}), fsys, goflags)
+	code := Run(args, &stdout, &stderr, opener(map[string]string{"cover.out": profile}), fsys, func(name string) (string, error) { return env[name], nil })
 	return code, stdout.String(), stderr.String()
 }
 
@@ -470,14 +470,14 @@ func TestAGatedPackageMayNotImportAModuleThatIsReplacedByADirectory(t *testing.T
 // A profile made under a build that is not of the module's own files is refused, and says why: GOFLAGS=-modfile=<abs>/alt.mod hid a function from the
 // gate, and a vendor directory failed it only by accident (review of #39).
 func TestRunRefusesABuildThatHidesWhatItMeasures(t *testing.T) {
-	for _, flags := range []string{"-modfile=/abs/alt.mod", "-mod=vendor", "-mod=mod", "-overlay=/abs/o.json", "-workfile=/abs/go.work", "-count=1 -modfile=/abs/alt.mod", "--mod=vendor"} {
-		code, stdout, stderr := runWith(t, goodProfile, tree(), flags, "cover.out", "./good")
+	for _, flags := range []string{"-modfile=/abs/alt.mod", "-mod=vendor", "-mod=mod", "-overlay=/abs/o.json", "-workfile=/abs/go.work", "-count=1 -modfile=/abs/alt.mod", "--mod=vendor", "-toolexec=/abs/wrap", "-tags=hidden"} {
+		code, stdout, stderr := runWith(t, goodProfile, tree(), map[string]string{"GOFLAGS": flags}, "cover.out", "./good")
 		if code != 2 || stdout != "" || !strings.Contains(stderr, "GOFLAGS has "+strings.Fields(flags)[len(strings.Fields(flags))-1]) || !strings.Contains(stderr, "unset it") {
 			t.Errorf("GOFLAGS=%s: %d %q %q", flags, code, stdout, stderr)
 		}
 	}
-	for _, flags := range []string{"", "-mod=readonly", "-count=1 -race", "-modcacherw", "-tags=modfile"} {
-		if code, _, stderr := runWith(t, goodProfile, tree(), flags, "cover.out", "./good"); code != 0 {
+	for _, flags := range []string{"", "-mod=readonly", "-count=1 -race", "-modcacherw", "-modcacherw -count=2"} {
+		if code, _, stderr := runWith(t, goodProfile, tree(), map[string]string{"GOFLAGS": flags}, "cover.out", "./good"); code != 0 {
 			t.Errorf("GOFLAGS=%q is fine and was refused: %d %q", flags, code, stderr)
 		}
 	}
@@ -490,5 +490,30 @@ func TestRunRefusesABuildThatHidesWhatItMeasures(t *testing.T) {
 	withFile["vendor"] = file("a file called vendor is not the go command's vendor directory")
 	if code, _, stderr := run(t, goodProfile, withFile, "cover.out", "./good"); code != 0 {
 		t.Errorf("a file called vendor: %d %q", code, stderr)
+	}
+}
+
+// The settings are the go tool's, and a failure to ask is a refusal; GOWORK that names a workspace file is refused, "off" and empty are not.
+func TestRunAsksTheGoToolForGOWORKAndFailsClosed(t *testing.T) {
+	if code, _, stderr := runWith(t, goodProfile, tree(), map[string]string{"GOWORK": "/outside/go.work"}, "cover.out", "./good"); code != 2 || !strings.Contains(stderr, "workspace file /outside/go.work") || !strings.Contains(stderr, "GOWORK=off") {
+		t.Errorf("a go.work: %d %q", code, stderr)
+	}
+	for _, work := range []string{"", "off", " off\n"} {
+		if code, _, stderr := runWith(t, goodProfile, tree(), map[string]string{"GOWORK": work}, "cover.out", "./good"); code != 0 {
+			t.Errorf("GOWORK=%q: %d %q", work, code, stderr)
+		}
+	}
+	for _, failing := range []string{"GOFLAGS", "GOWORK"} {
+		var stdout, stderr bytes.Buffer
+		env := func(name string) (string, error) {
+			if name == failing {
+				return "", errors.New("no go tool")
+			}
+			return "", nil
+		}
+		code := Run([]string{"cover.out", "./good"}, &stdout, &stderr, opener(map[string]string{"cover.out": goodProfile}), tree(), env)
+		if code != 2 || !strings.Contains(stderr.String(), "could not say what "+failing+" is") {
+			t.Errorf("%s unknown: %d %q", failing, code, stderr.String())
+		}
 	}
 }

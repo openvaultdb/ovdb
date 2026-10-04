@@ -82,12 +82,12 @@ func (r ExecRunner) Run(args []string, limit int) ([]byte, error) {
 	case out.over:
 		return nil, ErrTooLarge
 	case ctx.Err() != nil:
-		return nil, fmt.Errorf("git did not finish in %s", cmp.Or(r.Timeout, 30*time.Second))
+		return nil, TimeoutError{After: cmp.Or(r.Timeout, 30*time.Second)}
 	case errors.As(err, &exit):
 		lines := strings.Split(strings.TrimSpace(string(stderr.buf)), "\n")
 		return nil, &ExitError{Code: exit.ExitCode(), Stderr: lines[len(lines)-1], Full: string(stderr.buf)}
 	case err != nil:
-		return nil, fmt.Errorf("git could not be run: %s", ascii(err.Error()))
+		return nil, fmt.Errorf("%w: %s", ErrCannotRun, ascii(err.Error()))
 	}
 	return out.buf, nil
 }

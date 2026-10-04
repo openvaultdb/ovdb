@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Kind is what a path is in the commit that is read.
@@ -76,6 +77,10 @@ var (
 	ErrAlternates = errors.New("this repository borrows objects from another directory that is not there (objects/info/alternates): run the check in a complete clone")
 	// ErrOldGit: git is older than MinGit.
 	ErrOldGit = errors.New("git is older than " + MinGit + ", which is the first that can be told never to fetch a missing object (GIT_NO_LAZY_FETCH): update git")
+	// ErrCannotRun: git could not be started (it is not installed, or not where the PATH says).
+	ErrCannotRun = errors.New("git could not be run")
+	// ErrTimeout: a call to git did not finish in time. A TimeoutError is it, and is ErrCannotRun too: git was found, and gave no answer.
+	ErrTimeout = errors.New("git did not finish in time")
 	// ErrMalformed: git's output is not in the form that is read.
 	ErrMalformed = errors.New("git's output is not in a form this check reads")
 )
@@ -106,5 +111,29 @@ func ascii(s string) string {
 		s = s[:200] + "..."
 	}
 	q := strconv.QuoteToASCII(s)
-	return q[1 : len(q)-1]
+	q = q[1 : len(q)-1]
+	// QuoteToASCII writes " as \": a quote is printable, and the escape reads as a stray backslash (exec: \"git\": executable file not found).
+	var b strings.Builder
+	for i := 0; i < len(q); i++ {
+		switch {
+		case q[i] == '\\' && i+1 < len(q) && q[i+1] == '"':
+			b.WriteByte('"')
+			i++
+		case q[i] == '\\' && i+1 < len(q):
+			b.WriteByte('\\')
+			b.WriteByte(q[i+1])
+			i++
+		default:
+			b.WriteByte(q[i])
+		}
+	}
+	return b.String()
 }
+
+// TimeoutError is what a call to git that did not finish in After is: it is ErrTimeout, and ErrCannotRun (no verdict about the repository).
+type TimeoutError struct{ After time.Duration }
+
+func (e TimeoutError) Error() string { return "git did not finish in " + e.After.String() }
+
+// Is makes a TimeoutError both ErrTimeout and ErrCannotRun.
+func (e TimeoutError) Is(target error) bool { return target == ErrTimeout || target == ErrCannotRun }

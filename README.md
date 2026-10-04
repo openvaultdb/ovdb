@@ -245,6 +245,143 @@ you signed in before this scope was requested, run `ovdb cloud login` again.
 Run `ovdb <command> --help` for the full flag reference of any subcommand,
 or `ovdb version` for build version/commit/date.
 
+## For publishers: `ovdb publisher check`
+
+If you publish a database to the OVDB Directory, `ovdb publisher check` tells you, before you push, whether the
+repository that holds your `OVDB.md` and your manifests passes the rules the Directory applies to them, and the
+stricter rules a publisher's own check holds a repository to (the ones the ChinookDB reference repository's checker adds).
+
+```sh
+ovdb publisher check                       # the Git repository in the current directory
+ovdb publisher check ../my-database        # another one
+ovdb publisher check --repository https://github.com/me/my-database
+ovdb publisher check --json                # a document for a CI job
+```
+
+**What it checks.** The repository as it is *committed at `HEAD`* (what you changed and did not commit is not looked at,
+which is also what the Directory reads): `OVDB.md` and every manifest it lists (the fields, the URLs, the licences, the
+recordsets), the files an own-form manifest names (the ModelSpec JSON file, `model.hcl`, the MeaningGraph file) and that
+they agree with the manifest (model name and address, the recordsets against the entities of the model, the meaning
+file's id, licence and `models:` entry), and, with `--repository`, that every manifest says it is in that repository
+(`publisher.repository`). It checks one commit at a time and reads only those files.
+
+**What it does not check.** It does not look at the hosted repository (the Directory does, and may find what a local
+clone does not show: a force-pushed branch, a private or renamed repository), it does not fetch anything, and it does not
+check anything the Directory or the registries (ModelSpec, MeaningGraph) check beyond these rules: that a name is
+registered, that a URL answers, that the data is what the manifest says. A pass here is **not** the Directory's
+acceptance.
+
+**It never uses the network.** It runs `git` (version 2.45 or newer: the first that can be told never to fetch a missing
+object, which the check relies on), sends nothing, and starts no server. A partial clone that lacks an object the commit
+needs is refused with a message saying so, not completed by a fetch. The repository's own git
+configuration cannot make it run a program (no hook, file system monitor, credential helper, textconv or filter driver runs; the
+details are in [internal/publisher/repo/README.md](internal/publisher/repo/README.md)). Check a clone you made, not a directory somebody else
+handed you, unless you have looked at its `.git/config`.
+
+**Exit codes.** `0` no problems; `1` the repository is refused; `2` the command could not run as asked.
+
+| What happened | Exit | Where it is reported |
+| --- | --- | --- |
+| no findings | 0 | summary on standard output |
+| the repository is refused: any finding, including a missing `OVDB.md`, a file that is not tracked, a bad manifest | 1 | findings and summary on standard output |
+| not a Git repository | 1 | a finding (`repo-unreadable`) |
+| a Git repository with no commit yet | 1 | a finding (`repo-no-commit`) |
+| a bare repository, a directory below the top of the repository, a partial clone short of an object, a damaged repository | 1 | a finding (`repo-bare`, `repo-subdirectory`, `repo-partial-clone`, `repo-object-missing`, `repo-object-corrupt`, ...) |
+| `--repository` is not a repository URL (`https://github.com/<owner>/<repository>`) | 2 | usage error on standard error |
+| `--repository` is a repository URL that the manifests do not say | 1 | a finding (`repo-repository`) |
+| an unknown flag, more than one path, a path that does not exist or is not a directory | 2 | usage error on standard error |
+| `git` is not installed (or not on the `PATH`) | 2 | error on standard error |
+| `git` is older than 2.45 | 2 | error on standard error |
+| a `git` call that does not finish in 30 seconds | 2 | error on standard error |
+| standard output cannot be written (a full disk, a descriptor that is not open for writing) | 2 | error on standard error; with `--json` only the exit code |
+
+A pipe whose reader has gone (`ovdb publisher check | head -1`) ends the process by SIGPIPE, as it does any command; that is not this row.
+
+The rule: a wrong flag or path is the caller's mistake, and a machine whose `git` cannot be run, is too old, or does not finish gives
+no verdict about the repository, and a result that cannot be delivered is not a verdict: all are `2`. Everything about the repository itself, "not a repository" and "no commit yet" included, is a
+verdict: `1`. With `--json` a `2` is the same error envelope the other commands print (`{"schema":1,"error":{...}}`) on standard output.
+
+**The output for people** is one block for each finding, in the order the check reports them: the file and line where
+there is one, the rule id in brackets, and the whole message the rule wrote (what is wrong and what to write); then one
+summary line. A repository with a problem:
+
+<!-- publisher-check-golden: refused.txt -->
+```text
+ovdb.yaml:59  [repo-recordsets]
+  recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Track"
+
+ovdb.yaml:59  [repo-recordsets]
+  recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Tracks"
+
+Refused: 2 problems at commit 98ff05b4119c. Fix them, commit, and run the check again.
+```
+
+and one with nothing wrong:
+
+<!-- publisher-check-golden: accepted.txt -->
+```text
+OK: commit 79e7bb0b1d6f, 1 manifest listed in OVDB.md, no problems.
+This applies the OVDB Directory's rules for OVDB.md and the manifests, and the stricter rules a publisher's own check uses. The Directory also reads your hosted repository, so a pass here is not its acceptance.
+```
+
+When the repository cannot be read at all there is no commit to show, and the summary says what was found instead: a
+repository with no commit yet, a bare one, a directory below the top of its repository, a directory that is not a
+repository, or objects git cannot read. When the check reports its most findings (100), it says how many more were left
+out, and they are not counted among the problems.
+
+Nothing that comes from the repository (a file name, a manifest value, git's own message) reaches the terminal as it is: every
+character that is not printable ASCII is shown as an escape (`\x1b`, `\u00e9`), so a hostile file name cannot
+move the cursor or retitle the window; a file name is cut at 200 bytes, a message is shown whole. The output is plain text, with
+no colour, whether or not it is a terminal (`NO_COLOR` has nothing to turn off), and its lines are not wrapped. It is bounded: at
+most 100 findings, each message at most 400 bytes; the largest output is under 150 KiB as text and under 1 MiB as JSON
+(`TestTheLargestOutputIsBounded`).
+
+**The JSON document** (`--json`), the same `schema` as every `ovdb` document, on standard output, always one line. For the
+repository above:
+
+<!-- publisher-check-golden: refused.json -->
+```json
+{"schema":1,"command":"publisher check","commit":"98ff05b4119c5985cade0f961ecdb25e8b1277b6","profile":"publisher","ok":false,"manifests":1,"findings":[{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets lacks the ModelSpec entities of \"model/chinook.modelspec.json\": \"Track\""},{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets names things that are not ModelSpec entities of \"model/chinook.modelspec.json\": \"Tracks\""}],"summary":{"errors":2,"capped":false,"omitted":0}}
+```
+
+and for one with nothing wrong:
+
+<!-- publisher-check-golden: accepted.json -->
+```json
+{"schema":1,"command":"publisher check","commit":"79e7bb0b1d6f0666dce465874990dec64348331f","profile":"publisher","ok":true,"manifests":1,"findings":[],"summary":{"errors":0,"capped":false,"omitted":0}}
+```
+
+`commit` is the commit that was judged, `""` when none could be read. `profile` is `publisher`. `manifests` is the number of
+manifests `OVDB.md` lists. Each finding has a stable `rule` (match on that, never on the message), a `severity` (`error`
+is the only one), the `path` of the file it is about (`"repository"` when it is about the repository as a whole, `"OVDB.md"` for
+`OVDB.md`), the `line` (0 when there is none) and the `message`. `ok` is true when there are no findings. `summary.errors`
+counts the findings; `summary.capped` is true when the check left findings out, `summary.omitted` says how many, and the last
+finding is then the notice `findings-capped`, which is not counted. A new field may be added to this document without a new
+`schema`; a field is never removed or changed without one. The documents are pinned by golden files in
+`internal/publisher/checkcmd/testdata`, and a test holds the examples above to them.
+
+**In CI**, with no token (the release assets are public); pin the version, and check the download against `checksums.txt`:
+
+```yaml
+      - uses: actions/checkout@v7
+      - name: Check the repository for the OVDB Directory
+        run: |
+          version=0.23.0
+          asset="ovdb_${version}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/openvaultdb/ovdb/releases/download/v${version}/${asset}"
+          curl -fsSLO "https://github.com/openvaultdb/ovdb/releases/download/v${version}/checksums.txt"
+          grep " ${asset}\$" checksums.txt | sha256sum --check -
+          tar -xzf "${asset}" ovdb
+          ./ovdb publisher check --repository "https://github.com/${GITHUB_REPOSITORY}"
+```
+
+`--repository` is compared with `publisher.repository` as written, letter case included, and `${GITHUB_REPOSITORY}` is spelled as GitHub spells
+the repository: if its name has capital letters, write `publisher.repository` the same way, or leave `--repository` out. The finding says both
+spellings (`the manifest has ..., --repository is ...`).
+
+The step fails the job on exit code `1` or `2`. On a pull request `actions/checkout` checks out the merge commit, which
+is what is checked. The runner's `git` must be 2.45 or newer (the `ubuntu-latest` image's is).
+
 ## Development
 
 ```sh
@@ -252,8 +389,7 @@ go build -o ovdb .
 go test ./...
 ```
 
-The packages under `internal/publisher` (the groundwork of a future
-`ovdb publisher check`) are held to exactly 100% statement coverage by a gate
+The packages under `internal/publisher` (`ovdb publisher check`) are held to exactly 100% statement coverage by a gate
 scoped to them, `cmd/covergate`, run by the `publisher-coverage` job of
 `.github/workflows/ci.yml`; how to run it, and the rules those packages
 implement and how they are proved against their JavaScript references, are in

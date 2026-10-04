@@ -205,7 +205,7 @@ jobs:
       - name: go test with coverage (publisher check packages)
         run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./internal/covergate/... ./cmd/covergate/...
       - name: Every statement of exactly those packages is covered
-        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/covergate ./cmd/covergate
+        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/publisher/checkcmd ./internal/covergate ./cmd/covergate
 
   # The goldens that the parity tests of the publisher check read (testdata/reference of
   # internal/publisher/rules, manifest and repo) are made by three generators
@@ -243,3 +243,9 @@ jobs:
           cache: true
       - name: Package repo reads real repositories as the in-memory reader does
         run: OVDB_REAL_GIT=1 go test -count=1 -v -run RealGit ./internal/publisher/repo/
+      # `ovdb publisher check` through the built binary, against real repositories made at test
+      # time and the real ChinookDB repository at the pinned commit (fetched by git from
+      # github.com: the same repository the goldens above are made from; the command itself
+      # uses no network).
+      - name: ovdb publisher check, end to end
+        run: OVDB_REAL_GIT=1 go test -count=1 -v -run PublisherCheckEndToEnd .

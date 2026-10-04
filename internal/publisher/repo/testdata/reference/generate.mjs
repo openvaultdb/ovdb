@@ -245,14 +245,16 @@ const observed = []; // what the checker said about each case, for the check of 
 const cases = [];
 const addCase = (group, name, ops, repository = own) => {
   current = `${group}: ${name}`;
-  const [dir, cleanup] = build(apply(ops));
+  const state = apply(ops);
+  const texts = Object.fromEntries([modelPath, meaningPath].map((p) => [p, typeof state.tracked.get(p)?.text === 'string' && state.tracked.get(p).text.length < 100000 ? state.tracked.get(p).text : '']));
+  const [dir, cleanup] = build(state);
   try {
     seen = [];
     const plain = verdict(dir, null);
     const plainProblems = seen;
     seen = [];
     const withRepository = repository === null ? '-' : verdict(dir, repository);
-    observed.push({ label: current, plain, with: withRepository, plainProblems, withProblems: seen });
+    observed.push({ texts, label: current, plain, with: withRepository, plainProblems, withProblems: seen });
     cases.push({ group, name, ops, repository, plain, with: withRepository });
   } finally { cleanup(); }
 };
@@ -422,8 +424,8 @@ for (const [name, ops] of Object.entries({
   'text after the value': asModel(`${base[modelPath]} x`),
   'a second value after the first': asModel(`${base[modelPath]}\n{}`),
   'white space after the value': asModel(`${base[modelPath]}\n\n \t\r\n`),
-  'a form feed between tokens': asModel(base[modelPath].replace('{', '{\f')),
-  'a comment': asModel(base[modelPath].replace('{', '{/* c */')),
+  'a form feed between tokens': asModel(base[modelPath].replace('"1.0-draft",', '"1.0-draft",\f')),
+  'a comment': asModel(base[modelPath].replace('"module": {', '"module": /* c */{')),
   'single quotes': asModel(base[modelPath].replace('"modelspec"', "'modelspec'")),
   'a trailing comma': asModel(base[modelPath].replace(/\}\s*$/, ',}\n')),
   'a raw tab in a string': unrelated('x', '"a\tb"'),
@@ -524,6 +526,23 @@ addCase('fixtures', 'the hoster example alone, with no model files', [['copy', '
 // goldens had them for a release). So every case has an expectation written from its name, and the checker's own messages must bear it out: for a
 // refusal, a problem that matches the text; for a case that both accept, no problem at all. A case that no line names fails, and every mismatch is
 // listed before the run fails.
+// Where the checker's message puts a fault is part of the reason: a message that two different faults give the same words for (JSON.parse says
+// "Expected property name" for a comment, a form feed and single quotes alike) is pinned by where it says the fault is, and by the fault being in the
+// text of the case where the name says it is. A case whose fault is swapped for another no longer matches its own line.
+const jsonAt = (head, needle, skip = 0, len = needle.length - skip, last = false) => (problem, o) => {
+  const text = o.texts[modelPath];
+  const start = (last ? text.lastIndexOf(needle) : text.indexOf(needle)) + skip;
+  const m = problem.match(/is not a ModelSpec JSON file: (.*?)(?: in JSON)? at position (\d+)/);
+  return start >= skip && m !== null && m[1] === head && Number(m[2]) >= start && Number(m[2]) <= start + len;
+};
+const jsonToken = (token, needle) => (problem, o) => problem.includes(`is not a ModelSpec JSON file: Unexpected token '${token}'`) && o.texts[modelPath].includes(needle);
+// The line of the second of two lines that are the same, for "Map keys must be unique at line N, column C".
+const duplicate = (path, line, column) => (problem, o) => {
+  const lines = o.texts[path].split('\n');
+  const first = lines.indexOf(line);
+  const second = lines.indexOf(line, first + 1);
+  return first >= 0 && second > first && problem.includes(`is not valid YAML: Map keys must be unique at line ${second + 1}, column ${column}`);
+};
 const tracked = /must be a tracked regular file/;
 const expectations = [
   [/^base:/, null],
@@ -598,7 +617,21 @@ const expectations = [
   [/^json: a repeated entities: the last is wrong$/, /recordsets lacks/],
   [/^json: (a lone surrogate in the module name|a byte that is not UTF-8 in the module name|the keys Module, Name and Entities in capitals|the key Name in capitals|the key Module in capitals)$/, /has no module\.name/],
   [/^json: the key Entities in capitals$/, /has no entities/],
-  [/^json: (a number with a leading zero|a number that is a plus|a number with a trailing dot|a BOM at the start|text after the value|a second value after the first|a form feed between tokens|a comment|single quotes|a trailing comma|a raw tab in a string|a raw line break in a string|an invalid escape|NaN|a NUL byte in white space)$/, /is not a ModelSpec JSON file/],
+  [/^json: a number with a leading zero$/, jsonAt('Unexpected number', '"x":01', 4, 2)],
+  [/^json: a number that is a plus$/, jsonToken('+', ':+1')],
+  [/^json: a number with a trailing dot$/, jsonAt('Unterminated fractional number', '"x":1.', 4, 2)],
+  [/^json: a BOM at the start$/, jsonToken('\ufeff', '\ufeff{')],
+  [/^json: text after the value$/, jsonAt('Unexpected non-whitespace character after JSON', ' x', 1, 1, true)],
+  [/^json: a second value after the first$/, jsonAt('Unexpected non-whitespace character after JSON', '\n{}', 1, 1, true)],
+  [/^json: a form feed between tokens$/, jsonAt('Expected double-quoted property name', '\f')],
+  [/^json: a comment$/, jsonToken('/', '/* c */')],
+  [/^json: single quotes$/, jsonAt("Expected property name or '}'", "'modelspec'")],
+  [/^json: a trailing comma$/, jsonAt('Expected double-quoted property name', ',}')],
+  [/^json: a raw tab in a string$/, jsonAt('Bad control character in string literal', 'a\tb', 1, 1)],
+  [/^json: a raw line break in a string$/, jsonAt('Bad control character in string literal', 'a\nb', 1, 1)],
+  [/^json: an invalid escape$/, jsonAt('Bad escaped character', '\\x', 1, 1)],
+  [/^json: NaN$/, jsonToken('N', 'NaN')],
+  [/^json: a NUL byte in white space$/, jsonAt("Expected property name or '}'", '\0')],
   [/^json: /, null],
   // The recordsets.
   [/^recordsets: (one fewer than the entities|one fewer and one more|in another case)$/, /recordsets lacks/],
@@ -606,7 +639,9 @@ const expectations = [
   [/^recordsets: a name twice$/, /recordsets lists a name twice/],
   // The meaning file.
   [/^meaning: (empty|only comments|only white space|a list|a string|a number|null)$/, /is not a MeaningGraph file: it must be a mapping/],
-  [/^meaning: (not YAML|id written twice|models with the entry twice)$/, /is not valid YAML/],
+  [/^meaning: not YAML$/, /is not valid YAML: Flow sequence in block collection must be sufficiently indented and end with a \] at line 2/],
+  [/^meaning: id written twice$/, duplicate(meaningPath, 'id: chinook', 1)],
+  [/^meaning: models with the entry twice$/, duplicate(meaningPath, '  chinook: chinook.modelspec.hcl', 3)],
   [/^meaning: (a mapping with nothing in it|id of another graph|id missing|id a number|id null|id in another case|a graph id that is digits, and a number in the file)$/, /meaning\.graph\.id is/],
   [/^meaning: licen[cs]e/, /licences\.meaning is/],
   [/^meaning: (models missing|models a list|models null|models for another module|the entry a number|the entry null|the entry blank|the entry a list|the entry an empty string)$/, /has no models: entry/],
@@ -614,7 +649,7 @@ const expectations = [
   [/^meaning: the entry (with a trailing slash|with a trailing \/\.\/|with an empty segment|with a leading slash|that leaves the repository|that is \.\.|with a space|with a glob|with a backslash|with a space that|with a star that|with a backslash that)/, /models must name/],
   [/^meaning: /, null],
   // The YAML the reader is stricter about: the checker's library reads all of it but a second document.
-  [/^yaml: a second document$/, /is not valid YAML/],
+  [/^yaml: a second document$/, /is not valid YAML: Source contains multiple documents/],
   [/^yaml: /, null],
 ];
 const reasonProblems = [];
@@ -623,11 +658,12 @@ for (const o of observed) {
   if (line === undefined) { reasonProblems.push(`${o.label}: no expectation names this case`); continue; }
   const [, expect] = line;
   const want = expect !== null && typeof expect === 'object' && !(expect instanceof RegExp) ? expect : { plain: expect, with: expect };
+  const matches = (expected, p) => (typeof expected === 'function' ? expected(p, o) : expected.test(p));
   for (const [run, expected, verdictOfRun, problems] of [['plain', want.plain, o.plain, o.plainProblems], ['with --repository', want.with, o.with, o.withProblems]]) {
     if (verdictOfRun === '-') continue;
     if (expected === null) { if (verdictOfRun !== '1') reasonProblems.push(`${o.label} (${run}): the checker should accept this case and says: ${problems.join(' | ').slice(0, 160)}`); continue; }
     if (verdictOfRun !== '0') reasonProblems.push(`${o.label} (${run}): the checker should refuse this case, as ${expected}, and accepts it`);
-    else if (!problems.some((p) => expected.test(p))) reasonProblems.push(`${o.label} (${run}): the checker refuses this case, but not as ${expected}: ${problems.join(' | ').slice(0, 160)}`);
+    else if (!problems.some((p) => matches(expected, p))) reasonProblems.push(`${o.label} (${run}): the checker refuses this case, but not as ${expected}: ${problems.join(' | ').slice(0, 160)}`);
   }
 }
 if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s) whose verdict does not come from the reason their name states:\n${reasonProblems.join('\n')}`); process.exit(1); }

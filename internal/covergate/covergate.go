@@ -521,13 +521,13 @@ func packageDir(arg, module string) (string, error) {
 // Run is the gate command: Run([]string{"cover.out", "./internal/a", ...}, ...)
 // prints the totals and returns 0 when every statement of the packages is
 // covered and nothing hides a package from the profile, 1 when anything is
-// wrong, and 2 for a usage or read error. root is the module's file tree, and goflags the value of GOFLAGS the profile was made under.
-func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), root fs.FS, goflags string) int {
+// wrong, and 2 for a usage or read error. root is the module's file tree, and goenv asks the go tool for one of its settings (`go env NAME`).
+func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadCloser, error), root fs.FS, goenv func(name string) (string, error)) int {
 	if len(args) < 2 {
 		_, _ = fmt.Fprintln(stderr, "usage: covergate <cover profile> <package>...")
 		return 2
 	}
-	if problem := hiddenBuild(root, goflags); problem != "" {
+	if problem := hiddenBuild(root, goenv); problem != "" {
 		_, _ = fmt.Fprintf(stderr, "covergate: %s\n", problem)
 		return 2
 	}
@@ -579,16 +579,29 @@ func Run(args []string, stdout, stderr io.Writer, open func(string) (io.ReadClos
 }
 
 // hiddenBuild says why the profile cannot be trusted to be of the sources the gate reads, or "": a build that is not of the module's own files at the
-// module's own versions makes a profile of other code. GOFLAGS can name another go.mod (-modfile), replace files (-overlay), use another go.work
-// (-workfile), and choose vendored (-mod=vendor) or freshly resolved (-mod=mod) dependencies, and a vendor directory is used by the go command of its
-// own accord when go.mod says go 1.14 or later. Every one of them hides a function from the gate or puts another in its place.
-func hiddenBuild(root fs.FS, goflags string) string {
-	for _, flag := range strings.Fields(goflags) {
+// module's own versions makes a profile of other code. The settings are asked of the go tool (`go env GOFLAGS GOWORK`), not read from this process's
+// environment, because the go tool also reads them from its GOENV file (what `go env -w` writes): GOFLAGS can name another go.mod (-modfile), replace
+// files (-overlay), use another go.work (-workfile), run the compiler through a program (-toolexec), choose which files are built (-tags), and choose
+// vendored (-mod=vendor) or freshly resolved (-mod=mod) dependencies; GOWORK can name a go.work outside the tree; and a vendor directory is used by
+// the go command of its own accord. Every one of them hides a function from the gate or puts another in its place.
+func hiddenBuild(root fs.FS, goenv func(name string) (string, error)) string {
+	flags, err := goenv("GOFLAGS")
+	if err != nil {
+		return fmt.Sprintf("the go tool could not say what GOFLAGS is (%v), so the gate cannot tell what the profile measured", err)
+	}
+	for _, flag := range strings.Fields(flags) {
 		name, value, _ := strings.Cut(strings.TrimLeft(flag, "-"), "=")
 		switch {
-		case name == "modfile", name == "overlay", name == "workfile", name == "mod" && (value == "vendor" || value == "mod"):
-			return fmt.Sprintf("GOFLAGS has %s: the profile would be of another build than the module's own files, so the gate cannot tell what it measured; unset it", flag)
+		case name == "modfile", name == "overlay", name == "workfile", name == "toolexec", name == "tags", name == "mod" && (value == "vendor" || value == "mod"):
+			return fmt.Sprintf("GOFLAGS has %s: the profile would be of another build than the module's own files, so the gate cannot tell what it measured; unset it (it may come from the file `go env GOENV` names)", flag)
 		}
+	}
+	work, err := goenv("GOWORK")
+	if err != nil {
+		return fmt.Sprintf("the go tool could not say what GOWORK is (%v), so the gate cannot tell what the profile measured", err)
+	}
+	if work = strings.TrimSpace(work); work != "" && work != "off" {
+		return fmt.Sprintf("the go tool uses the workspace file %s: modules it names replace the module's dependencies, so the profile may be of other code than the gate reads; set GOWORK=off", work)
 	}
 	if info, err := fs.Stat(root, "vendor"); err == nil && info.IsDir() {
 		return "the module has a vendor directory: the go command builds from it, not from the module's dependencies, so the profile may be of other code than the gate reads; remove it"

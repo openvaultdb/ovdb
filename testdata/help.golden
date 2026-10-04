@@ -23,6 +23,7 @@
     install [name...] [--flags]                 List and install fleet CLIs relevant to ovdb
     list [path] [--flags]                       List collections, a collection's records, or show a record
     open [--flags]                              Sign in to the OVDB web console
+    publisher [command]                         Check what you publish to the OVDB Directory
     pwd [--flags]                               Print the current database, path and where they came from
     self-update [--flags]                       Update the installed ovdb binary to the latest release
     serve [--flags]                             Run the OpenVaultDB API server

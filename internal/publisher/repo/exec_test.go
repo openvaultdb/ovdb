@@ -120,7 +120,7 @@ func TestExecRunnerStopsGitThatTakesTooLong(t *testing.T) {
 	r := runner(t, "sleep")
 	r.Timeout = 300 * time.Millisecond
 	start := time.Now()
-	if _, err := r.Run(nil, 100); err == nil || !strings.Contains(err.Error(), "did not finish in 300ms") {
+	if _, err := r.Run(nil, 100); err == nil || !strings.Contains(err.Error(), "did not finish in 300ms") || !errors.Is(err, ErrCannotRun) || !errors.Is(err, ErrTimeout) || errors.Is(err, ErrOldGit) {
 		t.Errorf("err = %v", err)
 	}
 	if time.Since(start) > 20*time.Second {
@@ -130,7 +130,7 @@ func TestExecRunnerStopsGitThatTakesTooLong(t *testing.T) {
 
 func TestExecRunnerWithoutGit(t *testing.T) {
 	_, err := ExecRunner{Git: "/nonexistent/git", Dir: "."}.Run(nil, 100)
-	if err == nil || !strings.Contains(err.Error(), "git could not be run: ") {
+	if err == nil || !errors.Is(err, ErrCannotRun) || !strings.Contains(err.Error(), "git could not be run: ") {
 		t.Errorf("err = %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
+	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 )
 
 const ownManifest = `format: ovdb-manifest/draft-1
@@ -286,7 +287,11 @@ func TestRepositoryOptionIsComparedExactly(t *testing.T) {
 			t.Errorf("%q: findings %v", c.value, r.Findings)
 		}
 		if !c.ok {
-			only(t, r, RuleRepository, "ovdb.yaml", 24, "publisher.repository must be ")
+			f := only(t, r, RuleRepository, "ovdb.yaml", 24, "publisher.repository and --repository must be written the same, letter case included: ")
+			// Both spellings are in the message, so a publisher sees the difference at once.
+			if !strings.HasSuffix(f.Message, "the manifest has "+rules.Quote(ownRepo)+", --repository is "+rules.Quote(c.value)) {
+				t.Errorf("message %q", f.Message)
+			}
 		}
 	}
 	// A publisher.repository the manifest rules refuse is not compared: its own finding says what is wrong.
@@ -624,7 +629,7 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 		"a list":                        {`[]`, RuleModelJSON, 0, "is not a ModelSpec JSON file: it must be a JSON object"},
 		"text after the value":          {goodModel + "\n{}", RuleModelJSON, 0, "text after the JSON value"},
 		"nested too deep":               {`{"x":` + strings.Repeat("[", 100) + strings.Repeat("]", 100) + "}", RuleModelDepth, 0, "is nested more than 100 levels deep"},
-		"too many entities":             {manyEntities(MaxEntities + 1), RuleEntitiesLimit, 0, "has more than 10000 entities, which is more than this check reads"},
+		"too many entities":             {manyEntities(MaxEntities + 1), RuleEntitiesLimit, 0, "has an entities object of more than 10000 entities, which is more than this check reads"},
 		"no module":                     {`{"entities": {"Album": {}, "Artist": {}}}`, RuleModelModule, 0, "has no module.name that is a ModelSpec module name"},
 		"a module name that is not one": {`{"module": {"name": "_x"}, "entities": {"Album": {}, "Artist": {}}}`, RuleModelModule, 0, "has no module.name"},
 		"no entities":                   {`{"module": {"name": "chinook"}}`, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)"},
@@ -762,10 +767,14 @@ func TestWhatOneCheckCostsIsBounded(t *testing.T) {
 	}
 	m, _ := withManifest("  - Album\n  - Artist\n", list(MaxEntities+1))
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(manifestWithEntities(MaxEntities + 1))}
-	only(t, Check(m, publisher()), RuleEntitiesLimit, modelPath, 0, "has more than 10000 entities")
+	only(t, Check(m, publisher()), RuleEntitiesLimit, modelPath, 0, "has an entities object of more than 10000 entities")
 	m2, text := withManifest("  - Album\n  - Artist\n", list(MaxRecordsets+1))
 	m2.Nodes[modelPath] = Node{Kind: File, Content: []byte(manifestWithEntities(MaxEntities))}
 	only(t, Check(m2, publisher()), RuleRecordsetsLimit, "ovdb.yaml", lineOf(text, "- Album"), "recordsets lists 10001 names, which is more than the 10000 this check reads")
+	// An entities object that a later one replaces is read too, and the message says which kind of thing it found.
+	sup, _ := withManifest("  - Album\n  - Artist\n", "  - Album\n  - Artist\n")
+	sup.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"module":{"name":"chinook"},"entities":` + manyEntitiesObject(MaxEntities+1) + `,"entities":{"Album":{},"Artist":{}}}`)}
+	only(t, Check(sup, publisher()), RuleEntitiesLimit, modelPath, 0, "a repeated entities member is read as the last, but each of them is read")
 	// The reviewer's worst case is refused at once, and the most that is accepted takes a moment for 32 manifests.
 	start := time.Now()
 	worst, _ := withManifest("  - Album\n  - Artist\n", list(20000))
@@ -809,5 +818,41 @@ func TestFinishedRecordsOnlyATestThatRanToItsEnd(t *testing.T) {
 	defer realGitFinishedMu.Unlock()
 	if realGitFinished[t.Name()+"/skipped"] {
 		t.Error("a skipped test was recorded as finished")
+	}
+}
+
+// manyEntitiesObject is the JSON object of n entities e0, e1 ... in base 36.
+func manyEntitiesObject(n int) string {
+	var b strings.Builder
+	b.WriteString("{")
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(`"e` + strconv.FormatInt(int64(i), 36) + `":{}`)
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// The reason of a failure is cut at 200 bytes by ascii, and the advice is last: no error of the reader is longer, so none loses its advice.
+func TestNoErrorOfTheReaderIsCutByAscii(t *testing.T) {
+	for _, err := range []error{ErrNoCommit, ErrBare, ErrSubdirectory, ErrPartialClone, ErrObjectMissing, ErrObjectCorrupt, ErrAlternates, ErrOldGit, ErrMalformed, ErrCannotRun} {
+		if got := ascii(err.Error()); got != err.Error() {
+			t.Errorf("ascii changes %q to %q", err, got)
+		}
+	}
+}
+
+// A quote is printable ASCII and stays a quote; a backslash is shown as one.
+func TestAsciiLeavesQuotesRaw(t *testing.T) {
+	if got := ascii(`exec: "git": not found`); got != `exec: "git": not found` {
+		t.Errorf("quotes: %q", got)
+	}
+	if got := ascii(`a\b"c`); got != `a\\b"c` {
+		t.Errorf("backslash: %q", got)
+	}
+	if got := ascii("tab\there\u00e9"); got != `tab\there\u00e9` {
+		t.Errorf("escapes: %q", got)
 	}
 }

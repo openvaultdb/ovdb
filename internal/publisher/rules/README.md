@@ -1,9 +1,8 @@
 # internal/publisher/rules
 
 The pure rules that a publisher's own OVDB manifest is held to. This package is
-the groundwork of `ovdb publisher check`, a command that checks the manifest a
-publisher keeps in their repository; **no command uses it yet**, and nothing in
-it is visible to a user of `ovdb`.
+the base of `ovdb publisher check`, the command that checks what a publisher
+keeps in their repository (see the README of the module); the `ovdb` binary links it.
 
 "Pure" means no file, no network, no clock and no YAML: strings in, a verdict
 out. Reading the manifest, the repository and the Directory's records comes in
