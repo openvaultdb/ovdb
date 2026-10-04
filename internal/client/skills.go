@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
@@ -81,7 +83,11 @@ func (l *Local) PlanSkill(request skills.InstallRequest) (SkillPlan, error) {
 		}
 	}
 	request.Harnesses, request.Targets = nil, targets
-	return SkillPlan{Skill: env.Describe(d), Request: request, Targets: env.Plan(d, targets)}, nil
+	planned := env.Plan(d, targets)
+	// Adoption is asked for only when the plan has a folder to take over, so a
+	// request that has none is the one every version of the server understands.
+	request.Adopt = slices.ContainsFunc(planned, func(t skills.Target) bool { return t.State == skills.StateAdoptable })
+	return SkillPlan{Skill: env.Describe(d), Request: request, Targets: planned}, nil
 }
 
 // InstallSkill installs the planned skill through the server, starting it
@@ -92,7 +98,19 @@ func (l *Local) InstallSkill(ctx context.Context, plan SkillPlan, noStart bool) 
 	if err != nil {
 		return nil, err
 	}
-	response, err := c.Do(ctx, http.MethodPost, SkillsInstallPath, plan.Request)
+	return l.postInstall(ctx, c, plan.Request)
+}
+
+// postInstall sends request to the server c is connected to. A running server
+// of a version before adoption existed refuses the field "adopt" as unknown;
+// say that the server must be restarted, which is what is wrong.
+func (l *Local) postInstall(ctx context.Context, c *Client, request skills.InstallRequest) ([]byte, error) {
+	response, err := c.Do(ctx, http.MethodPost, SkillsInstallPath, request)
+	if e := envelope.As(err); e != nil && request.Adopt && c.state.Whoami != nil && c.state.Whoami.Version != l.Version &&
+		e.Code == envelope.InvalidArgument && strings.Contains(e.Reason, `"adopt"`) {
+		mismatch := VersionMismatch(c.state.Whoami.Version, l.Version)
+		return envelope.MarshalError(mismatch), mismatch
+	}
 	return response.Body, err
 }
 
@@ -104,7 +122,7 @@ func (l *Local) DryRunSkill(ctx context.Context, plan SkillPlan) ([]byte, error)
 		return nil, err
 	}
 	d, _ := skills.Find(plan.Skill.ID)
-	document, err := skills.Build{Version: l.Version}.Install(ctx, env, d, plan.Request.Targets, true, false)
+	document, err := skills.Build{Version: l.Version}.Install(ctx, env, d, plan.Request.Targets, true, false, plan.Request.Adopt)
 	if err != nil {
 		return nil, err
 	}

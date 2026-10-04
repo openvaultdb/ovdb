@@ -19,12 +19,19 @@ import (
 // unset for both. No "update" alias: that alias stays reserved for
 // self-update alone (cli-install#req:update-alias-policy).
 func newUpgradeCmd(currentVersion string) *cobra.Command {
-	return cobracmd.NewUpgrade(cobracmd.UpgradeCommandOptions{
+	return cobracmd.NewUpgrade(upgradeOptions(currentVersion))
+}
+
+// upgradeOptions are what `ovdb upgrade` is built from. Tests start from them
+// and replace only the Env, DetectHost and release seams, so what they run is
+// ovdb's own wiring against no real PATH, executable or network.
+func upgradeOptions(currentVersion string) cobracmd.UpgradeCommandOptions {
+	return cobracmd.UpgradeCommandOptions{
 		Short:      "Upgrade installed fleet CLIs, including ovdb itself",
 		Errors:     upgradeErrors{},
 		HostID:     ovdbCatalogID,
 		HostConfig: newSelfUpdateConfig(currentVersion),
-	})
+	}
 }
 
 // upgradeErrors implements both cobracmd.ErrorMapper and

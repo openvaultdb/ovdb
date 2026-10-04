@@ -1,0 +1,1 @@
+{"schema":1,"error":{"code":"already_exists","message":"Couldn't install the OpenVaultDB skill","reason":"{{home}}/.claude/skills/openvaultdb already exists and wasn't installed by OVDB, so it was left as it is.","next":[{"label":"See the skills and where they go","command":"ovdb skills list"}]}}

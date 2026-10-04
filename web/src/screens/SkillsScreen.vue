@@ -18,7 +18,7 @@ import OvCommand from '../components/OvCommand.vue'
 import OvNotice from '../components/OvNotice.vue'
 import OvText from '../components/OvText.vue'
 import OvUsagePrompt from '../components/OvUsagePrompt.vue'
-import { t } from '../copy'
+import { hasPlainCopy, t } from '../copy'
 import { navigate } from '../router'
 import { offerUsagePrompt, recordUsage } from '../usage'
 
@@ -37,7 +37,7 @@ const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSea
 const from = /^\/[a-z]/.test(query.get('from') ?? '') ? query.get('from')! : null
 
 async function load() {
-  const response = await api<SkillsDocument>('GET', '/api/local/v1/skills')
+  const response = await api<SkillsDocument>('GET', '/api/local/v1/skills?adoptable=1')
   if (!response.ok) {
     loadProblem.value = response.error
     return
@@ -52,6 +52,22 @@ onMounted(async () => {
   if (skill) offer(skill)
 })
 
+// What a target's state reads as; a state this build has no text for is shown
+// as it came rather than blanking the screen.
+function stateText(state: string): string {
+  const key = `skills.state.${state}`
+  return hasPlainCopy(key) ? t(key) : state
+}
+
+// One target of an install result; an adopted folder says where the copy that
+// was there is kept.
+function resultLine(target: SkillInstallDocument['targets'][number]): string {
+  if (target.result === 'adopted' && target.backup_path) {
+    return t('skills.adopted.line', { name: target.name, path: target.dir, backup: target.backup_path })
+  }
+  return t('skills.result.line', { name: target.name, path: target.dir })
+}
+
 function selectable(target: SkillTarget): boolean {
   return target.detected && !!target.harness && target.state !== 'not_ovdb'
 }
@@ -60,8 +76,11 @@ function offer(skill: Skill) {
   offered.value = skill
   result.value = null
   problem.value = null
-  // A copy the person changed since install is replaced only when they tick it.
-  chosen.value = skill.targets.filter((target) => selectable(target) && target.state !== 'changed').map((target) => target.harness!)
+  // A copy the person changed since install is replaced, and one that was
+  // already there is taken over, only when they tick it.
+  chosen.value = skill.targets
+    .filter((target) => selectable(target) && target.state !== 'changed' && target.state !== 'adoptable')
+    .map((target) => target.harness!)
   void nextTick(() => heading.value?.focus())
 }
 
@@ -83,6 +102,9 @@ async function install() {
     skill: offered.value.id,
     harnesses: chosen.value,
     replace_changed: offered.value.targets.some((target) => target.state === 'changed' && chosen.value.includes(target.harness!)),
+    // Sent only when a ticked agent has a copy to take over: a server before
+    // adoption existed refuses the field, and this is the person's yes to it.
+    ...(offered.value.targets.some((target) => target.state === 'adoptable' && chosen.value.includes(target.harness!)) ? { adopt: true } : {}),
   })
   installing.value = false
   if (response.ok) {
@@ -95,6 +117,8 @@ async function install() {
     await load()
   } else {
     problem.value = response.error
+    // A failure can follow changes to other agents; the list says what is installed.
+    await load()
   }
   await nextTick()
   outcome.value?.focus()
@@ -106,7 +130,7 @@ const hints = computed(() => result.value?.next.filter((item) => !item.command &
 function installedFor(skill: Skill): string {
   const names = skill.targets
     .filter((target) => target.installed)
-    .map((target) => (target.state === 'installed' ? target.name : `${target.name} (${t(`skills.state.${target.state}`)})`))
+    .map((target) => (target.state === 'installed' ? target.name : `${target.name} (${stateText(target.state)})`))
   return names.length ? t('skills.list.installed_for', { agents: names.join(', ') }) : t('skills.list.not_installed')
 }
 
@@ -152,6 +176,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
                   <code class="font-mono text-sm [overflow-wrap:anywhere] text-muted">{{ target.dir }}</code>
                   <span v-if="target.state === 'changed'" class="text-sm text-muted">{{ t('skills.consent.changed') }}</span>
                   <span v-else-if="target.state === 'update_available'" class="text-sm text-muted">{{ t('skills.consent.update_available') }}</span>
+                  <span v-else-if="target.state === 'adoptable'" class="text-sm text-muted">{{ t('skills.consent.adoptable') }}</span>
                 </span>
               </label>
               <p v-else class="flex items-start gap-3 text-muted" :data-harness="target.harness">
@@ -188,7 +213,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
         >
           <ul class="flex flex-col gap-1">
             <li v-for="target in result.targets" :key="target.dir" class="[overflow-wrap:anywhere]">
-              {{ t('skills.result.line', { name: target.name, path: target.dir }) }}
+              {{ resultLine(target) }}
             </li>
           </ul>
         </OvNotice>

@@ -31,7 +31,13 @@ func newSelfUpdateConfig(currentVersion string) selfupdate.Config {
 }
 
 func newSelfUpdateCmd(currentVersion string) *cobra.Command {
-	return cobracmd.New(newSelfUpdateConfig(currentVersion), cobracmd.CommandOptions{
+	return newSelfUpdateCmdFor(newSelfUpdateConfig(currentVersion))
+}
+
+// newSelfUpdateCmdFor is newSelfUpdateCmd for a given configuration: tests
+// replace its release endpoint and run ovdb's own command against it.
+func newSelfUpdateCmdFor(cfg selfupdate.Config) *cobra.Command {
+	return cobracmd.New(cfg, cobracmd.CommandOptions{
 		Short:      "Update the installed ovdb binary to the latest release",
 		Aliases:    []string{"update"},
 		JSONFormat: true,
