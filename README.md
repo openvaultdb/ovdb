@@ -61,12 +61,20 @@ ovdb --help
   (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
   fleet CLI's own `install ovdb` also resolves releases from. A copy of
   `ovdb` inside a directory the operating system's package manager owns
-  (`/usr/bin`, `/usr/sbin`, `/bin`, `/nix/store`, ... on macOS and Linux;
-  `%SystemRoot%` and `%ProgramFiles%` on Windows) counts as managed by the
-  system package manager: `self-update` and `upgrade` do not replace it in
-  place, they say how to update it, and `--format json` carries that as
-  `hint` (`upgrade_hint` with `--check`). `/usr/local/bin`, `~/go/bin` and
-  other directories you placed it in stay replaceable.
+  counts as managed by the system package manager: `self-update` and
+  `upgrade` do not replace it in place, they say how to update it, and
+  `--format json` carries that as `hint` (`upgrade_hint` with `--check`).
+  The directories are the library's own list for each operating system:
+  - macOS: `/usr/bin`, `/usr/sbin`, `/usr/libexec`, `/bin`, `/sbin`, `/System`, `/nix/store`, `/run/current-system`
+  - Linux: `/usr/bin`, `/usr/sbin`, `/usr/lib`, `/usr/lib64`, `/usr/libexec`, `/usr/share`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/nix/store`, `/run/current-system`
+  - Windows: `%SystemRoot%`, `%ProgramFiles%`, `%ProgramFiles(x86)%`
+
+  A copy anywhere else (`/usr/local/bin`, `~/go/bin`, `~/bin`, a Homebrew
+  directory, ...) is classified as before. On Windows `ovdb` is published as a
+  zip, so a copy unzipped under `%ProgramFiles%` is classified as managed too,
+  and the hint it prints ("Windows Update, or the installer (MSI/EXE) that
+  originally placed it there") does not describe it: update such a copy by
+  downloading the new zip from the releases page and replacing the files.
 - **`ovdb skills`** — list the AI agent skills and where each AI agent keeps
   them (`skills list`), and install one for the agents found on this computer
   (`skills install <openvaultdb|todo-demo>`, which asks first). A folder of

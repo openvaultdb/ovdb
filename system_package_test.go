@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -208,5 +211,72 @@ func TestUpgradeOfASystemPackageCopyRedirects(t *testing.T) {
 		if strings.Contains(path, "/download/") || strings.HasSuffix(path, ".tar.gz") {
 			t.Errorf("upgrade of a system-managed copy downloaded %s", path)
 		}
+	}
+}
+
+// The README lists the directories the library treats as the system package
+// manager's, per operating system. They are the library's own list
+// (selfupdate.SystemPackageDirs), so a release of it that adds or drops one
+// fails here until the README says so; the release notes are written from it.
+func TestReadmeListsTheSystemPackageDirectories(t *testing.T) {
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string][]string{}
+	line := regexp.MustCompile(`(?m)^\s*- (macOS|Linux|Windows): (.*)$`)
+	token := regexp.MustCompile("`([^`]+)`")
+	for _, match := range line.FindAllStringSubmatch(string(readme), -1) {
+		for _, quoted := range token.FindAllStringSubmatch(match[2], -1) {
+			listed[match[1]] = append(listed[match[1]], quoted[1])
+		}
+	}
+	for name, goos := range map[string]string{"macOS": "darwin", "Linux": "linux", "Windows": "windows"} {
+		// An environment-derived Windows root is shown as %Name%.
+		want := selfupdate.SystemPackageDirs(goos, func(name string) string { return "%" + name + "%" })
+		if !slices.Equal(listed[name], want) {
+			t.Errorf("the README lists for %s %v, but selfupdate.SystemPackageDirs(%q) is %v: update the README and the release notes", name, listed[name], goos, want)
+		}
+	}
+}
+
+// ovdb self-update, through ovdb's own command: an available update ends with
+// ovdb's exit code 1 and the "self-update:" finding, the command answers to
+// `update` and takes --format, and a failed lookup is prefixed. Dropping the
+// error mapper, the alias or the format flag from newSelfUpdateCmd fails here.
+// (The command has no seam for the executable's detection, so a system copy is
+// tested through the library above.)
+func TestSelfUpdateCommandKeepsOvdbsContract(t *testing.T) {
+	srv, _ := releasesServer(t, "v1.1.0")
+	cmd := newSelfUpdateCmdFor(func() selfupdate.Config {
+		cfg := newSelfUpdateConfig("1.0.0")
+		cfg.ReleasesAPIURL, cfg.HTTPClient = srv.URL, srv.Client()
+		return cfg
+	}())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--check", "--format", "json"})
+	err := cmd.Execute()
+	if err == nil || commandExitCode(err) != 1 || err.Error() != "self-update: update available (1.0.0 -> 1.1.0)" {
+		t.Errorf("--check = %v, want ovdb's exit-1 finding", err)
+	}
+	if !strings.Contains(out.String(), `"latest":"1.1.0"`) || !strings.Contains(out.String(), `"verdict":"update_available"`) {
+		t.Errorf("--check --format json = %q", out.String())
+	}
+	if !slices.Contains(cmd.Aliases, "update") {
+		t.Errorf("aliases = %v", cmd.Aliases)
+	}
+
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
+	defer broken.Close()
+	cfg := newSelfUpdateConfig("1.0.0")
+	cfg.ReleasesAPIURL, cfg.HTTPClient = broken.URL, broken.Client()
+	failing := newSelfUpdateCmdFor(cfg)
+	failing.SetOut(&out)
+	failing.SetErr(&out)
+	failing.SetArgs([]string{"--check"})
+	if err := failing.Execute(); err == nil || !strings.HasPrefix(err.Error(), "self-update: ") || commandExitCode(err) != 1 {
+		t.Errorf("a failed lookup = %v", err)
 	}
 }
