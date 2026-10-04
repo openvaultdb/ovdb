@@ -60,6 +60,13 @@ ovdb --help
   in `cli-helpers`' compiled-in `cliinstall` catalog
   (`cliinstall.ByID("ovdb").Config(...)`), the single source every other
   fleet CLI's own `install ovdb` also resolves releases from.
+- **`ovdb skills`** — list the AI agent skills and where each AI agent keeps
+  them (`skills list`), and install one for the agents found on this computer
+  (`skills install <openvaultdb|todo-demo>`, which asks first). A folder of
+  that name that is already there and already is the skill (its `SKILL.md`
+  names it and it holds no file the skill doesn't ship) is adopted: `ovdb` takes it over after
+  keeping a backup of your copy, and says where (`backup_path` in `--json`).
+  A folder that is anything else is left as it is.
 - **`ovdb install`** — list, show details for, and install fleet CLIs
   relevant to ovdb (`ingitdb`, `datatug`); see
   [Installing related CLIs](#installing-related-clis) below.

@@ -178,6 +178,57 @@ describe('AI agent skills', () => {
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: true })
   })
 
+  it('offers a copy that was already there unticked, and adopts it only when ticked, saying where the copy is kept', async () => {
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const adoptable = document()
+    adoptable.skills[1].targets[0] = { ...adoptable.skills[1].targets[0], state: 'adoptable' }
+    let adopted = false
+    const calls = installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/skills': () => json(200, adoptable),
+      'POST /api/local/v1/skills/install': () => {
+        adopted = true
+        return json(201, {
+          ...installedDocument,
+          targets: [
+            {
+              ...installedDocument.targets[0],
+              result: 'adopted',
+              backup_path: '/home/a/.claude/skills/.cli-helpers-skills-adopted-backup/20261004T120000.000000000Z/openvaultdb-todo-demo',
+            },
+          ],
+        })
+      },
+    })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    expect(adopted).toBe(false)
+    const claude = wrapper.get('[data-harness="claude"]')
+    expect((claude.get('input').element as HTMLInputElement).checked).toBe(false)
+    expect(claude.text()).toContain('already here — installing takes it over and keeps a backup of your copy')
+    await wrapper.get('[data-testid="install-skill"]').trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+    await claude.get('input').setValue(true)
+    await wrapper.get('[data-testid="install-skill"]').trigger('click')
+    await flushPromises()
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: false })
+    expect(wrapper.get('[data-testid="skill-result"]').text()).toContain(
+      'Claude Code: /home/a/.claude/skills/openvaultdb-todo-demo (already there, now managed by OVDB; your copy is kept at ' +
+        '/home/a/.claude/skills/.cli-helpers-skills-adopted-backup/20261004T120000.000000000Z/openvaultdb-todo-demo)',
+    )
+  })
+
+  it('shows a state this build has no text for as it came instead of blanking the screen', async () => {
+    window.history.replaceState({}, '', '/skills')
+    const newer = document(true)
+    newer.skills[1].targets[0] = { ...newer.skills[1].targets[0], installed: true, state: 'from_a_newer_ovdb' as never }
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills': () => json(200, newer) })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    expect(wrapper.get('[data-skill="todo-demo"] [data-testid="installed-for"]').text()).toBe('Installed for Claude Code (from_a_newer_ovdb)')
+  })
+
   it('shows a refusal with what to do', async () => {
     window.history.replaceState({}, '', '/skills?skill=openvaultdb')
     installFetch({

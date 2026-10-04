@@ -55,6 +55,15 @@ func T(key string, params map[string]string) string {
 	return template
 }
 
+// Has reports whether key is in the catalogue. A key built at run time from a
+// value ovdb does not own (an action or state a library or another ovdb build
+// reports) must be checked with Has before it goes to T: copy_ast_test.go can
+// check only literal keys, and T panics on any other missing one.
+func Has(key string) bool {
+	_, ok := catalogue[key]
+	return ok
+}
+
 // ForPeople is a next-step label as a person reads it: the agent-directed
 // "(ask the person first)" note is dropped where only a person chooses, the
 // TUI (review L8). CLI text output keeps it: agents without a skill read

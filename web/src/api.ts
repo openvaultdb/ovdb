@@ -164,7 +164,7 @@ export interface SkillTarget {
   dir: string
   detected: boolean
   installed: boolean
-  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb'
+  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb' | 'adoptable'
 }
 
 export interface Skill {
@@ -192,7 +192,7 @@ export interface SkillInstallDocument {
   dir: string
   name: string
   already_up_to_date: boolean
-  targets: (SkillTarget & { result: string; reason?: string })[]
+  targets: (SkillTarget & { result: string; reason?: string; backup_path?: string })[]
   next: Next[]
 }
 

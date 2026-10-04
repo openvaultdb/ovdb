@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
+	embedded "github.com/openvaultdb/ovdb/skills"
 )
 
 func userHomeOf(m Model) string { return m.local.Getenv("HOME") }
@@ -176,5 +178,56 @@ func TestConsentForChangedSkill(t *testing.T) {
 	m = send(t, m, key("space"))
 	if harnesses, replace := m.skills.chosen(); len(harnesses) != 1 || !replace {
 		t.Errorf("chosen = %v %v", harnesses, replace)
+	}
+}
+
+// skillsync v0.26.0 takes over a folder that is already the bundled skill. In
+// the TUI that copy is offered unticked (like one the person changed), the
+// consent step says installing takes it over and keeps a backup, the list does
+// not count it as installed, and ticking it adopts it: the Result says where
+// the copy that was there is kept.
+func TestConsentForAnAdoptableSkill(t *testing.T) {
+	m := realModel(t, freePort(t))
+	home := userHomeOf(m)
+	bundled, err := fs.ReadFile(embedded.FS, "openvaultdb/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".claude", "skills", "openvaultdb")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), bundled, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(""))
+	if view := flat(m.View().Content); !strings.Contains(view, "Not installed") || strings.Contains(view, "Installed for") {
+		t.Errorf("list counts a copy OVDB doesn't manage as installed:\n%s", view)
+	}
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
+	view := flat(m.View().Content)
+	for _, want := range []string{"> [ ] Claude Code", "already here — installing takes it over and keeps a backup of your copy"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("consent lacks %q:\n%s", want, view)
+		}
+	}
+	if harnesses, replace := m.skills.chosen(); len(harnesses) != 0 || replace {
+		t.Errorf("chosen by default = %v %v", harnesses, replace)
+	}
+	m = send(t, m, key("space"))
+	if harnesses, replace := m.skills.chosen(); len(harnesses) != 1 || replace {
+		t.Errorf("chosen = %v %v: taking over a copy is not replacing a changed one", harnesses, replace)
+	}
+	m = send(t, m, key("down"))
+	m = send(t, m, key("enter")) // Install skill
+	view = flat(m.View().Content)
+	if m.screen != ScreenResult || !strings.Contains(view, "Installed the OpenVaultDB skill") ||
+		!strings.Contains(view, "(already there, now managed by OVDB; your copy is kept at") {
+		t.Fatalf("installed:\n%s", view)
+	}
+	if !strings.Contains(strings.ReplaceAll(view, " ", ""), filepath.Join(home, ".claude", "skills", ".cli-helpers-skills-adopted-backup")) {
+		t.Errorf("the Result doesn't name the backup folder:\n%s", view)
 	}
 }

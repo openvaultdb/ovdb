@@ -61,8 +61,13 @@ const (
 	StateUpdateAvailable = "update_available"
 	// StateChanged is an OVDB-installed copy the person edited since.
 	StateChanged = "changed"
-	// StateNotOVDB is a folder of the same name OVDB didn't install.
+	// StateNotOVDB is a folder of the same name OVDB didn't install and
+	// can't take over: it isn't this skill, or holds files the skill doesn't.
 	StateNotOVDB = "not_ovdb"
+	// StateAdoptable is a folder of the same name OVDB didn't install that is
+	// this skill already (its SKILL.md names it, and it holds nothing the
+	// skill doesn't): installing takes it over, keeping a backup of it.
+	StateAdoptable = "adoptable"
 )
 
 // Publisher is the skillsync publisher of the CLI and of every bundle.
@@ -230,19 +235,34 @@ func stateOf(skillsDir string, d Definition) string {
 		return StateNotOVDB
 	}
 	for _, change := range report.Changes {
-		if change.Name != d.Dir {
-			continue
+		if change.Name == d.Dir {
+			return stateFor(change)
 		}
-		switch {
-		case change.Action == skillsync.Updated:
-			return StateUpdateAvailable
-		case change.Action == skillsync.Unchanged:
-			return StateInstalled
-		case change.Action == skillsync.Conflict && change.Reason == modifiedTarget:
+	}
+	return StateNotOVDB
+}
+
+// stateFor is the state of a skill from what skillsync would do to it.
+// Every skillsync action is named here, so a new one is a decision made in
+// this switch (and in copy/en.json's skills.result.<action>), not a fall
+// through; TestEverySkillsyncActionIsHandled holds the list to the library.
+// Anything not named is StateNotOVDB, which never installs over it.
+func stateFor(change skillsync.Change) string {
+	switch change.Action {
+	case skillsync.Updated:
+		return StateUpdateAvailable
+	case skillsync.Unchanged:
+		return StateInstalled
+	case skillsync.Added:
+		return StateNotInstalled
+	case skillsync.Adopted:
+		return StateAdoptable
+	case skillsync.Conflict:
+		if change.Reason == modifiedTarget {
 			return StateChanged
-		case change.Action == skillsync.Added:
-			return StateNotInstalled
 		}
+	case skillsync.Removed:
+		// Never planned for an embedded bundle that lists the skill.
 	}
 	return StateNotOVDB
 }
@@ -361,9 +381,13 @@ type InstallRequest struct {
 // Outcome is what installing did in one target.
 type Outcome struct {
 	Target
-	// Result is added, updated, unchanged or conflict (skillsync's actions).
+	// Result is one of skillsync's actions: added, updated, unchanged,
+	// adopted, conflict (removed is never planned for an install).
 	Result string `json:"result"`
 	Reason string `json:"reason,omitempty"`
+	// BackupPath is where the copy that was already there is kept after
+	// Result adopted; empty for every other result and for a dry run.
+	BackupPath string `json:"backup_path,omitempty"`
 }
 
 // InstallDocument is the body of POST /api/local/v1/skills/install and the
@@ -642,7 +666,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			outcome.Result = string(skillsync.Unchanged)
 			for _, change := range report.Changes {
 				if change.Name == d.Dir {
-					outcome.Result, outcome.Reason = string(change.Action), change.Reason
+					outcome.Result, outcome.Reason, outcome.BackupPath = string(change.Action), change.Reason, change.BackupPath
 				}
 			}
 			switch {

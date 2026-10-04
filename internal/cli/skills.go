@@ -68,6 +68,15 @@ func (a *App) skillsListCmd() *cobra.Command {
 	return cmd
 }
 
+// adoptedBackupLine says where the copy that was already there is kept, or
+// in a dry run that one would be.
+func adoptedBackupLine(dryRun bool, outcome skills.Outcome) string {
+	if dryRun || outcome.BackupPath == "" {
+		return uicopy.T("skills.result.backup_planned", nil)
+	}
+	return uicopy.T("skills.result.backup", map[string]string{"path": outcome.BackupPath})
+}
+
 // targetLine is "Claude Code  installed  /h/.claude/skills/openvaultdb".
 func targetLine(target skills.Target, withState bool) string {
 	name := target.Name
@@ -78,8 +87,8 @@ func targetLine(target skills.Target, withState bool) string {
 	if withState {
 		state := uicopy.T("skills.state.not_installed", nil)
 		switch {
-		case target.Installed:
-			state = uicopy.T("skills.state."+target.State, nil)
+		case target.Installed, target.State == skills.StateAdoptable:
+			state = skills.StateText(target.State)
 		case !target.Detected:
 			state = uicopy.T("skills.state.not_found", nil)
 		}
@@ -154,7 +163,10 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 				say(w, uicopy.T(title, map[string]string{"name": document.Name}))
 				say(w, "")
 				for _, outcome := range document.Outcomes {
-					say(w, "  "+targetLine(outcome.Target, false)+"  ("+uicopy.T("skills.result."+outcome.Result, nil)+")")
+					say(w, "  "+targetLine(outcome.Target, false)+"  ("+skills.ResultText(outcome.Result)+")")
+					if outcome.Result == "adopted" {
+						say(w, "    "+adoptedBackupLine(document.DryRun, outcome))
+					}
 				}
 				if len(document.Next) > 0 {
 					say(w, "")
@@ -179,7 +191,7 @@ func (a *App) skillsInstallCmd() *cobra.Command {
 // terminal; anywhere else it fails with confirmation_required naming --yes,
 // having written nothing (ai-agent-skills#REQ:explicit-consent-to-install).
 func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string, harnesses []string, dir string, jsonOut bool) (bool, error) {
-	var dirs, changed, missing []string
+	var dirs, changed, adopted, missing []string
 	for _, target := range plan.Targets {
 		dirs = append(dirs, target.Dir)
 		if !target.Detected && target.Harness != "" {
@@ -187,6 +199,9 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string
 		}
 		if target.State == skills.StateChanged {
 			changed = append(changed, target.Dir)
+		}
+		if target.State == skills.StateAdoptable {
+			adopted = append(adopted, target.Dir)
 		}
 	}
 	command := "ovdb skills install " + id
@@ -206,6 +221,9 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string
 	if plan.Request.ReplaceChanged && len(changed) > 0 {
 		reason += " " + uicopy.T("skills.install.replaces_changes", map[string]string{"dirs": strings.Join(changed, ", ")})
 	}
+	if len(adopted) > 0 {
+		reason += " " + uicopy.T("skills.install.adopts", map[string]string{"dirs": strings.Join(adopted, ", ")})
+	}
 	needed := envelope.New(envelope.ConfirmationRequired, uicopy.T("skills.install.failed", map[string]string{"name": plan.Skill.Name})).
 		WithReason(reason).
 		WithNext(envelope.Next{Label: uicopy.T("skills.install.confirm_flag", nil), Command: command + " --yes"})
@@ -222,6 +240,10 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string
 	say(w, uicopy.T("skills.consent.install_for", nil))
 	for _, target := range plan.Targets {
 		say(w, "  "+targetLine(target, true))
+	}
+	if len(adopted) > 0 {
+		say(w, "")
+		say(w, uicopy.T("skills.install.adopts", map[string]string{"dirs": strings.Join(adopted, ", ")}))
 	}
 	reader := bufio.NewReader(in)
 	_, _ = io.WriteString(w, uicopy.T("skills.install.confirm", nil))

@@ -16,6 +16,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
+	embedded "github.com/openvaultdb/ovdb/skills"
 )
 
 // userHome is the client's HOME in e.
@@ -233,5 +234,126 @@ func TestSkillInstallNamesAgentsNotFound(t *testing.T) {
 	problem := decodeError(t, e.run("skills", "install", "todo-demo", "--json"), envelope.ConfirmationRequired)
 	if !strings.Contains(problem.Reason, "Claude Code wasn't found on this computer") {
 		t.Errorf("reason = %q", problem.Reason)
+	}
+}
+
+// bundledSkill is the text OVDB ships for skill dir.
+func bundledSkill(t *testing.T, dir string) string {
+	t.Helper()
+	data, err := fs.ReadFile(embedded.FS, dir+"/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// skillsync v0.26.0 adopts a folder that is already the bundled skill instead
+// of refusing it, and reports it as "adopted". Every way of asking for that
+// prints it: the person is told before they agree, the dry run and the real
+// install say what happens and where the copy that was there is kept, --json
+// carries the same as backup_path, and list says the folder is already here.
+// Before the text existed the human forms of the dry run and the install
+// panicked with a missing copy key (exit 2 in the binary).
+func TestSkillAdoptsAnExistingCopy(t *testing.T) {
+	e := previewEnv(t)
+	e.vars[cli.EnvNonInteractive] = "1"
+	claudeDir := filepath.Join(e.userHome(), ".claude", "skills", "openvaultdb")
+	cursorDir := filepath.Join(e.userHome(), ".cursor", "skills", "openvaultdb")
+	bundled := bundledSkill(t, "openvaultdb")
+	edited := bundled + "\nMy own note.\n"
+	for dir, text := range map[string]string{claudeDir: bundled, cursorDir: edited} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filesBefore := e.skillFiles()
+
+	// list: the folder is already here and not managed yet, not "not installed".
+	list := e.ok("skills", "list")
+	if !strings.Contains(list.stdout, "already here, not managed yet") {
+		t.Errorf("list = %s", list.stdout)
+	}
+	var listed skills.Document
+	if err := json.Unmarshal([]byte(e.ok("skills", "list", "--json").stdout), &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range listed.Skills[0].Targets {
+		if (target.Harness == "claude" || target.Harness == "cursor") && (target.State != skills.StateAdoptable || target.Installed) {
+			t.Errorf("list target = %+v, want adoptable and not installed", target)
+		}
+	}
+
+	// Asking first says the copy is taken over (human reads it from stderr's
+	// error, an agent from the JSON reason).
+	needed := decodeError(t, e.run("skills", "install", "openvaultdb", "--harness", "claude", "--json"), envelope.ConfirmationRequired)
+	if !strings.Contains(needed.Reason, "takes over the copy already in: "+claudeDir) || !strings.Contains(needed.Reason, "keeps a backup") {
+		t.Errorf("confirmation reason = %q", needed.Reason)
+	}
+	if human := e.run("skills", "install", "openvaultdb", "--harness", "claude"); human.code != 1 || !strings.Contains(human.stdout+human.stderr, "takes over the copy already in: "+claudeDir) {
+		t.Errorf("human confirmation = %+v", human)
+	}
+
+	// Dry run, human and JSON: no crash, nothing written, no server started.
+	dry := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--dry-run")
+	for _, want := range []string{"Installing the OpenVaultDB skill would change:", claudeDir + "  (already there, now managed by OVDB)", "    A backup of your copy would be kept."} {
+		if dry.code != 0 || !strings.Contains(dry.stdout, want) {
+			t.Errorf("dry run lacks %q: %+v", want, dry)
+		}
+	}
+	var dryDocument skills.InstallDocument
+	if r := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--dry-run", "--json"); r.code != 0 || json.Unmarshal([]byte(r.stdout), &dryDocument) != nil ||
+		dryDocument.Outcomes[0].Result != "adopted" || dryDocument.Outcomes[0].BackupPath != "" || !dryDocument.DryRun {
+		t.Errorf("dry run JSON = %+v", r)
+	}
+	if got := e.skillFiles(); len(got) != len(filesBefore) {
+		t.Errorf("a dry run changed the files: %v -> %v", filesBefore, got)
+	}
+	if _, err := os.Stat(filepath.Join(e.dirs.Runtime, "server.json")); !os.IsNotExist(err) {
+		t.Errorf("a dry run started the server: %v", err)
+	}
+
+	// The real install, human: says what happened and where the copy is kept.
+	real := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+	if real.code != 0 || !strings.HasPrefix(real.stdout, "Installed the OpenVaultDB skill\n") || !strings.Contains(real.stdout, claudeDir+"  (already there, now managed by OVDB)") {
+		t.Fatalf("install = %+v", real)
+	}
+	const keptAt = "    Your copy is kept at "
+	_, rest, found := strings.Cut(real.stdout, keptAt)
+	backup := strings.TrimSpace(strings.SplitN(rest, "\n", 2)[0])
+	if !found || !strings.HasPrefix(backup, filepath.Dir(claudeDir)+string(filepath.Separator)) {
+		t.Fatalf("install output names no backup under the skills folder:\n%s", real.stdout)
+	}
+	if kept, err := os.ReadFile(filepath.Join(backup, "SKILL.md")); err != nil || string(kept) != bundled {
+		t.Errorf("backup = %q, %v", kept, err)
+	}
+
+	// The real install, JSON: the same facts, and the edited copy is what is kept.
+	var document skills.InstallDocument
+	r := e.run("skills", "install", "openvaultdb", "--harness", "cursor", "--yes", "--json")
+	if err := json.Unmarshal([]byte(r.stdout), &document); r.code != 0 || err != nil || document.Outcomes[0].Result != "adopted" || document.AlreadyUpToDate {
+		t.Fatalf("install --json = %+v", r)
+	}
+	if kept, err := os.ReadFile(filepath.Join(document.Outcomes[0].BackupPath, "SKILL.md")); err != nil || string(kept) != edited {
+		t.Errorf("backup of the edited copy = %q, %v", kept, err)
+	}
+	if now, _ := os.ReadFile(filepath.Join(cursorDir, "SKILL.md")); string(now) != bundled {
+		t.Errorf("the skill was not put in place: %q", now)
+	}
+
+	// Managed from now on: listed as installed, and installing again changes nothing.
+	for _, target := range func() []skills.Target {
+		var after skills.Document
+		_ = json.Unmarshal([]byte(e.ok("skills", "list", "--json").stdout), &after)
+		return after.Skills[0].Targets
+	}() {
+		if (target.Harness == "claude" || target.Harness == "cursor") && target.State != skills.StateInstalled {
+			t.Errorf("after the install %s is %s", target.Harness, target.State)
+		}
+	}
+	if again := e.ok("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); !strings.Contains(again.stdout, "already up to date") {
+		t.Errorf("second install = %s", again.stdout)
 	}
 }

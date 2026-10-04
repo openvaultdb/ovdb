@@ -2,6 +2,7 @@ package localserver
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
+	embedded "github.com/openvaultdb/ovdb/skills"
 )
 
 // ai-agent-skills through the local API (capabilities 20 and 21).
@@ -106,6 +108,56 @@ func TestSkillsEndpoints(t *testing.T) {
 	}
 	if response := post(`{"skill":"openvaultdb","dir":"/etc/x"}`, "", testSecret); response.code != http.StatusBadRequest {
 		t.Errorf("dir field from the CLI credential = %d", response.code)
+	}
+}
+
+// skillsync v0.26.0 adopts a folder that is already the bundled skill, so the
+// documents the web console reads say so: GET lists the target as adoptable
+// (and not installed), POST adopts it for a console session, which picks only
+// harnesses, and answers 201 with result "adopted" and backup_path, the folder
+// that holds the copy that was there.
+func TestSkillsAdoptionThroughTheAPI(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	session := f.signIn(t)
+	bundled, err := fs.ReadFile(embedded.FS, "openvaultdb/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claudeSkills := filepath.Join(skills.Canonical(f.userHome), ".claude", "skills")
+	if err := os.MkdirAll(filepath.Join(claudeSkills, "openvaultdb"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeSkills, "openvaultdb", "SKILL.md"), bundled, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var document skills.Document
+	rec := f.do(t, request{path: "/api/local/v1/skills", cookie: session})
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("GET skills = %d %s", rec.Code, rec.Body)
+	}
+	if target := document.Skills[0].Targets[0]; target.Harness != "claude" || target.State != skills.StateAdoptable || target.Installed || len(document.Skills[0].InstalledFor) != 0 {
+		t.Errorf("target = %+v", target)
+	}
+	if !strings.Contains(rec.Body.String(), `"state":"adoptable"`) {
+		t.Errorf("GET skills = %s", rec.Body)
+	}
+
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/skills/install", body: `{"skill":"openvaultdb","harnesses":["claude"]}`, cookie: session, header: sameOrigin(testHost)})
+	var installed skills.InstallDocument
+	if err := json.Unmarshal(rec.Body.Bytes(), &installed); err != nil || rec.Code != http.StatusCreated || len(installed.Outcomes) != 1 {
+		t.Fatalf("POST install = %d %s", rec.Code, rec.Body)
+	}
+	outcome := installed.Outcomes[0]
+	if outcome.Result != "adopted" || outcome.State != skills.StateInstalled || installed.AlreadyUpToDate {
+		t.Errorf("outcome = %+v", outcome)
+	}
+	if !strings.HasPrefix(outcome.BackupPath, claudeSkills+string(filepath.Separator)) || !strings.Contains(rec.Body.String(), `"backup_path":`) {
+		t.Errorf("backup path = %q in %s", outcome.BackupPath, rec.Body)
+	}
+	if kept, err := os.ReadFile(filepath.Join(outcome.BackupPath, "SKILL.md")); err != nil || string(kept) != string(bundled) {
+		t.Errorf("backup = %q, %v", kept, err)
 	}
 }
 

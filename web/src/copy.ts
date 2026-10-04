@@ -10,6 +10,16 @@ const catalogue = en as Record<string, string>
 export type CopyParams = Record<string, string>
 
 /**
+ * Whether key is in copy/en.json. A key built at run time from a value this
+ * build does not own (a state or result another ovdb build reports) must be
+ * checked with this before t(), which throws on a missing key and would blank
+ * the screen: tests/copy-keys.test.ts can check only literal keys.
+ */
+export function hasCopy(key: string): boolean {
+  return catalogue[key] !== undefined
+}
+
+/**
  * Renders the copy catalogue entry named by key, replacing each "{name}"
  * placeholder in the template with params[name]. A placeholder with no
  * matching entry in params is left in place, matching copy/copy.go's T.
