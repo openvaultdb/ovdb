@@ -56,6 +56,7 @@ func tree() fstest.MapFS {
 		"linetest/p_test.go":          file("package linetest\n\n//line p.go:3\nfunc helper() {}\n"),
 		"linestring/p.go":             file("package linestring\n\nvar text = `\n//line a.go:1\n/*line b.go:1*/\n`\n\nfunc F() int { return len(text) }\n"),
 		"linecomment/p.go":            file("package linecomment\n\n// the line a.go:1 is not a directive\n//lineage is not one either\n//line\nfunc F() int { return 1 }\n"),
+		"linetab/p.go":                file("package linetab\n\n//line\tx.go:1\nfunc F() int { return 1 }\n\nfunc G() int { /*line\ty.go:7*/ return 2 }\n"),
 		"bom/p.go":                    file("\xef\xbb\xbf//go:build windows\n\npackage bom\n\nconst C = 1\n"),
 		"bad/bad.go":                  file("this is not Go"),
 		"nogo/readme.txt":             file("nothing"),
@@ -117,15 +118,16 @@ func TestParseErrors(t *testing.T) {
 }
 
 // A //line or /*line*/ directive is refused wherever it is (a test file too), by
-// the scanner's comments: the same text in a raw string, or a comment that only
-// starts like one, is not.
+// the scanner's comments, followed by a space or a tab (Go honours only the
+// space; the gate is stricter on purpose, and linetab is the row for the tab).
+// The same text in a raw string, or a comment that only starts like one, is not.
 func TestLineDirectives(t *testing.T) {
 	for _, c := range []struct {
 		dir   string
 		lines []int
 	}{
 		{"linedir", []int{3}}, {"lineother", []int{3}}, {"lineblock", []int{3, 5}}, {"linetest", []int{3}},
-		{"linestring", nil}, {"linecomment", nil}, {"good", nil},
+		{"linetab", []int{3, 6}}, {"linestring", nil}, {"linecomment", nil}, {"good", nil},
 	} {
 		pkg, err := LoadPackage(tree(), module, c.dir)
 		if err != nil {

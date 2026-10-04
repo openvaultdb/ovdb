@@ -377,6 +377,12 @@ func TestShow(t *testing.T) {
 	}
 }
 
+func TestQuoteIsShow(t *testing.T) {
+	if Quote("a\nb") != show("a\nb") || Quote(strings.Repeat("a", 100)) != show(strings.Repeat("a", 100)) {
+		t.Error("Quote is not show")
+	}
+}
+
 func printableASCII(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] < 0x20 || s[i] > 0x7e {

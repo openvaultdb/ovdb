@@ -187,4 +187,7 @@ The packages under `internal/publisher` (the groundwork of a future
 scoped to them, `cmd/covergate`, run by the `publisher-coverage` job of
 `.github/workflows/ci.yml`; how to run it, and the rules those packages
 implement and how they are proved against their JavaScript references, are in
-[internal/publisher/rules/README.md](internal/publisher/rules/README.md).
+[internal/publisher/rules/README.md](internal/publisher/rules/README.md); the
+judge of a publisher's `OVDB.md` and manifest is described, with its limits and
+its proof, in
+[internal/publisher/manifest/README.md](internal/publisher/manifest/README.md).

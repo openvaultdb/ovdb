@@ -54,6 +54,10 @@ func problem(rule Rule, format string, args ...any) *Problem {
 // maxShown is the most bytes of an input that a message repeats.
 const maxShown = 40
 
+// Quote is [show] for other packages: the one way a piece of input goes into a
+// message, cut to a short length, quoted and escaped to printable ASCII.
+func Quote(s string) string { return show(s) }
+
 // show is the one way a piece of input goes into a message: cut to maxShown
 // bytes, quoted, and escaped to printable ASCII, so that no message holds a
 // control character, an escape sequence, a line break (a forged log line or

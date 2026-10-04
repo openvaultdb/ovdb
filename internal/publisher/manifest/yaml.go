@@ -12,6 +12,9 @@ import "github.com/meaninggraph/cli/pkg/meaning"
 // Number, Bool, Map or Seq (see the reader's package for the exact subset).
 type Node = meaning.Node
 
+// kind is the kind of a Node.
+type kind = meaning.Kind
+
 // The kinds of a Node.
 const (
 	kindNull   = meaning.Null
