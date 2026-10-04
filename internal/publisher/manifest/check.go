@@ -129,3 +129,41 @@ func tooBig(c *collector, text []byte) bool {
 	c.add("document-size", 0, "is %d bytes; at most %d are read", len(text), MaxDocumentBytes)
 	return true
 }
+
+// Judge judges the documents of one call that has several: OVDB.md and each
+// manifest it lists. They share one budget of MaxFindings, so the cap is the
+// call's; the findings come in the order the documents are judged, and Notice
+// is the last. Check judges one manifest and needs none of this.
+type Judge struct {
+	b       *budget
+	profile Profile
+}
+
+// NewJudge returns a Judge for the profile, or, for a profile this package does
+// not know, no Judge and the finding that says so.
+func NewJudge(profile Profile) (*Judge, []Finding) {
+	if !profile.known() {
+		return nil, unknownProfile(profile)
+	}
+	return &Judge{b: newBudget(), profile: profile}, nil
+}
+
+// OVDBMd judges OVDB.md.
+func (j *Judge) OVDBMd(doc []byte) (OVDBMd, []Finding) { return checkOVDBMd(doc, j.b, j.profile) }
+
+// Manifest judges the manifest at path.
+func (j *Judge) Manifest(doc []byte, path string) (Manifest, []Finding) {
+	return checkManifest(doc, path, j.b, j.profile)
+}
+
+// Report is a finding of the caller's about document, made the way the findings
+// of the documents are: within the budget and MaxMessageBytes. It returns no
+// finding when the budget is spent; Notice then says so.
+func (j *Judge) Report(document, rule string, line int, format string, args ...any) []Finding {
+	c := newCollector(document, j.b)
+	c.add(rule, line, format, args...)
+	return c.findings
+}
+
+// Notice is the finding that says findings were left out, or nothing.
+func (j *Judge) Notice(document string) []Finding { return j.b.notice(document) }
