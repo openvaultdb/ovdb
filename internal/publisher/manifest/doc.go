@@ -6,10 +6,11 @@
 // model and graph addresses, the recordset names), so that caller never reads the
 // documents again.
 //
-// A profile says whose rules judge: the Directory's (Directory), the OVDB
-// Directory's own shape rules. Another profile (the publisher's, which adds what
-// the Chinook checker adds) is added as a Profile value without changing the
-// signatures here.
+// A profile says whose rules judge: the OVDB Directory's own shape rules (Directory),
+// or what a publisher's own check holds a repository to (Publisher), which is the
+// Directory's rules and the rules the Chinook checker adds. Each is proved against
+// its JavaScript reference over a corpus (see the README), and the Publisher profile
+// refuses every pair that the Directory profile refuses.
 //
 // Both documents are YAML (OVDB.md has YAML front matter) and are read with the
 // strict reader of github.com/meaninggraph/cli/pkg/meaning, a subset of YAML 1.2 in

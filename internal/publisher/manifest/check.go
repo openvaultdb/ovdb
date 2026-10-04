@@ -15,12 +15,15 @@ type Profile int
 const (
 	// Directory is the OVDB Directory's own rules for OVDB.md and a manifest.
 	Directory Profile = iota
+	// Publisher is what a publisher's own check holds a repository to: every rule
+	// of Directory, and the rules the Chinook checker adds (see the README).
+	Publisher
 )
 
 // known reports whether the profile is one this package judges by. An unknown
 // profile is never judged by another's rules: it is a finding, because the next
 // profile is the stricter one.
-func (p Profile) known() bool { return p == Directory }
+func (p Profile) known() bool { return p == Directory || p == Publisher }
 
 // RuleProfile is the rule of the finding for an unknown profile.
 const RuleProfile = "profile-unknown"
@@ -56,13 +59,13 @@ func Check(ovdbMd []byte, manifestPath string, manifest []byte, profile Profile)
 		return Result{Profile: profile, Findings: unknownProfile(profile)}
 	}
 	b := newBudget()
-	md, findings := checkOVDBMd(ovdbMd, b)
+	md, findings := checkOVDBMd(ovdbMd, b, profile)
 	if md.Read && md.Publish.Usable() && !md.Lists(manifestPath) {
 		c := newCollector("OVDB.md", b)
 		c.add("ovdbmd-unlisted", md.Publish.Line, "OVDB.md does not list %s in publish (it lists %s); the publisher has not opted this manifest in: add %s to publish", rules.Quote("./"+manifestPath), listed(md.Entries), rules.Quote("./"+manifestPath))
 		findings = append(findings, c.findings...)
 	}
-	m, more := checkManifest(manifest, manifestPath, b)
+	m, more := checkManifest(manifest, manifestPath, b, profile)
 	findings = append(append(findings, more...), b.notice(manifestPath)...)
 	return Result{Profile: profile, Findings: findings, OVDBMd: md, Manifest: m}
 }

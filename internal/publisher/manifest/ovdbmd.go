@@ -84,11 +84,11 @@ func CheckOVDBMd(doc []byte, profile Profile) (OVDBMd, []Finding) {
 		return OVDBMd{}, unknownProfile(profile)
 	}
 	b := newBudget()
-	md, findings := checkOVDBMd(doc, b)
+	md, findings := checkOVDBMd(doc, b, profile)
 	return md, append(findings, b.notice("OVDB.md")...)
 }
 
-func checkOVDBMd(doc []byte, b *budget) (OVDBMd, []Finding) {
+func checkOVDBMd(doc []byte, b *budget, profile Profile) (OVDBMd, []Finding) {
 	c := newCollector("OVDB.md", b)
 	var md OVDBMd
 	if tooBig(c, doc) {
@@ -108,6 +108,13 @@ func checkOVDBMd(doc []byte, b *budget) (OVDBMd, []Finding) {
 		return md, c.findings
 	}
 	md.Read = true
+	if profile == Publisher {
+		for _, key := range node.Keys {
+			if key != "ovdb" && key != "publish" {
+				c.add("ovdbmd-keys", node.Fields[key].Line+1, "unknown front matter key %s: only ovdb and publish are read, so remove it (a stray secret must not ride along)", rules.Quote(key))
+			}
+		}
+	}
 	v := node.Field("ovdb")
 	md.Version = found(v, v != nil && v.Kind == kindNumber && v.Text == "1", "1")
 	lower(&md.Version, 1)
@@ -135,9 +142,15 @@ func checkOVDBMd(doc []byte, b *budget) (OVDBMd, []Finding) {
 		case !seen[path]:
 			seen[path] = true
 			md.Entries = append(md.Entries, path)
-		case !repeated[path]:
-			repeated[path] = true
-			md.Repeated = append(md.Repeated, path)
+		default:
+			if !repeated[path] {
+				repeated[path] = true
+				md.Repeated = append(md.Repeated, path)
+			}
+			if profile == Publisher {
+				allUsable = false
+				c.add("ovdbmd-duplicate", entry.Line+1, "publish lists %s twice: list each manifest once", rules.Quote(entry.Text))
+			}
 		}
 	}
 	md.Publish = found(list, allUsable, md.Entries)

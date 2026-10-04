@@ -582,7 +582,7 @@ func TestFindingLines(t *testing.T) {
 }
 
 func TestProfileAndDocumentNames(t *testing.T) {
-	for _, profile := range []Profile{Profile(7), Profile(-1), Directory + 1} {
+	for _, profile := range []Profile{Profile(7), Profile(-1), Publisher + 1} {
 		r := Check([]byte(goodMD), "ovdb.yaml", []byte(ownManifest), profile)
 		if r.OK() || len(r.Findings) != 1 || r.Findings[0].Rule != RuleProfile || r.Manifest.Read || r.OVDBMd.Read {
 			t.Errorf("profile %d: %+v", profile, r)

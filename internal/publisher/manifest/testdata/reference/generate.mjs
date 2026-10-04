@@ -20,10 +20,10 @@
 // --directory <dir> and --chinookdb <dir> (at the pinned commits; the Directory's with `npm ci --omit=dev` run).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { references as pinnedReferences, remoteUrl } from '../../../references.mjs';
 
@@ -31,6 +31,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = join(here, 'corpus.json');
 const verdictsPath = join(here, 'directory.verdicts.json');
 const factsPath = join(here, 'directory.facts.json');
+const publisherVerdictsPath = join(here, 'publisher.verdicts.json');
+const publisherFactsPath = join(here, 'publisher.facts.json');
 const digestsPath = join(here, 'digests.json');
 
 const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
@@ -68,10 +70,19 @@ function checkout(name) {
 
 const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');
+// The Chinook checker imports the `yaml` package, which its own checkout does not have installed (it would need the whole of its
+// site's dependencies): the checkout we fetch gets a link to the copy that the Directory's checkout has, the same package.
+if (!existsSync(join(chinookRoot, 'node_modules', 'yaml'))) {
+  if (argValue('--chinookdb')) throw new Error(`${chinookRoot} has no node_modules/yaml, which ovdb-manifest.mjs imports: install it there, or let the script fetch the checkout`);
+  mkdirSync(join(chinookRoot, 'node_modules'), { recursive: true });
+  symlinkSync(join(directoryRoot, 'node_modules', 'yaml'), join(chinookRoot, 'node_modules', 'yaml'), 'dir');
+}
 const directory = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/directory.mjs')).href);
 const gitlib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/git.mjs')).href);
 const modelspec = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/modelspec.mjs')).href);
 const meaningLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/meaning.mjs')).href);
+const chinook = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/ovdb-manifest.mjs')).href);
+const { isolatedGitEnv } = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/git-env.mjs')).href);
 const { parse: parseYaml, stringify: stringifyYaml } = createRequire(join(directoryRoot, 'package.json'))('yaml');
 const read = (root, file) => readFileSync(join(root, file), 'utf8');
 
@@ -203,6 +214,149 @@ const mdDerive = (buffer, path) => {
   } catch { thrown += 1; return null; }
 };
 const mdVerdict = (buffer, path) => (mdDerive(buffer, path) === null ? 0 : 1);
+
+
+// ---- the publisher reference: the Chinook checker, run on a repository ----
+//
+// scripts/lib/ovdb-manifest.mjs reads a git repository at HEAD through a `files` object (problem, read, kind), which its own test
+// suite also implements in memory for the cases it has by the hundred. A case is run on a repository held in memory, as that suite
+// does, and a sample of the cases is run again on a real throwaway repository, one per case in a directory of its own that is
+// removed afterwards, and the script fails if the two ever differ.
+//
+// What the checker refuses falls in two groups, found by running each case on two repositories:
+//  - "consistent": the repository holds every file the documents name, with contents that agree with them (the model of the module that
+//    model.address or model.name names and the recordsets as entities, a meaning file with the graph's id, the meaning licence and the
+//    models: entry that is model.hcl). What the checker still refuses is refused by the two documents alone: this slice's.
+//  - "bare": the repository holds only OVDB.md and the manifests. What it refuses and the consistent one does not needs other files,
+//    and is slice 3's. The verdict file records how many cases, by what the refusal is about.
+const goodMd = '---\novdb: 1\npublish: [./ovdb.yaml]\n---\n';
+const objectOf = (text) => { try { const value = parseYaml(text); return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null; } catch { return null; } };
+const filesFor = (held) => ({ problem: () => '', kind: (path) => (held.has(path) ? 'file' : 'missing'), read: (path) => held.get(path) });
+// The files named by a manifest. `consistent` agree with it; `wrong` are well formed and disagree (another module, other entities,
+// another graph id and licence, no models: entry); `broken` are not JSON and not a YAML mapping.
+const namedFiles = (manifest, kind) => {
+  const held = new Map();
+  if (manifest === null) return held;
+  const string = (value) => (typeof value === 'string' ? value : undefined);
+  const address = modelspec.parseModelAddress(manifest.model?.address);
+  const consistent = kind === 'consistent';
+  const module = consistent ? (address?.module ?? string(manifest.model?.name) ?? 'chinook') : 'Hostile';
+  const entities = consistent && Array.isArray(manifest.recordsets) ? manifest.recordsets.filter((name) => typeof name === 'string') : ['Hostile_entity'];
+  const modelFile = string(manifest.model?.modelspec); const hcl = string(manifest.model?.hcl); const meaningFile = string(manifest.meaning?.file);
+  if (modelFile !== undefined) held.set(modelFile, kind === 'broken' ? 'not json' : JSON.stringify({ module: { name: module }, entities: Object.fromEntries(entities.map((name) => [name, {}])) }));
+  if (hcl !== undefined) held.set(hcl, 'module');
+  if (meaningFile !== undefined) {
+    const relative = hcl !== undefined ? posix.relative(posix.dirname(meaningFile), hcl) : 'x.modelspec.hcl';
+    held.set(meaningFile, kind === 'broken' ? '- not a mapping' : JSON.stringify(consistent
+      ? { id: string(manifest.meaning?.graph?.id) ?? 'x', license: string(manifest.licences?.meaning) ?? 'MIT', models: { [module]: relative } }
+      : { id: 'hostile', license: 'Hostile', models: {} }));
+  }
+  return held;
+};
+const repositoryKinds = ['consistent', 'bare', 'wrong', 'broken'];
+const manifestRepository = (manifestText, kind) => {
+  const held = new Map([['OVDB.md', goodMd]]);
+  if (kind !== 'bare') for (const [path, text] of namedFiles(objectOf(manifestText), kind)) held.set(path, text);
+  held.set('ovdb.yaml', manifestText);
+  return held;
+};
+// OVDB.md under test: every entry names a tracked copy of the real Chinook manifest, so that only OVDB.md can be wrong.
+const mdRepository = (mdText, kind) => {
+  const held = new Map([['OVDB.md', mdText]]);
+  const chinookManifest = bases[chinookYaml];
+  if (kind !== 'bare') for (const [path, text] of namedFiles(objectOf(chinookManifest), kind)) held.set(path, text);
+  const { data } = chinook.parseFrontmatter(mdText);
+  for (const entry of Array.isArray(data?.publish) ? data.publish : []) {
+    if (typeof entry === 'string' && entry.startsWith('./') && entry.length > 2) held.set(entry.slice(2), chinookManifest);
+  }
+  return held;
+};
+const publisherProblems = (held) => {
+  try { return chinook.reportOvdbManifest(filesFor(held), {}).problems; } catch (error) { thrown += 1; return [`threw: ${error.message}`]; }
+};
+// The same on a real repository: git init, add, commit, and the checker's own gitRepoFiles.
+const realProblems = (held) => {
+  const root = mkdtempSync(join(tmpdir(), 'ovdb-publisher-case-'));
+  try {
+    const env = isolatedGitEnv();
+    const git = (...args) => execFileSync('git', ['-C', root, ...args], { env, stdio: 'pipe' });
+    git('init', '--quiet');
+    for (const [path, text] of held) {
+      if (path.length > 200 || !/^[A-Za-z0-9_.\/-]+$/.test(path) || path.startsWith('/') || path.split('/').some((part) => part === '..' || part === '.' || part === '' || part === '.git')) return null; // not a file git can hold: the case is not compared
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), text);
+    }
+    git('add', '-A', '--force');
+    git('-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '--allow-empty', '-m', 'case');
+    return chinook.reportOvdbManifest(chinook.gitRepoFiles(root), {}).problems;
+  } finally { rmSync(root, { recursive: true, force: true }); }
+};
+// What a refusal needs: the classes of what only the bare repository refuses.
+const needsClasses = [
+  ['a tracked regular file', /must be a tracked regular file/],
+  ['the model file: JSON, module and entities', /is not a ModelSpec JSON file|has no module\.name|has no entities/],
+  ['model.name against the model file', /model\.name is .*, but .* is module/],
+  ['model.address against the model file', /model\.address must be modelspec:\/\/.*, this repository plus the module name in/],
+  ['the meaning file against the manifest', /meaning file's id|licences\.meaning is .* but the meaning file says|has no models: entry|models must name the ModelSpec module|but the meaning file's models: entry|is not valid YAML|is not a MeaningGraph file/],
+  ['recordsets against the model', /recordsets lacks ModelSpec entities|recordsets names things that are not ModelSpec entities/],
+];
+const classOf = (problem) => needsClasses.find(([, pattern]) => pattern.test(problem))?.[0];
+// [verdict, needs]: the verdict of the consistent repository, and the classes of what the others refuse on top, or ''.
+const publisherVerdict = (held) => {
+  if (publisherProblems(held.consistent).length > 0) return ['0', ''];
+  const others = repositoryKinds.slice(1).flatMap((kind) => publisherProblems(held[kind]));
+  if (others.length === 0) return ['1', ''];
+  const classes = [...new Set(others.map((problem) => classOf(problem) ?? `unclassified: ${problem}`))].sort();
+  return ['1', classes.join('; ')];
+};
+const heldOf = (repository, text) => Object.fromEntries(repositoryKinds.map((kind) => [kind, repository(text, kind)]));
+const publisherManifestHeld = (buffer) => heldOf(manifestRepository, decoded(buffer));
+const publisherMdHeld = (buffer) => heldOf(mdRepository, decoded(buffer));
+// The entries of an accepted OVDB.md, as a set in order.
+const mdEntries = (buffer) => {
+  const { data } = chinook.parseFrontmatter(decoded(buffer));
+  return [...new Set(data.publish.map((entry) => entry.slice(2)))];
+};
+
+// What the checker's source says, by line: each rule that the publisher profile adds to the Directory's, whether the two documents
+// decide it, and where the checker makes it. The script fails if a cited line no longer holds its snippet.
+const chinookLines = read(chinookRoot, 'scripts/lib/ovdb-manifest.mjs').split('\n');
+const publisherRules = [
+  // [id, who decides, Go rule, snippet, lines]
+  ['unknown keys at every level of a manifest', 'documents', 'manifest-keys', 'const unknown = Object.keys(object)', [251, 254, 255]],
+  ['id is a lower-case id of at most 80 characters', 'documents', 'manifest-id', 'idPattern.test(manifest.id)', [260]],
+  ['deployment.discovery is on the origin of url, at /.well-known/openvaultdb', 'documents', 'manifest-discovery', 'discovery.pathname !== discoveryPath', [289, 290]],
+  ['deployment.recordset_page is on the origin of deployment.url', 'documents', 'manifest-url', 'expanded.origin !== deployed.origin', [295]],
+  ['publisher.url is https://github.com/<owner>', 'documents', 'manifest-publisher', 'publisher.url must be https://github.com/<owner>', [302]],
+  ['publisher.repository is required, a github.com repository, owned by the owner of publisher.url', 'documents', 'manifest-publisher', 'publisher.repository must belong to the owner in publisher.url', [305, 306, 308]],
+  ['model.address names a repository of github.com and a module that starts with a letter', 'documents', 'manifest-model', 'model.address must be modelspec://github.com', [67, 319, 320]],
+  ['model.name is a module name that starts with a letter', 'documents', 'manifest-model', 'model.name, when given, must be a ModelSpec module name', [322, 323]],
+  ['shared form: model.name is the module of model.address', 'documents', 'manifest-model', 'but model.address names module', [486, 487]],
+  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [333, 485, 499]],
+  ['own form: model.hcl is required, model.modelspec ends in .modelspec.json', 'documents', 'manifest-required, manifest-model', 'model.hcl is required with local model files', [378, 387, 388]],
+  ['own form: model.address is this repository (publisher.repository), without a pin', 'documents', 'manifest-model', 'model.address must be ${expected}', [426, 427, 428, 429]],
+  ['meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)', 'documents', 'manifest-meaning', 'meaning.graph.id must be a MeaningGraph registry id', [437, 507]],
+  ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [476, 477, 478]],
+  ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [510, 511]],
+  ['each licence is one of 18 SPDX ids', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [356, 360]],
+  ['recordsets are names that look like ModelSpec entities', 'documents', 'manifest-recordsets', 'recordsets names must look like ModelSpec entity names', [525, 526]],
+  ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [528, 529, 530, 531]],
+  ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [198, 199]],
+  ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [216, 217]],
+  ['OVDB.md and every manifest it lists are tracked regular files', 'files', '', 'OVDB.md must be a tracked regular file', [189]],
+  ['every file a manifest names is a tracked regular file', 'files', '', 'which must be a tracked regular file', [391, 392]],
+  ['the model file is JSON with a module name and entities', 'files', '', 'is not a ModelSpec JSON file', [408, 410, 413, 415]],
+  ['own form: model.name is the module of the model file', 'files', '', 'model.name !== moduleName', [420]],
+  ['own form: the module of model.address is the model file\'s', 'files', '', 'this repository plus the module name in', [427, 429]],
+  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [451, 453, 454]],
+  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [459, 461, 468]],
+  ['own form: recordsets are exactly the model\'s entities', 'files', '', 'recordsets lacks ModelSpec entities', [535, 538, 539]],
+  ['publisher.repository is the repository the check is run in (the --repository option)', 'input', '', 'the repository this manifest is in', [309]],
+  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [226]],
+];
+for (const [id, , , snippet, cited] of publisherRules) {
+  if (!cited.some((line) => chinookLines[line - 1]?.includes(snippet))) throw new Error(`ovdb-manifest.mjs at ${pins.chinookdb.commit}: none of lines ${cited.join(', ')} holds \`${snippet}\`, which is where the table of generate.mjs says the checker makes "${id}"`);
+}
 
 // ---- the bases: real documents, and what is made from them ----
 
@@ -381,12 +535,24 @@ for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObjec
 
 // ---- the single-field edits of both JavaScript test suites ----
 
-// Each `(m) => { ... }` or `(manifest) => { ... }` of the suites that edits a manifest, applied to an own and a shared manifest. Those that name
-// something only the suite's own scope has (a helper, a constant) throw here and are skipped; the count is recorded.
+// Each `(m) => { ... }`, `(manifest) => { ... }` or `(doc) => { ... }` of the suites (a body of one line or of several, found by matching
+// the braces), applied to an own and a shared manifest. Those that name something only the suite's own scope has (a helper, a
+// constant) throw here and are skipped; the count is recorded.
 let minedEdits = 0; let appliedEdits = 0;
 const edits = new Set();
+const bodyAt = (text, open) => { // the text between the brace at `open` and its match, or null
+  let depth = 0;
+  for (let at = open; at < text.length; at += 1) {
+    if (text[at] === '{') depth += 1;
+    else if (text[at] === '}' && (depth -= 1) === 0) return text.slice(open + 1, at);
+  }
+  return null;
+};
 for (const text of suites) {
-  for (const match of text.matchAll(/\((m|manifest)\) => \{([^}\n]*)\}/g)) edits.add(`${match[1]}\u0000${match[2]}`);
+  for (const match of text.matchAll(/\((m|manifest|doc)\) => \{/g)) {
+    const body = bodyAt(text, match.index + match[0].length - 1);
+    if (body !== null && body.length < 2000) edits.add(`${match[1]}\u0000${body}`);
+  }
 }
 for (const entry of [...edits].sort()) {
   const [parameter, body] = entry.split('\u0000');
@@ -580,6 +746,81 @@ for (const length of [1026, 1027, 1100]) addMd('md length', mdName, front(`ovdb:
 for (let count = 1; count <= 3; count += 1) addMd('md repeated', mdName, front(`ovdb: 1\npublish: [${Array(count).fill('./ovdb.yaml').join(', ')}, ./b.yaml, ./b.yaml]`));
 addMd('md repeated', mdName, front(`ovdb: 1\npublish: [${Array.from({ length: 150 }, () => './x').join(', ')}]`), 'x');
 
+// ---- what only the publisher profile refuses ----
+
+const licenceIds = chinook.licenceIds;
+const caseVariants = (id) => [id, id.toLowerCase(), id.toUpperCase(), `${id} `, ` ${id}`, `${id}\n`];
+const otherLicences = ['GPL-3.0-or-later', 'GPL-3.0', 'Apache 2.0', 'CC-BY-NC-4.0', 'Proprietary', 'LicenseRef-x', 'MIT OR Apache-2.0', 'cc0-1.0', 'mit', 'Mit', 'BSD-2-Clause-Patent', 'AGPL-3.0', 'LGPL-2.1-only', 'X'.repeat(64), 'X'.repeat(65)];
+for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObject]]) {
+  const mutate = (family, change) => { const copy = clone(object); change(copy); addManifest(family, baseName, jsonOf(copy)); };
+  // licences: each id in and out of the list, and in other letter case, in each of the three fields
+  for (const field of ['data', 'model', 'meaning']) {
+    for (const id of licenceIds) for (const value of baseName === ownJson ? caseVariants(id) : [id, id.toLowerCase()]) mutate('publisher: licence', (m) => { m.licences[field] = value; });
+    for (const value of otherLicences) mutate('publisher: licence', (m) => { m.licences[field] = value; });
+  }
+  // discovery and the recordset page
+  const origin = new URL(object.url).origin; const cloud = new URL(object.deployment.url).origin;
+  for (const path of ['/.well-known/openvaultdb', '/.well-known/openvaultdb/', '/.well-known/openvaultdb2', '/.well-known/OpenVaultDB', '/.well-known/other', '/', '/x', '/.well-known/', '/openvaultdb', '/ovdb/.well-known/openvaultdb', '/.well-known/openvaultdb/x']) mutate('publisher: discovery', (m) => { m.deployment.discovery = `${origin}${path}`; });
+  for (const host of ['cloud.example.org', 'ovdb.example.net', 'example.com', 'a.ovdb.example.com', 'github.com']) for (const field of ['discovery', 'recordset_page']) {
+    mutate('publisher: origin', (m) => { m.deployment[field] = `https://${host}${field === 'discovery' ? '/.well-known/openvaultdb' : '/c/{name}'}`; });
+  }
+  for (const path of ['/c/{name}', '/{name}', '/c/{name}/x', '/c/{name}.html', '/a/b/{name}/c/d']) {
+    mutate('publisher: origin', (m) => { m.deployment.recordset_page = `${cloud}${path}`; });
+    mutate('publisher: origin', (m) => { m.deployment.recordset_page = `${origin}${path}`; });
+  }
+  // publisher.url and publisher.repository
+  for (const url of ['https://github.com/datatug', 'https://github.com/other', 'https://github.com/datatug/', 'https://github.com/datatug/chinookdb', 'https://github.com/', 'https://github.com', 'https://gitlab.com/datatug', 'https://github.com.evil.example/datatug', 'https://www.github.com/datatug', 'https://github.com/DataTug', 'https://github.com/.', 'https://github.com/..', 'https://github.com/a/b/c', 'https://example.com/datatug', 'http://github.com/datatug', 'https://github.com/data~tug', 'https://github.com/acme', 'https://github.com/example_org', 'https://github.com/a.b-c_d', 'https://github.com/datatug.git']) mutate('publisher: owner', (m) => { m.publisher.url = url; });
+  for (const repository of ['https://github.com/datatug/chinookdb', 'https://github.com/other/chinookdb', 'https://github.com/DataTug/chinookdb', 'https://github.com/datatug/ChinookDB', 'https://github.com/datatug/chinookdb/', 'https://github.com/datatug/chinookdb.git', 'https://gitlab.com/datatug/chinookdb', 'https://github.com/datatug', 'https://github.com/acme/chinook-hosting', 'https://github.com/example_org/chinook-hosting']) mutate('publisher: owner', (m) => { m.publisher.repository = repository; });
+  mutate('publisher: owner', (m) => { delete m.publisher.repository; });
+  mutate('publisher: owner', (m) => { delete m.publisher.url; });
+  // id
+  for (const id of ['Chinook', 'chinook_db', '-chinook', 'chinook-', 'chinook--db', 'chin-ook', '1', 'a'.repeat(80), 'a'.repeat(81), 'a-'.repeat(40) + 'a', 'chinook db', 'chinoók', 'CHINOOK', 'a--', '-', '']) mutate('publisher: id', (m) => { m.id = id; });
+  // recordset names and the pages they make
+  for (const names of [['1a'], ['a-b'], ['a b'], [''], ['é'], ['a.b'], ['_a'], ['a/b'], ['{name}'], ['A', 'a'], ['A', 'A '], ['a'.repeat(3000)], ['ok_1', 'Ok2', '_'], ['a?b'], ['a%41'], ['Album', 'Album2', '2Album']]) mutate('publisher: recordsets', (m) => { m.recordsets = names; });
+  mutate('publisher: recordsets', (m) => { m.deployment.recordset_page = `${cloud}/c/${'x'.repeat(2030)}/{name}`; m.recordsets = ['Album']; });
+  mutate('publisher: recordsets', (m) => { m.deployment.recordset_page = `${cloud}/c/${'x'.repeat(1990)}/{name}`; m.recordsets = ['Album', 'a'.repeat(60)]; });
+  // keys: unknown, and the allowed ones at the wrong level
+  for (const [path, key] of [[[], 'api_key'], [['deployment'], 'token'], [['model'], 'extra'], [['meaning'], 'extra'], [['meaning', 'graph'], 'secret'], [['publisher'], 'email'], [['licences'], 'extra'], [[], 'Format'], [[], 'recordsets_Partial'], [['deployment'], 'recordset_pages'], [['model'], 'modelspec2'], [['publisher'], 'repository2'], [[], '__proto__x'], [[], ''], [[], ' id']]) {
+    mutate('publisher: keys', (m) => { let node = m; for (const step of path) node = node[step]; if (node !== undefined && node !== null && typeof node === 'object') node[key] = 'x'; });
+  }
+  for (const [level, key] of [['model', 'address'], ['meaning', 'address'], ['model', 'name'], ['meaning', 'file'], ['deployment', 'engine']]) mutate('publisher: keys', (m) => { m[key] = 'x'; delete m[level]?.[key]; });
+}
+// model.hcl, model.modelspec and the own-form names, in both spellings
+for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObject]]) {
+  const mutate = (family, change) => { const copy = clone(object); change(copy); addManifest(family, baseName, jsonOf(copy)); };
+  for (const value of ['model/chinook.modelspec.hcl', 'model/chinook.modelspec.json', 'model/chinook.hcl', 'model/x.modelspec.hcl', 'chinook.modelspec.hcl', '.modelspec.hcl', 'model/', 'model/*.modelspec.hcl', '/model/chinook.modelspec.hcl', '../chinook.modelspec.hcl', 3, ['x'], '', ' ', null, true, {}, 'model/chinook.modelspec.HCL', 'model/a b.modelspec.hcl']) mutate('publisher: model files', (m) => { m.model = { ...m.model, hcl: value }; });
+  for (const value of ['model/chinook.modelspec.json', 'model/chinook.json', 'model/chinook.modelspec.hcl', '.modelspec.json', 'chinook.modelspec.json', '../x.modelspec.json', 3, '', null, ['x'], 'model/chinook.modelspec.JSON']) mutate('publisher: model files', (m) => { m.model = { ...m.model, modelspec: value }; });
+  mutate('publisher: model files', (m) => { delete m.model.hcl; });
+  mutate('publisher: model files', (m) => { delete m.model.modelspec; });
+  mutate('publisher: model files', (m) => { delete m.model.hcl; delete m.model.modelspec; m.model.name = 'chinook'; });
+  for (const value of ['model/chinook.meaning.yaml', 'chinook.meaning.yaml', 'model/', 'a//b', '../x.yaml', '/abs.yaml', 'model/*.yaml', 'a b.yaml', 3, '', null]) mutate('publisher: model files', (m) => { m.meaning = { ...m.meaning, file: value }; });
+  // names and addresses
+  for (const name of ['chinook', 'Chinook', 'other', '_x', 'x_', 'a1', '1a', 'a-b', '', null, 5]) mutate('publisher: model name', (m) => { m.model = { ...m.model, name }; });
+  // without an address the name stands alone (an own manifest may leave model.address out)
+  for (const name of ['chinook', 'Chinook', '_x', '_', 'x_', 'a1', '1a', 'a-b', 'a b', '\u00e9', '', null, 5, ['a'], true]) mutate('publisher: model name', (m) => { delete m.model.address; m.model = { ...m.model, name }; });
+  const repo = (key) => (baseName === ownJson ? 'datatug/chinookdb' : key);
+  const pins = baseName === ownJson ? '' : `?ref=${pinHex}`;
+  for (const address of [`modelspec://github.com/${repo('datatug/chinookdb')}/chinook${pins}`, `modelspec://github.com/${repo('datatug/chinookdb')}/_chinook${pins}`, `modelspec://github.com/${repo('datatug/chinookdb')}/1chinook${pins}`, `modelspec://github.com/${repo('datatug/chinookdb')}/Chinook${pins}`, `modelspec://github.com/other/chinookdb/chinook${pins}`, 'modelspec://github.com/acme/chinook-hosting/chinook' + pins, 'modelspec://github.com/example_org/chinook-hosting/chinook' + pins, `modelspec://github.com/DataTug/chinookdb/chinook${pins}`, `modelspec://github.com/datatug/chinookdb/chinook?ref=${pinHex}`, 'modelspec://github.com/datatug/chinookdb/chinook', `modelspec://github.com/datatug/chinookdb.git/chinook${pins}`, `modelspec://github.com/a/./chinook${pins}`, `modelspec://example.com/datatug/chinookdb/chinook${pins}`]) {
+    mutate('publisher: addresses', (m) => { m.model = { ...m.model, address }; });
+    mutate('publisher: addresses', (m) => { m.model = { ...m.model, address, name: 'chinook' }; });
+  }
+  for (const address of [`meaning://github.com/datatug/chinookdb?ref=${pinHex}`, `meaning://github.com/acme/chinook-hosting?ref=${pinHex}`, `meaning://github.com/example_org/chinook-hosting?ref=${pinHex}`, 'meaning://github.com/datatug/chinookdb', `meaning://github.com/DataTug/chinookdb?ref=${pinHex}`, `meaning://github.com/a/b.git?ref=${pinHex}`, `meaning://github.com/./b?ref=${pinHex}`, `meaning://gitlab.com/a/b?ref=${pinHex}`]) mutate('publisher: addresses', (m) => { m.meaning = { ...m.meaning, address }; });
+  for (const address of ['meaning://github.com/datatug/chinookdb', 'meaning://github.com/DataTug/ChinookDB', 'meaning://github.com/datatug/chinookdb/', 'meaning://github.com/other/chinookdb', `meaning://github.com/datatug/chinookdb?ref=${pinHex}`, 'meaning://github.com/acme/chinook-hosting', 'https://github.com/datatug/chinookdb', 'meaning://', 5, '', null]) mutate('publisher: graph', (m) => { m.meaning = { ...m.meaning, graph: { ...m.meaning.graph, address } }; });
+  for (const id of ['chinook', 'Chinook', 'chinook-1', 'chinook_1', '-x', 'x-', 'x--y', '1', 'a'.repeat(100), '', null, 5, 'é']) mutate('publisher: graph', (m) => { m.meaning = { ...m.meaning, graph: { ...m.meaning.graph, id } }; });
+}
+// OVDB.md: unknown keys and publish entries that repeat, or nearly
+{
+  const entries = ['./ovdb.yaml', './ovdb.yaml ', './Ovdb.yaml', './a/../ovdb.yaml', './ovdb.yaml/', './x/ovdb.yaml', './ovdb.yaml#a', ' ./ovdb.yaml', './/ovdb.yaml', './sub/../ovdb.yaml', 'ovdb.yaml', '././ovdb.yaml'];
+  for (const first of ['./ovdb.yaml', './b.yaml']) for (const entry of entries) addMd('publisher: publish', mdName, front(`ovdb: 1\npublish: [${first}, "${entry}"]`));
+  addMd('publisher: publish', mdName, front('ovdb: 1\npublish: [./a.yaml, ./b.yaml, ./a.yaml, ./b.yaml, ./c.yaml]'));
+  addMd('publisher: publish', mdName, front('ovdb: 1\npublish:\n  - ./ovdb.yaml\n  - ./ovdb.yaml\n  - ./ovdb.yaml'));
+  for (const key of ['token', 'Ovdb', 'publish2', 'ovdb ', '', 'null', '_', 'x'.repeat(100), 'ovdb_version', 'format', 'title', 'description', 'license', 'version', 'url']) {
+    addMd('publisher: keys', mdName, front(`ovdb: 1\npublish: [./ovdb.yaml]\n${key === '' ? '""' : key.includes(' ') ? `"${key}"` : key}: abc`));
+    addMd('publisher: keys', mdName, front(`${key === '' ? '""' : key.includes(' ') ? `"${key}"` : key}: abc\novdb: 1\npublish: [./ovdb.yaml]`));
+  }
+  for (const value of ['1', '{a: b}', '[1, 2]', '~', '""', 'true']) addMd('publisher: keys', mdName, front(`ovdb: 1\npublish: [./ovdb.yaml]\nextra: ${value}`));
+}
+
 // ---- the goldens ----
 
 const manifestBuffers = manifestCases.map(([base, patch, flags]) => flagged(applyPatch(bases[base], patch), flags));
@@ -588,6 +829,33 @@ const verdicts = {
   manifest: manifestBuffers.map((buffer) => manifestVerdict(buffer)).join(''),
   md: mdBuffers.map((buffer, at) => mdVerdict(buffer, mdCases[at][3])).join(''),
 };
+const directoryThrown = thrown;
+thrown = 0;
+// The publisher reference: the verdict of every case, and what a refusal needs.
+const publisherManifest = manifestBuffers.map((buffer) => publisherVerdict(publisherManifestHeld(buffer)));
+const publisherMd = mdBuffers.map((buffer) => publisherVerdict(publisherMdHeld(buffer)));
+const publisherThrown = thrown;
+// A sample of the cases again on real repositories: the in-memory repository must not change a verdict.
+let realChecked = 0;
+const sampled = (buffers, held, step) => buffers.forEach((buffer, at) => {
+  if (at % step !== 0) return;
+  const repositories = held(buffer);
+  for (const kind of repositoryKinds) {
+    const real = realProblems(repositories[kind]);
+    if (real === null) continue;
+    if ((real.length === 0) !== (publisherProblems(repositories[kind]).length === 0)) throw new Error(`the checker refuses differently on a real repository and on one in memory (${kind}) for ${JSON.stringify(decoded(buffer)).slice(0, 300)}: ${real.join('; ')}`);
+    realChecked += 1;
+  }
+});
+sampled(manifestBuffers, publisherManifestHeld, 150);
+sampled(mdBuffers, publisherMdHeld, 12);
+const needsCounts = (pairs) => {
+  const counts = {};
+  for (const [verdict, needs] of pairs) if (verdict === '1' && needs) for (const name of needs.split('; ')) counts[name] = (counts[name] ?? 0) + 1;
+  return Object.fromEntries(Object.entries(counts).sort());
+};
+const needsFiles = { manifest: needsCounts(publisherManifest), md: needsCounts(publisherMd) };
+for (const name of [...Object.keys(needsFiles.manifest), ...Object.keys(needsFiles.md)]) if (name.startsWith('unclassified')) throw new Error(`a refusal that needs other files is not in a class of generate.mjs: ${name}`);
 const count = (text, digit) => [...text].filter((c) => c === digit).length;
 const meta = {
   format: 'ovdb-publisher-manifest-reference/2',
@@ -606,9 +874,25 @@ const corpus = {
 const verdictFile = {
   ...meta,
   profile: 'directory',
-  thrown,
+  thrown: directoryThrown,
   manifest: { accepted: count(verdicts.manifest, '1'), refused: count(verdicts.manifest, '0'), verdicts: verdicts.manifest },
   md: { accepted: count(verdicts.md, '1'), refused: count(verdicts.md, '0'), verdicts: verdicts.md },
+};
+// The real repository of the references: the checker accepts the real documents, read from the real git history.
+{
+  const real = chinook.checkOvdbManifest(chinook.gitRepoFiles(chinookRoot), { repository: 'https://github.com/datatug/chinookdb' });
+  if (real.length > 0) throw new Error(`the Chinook checker refuses the Chinook repository at ${pins.chinookdb.commit}: ${real.join('; ')}`);
+}
+const publisherVerdicts = { manifest: publisherManifest.map(([verdict]) => verdict).join(''), md: publisherMd.map(([verdict]) => verdict).join('') };
+const publisherVerdictFile = {
+  ...meta,
+  profile: 'publisher',
+  thrown: publisherThrown,
+  realChecked,
+  manifest: { accepted: count(publisherVerdicts.manifest, '1'), refused: count(publisherVerdicts.manifest, '0'), verdicts: publisherVerdicts.manifest },
+  md: { accepted: count(publisherVerdicts.md, '1'), refused: count(publisherVerdicts.md, '0'), verdicts: publisherVerdicts.md },
+  needsFiles,
+  rules: publisherRules.map(([id, who, go, , lines]) => ({ id, who, go, lines })),
 };
 // The facts: for each accepted manifest, the values factsOf derives, as the difference from those of its base
 // (a base that is accepted is the reference of its cases); for each accepted OVDB.md, the set it lists.
@@ -627,6 +911,22 @@ manifestCases.forEach(([base], at) => {
 });
 const mdLists = [];
 mdCases.forEach(([, , , path], at) => { if (verdicts.md[at] === '1') mdLists.push(mdDerive(mdBuffers[at], path)); });
+// The same under the publisher reference: for each case that it accepts, the values factsOf derives, as the difference from the
+// facts of its base when the publisher accepts the base (else all of them), and the set each accepted OVDB.md lists.
+const publisherBaseFacts = {};
+for (const name of Object.keys(baseFacts)) {
+  if (publisherVerdict(heldOf(manifestRepository, bases[name]))[0] === '1') publisherBaseFacts[name] = baseFacts[name];
+}
+const publisherDeltas = [];
+manifestCases.forEach(([base], at) => {
+  if (publisherVerdicts.manifest[at] !== '1') return;
+  const facts = factsOfBuffer(manifestBuffers[at]);
+  const delta = {};
+  for (const [key, value] of Object.entries(facts)) if (JSON.stringify(value) !== JSON.stringify(publisherBaseFacts[base]?.[key])) delta[key] = value;
+  publisherDeltas.push(delta);
+});
+const publisherLists = [];
+mdCases.forEach((_, at) => { if (publisherVerdicts.md[at] === '1') publisherLists.push(mdEntries(mdBuffers[at])); });
 // Presence: for every manifest of the corpus, accepted or not, which of the fields of the table the Directory's parsed
 // manifest has (the key is written, even with null), as a bit mask in the order of the table; "-" when the reference
 // cannot read the document and "0" when it reads something that is not a mapping. The Go test compares it with the
@@ -668,6 +968,15 @@ const factsText = [
   '  "md": [', mdLists.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ]',
   '}', '',
 ].join('\n');
+const publisherVerdictText = `${JSON.stringify(publisherVerdictFile, null, 1)}\n`;
+const publisherFactsText = [
+  '{',
+  ...Object.entries({ ...meta, profile: 'publisher' }).map(([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)},`),
+  '  "bases": {', Object.entries(publisherBaseFacts).map(([name, facts]) => `    ${JSON.stringify(name)}: ${JSON.stringify(facts)}`).join(',\n'), '  },',
+  '  "manifest": [', publisherDeltas.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ],',
+  '  "md": [', publisherLists.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ]',
+  '}', '',
+].join('\n');
 // A digest of every committed golden of both slices, so that a hand edit of any of them fails `go test` until the
 // generator is run again (the digests of the rules golden are read from the committed file, which its own
 // generator writes: run that one first when the rules change).
@@ -677,15 +986,17 @@ const digestText = `${JSON.stringify({
   'manifest/testdata/reference/corpus.json': sha(corpusText),
   'manifest/testdata/reference/directory.verdicts.json': sha(verdictText),
   'manifest/testdata/reference/directory.facts.json': sha(factsText),
+  'manifest/testdata/reference/publisher.verdicts.json': sha(publisherVerdictText),
+  'manifest/testdata/reference/publisher.facts.json': sha(publisherFactsText),
   'rules/testdata/reference/matrix.golden.json': sha(readFileSync(rulesGolden)),
 }, null, 1)}\n`;
 
 if (thrown > 0) console.error(`note: the reference threw on ${thrown} document(s); they are recorded as refused`);
-const targets = [[corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [digestsPath, digestText]];
+const targets = [[corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [digestsPath, digestText]];
 if (process.argv.includes('--check')) {
   if (targets.some(([path, text]) => readFileSync(path, 'utf8') !== text)) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
   console.log(`the goldens are up to date (${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents)`);
 } else {
   for (const [path, text] of targets) writeFileSync(path, text);
-  console.log(`wrote ${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents: corpus ${(corpusText.length / 1024).toFixed(0)} KiB, verdicts ${(verdictText.length / 1024).toFixed(0)} KiB, facts ${(factsText.length / 1024).toFixed(0)} KiB; accepted ${verdictFile.manifest.accepted}+${verdictFile.md.accepted}, refused ${verdictFile.manifest.refused}+${verdictFile.md.refused}; mined edits ${appliedEdits} of ${minedEdits} applied`);
+  console.log(`wrote ${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents: corpus ${(corpusText.length / 1024).toFixed(0)} KiB, verdicts ${(verdictText.length / 1024).toFixed(0)} KiB, facts ${(factsText.length / 1024).toFixed(0)} KiB; accepted ${verdictFile.manifest.accepted}+${verdictFile.md.accepted} (publisher ${publisherVerdictFile.manifest.accepted}+${publisherVerdictFile.md.accepted}), refused ${verdictFile.manifest.refused}+${verdictFile.md.refused} (publisher ${publisherVerdictFile.manifest.refused}+${publisherVerdictFile.md.refused}); real repositories ${realChecked}; mined edits ${appliedEdits} of ${minedEdits} applied`);
 }
