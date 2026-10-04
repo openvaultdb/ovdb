@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -47,6 +48,15 @@ func tree() fstest.MapFS {
 		"partial/a.go":                file("package partial\n\nfunc A() int { return 1 }\n"),
 		"partial/b.go":                file("package partial\n\nfunc B() int { return 2 }\n"),
 		"partial/c.go":                file("package partial\n\ntype T struct{}\n"),
+		"linedir/a.go":                file("package linedir\n\nfunc A() int {\n\treturn 1\n}\n"),
+		"linedir/b.go":                file("package linedir\n\n//line a.go:3\nfunc B() int { return 2 }\n"),
+		"lineother/p.go":              file("package lineother\n\n//line sub/other.go:1:1\nfunc F() int { return 1 }\n"),
+		"lineblock/p.go":              file("package lineblock\n\nfunc F() int { /*line x.go:10*/ return 1 }\n\n/*line y.go:1*/ func G() {}\n"),
+		"linetest/p.go":               file("package linetest\n\nfunc F() int { return 1 }\n"),
+		"linetest/p_test.go":          file("package linetest\n\n//line p.go:3\nfunc helper() {}\n"),
+		"linestring/p.go":             file("package linestring\n\nvar text = `\n//line a.go:1\n/*line b.go:1*/\n`\n\nfunc F() int { return len(text) }\n"),
+		"linecomment/p.go":            file("package linecomment\n\n// the line a.go:1 is not a directive\n//lineage is not one either\n//line\nfunc F() int { return 1 }\n"),
+		"bom/p.go":                    file("\xef\xbb\xbf//go:build windows\n\npackage bom\n\nconst C = 1\n"),
 		"bad/bad.go":                  file("this is not Go"),
 		"nogo/readme.txt":             file("nothing"),
 	}
@@ -94,6 +104,7 @@ func TestParseErrors(t *testing.T) {
 		"negative statements":     "a/b.go:1.1,2.2 -1 0\n",
 		"count not a number":      "a/b.go:1.1,2.2 1 x\n",
 		"negative count":          "a/b.go:1.1,2.2 1 -1\n",
+		"one location, two sizes": "a/b.go:1.1,2.2 1 0\na/b.go:1.1,2.2 2 1\n",
 		"a line over the limit":   strings.Repeat("a", 2<<20),
 	} {
 		if _, err := Parse(strings.NewReader(profile)); err == nil {
@@ -102,6 +113,61 @@ func TestParseErrors(t *testing.T) {
 	}
 	if _, err := Parse(iotest.ErrReader(errors.New("disk"))); err == nil || !strings.Contains(err.Error(), "disk") {
 		t.Errorf("a failing reader gives %v", err)
+	}
+}
+
+// A //line or /*line*/ directive is refused wherever it is (a test file too), by
+// the scanner's comments: the same text in a raw string, or a comment that only
+// starts like one, is not.
+func TestLineDirectives(t *testing.T) {
+	for _, c := range []struct {
+		dir   string
+		lines []int
+	}{
+		{"linedir", []int{3}}, {"lineother", []int{3}}, {"lineblock", []int{3, 5}}, {"linetest", []int{3}},
+		{"linestring", nil}, {"linecomment", nil}, {"good", nil},
+	} {
+		pkg, err := LoadPackage(tree(), module, c.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(pkg.Directives) != len(c.lines) {
+			t.Errorf("%s: directives %q, want lines %v", c.dir, pkg.Directives, c.lines)
+			continue
+		}
+		for i, line := range c.lines {
+			if !strings.Contains(pkg.Directives[i], ":"+strconv.Itoa(line)+": a line directive") || !strings.Contains(pkg.Directives[i], c.dir+"/") {
+				t.Errorf("%s: %q does not name the file and line %d", c.dir, pkg.Directives[i], line)
+			}
+		}
+	}
+	// A BOM before the constraint does not hide it from the header rule (a file
+	// of declarations only has no statement for the file-set rule to find).
+	pkg, err := LoadPackage(tree(), module, "bom")
+	if err != nil || pkg.HasStatements || len(pkg.Constraints) != 1 || !strings.Contains(pkg.Constraints[0], "//go:build windows") {
+		t.Errorf("bom = %+v, %v", pkg, err)
+	}
+}
+
+// The reproduction of the review: a block that never ran, placed after a //line
+// directive that names a covered file at the position of one of its covered
+// blocks, shares the location of that block in the profile and, merged as "hit
+// if any listing was", would count as covered. Parse still merges listings of one
+// block (that is what -coverpkg makes); the directive is what the gate refuses.
+func TestLineDirectiveCannotHideAnUnrunBlock(t *testing.T) {
+	profile := "mode: atomic\n" +
+		module + "/linedir/a.go:3.16,5.2 1 1\n" + // a.go, covered
+		module + "/linedir/a.go:3.16,5.2 1 0\n" // b.go's block, renamed to the same location by its directive
+	blocks, err := Parse(strings.NewReader(profile))
+	if err != nil || len(blocks) != 1 || !blocks[0].Hit {
+		t.Fatalf("the merged profile = %+v, %v", blocks, err)
+	}
+	code, stdout, stderr := run(t, profile, tree(), "cover.out", "./linedir")
+	if code != 1 || !strings.Contains(stdout, "1 of 1") || !strings.Contains(stderr, "linedir/b.go:3: a line directive") {
+		t.Errorf("Run = %d %q %q: the gate must refuse the directive although every statement counts as covered", code, stdout, stderr)
+	}
+	if code, _, _ := run(t, profile, tree(), "cover.out", "./lineother"); code != 1 {
+		t.Errorf("a directive naming another file: exit %d", code)
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	"go/ast"
 	"go/build/constraint"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"io"
 	"io/fs"
@@ -47,7 +48,18 @@ func (b Block) Dir() string {
 }
 
 // Parse reads a cover profile in any mode. A block listed more than once, as
-// when several test binaries cover the same package, counts once.
+// when several test binaries cover the same package (-coverpkg), counts once, and
+// is hit when any listing of it was hit. Two listings of one location must
+// describe the same block, with the same statement count: if they do not, the
+// profile is refused.
+//
+// What Parse cannot tell from the profile alone is a repeated location that is
+// two different blocks of the source with the same statement count: that is what
+// a //line directive makes (a block is named by the file the directive gives
+// and the physical line and column), and "hit if any listing was hit" would then
+// count an unexecuted block as covered. A profile cannot say which case it is,
+// so the gate does not try: it refuses every //line directive in a gated package
+// (see LoadPackage), and with none there, one location is one block.
 func Parse(r io.Reader) ([]Block, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -75,6 +87,8 @@ func Parse(r io.Reader) ([]Block, error) {
 		if !seen {
 			block = &Block{Location: fields[0], Statements: statements}
 			merged[fields[0]] = block
+		} else if block.Statements != statements {
+			return nil, fmt.Errorf("line %d: %s is listed with %d statements and with %d: one location is one block", line, fields[0], block.Statements, statements)
 		}
 		block.Hit = block.Hit || count > 0
 	}
@@ -97,6 +111,7 @@ type Package struct {
 	Files         []string // the non-test files with a statement, as import paths: each must be in the profile
 	TestMains     []string // test files that declare TestMain
 	Constraints   []string // one message per build constraint, GOOS/GOARCH file name or import "C"
+	Directives    []string // one message per //line or /*line*/ directive, which renames the blocks of a profile
 }
 
 // The gate reads every .go file of the package directory, whatever its name or
@@ -108,6 +123,14 @@ type Package struct {
 // reads (decided by go/build/constraint on the lines that Go itself reads, the
 // header before the package clause), a GOOS or GOARCH file name, and import "C"
 // (left out when cgo is off).
+//
+// A //line or /*line*/ directive is refused too, in any file, test files
+// included: the cover profile names a block by the file the directive gives and
+// the physical line and column, so a block after a directive can have the
+// location of a covered block of another file, and the two merge into one that
+// counts as covered. Directives are found with the scanner's comments, so one
+// in any position that Go honours is seen and the same text inside a string
+// literal is not.
 //
 // Those rules name the causes that are known. The file-set rule closes the
 // class: every non-test file of a gated package that has a statement must have
@@ -174,6 +197,9 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 		for _, line := range headerConstraints(src, parsed) {
 			pkg.Constraints = append(pkg.Constraints, fmt.Sprintf("%s: %s", file, line))
 		}
+		for _, line := range lineDirectives(file, src) {
+			pkg.Directives = append(pkg.Directives, fmt.Sprintf("%s:%d: a line directive renames the blocks of the cover profile, so a block that never ran can take the location of one that did; no file of a gated package may have one", file, line))
+		}
 		if importsC(parsed) {
 			pkg.Constraints = append(pkg.Constraints, fmt.Sprintf(`%s: imports "C", so the build leaves it out when cgo is off`, file))
 		}
@@ -200,6 +226,7 @@ func LoadPackage(fsys fs.FS, module, dir string) (Package, error) {
 func headerConstraints(src []byte, file *ast.File) []string {
 	var found []string
 	header := string(src[:min(int(file.Package)-1, len(src))]) // token.Pos of a file made with a fresh FileSet is its offset + 1
+	header = strings.TrimPrefix(header, "\ufeff")              // Go reads the header without a leading byte order mark
 	for _, line := range strings.Split(header, "\n") {
 		line = strings.TrimSpace(line)
 		if constraint.IsGoBuild(line) || constraint.IsPlusBuild(line) {
@@ -207,6 +234,31 @@ func headerConstraints(src []byte, file *ast.File) []string {
 		}
 	}
 	return found
+}
+
+// lineDirectives returns the lines of the line directives of src, as Go sees
+// them: comments that begin //line or /*line followed by a space or a tab, found
+// by the Go scanner (so not text inside a string literal), at any column.
+func lineDirectives(name string, src []byte) []int {
+	fset := token.NewFileSet()
+	file := fset.AddFile(name, -1, len(src))
+	var sc scanner.Scanner
+	sc.Init(file, src, nil, scanner.ScanComments)
+	var lines []int
+	for {
+		pos, tok, text := sc.Scan()
+		if tok == token.EOF {
+			return lines
+		}
+		if tok != token.COMMENT {
+			continue
+		}
+		for _, prefix := range []string{"//line", "/*line"} {
+			if rest, ok := strings.CutPrefix(text, prefix); ok && (strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "\t")) {
+				lines = append(lines, fset.PositionFor(pos, false).Line)
+			}
+		}
+	}
 }
 
 // importsC reports whether the file imports "C": cgo, which a build with
@@ -283,6 +335,7 @@ func Check(pkgs []Package, blocks []Block) Result {
 		for _, constraint := range pkg.Constraints {
 			result.Problems = append(result.Problems, fmt.Sprintf("%s: a Go file with a build constraint can be left out of a test run and so out of the coverage profile, where the gate cannot see it; no file of a gated package may have one", constraint))
 		}
+		result.Problems = append(result.Problems, pkg.Directives...)
 		for _, file := range pkg.TestMains {
 			result.Problems = append(result.Problems, fmt.Sprintf("%s declares TestMain, which can hide a failing test (it may run the tests and exit 0); no gated package may have one", file))
 		}
