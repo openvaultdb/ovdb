@@ -17,10 +17,11 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dal-go/record v0.1.3
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.0
+	github.com/meaninggraph/cli v0.2.0
 	github.com/openvaultdb/openvaultdb-go v0.9.0
 	github.com/spf13/cobra v1.10.2
-	github.com/strongo/buildinfo v0.3.0
-	github.com/strongo/cli-helpers v0.21.0
+	github.com/strongo/buildinfo v0.3.2
+	github.com/strongo/cli-helpers v0.26.0
 	github.com/strongo/deviceauth v0.0.2
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -90,6 +91,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/strongo/random v0.0.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
@@ -103,10 +105,10 @@ require (
 	go.starlark.net v0.0.0-20260708150628-5395d018f003 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.292.0 // indirect
 	google.golang.org/genproto v0.0.0-20260803160001-6ac0973c030d // indirect
