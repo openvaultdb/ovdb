@@ -66,8 +66,8 @@ func Source(t testing.TB, importPath string) []*ast.File {
 }
 
 // StringConstsOfType lists, sorted, the string values of the constants of type
-// typeName in files, written either as `Name Type = "value"` or as
-// `Name = Type("value")`.
+// typeName in files, written as `Name Type = "value"`, `Name = Type("value")`,
+// `Name Type = Type("value")`, or several names at once, `A, B Type = "a", "b"`.
 func StringConstsOfType(files []*ast.File, typeName string) []string {
 	var values []string
 	for _, file := range files {
@@ -78,24 +78,28 @@ func StringConstsOfType(files []*ast.File, typeName string) []string {
 			}
 			for _, spec := range gen.Specs {
 				value, ok := spec.(*ast.ValueSpec)
-				if !ok || len(value.Values) != 1 {
+				if !ok {
 					continue
 				}
-				literal := value.Values[0]
+				typed := false
 				if ident, ok := value.Type.(*ast.Ident); ok && ident.Name == typeName {
-					// Name Type = "value"
-				} else if call, ok := literal.(*ast.CallExpr); ok && value.Type == nil && len(call.Args) == 1 {
-					// Name = Type("value")
-					if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != typeName {
+					typed = true
+				}
+				for _, literal := range value.Values {
+					// Name = Type("value"), also when the constant is declared of
+					// that type as well.
+					if call, ok := literal.(*ast.CallExpr); ok && len(call.Args) == 1 {
+						if fun, ok := call.Fun.(*ast.Ident); !ok || fun.Name != typeName {
+							continue
+						}
+						literal = call.Args[0]
+					} else if !typed {
 						continue
 					}
-					literal = call.Args[0]
-				} else {
-					continue
-				}
-				if lit, ok := literal.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-					if text, err := strconv.Unquote(lit.Value); err == nil {
-						values = append(values, text)
+					if lit, ok := literal.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						if text, err := strconv.Unquote(lit.Value); err == nil {
+							values = append(values, text)
+						}
 					}
 				}
 			}

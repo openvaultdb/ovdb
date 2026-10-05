@@ -121,7 +121,7 @@ func TestDoesNotAdoptWhatIsNotTheSkill(t *testing.T) {
 				t.Errorf("state = %s, want %s", state, StateNotOVDB)
 			}
 			d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}, Adopt: true})
-			doc, err := Build{}.Install(context.Background(), e, d, targets, false, false, true)
+			doc, err := Build{}.Install(context.Background(), e, d, targets, false, false, Consent{All: true})
 			problem := envelope.As(err)
 			if problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "wasn't installed by OVDB") {
 				t.Fatalf("install = %v", err)
@@ -153,7 +153,7 @@ func TestWithoutAdoptTheFolderIsRefusedAsBefore(t *testing.T) {
 	before := tree(t, skillsDir)
 	d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
 	for _, dryRun := range []bool{true, false} {
-		doc, err := Build{}.Install(context.Background(), e, d, targets, dryRun, false, false)
+		doc, err := Build{}.Install(context.Background(), e, d, targets, dryRun, false, Consent{})
 		problem := envelope.As(err)
 		if problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "wasn't installed by OVDB") || problem.Targets != nil {
 			t.Fatalf("dryRun=%v: err = %+v", dryRun, err)
@@ -186,7 +186,7 @@ func TestFailedInstallNamesTheTargetsThatChanged(t *testing.T) {
 	putCopy(t, filepath.Join(e.Home, ".codex", "skills", "openvaultdb"), map[string]string{"SKILL.md": "mine"})
 	d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude", "codex"}})
 
-	_, err := Build{}.Install(context.Background(), e, d, targets, true, false, true)
+	_, err := Build{}.Install(context.Background(), e, d, targets, true, false, Consent{All: true})
 	plan := envelope.As(err)
 	claude := filepath.Join(e.Home, ".claude", "skills", "openvaultdb")
 	if plan == nil || !strings.Contains(plan.Reason, "Claude Code would change: "+claude+" (added).") || plan.Targets == nil {
@@ -196,7 +196,7 @@ func TestFailedInstallNamesTheTargetsThatChanged(t *testing.T) {
 		t.Errorf("a dry run wrote %s", claude)
 	}
 
-	_, err = Build{}.Install(context.Background(), e, d, targets, false, false, true)
+	_, err = Build{}.Install(context.Background(), e, d, targets, false, false, Consent{All: true})
 	failure := envelope.As(err)
 	if failure == nil || failure.Code != envelope.AlreadyExists || !strings.Contains(failure.Reason, "Before it stopped, Claude Code changed: "+claude+" (added).") {
 		t.Fatalf("install = %+v", err)
@@ -210,7 +210,7 @@ func TestFailedInstallNamesTheTargetsThatChanged(t *testing.T) {
 	}
 
 	// An update, too: the next run finds Claude Code installed, so it changes nothing.
-	again, err := Build{}.Install(context.Background(), e, d, targets, false, false, true)
+	again, err := Build{}.Install(context.Background(), e, d, targets, false, false, Consent{All: true})
 	if p := envelope.As(err); p == nil || p.Targets != nil || strings.Contains(p.Reason, "changed") || again.Outcomes[0].Result != "unchanged" {
 		t.Errorf("a failure that changed nothing = %+v", err)
 	}

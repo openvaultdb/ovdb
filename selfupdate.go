@@ -27,7 +27,30 @@ func newSelfUpdateConfig(currentVersion string) selfupdate.Config {
 	if !ok {
 		panic("ovdb: catalog id " + ovdbCatalogID + " is missing from cliinstall")
 	}
-	return entry.Config(currentVersion)
+	cfg := entry.Config(currentVersion)
+	cfg.SystemPackageHintFor = systemPackageHint
+	return cfg
+}
+
+// releasesURL is where ovdb's archives are published.
+const releasesURL = "https://github.com/openvaultdb/ovdb/releases"
+
+// systemPackageHint is what ovdb says to do about a copy inside a directory the
+// operating system's package manager owns (selfupdate.Config.SystemPackageHintFor).
+// ovdb is published as a zip on Windows and a tar.gz elsewhere, besides its
+// Homebrew cask, and as no installer or distribution package, so the library's
+// Windows text (Windows Update or an installer) names things that never put an
+// ovdb there. An empty answer keeps the library's own text, which is right for
+// macOS (a directory System Integrity Protection guards).
+func systemPackageHint(goos, _ string) string {
+	switch goos {
+	case "windows":
+		return "a new download of the ovdb zip from " + releasesURL + ", replacing the files (ovdb is published as a zip, not through Windows Update or an installer)"
+	case "darwin":
+		return ""
+	default:
+		return "the package manager that installed it or, for a copy extracted from a tar.gz archive, a new download of that archive from " + releasesURL
+	}
 }
 
 func newSelfUpdateCmd(currentVersion string) *cobra.Command {

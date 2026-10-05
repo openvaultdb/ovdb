@@ -9,6 +9,7 @@ import (
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
 	"github.com/openvaultdb/ovdb/internal/setup/skills"
+	"github.com/openvaultdb/ovdb/internal/setup/skills/skillstest"
 	embedded "github.com/openvaultdb/ovdb/skills"
 )
 
@@ -156,7 +157,7 @@ func TestConsentForChangedSkill(t *testing.T) {
 	if err := os.RemoveAll(claude); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (skills.Build{}).Install(t.Context(), env, d, []skills.RequestTarget{{Harness: "claude", SkillsDir: filepath.Dir(claude)}}, false, false, false); err != nil {
+	if _, err := (skills.Build{}).Install(t.Context(), env, d, []skills.RequestTarget{{Harness: "claude", SkillsDir: filepath.Dir(claude)}}, false, false, skills.Consent{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(claude, "SKILL.md"), []byte("edited"), 0o600); err != nil {
@@ -173,11 +174,11 @@ func TestConsentForChangedSkill(t *testing.T) {
 	if items := m.skills.consentItems(); len(items) != 3 {
 		t.Errorf("items = %v", items)
 	}
-	if harnesses, replace := m.skills.chosen(); len(harnesses) != 0 || replace {
+	if harnesses, replace, _ := m.skills.chosen(); len(harnesses) != 0 || replace {
 		t.Errorf("chosen by default = %v %v", harnesses, replace)
 	}
 	m = send(t, m, key("space"))
-	if harnesses, replace := m.skills.chosen(); len(harnesses) != 1 || !replace {
+	if harnesses, replace, _ := m.skills.chosen(); len(harnesses) != 1 || !replace {
 		t.Errorf("chosen = %v %v", harnesses, replace)
 	}
 }
@@ -214,11 +215,11 @@ func TestConsentForAnAdoptableSkill(t *testing.T) {
 			t.Errorf("consent lacks %q:\n%s", want, view)
 		}
 	}
-	if harnesses, replace := m.skills.chosen(); len(harnesses) != 0 || replace {
+	if harnesses, replace, _ := m.skills.chosen(); len(harnesses) != 0 || replace {
 		t.Errorf("chosen by default = %v %v", harnesses, replace)
 	}
 	m = send(t, m, key("space"))
-	if harnesses, replace := m.skills.chosen(); len(harnesses) != 1 || replace {
+	if harnesses, replace, _ := m.skills.chosen(); len(harnesses) != 1 || replace {
 		t.Errorf("chosen = %v %v: taking over a copy is not replacing a changed one", harnesses, replace)
 	}
 	m = send(t, m, key("down"))
@@ -244,5 +245,150 @@ func TestFailedSkillInstallShowsWhatChanged(t *testing.T) {
 	view := strings.ReplaceAll(flat(next.View().Content), " ", "")
 	if next.screen != ScreenProblem || !strings.Contains(view, "Beforeitstopped,Kiro") || !strings.Contains(view, "Yourcopyiskeptat/h/.kiro/skills/.cli-helpers-skills-adopted-backup/x/openvaultdb") {
 		t.Errorf("problem screen:\n%s", flat(next.View().Content))
+	}
+}
+
+func putBundledCopy(t *testing.T, dir string) {
+	t.Helper()
+	bundled, err := fs.ReadFile(embedded.FS, "openvaultdb/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), bundled, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The consent is bound to what the screen showed: the folders already there
+// that the person ticked (adoptDirs of chosen), not a flag derived from a plan
+// made when Install is pressed.
+func TestConsentNamesTheFoldersTheScreenShowedAsAlreadyThere(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 80, 24)
+	home := userHomeOf(m)
+	for _, harness := range []string{".claude", ".codex"} {
+		putBundledCopy(t, filepath.Join(home, harness, "skills", "openvaultdb"))
+	}
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
+	if _, _, dirs := m.skills.chosen(); len(dirs) != 0 {
+		t.Errorf("adoptDirs by default = %v: a folder already there is offered unticked", dirs)
+	}
+	m = send(t, m, key("space")) // Claude Code
+	_, _, dirs := m.skills.chosen()
+	claude := filepath.Join(skills.Canonical(home), ".claude", "skills", "openvaultdb")
+	if len(dirs) != 1 || dirs[0] != claude {
+		t.Errorf("adoptDirs = %v, want only the ticked %s", dirs, claude)
+	}
+}
+
+// A folder that becomes adoptable after the consent screen was drawn is not
+// taken over by an Install that ticked it as "not installed": the TUI sends the
+// folders it showed, so the library refuses the new one, and the one the person
+// did tick as already there is adopted.
+func TestAFolderThatBecameAdoptableAfterTheScreenIsNotTakenOver(t *testing.T) {
+	m := realModel(t, freePort(t))
+	home := userHomeOf(m)
+	claude := filepath.Join(home, ".claude", "skills", "openvaultdb")
+	codex := filepath.Join(home, ".codex", "skills", "openvaultdb")
+	putBundledCopy(t, claude)
+	if err := os.MkdirAll(filepath.Join(home, ".codex", "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage)) // the screen: Claude Code already there, Codex not installed
+	m = send(t, m, key("space"))                     // tick Claude Code (Codex is ticked already)
+	putBundledCopy(t, codex)                         // after the screen was drawn
+	m = send(t, m, key("down"))
+	m = send(t, m, key("down"))
+	m = send(t, m, key("enter")) // Install skill
+	if m.screen != ScreenProblem {
+		t.Fatalf("screen = %s, want the refusal of the folder nobody was shown", m.screen)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "skills", ".cli-helpers-skills-adopted-backup")); !os.IsNotExist(err) {
+		t.Errorf("the folder that appeared after the screen was taken over: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", ".cli-helpers-skills-adopted-backup")); err != nil {
+		t.Errorf("the folder the person ticked was not adopted: %v", err)
+	}
+}
+
+// An interrupted install is shown on the list and on the consent step as what
+// it is, with a note, and installing it is possible (the install finishes the
+// recovery first).
+func TestAnInterruptedInstallIsShownAsSuch(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 100, 30)
+	home := userHomeOf(m)
+	dir := filepath.Join(home, ".claude", "skills")
+	putBundledCopy(t, filepath.Join(dir, "openvaultdb"))
+	skillstest.PutPendingRecovery(t, dir)
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(""))
+	if view := flat(m.View().Content); !strings.Contains(view, "Interrupted install, installing finishes it or says what to do: Claude Code") {
+		t.Errorf("list:\n%s", view)
+	}
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
+	view := flat(m.View().Content)
+	if !strings.Contains(view, "> [x] Claude Code") || !strings.Contains(view, "an earlier install here was interrupted — installing finishes it, or says what to do") {
+		t.Errorf("consent:\n%s", view)
+	}
+}
+
+// A copy of this skill with a stray file is shown with the library's reason,
+// which names the file, not only as "another skill with this name".
+func TestAnotherFolderIsShownWithTheLibrarysReason(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 120, 30)
+	dir := filepath.Join(userHomeOf(m), ".codex", "skills", "openvaultdb")
+	putBundledCopy(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".DS_Store"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
+	if view := flat(m.View().Content); !strings.Contains(view, "Codex — another skill with this name (unmanaged target") || !strings.Contains(view, ".DS_Store") {
+		t.Errorf("consent:\n%s", view)
+	}
+}
+
+// The advice for an interruption the library cannot recover from (#45) is
+// shown whole on the problem screen.
+func TestAnUnrecoverableInstallShowsItsAdvice(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 120, 40)
+	failure := envelope.New(envelope.StorageUnavailable, "Couldn't install the OpenVaultDB skill").
+		WithReason("An earlier install in /h/.claude/skills was interrupted, and OVDB can't finish or undo it (x). Your own copy of the folder is kept in /h/.claude/skills/.cli-helpers-skills-adopted-backup/t/openvaultdb. This is a known problem of the skills library (https://github.com/strongo/cli-helpers/issues/45).")
+	next, _ := m.updateSkillsMsg(skillInstalledMsg{err: failure})
+	view := strings.ReplaceAll(flat(next.View().Content), " ", "")
+	for _, want := range []string{"wasinterrupted", "Yourowncopyofthefolderiskeptin/h/.claude/skills/.cli-helpers-skills-adopted-backup/t/openvaultdb", "cli-helpers/issues/45"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("problem screen lacks %q:\n%s", want, flat(next.View().Content))
+		}
+	}
+}
+
+// OVDB's own skill whose record cannot be read is not "another skill with this
+// name": the consent step says what is wrong, with the library's reason, and it
+// cannot be chosen.
+func TestAnUnusableRecordIsShownAsSuch(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 120, 30)
+	dir := filepath.Join(userHomeOf(m), ".claude", "skills")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	putBundledCopy(t, filepath.Join(dir, "openvaultdb"))
+	if err := os.WriteFile(filepath.Join(dir, ".cli-helpers-skills-sync.json"), []byte(`{"schema":2,"plug`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
+	view := flat(m.View().Content)
+	if !strings.Contains(view, "Claude Code — its record can't be read (skills sync state is corrupt") || strings.Contains(view, "another skill with this name") || strings.Contains(view, "[x] Claude Code") {
+		t.Errorf("consent:\n%s", view)
 	}
 }

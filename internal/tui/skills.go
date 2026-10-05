@@ -72,10 +72,18 @@ func (m Model) loadSkillsCmd(offer string) tea.Cmd {
 	}
 }
 
-func (m Model) installSkillCmd(id string, harnesses []string, replaceChanged bool) tea.Cmd {
+// installSkillCmd installs skill id for harnesses. adoptDirs are the folders
+// the consent step showed as already there and the person ticked: only those
+// are taken over, so a folder that became adoptable after the screen was drawn
+// is refused. It is never nil, so the client keeps this list and does not
+// make one from a fresh plan.
+func (m Model) installSkillCmd(id string, harnesses []string, replaceChanged bool, adoptDirs []string) tea.Cmd {
 	local, ctx := m.local, m.ctx
+	if adoptDirs == nil {
+		adoptDirs = []string{}
+	}
 	return func() tea.Msg {
-		plan, err := local.PlanSkill(skills.InstallRequest{Skill: id, Harnesses: harnesses, ReplaceChanged: replaceChanged})
+		plan, err := local.PlanSkill(skills.InstallRequest{Skill: id, Harnesses: harnesses, ReplaceChanged: replaceChanged, AdoptDirs: adoptDirs})
 		if err != nil {
 			return skillInstalledMsg{err: err}
 		}
@@ -136,7 +144,7 @@ func (s *skillsScreen) openConsent(id string) {
 // selectable reports whether target can be chosen: a found agent whose
 // folder of this name, if any, OVDB installed or can take over.
 func selectable(target skills.Target) bool {
-	return target.Detected && target.State != skills.StateNotOVDB
+	return target.Detected && target.State != skills.StateNotOVDB && target.State != skills.StateRecordUnusable
 }
 
 // consentItems are the consent step's cursor stops: each found agent, then
@@ -156,16 +164,20 @@ const (
 	itemNotNow  = "\x00not-now"
 )
 
-// chosen is the ticked agents, and whether one of them replaces a copy the
-// person changed.
-func (s skillsScreen) chosen() (harnesses []string, replaceChanged bool) {
+// chosen is the ticked agents, whether one of them replaces a copy the person
+// changed, and the folders already there that they ticked, as the screen
+// showed them.
+func (s skillsScreen) chosen() (harnesses []string, replaceChanged bool, adoptDirs []string) {
 	for _, target := range s.consent.Targets {
 		if selectable(target) && s.selected[target.Harness] {
 			harnesses = append(harnesses, target.Harness)
 			replaceChanged = replaceChanged || target.State == skills.StateChanged
+			if target.State == skills.StateAdoptable {
+				adoptDirs = append(adoptDirs, target.Dir)
+			}
 		}
 	}
-	return harnesses, replaceChanged
+	return harnesses, replaceChanged, adoptDirs
 }
 
 func (m Model) updateSkills(key string) (tea.Model, tea.Cmd) {
@@ -200,12 +212,12 @@ func (m Model) updateSkills(key string) (tea.Model, tea.Cmd) {
 			if key != "enter" {
 				return m, nil
 			}
-			harnesses, replaceChanged := m.skills.chosen()
+			harnesses, replaceChanged, adoptDirs := m.skills.chosen()
 			if len(harnesses) == 0 {
 				return m, nil
 			}
 			m.busy = &busyState{label: uicopy.T("skills.installing", map[string]string{"name": m.skills.consent.Name})}
-			return m, tea.Batch(m.installSkillCmd(m.skills.consent.ID, harnesses, replaceChanged), tickCmd())
+			return m, tea.Batch(m.installSkillCmd(m.skills.consent.ID, harnesses, replaceChanged, adoptDirs), tickCmd())
 		case itemNotNow:
 			if key != "enter" {
 				return m, nil
@@ -291,6 +303,16 @@ func (m Model) viewSkills() string {
 		}
 		b.WriteString(mutedStyle.Render(indentWrap("    ", installed, width)))
 		b.WriteString("\n")
+		var interrupted []string
+		for _, target := range skill.Targets {
+			if target.State == skills.StateRecoveryPending {
+				interrupted = append(interrupted, target.Name)
+			}
+		}
+		if len(interrupted) > 0 {
+			b.WriteString(mutedStyle.Render(indentWrap("    ", uicopy.T("skills.list.recovery_pending", map[string]string{"agents": strings.Join(interrupted, ", ")}), width)))
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
 }
@@ -310,8 +332,11 @@ func (m Model) viewConsent() string {
 	for _, target := range s.consent.Targets {
 		if !selectable(target) {
 			state := uicopy.T("skills.state.not_found", nil)
-			if target.State == skills.StateNotOVDB {
-				state = uicopy.T("skills.state.not_ovdb", nil)
+			if target.State == skills.StateNotOVDB || target.State == skills.StateRecordUnusable {
+				state = skills.StateText(target.State)
+				if target.StateReason != "" {
+					state += " (" + target.StateReason + ")"
+				}
 			}
 			b.WriteString(mutedStyle.Render(hangingWrap("      ", target.Name+" — "+state, width)))
 			b.WriteString("\n")
@@ -344,7 +369,7 @@ func (m Model) viewConsent() string {
 		if items[s.cursor] == item {
 			cursor, style = "> ", selectedItemStyle
 		}
-		if harnesses, _ := s.chosen(); item == itemInstall && len(harnesses) == 0 {
+		if harnesses, _, _ := s.chosen(); item == itemInstall && len(harnesses) == 0 {
 			style = mutedStyle
 		}
 		b.WriteString(style.Render(cursor + label))
