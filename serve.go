@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,7 +21,36 @@ import (
 	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 )
 
-func newServeCmd() *cobra.Command {
+// postgresPreviewHelp is the one statement of what a PostgreSQL or MySQL mount
+// does with a structured query. `ovdb serve --help`, `ovdb init --help` and the
+// README carry it word for word (a test holds them equal). The switch is read by
+// openvaultdb-go when a mount opens; ovdb never sets it.
+const postgresPreviewHelp = "PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /dtql) only when the environment of ovdb serve holds " +
+	core.PreviewPostgresQueriesEnv + "=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called. " +
+	"Key reads and writes are unaffected. Joins, grouping and aggregates also need postgres among the join engines, which ovdb serve does not list, so they answer 422 join_engine_unsupported on a PostgreSQL mount. MySQL mounts refuse structured queries whatever the switch says."
+
+// queryLimitsHelp names the limits the server applies to a query. ovdb serve
+// runs openvaultdb-go with its defaults and has no flag for any of them.
+const queryLimitsHelp = "Query limits: a relational query (join, grouping, aggregate, subquery) reads at most 8 sources with 4 levels of subquery, and answers at most limit 1000 rows (offset 10000, 8 MiB). " +
+	"A request runs for at most 10 seconds and reads at most 100,000 rows and 64 MiB from its sources; a join read in memory holds at most 10,000 rows and 16 MiB, and a grouping 100,000 groups. " +
+	"At most 2 in-memory and 4 database-side queries run at once, and a paged /dtql snapshot is at most 512 MiB and 1,000,000 rows, 2 at a time. " +
+	"GET /.well-known/openvaultdb lists them as query.limits. ovdb serve runs with these defaults and has no flag to change them."
+
+// serveDeps are the two parts of `ovdb serve` that a test replaces: how one
+// manifest file becomes a mounted database, and what runs the assembled server.
+type serveDeps struct {
+	mountFile func(path string) (*core.Database, error)
+	run       func(cmd *cobra.Command, srv *http.Server) error
+}
+
+// defaultServeDeps is what the binary runs with: the real mount and a listener.
+func defaultServeDeps() serveDeps {
+	return serveDeps{mountFile: mount.File, run: serveUntilSignal}
+}
+
+func newServeCmd() *cobra.Command { return newServeCmdWith(defaultServeDeps()) }
+
+func newServeCmdWith(deps serveDeps) *cobra.Command {
 	var addr, dir, dataDir, publicURL string
 	var manifests []string
 	var authEnabled, readOnly bool
@@ -33,7 +63,11 @@ func newServeCmd() *cobra.Command {
 
 Databases are mounted from --manifest files and/or every *.yaml manifest in --dir.
 With --data-dir, databases can also be created at runtime (POST /v1/databases);
-created databases persist as manifests in the data-dir and are remounted on restart.`,
+created databases persist as manifests in the data-dir and are remounted on restart.
+
+` + postgresPreviewHelp + `
+
+` + queryLimitsHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if publicURL != "" {
 				parsed, err := url.Parse(publicURL)
@@ -51,7 +85,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				dbs = mounted
 			}
 			for _, path := range manifests {
-				db, err := mount.File(path)
+				db, err := deps.mountFile(path)
 				if err != nil {
 					return err
 				}
@@ -139,24 +173,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				Handler:           server.New(appVersion, dbs, opts...).Handler(),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
-			errCh := make(chan error, 1)
-			go func() { errCh <- srv.ListenAndServe() }()
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "OpenVaultDB %s serving on http://%s\n", appVersion, addr)
-
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-			select {
-			case err := <-errCh:
-				return err
-			case <-sigCh:
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "shutting down...")
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					return err
-				}
-				return nil
-			}
+			return deps.run(cmd, srv)
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", DefaultAddr, "listen address")
@@ -173,6 +190,43 @@ created databases persist as manifests in the data-dir and are remounted on rest
 			"Use --cors '*' to allow any origin (development only — use with caution on public addresses)")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "reject all database and token mutations, including owner-token writes")
 	return cmd
+}
+
+// serveUntilSignal serves srv until its listener fails or the process is
+// interrupted. The interrupt signals are the only part that needs a process;
+// serveUntil holds the rest.
+func serveUntilSignal(cmd *cobra.Command, srv *http.Server) error {
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	return serveUntil(cmd.OutOrStdout(), srv.Addr, srv, stop)
+}
+
+// stoppableServer is the part of *http.Server that serveUntil uses.
+type stoppableServer interface {
+	ListenAndServe() error
+	Shutdown(ctx context.Context) error
+}
+
+// serveUntil starts srv, says where it listens, and returns when the listener
+// fails (with its error) or a value arrives on stop (after a shutdown that
+// waits at most 5 seconds for requests in flight).
+func serveUntil(out io.Writer, addr string, srv stoppableServer, stop <-chan os.Signal) error {
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+	_, _ = fmt.Fprintf(out, "OpenVaultDB %s serving on http://%s\n", appVersion, addr)
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-stop:
+		_, _ = fmt.Fprintln(out, "shutting down...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 // isNonLoopback reports whether addr (host:port) binds to a non-loopback
