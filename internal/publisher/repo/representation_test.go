@@ -183,3 +183,43 @@ func TestNativeRepresentationRepository(t *testing.T) {
 		t.Fatal("undeclared native target recordset accepted")
 	}
 }
+
+func TestRepresentationUsesMappedTargetAndNativeBridgeRecordsets(t *testing.T) {
+	for _, name := range []string{"mapped target", "missing mapping", "incorrect mapping", "missing target", "mapped bridge only"} {
+		t.Run(name, func(t *testing.T) {
+			p, _, deps := contractFixture(t)
+			n := p.Nodes["ovdb.yaml"]
+			text := strings.ReplaceAll(string(n.Content), "  - Countries\n", "  - dbo.Countries\n")
+			mapping := "recordset_entities: {dbo.Countries: Countries}\n"
+			switch name {
+			case "missing mapping":
+				mapping = ""
+			case "incorrect mapping":
+				mapping = "recordset_entities: {dbo.Countries: CustomerCountries}\n"
+			case "missing target":
+				text = strings.ReplaceAll(text, "  - dbo.Countries\n", "")
+				mapping = ""
+			case "mapped bridge only":
+				text = strings.ReplaceAll(text, "  - CustomerCountries\n", "  - dbo.CustomerCountries\n")
+				mapping = "recordset_entities: {dbo.Countries: Countries, dbo.CustomerCountries: CustomerCountries}\n"
+			}
+			n.Content = []byte(text + mapping)
+			p.Nodes["ovdb.yaml"] = n
+			findings := checkFixtureRepresentation(p, deps)
+			result := Check(p, Options{Profile: manifest.Publisher, Dependencies: deps})
+			if name == "mapped target" {
+				if len(findings) != 0 || !result.OK() {
+					t.Fatalf("valid mapped target refused: metadata %v; default %v", findings, result.Findings)
+				}
+				return
+			}
+			linked := false
+			for _, finding := range findings {
+				linked = linked || finding.Rule == "representation-manifest-link"
+			}
+			if !linked || result.OK() {
+				t.Fatalf("invalid association accepted: metadata %v; default %v", findings, result.Findings)
+			}
+		})
+	}
+}

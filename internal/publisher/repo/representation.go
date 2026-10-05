@@ -77,8 +77,15 @@ func (c *checker) representation(m manifest.Manifest, a representation.Reference
 		c.add(a.Path, "representation-contract", 0, "structural validation failed: %s", ascii(err.Error()))
 		return nil
 	}
+	// Targets name ModelSpec entities; bridge tables retain native recordset names.
+	entities := slices.Clone(m.Recordsets.Value)
+	for i, native := range entities {
+		if entity, mapped := m.RecordsetEntities.Value[native]; mapped {
+			entities[i] = entity
+		}
+	}
 	for _, contract := range doc.Contracts {
-		if m.Form != manifest.FormOwn || !m.ModelSpec.Usable() || !m.MeaningFile.Usable() || contract.Target.Model.Path != m.ModelSpec.Value || contract.Target.Binding.Document.Path != m.MeaningFile.Value || (contract.Execution != representation.NativeIdentifier && !slices.Contains(m.Recordsets.Value, contract.Bridge.Table)) || !slices.Contains(m.Recordsets.Value, contract.Target.Entity) {
+		if m.Form != manifest.FormOwn || !m.ModelSpec.Usable() || !m.MeaningFile.Usable() || contract.Target.Model.Path != m.ModelSpec.Value || contract.Target.Binding.Document.Path != m.MeaningFile.Value || (contract.Execution != representation.NativeIdentifier && !slices.Contains(m.Recordsets.Value, contract.Bridge.Table)) || !slices.Contains(entities, contract.Target.Entity) {
 			c.add(a.Path, "representation-manifest-link", 0, "target model/binding and native target/bridge recordsets must match this publisher manifest")
 		}
 	}
