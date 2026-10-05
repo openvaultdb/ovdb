@@ -118,7 +118,10 @@ or their owners' publication queue.
 
 ## Explicit native execution in contract format 2
 
-`schema2.json` and `ovdb-representation-contract/2` add a required `execution`
+`schema2.json` has canonical schema ID
+`https://openvaultdb.com/schemas/representation-contract-2.json`, distinct from
+format1, so consumers can register both schemas together. The closed
+`ovdb-representation-contract/2` format adds a required `execution`
 discriminator. `label-bridge` keeps the reviewed bridge, key-index and collision
 checks. `native-identifier` forbids both `bridge` and `target.keys`; it requires:
 
@@ -188,3 +191,10 @@ unchanged canonical decision path. The real ROR fixture exercises actual
 proposed additive receipt/snapshot linkage. Both remain staged fixtures without
 production eligibility. Directory, current demo-db/chinook checker, OVDB parity
 adoption and app admission companions remain prerequisites.
+
+A later provider packaging or wrapper revision needs explicit independent
+carry-forward review tying its unchanged semantic source, model, binding and
+native data to the accepted decision's original pins. Structural validation at a
+new outer provider commit does not inherit that semantic acceptance. Packaging
+proof and source identity evidence must be reviewed before canonical admission;
+any semantic change requires the dedicated specialist decision.

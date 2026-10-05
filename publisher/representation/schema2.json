@@ -458,7 +458,7 @@
     "contracts"
   ],
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openvaultdb.com/schemas/representation-contract-1.json",
+  "$id": "https://openvaultdb.com/schemas/representation-contract-2.json",
   "$defs": {
     "ref": {
       "type": "object",
@@ -468,7 +468,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1024,
-          "pattern": "^[A-Za-z0-9_./$-]+$",
+          "pattern": "^(?:[A-Za-z0-9_.-]+|\\$records)(?:/(?:[A-Za-z0-9_.-]+|\\$records))*$",
           "allOf": [
             {
               "not": {
