@@ -1042,17 +1042,18 @@ func TestPublisherRulesTable(t *testing.T) {
 		if !ok || row[0] != rule.Who || row[1] != goCell || row[2] != strings.Join(lines, ", ") {
 			t.Errorf("rule %q: README row %v, want %s, %s, %s", rule.ID, row, rule.Who, goCell, strings.Join(lines, ", "))
 		}
-		if rule.Who == "dropped" {
+		switch rule.Who {
+		case "dropped":
 			dropped++
 			if rule.Go != "" {
 				t.Errorf("a rule that Go no longer has names a rule of Go: %q", rule.ID)
 			}
-		} else if rule.Who == "documents" {
+		case "documents":
 			documents++
 			if rule.Go == "" {
 				t.Errorf("a rule decided by the documents has no rule of Go: %q", rule.ID)
 			}
-		} else {
+		default:
 			other++
 			if rule.Go != "" {
 				t.Errorf("a rule that needs other files or input has a rule of Go: %q", rule.ID)
