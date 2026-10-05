@@ -116,6 +116,10 @@ func TestSkillInstallShowsAdviceForAnUnrecoverableInterruptedInstall(t *testing.
 	} {
 		r := e.run(args...)
 		out := r.stdout + r.stderr
+		if problem := envelope.Decode([]byte(r.stdout)); problem != nil {
+			// JSON escapes a Windows path's backslashes: compare the decoded words.
+			out = problem.Message + " " + problem.Reason
+		}
 		if r.code != 1 {
 			t.Fatalf("%v = %+v", args, r)
 		}
