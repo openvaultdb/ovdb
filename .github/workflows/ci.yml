@@ -8,6 +8,11 @@ on:
     branches:
       - '**'
 
+# Every job of this file has a hard timeout, several times its normal time (from the runs of 4 and 5 October 2026: web 3.6 to 4.1 minutes, lifecycle 1.4 on
+# Linux, 1.7 to 2.5 on macOS, 4.9 to 6.5 on Windows, go.mod 0.3 to 0.5, exact coverage 1.4 to 2.2, goldens 3.8 to 3.9), so that a hung test or process fails the
+# job with a log instead of blocking the release workflow for as long as GitHub lets a job run (six hours). TestEveryJobOfCIHasATimeout holds the file to it.
+# The job that calls the shared strongo workflow (`strongo_workflow` below) cannot have one here: a job that calls a reusable workflow may not set
+# timeout-minutes, and v1.14.17 of that workflow has no input for it.
 jobs:
 
   strongo_workflow:
@@ -49,6 +54,8 @@ jobs:
   web:
     name: Web build, test, embed and browser tests
     runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -131,6 +138,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -171,6 +180,8 @@ jobs:
   go-mod-tidy:
     name: go.mod is tidy
     runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -195,6 +206,8 @@ jobs:
   publisher-coverage:
     name: Exact coverage (publisher check packages)
     runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -222,6 +235,8 @@ jobs:
   publisher-goldens:
     name: Parity goldens are current (publisher check packages)
     runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v5

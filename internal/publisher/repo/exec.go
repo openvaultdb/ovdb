@@ -27,6 +27,8 @@ type ExecRunner struct {
 	Git     string        // the program; "git" when empty
 	Dir     string        // the directory given to git -C
 	Timeout time.Duration // how long one call may take; 30 seconds when zero
+	// WaitDelay is how long the call waits, after git is gone, for what holds git's output to let go of it; two seconds when zero.
+	WaitDelay time.Duration
 }
 
 // gitEnv is the environment of every call: the caller's, without any GIT_ variable (they
@@ -76,6 +78,9 @@ func (r ExecRunner) Run(args []string, limit int) ([]byte, error) {
 	out := &bounded{limit: limit, cancel: cancel}
 	stderr := &bounded{limit: maxSmall, quiet: true}
 	cmd.Stdout, cmd.Stderr = out, stderr
+	// The timeout is a bound only if the call does not wait for what holds git's pipes: a git that left a child (a wrapper that does not exec) keeps them open
+	// after the process is killed, and Wait would wait for as long as the child lives. After WaitDelay the pipes are closed and Wait returns.
+	cmd.WaitDelay = cmp.Or(r.WaitDelay, 2*time.Second)
 	err := cmd.Run()
 	var exit *exec.ExitError
 	switch {
@@ -83,6 +88,8 @@ func (r ExecRunner) Run(args []string, limit int) ([]byte, error) {
 		return nil, ErrTooLarge
 	case ctx.Err() != nil:
 		return nil, TimeoutError{After: cmp.Or(r.Timeout, 30*time.Second)}
+	case errors.Is(err, exec.ErrWaitDelay):
+		return nil, fmt.Errorf("%w: git left a process running that holds its output", ErrCannotRun)
 	case errors.As(err, &exit):
 		lines := strings.Split(strings.TrimSpace(string(stderr.buf)), "\n")
 		return nil, &ExitError{Code: exit.ExitCode(), Stderr: lines[len(lines)-1], Full: string(stderr.buf)}

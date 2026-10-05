@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +34,24 @@ func fakeGit(mode string) {
 		}
 	case "sleep":
 		time.Sleep(time.Minute)
+	case "holder", "holder-exits":
+		// A git that starts a process that holds git's output (it inherits both pipes), as a wrapper script that does not exec its sleeper does; then sleeps,
+		// or exits at once.
+		holder := exec.Command(os.Args[0])
+		holder.Env = append(os.Environ(), "OVDB_FAKE_GIT=heartbeat")
+		holder.Stdout, holder.Stderr = os.Stdout, os.Stderr
+		if err := holder.Start(); err != nil {
+			os.Exit(4)
+		}
+		if mode == "holder" {
+			time.Sleep(time.Minute)
+		}
+	case "heartbeat":
+		// The holder: it records its pid, then touches a file every 20 ms (so a test can tell that it is alive), and ends by itself after 30 seconds.
+		_ = os.WriteFile(os.Getenv("OVDB_FAKE_HOLDER")+".pid", []byte(strconv.Itoa(os.Getpid())), 0o600)
+		for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+			_ = os.WriteFile(os.Getenv("OVDB_FAKE_HOLDER")+".beat", []byte(time.Now().String()), 0o600)
+		}
 	case "stderr":
 		fmt.Fprint(os.Stderr, strings.Repeat("noise\n", 2000), "the last line\n")
 		os.Exit(3)
@@ -152,5 +173,71 @@ func TestExecRunnerStopsGitAtOnceWhenItsOutputIsOverTheLimit(t *testing.T) {
 	}
 	if took := time.Since(start); took > 15*time.Second {
 		t.Errorf("the call took %s: git was left running until the timeout", took)
+	}
+}
+
+// holderOf is the fake git that leaves a holder behind, and a way to stop and check it: the test ends only when the holder is dead, as proved by its heartbeat
+// no longer beating.
+func holderOf(t *testing.T, mode string) ExecRunner {
+	t.Helper()
+	base := filepath.Join(t.TempDir(), "holder")
+	t.Setenv("OVDB_FAKE_HOLDER", base)
+	t.Cleanup(func() {
+		raw, err := os.ReadFile(base + ".pid")
+		if err != nil {
+			t.Errorf("the holder never started: %v", err)
+			return
+		}
+		pid, _ := strconv.Atoi(string(raw))
+		if p, err := os.FindProcess(pid); err == nil {
+			_ = p.Kill()
+		}
+		beat := func() string { b, _ := os.ReadFile(base + ".beat"); return string(b) }
+		time.Sleep(200 * time.Millisecond) // a write that was under way
+		before := beat()
+		time.Sleep(400 * time.Millisecond)
+		if beat() != before {
+			t.Errorf("the holder (pid %d) is still alive after the test", pid)
+		}
+	})
+	r := runner(t, mode)
+	r.WaitDelay = 300 * time.Millisecond
+	return r
+}
+
+// runWithin runs the call and fails the test, instead of waiting, when it does not return in limit: a runner that waits for a holder of its pipes waits for
+// as long as the holder lives.
+func runWithin(t *testing.T, r ExecRunner, limit time.Duration) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { _, err := r.Run(nil, 100); done <- err }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(limit):
+		t.Fatalf("the call did not return in %s: it waits for a process that holds git's output", limit)
+		return nil
+	}
+}
+
+// The bound of the timeout is a bound: a git that is killed at the timeout and has left a process that holds its output does not hold the call.
+func TestExecRunnerTimeoutHoldsWhenGitLeavesAProcessHoldingItsOutput(t *testing.T) {
+	r := holderOf(t, "holder")
+	r.Timeout = 500 * time.Millisecond
+	start := time.Now()
+	if err := runWithin(t, r, 10*time.Second); !errors.Is(err, ErrTimeout) {
+		t.Errorf("err = %v", err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("the call took %s for a timeout of 500ms", took)
+	}
+}
+
+// A git that exits and leaves such a process is an answer that cannot be trusted to be whole: the call fails at once, as could-not-run.
+func TestExecRunnerRefusesGitThatLeavesAProcessHoldingItsOutput(t *testing.T) {
+	r := holderOf(t, "holder-exits")
+	err := runWithin(t, r, 10*time.Second)
+	if !errors.Is(err, ErrCannotRun) || errors.Is(err, ErrTimeout) || !strings.Contains(err.Error(), "left a process running") {
+		t.Errorf("err = %v", err)
 	}
 }
