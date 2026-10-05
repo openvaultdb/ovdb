@@ -101,38 +101,38 @@ form.
 
 | Field | Where the Directory reads it | Fact |
 | --- | --- | --- |
-| `format` | directory.mjs 180 | `Format` |
-| `id` | directory.mjs 181, 313 | `ID` |
-| `title` | directory.mjs 181 | `Title` |
-| `description` | directory.mjs 181 | `Description` |
-| `url` | directory.mjs 109, 188, 193, 194, 312 | `URL` |
-| `homepage` | directory.mjs 230, 231, 667 | `Homepage` |
-| `deployment.url` | directory.mjs 110, 189, 666 | `DeploymentURL` |
-| `deployment.engine` | directory.mjs 190, 666 | `Engine` |
-| `deployment.discovery` | directory.mjs 191, 193, 194 | `Discovery` |
-| `deployment.recordset_page` | directory.mjs 111, 197, 651, 676 | `RecordsetPage` |
-| `model.modelspec` | directory.mjs 173, 216, 390, 391, 395, 402, 424, 441, 450 | `ModelSpec` |
-| `model.hcl` | directory.mjs 173, 198, 415 | `ModelHCL` |
-| `model.address` | directory.mjs 201, 202, 217, 418, 419, 421, 422, 426, 458, 475 | `ModelAddress` |
-| `model.name` | directory.mjs 402, 552 | `ModelName` |
-| `meaning.address` | directory.mjs 205, 206, 218, 459, 476 | `MeaningAddress` |
-| `meaning.file` | directory.mjs 209, 220, 372, 386, 392, 401, 407, 409, 413, 415, 460, 535, 539, 546 | `MeaningFile` |
-| `meaning.graph.id` | directory.mjs 210, 221, 314 | `GraphID` |
-| `meaning.graph.address` | directory.mjs 211, 222, 383, 502 | `GraphAddress` |
-| `licences.model` | directory.mjs 213, 223, 490 | `LicenceModel` |
-| `licences.meaning` | directory.mjs 213, 224, 401, 503 | `LicenceMeaning` |
-| `licences.data` | directory.mjs 234, 671 | `LicenceData` |
-| `publisher.name` | directory.mjs 226 | `PublisherName` |
-| `publisher.url` | directory.mjs 227 | `PublisherURL` |
-| `publisher.repository` | directory.mjs 315, 316 | `PublisherRepository` |
-| `recordsets` | directory.mjs 235, 337 | `Recordsets` |
-| `recordsets_partial` | directory.mjs 214, 219, 342, 351 | `RecordsetsPartial` |
-| `form` | directory.mjs 173, 179, 319 | `Form` |
-| `model.address.repository` | directory.mjs 201, 217, 419, 458, 564 | `ModelAddress.Repository` |
-| `model.address.module` | directory.mjs 201, 217, 419, 458, 564 | `ModelAddress.Module` |
-| `model.address.ref` | directory.mjs 201, 217, 419, 458, 564 | `ModelAddress.Ref` |
-| `meaning.address.repository` | directory.mjs 205, 459 | `MeaningAddress.Repository` |
-| `meaning.address.ref` | directory.mjs 205, 459 | `MeaningAddress.Ref` |
+| `format` | directory.mjs 205, 321 | `Format` |
+| `id` | directory.mjs 206, 426 | `ID` |
+| `title` | directory.mjs 206 | `Title` |
+| `description` | directory.mjs 206 | `Description` |
+| `url` | directory.mjs 118, 213, 218, 219, 424 | `URL` |
+| `homepage` | directory.mjs 255, 256, 812 | `Homepage` |
+| `deployment.url` | directory.mjs 119, 214, 811 | `DeploymentURL` |
+| `deployment.engine` | directory.mjs 215, 811 | `Engine` |
+| `deployment.discovery` | directory.mjs 216, 218, 219, 321, 418 | `Discovery` |
+| `deployment.recordset_page` | directory.mjs 120, 222, 777, 823 | `RecordsetPage` |
+| `model.modelspec` | directory.mjs 198, 241, 511, 512, 516, 523, 545, 562, 571 | `ModelSpec` |
+| `model.hcl` | directory.mjs 198, 223, 536 | `ModelHCL` |
+| `model.address` | directory.mjs 226, 227, 242, 539, 540, 542, 543, 547, 579, 596 | `ModelAddress` |
+| `model.name` | directory.mjs 523, 673 | `ModelName` |
+| `meaning.address` | directory.mjs 230, 231, 243, 580, 597 | `MeaningAddress` |
+| `meaning.file` | directory.mjs 234, 245, 493, 507, 513, 522, 528, 530, 534, 536, 581, 656, 660, 667 | `MeaningFile` |
+| `meaning.graph.id` | directory.mjs 235, 246, 427 | `GraphID` |
+| `meaning.graph.address` | directory.mjs 236, 247, 504, 623 | `GraphAddress` |
+| `licences.model` | directory.mjs 238, 248, 611 | `LicenceModel` |
+| `licences.meaning` | directory.mjs 238, 249, 522, 624 | `LicenceMeaning` |
+| `licences.data` | directory.mjs 259, 817 | `LicenceData` |
+| `publisher.name` | directory.mjs 251 | `PublisherName` |
+| `publisher.url` | directory.mjs 252 | `PublisherURL` |
+| `publisher.repository` | directory.mjs 428, 429 | `PublisherRepository` |
+| `recordsets` | directory.mjs 264, 265, 275, 453 | `Recordsets` |
+| `recordsets_partial` | directory.mjs 239, 244, 460, 471, 472 | `RecordsetsPartial` |
+| `form` | directory.mjs 198, 204, 432 | `Form` |
+| `model.address.repository` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Repository` |
+| `model.address.module` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Module` |
+| `model.address.ref` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Ref` |
+| `meaning.address.repository` | directory.mjs 230, 580 | `MeaningAddress.Repository` |
+| `meaning.address.ref` | directory.mjs 230, 580 | `MeaningAddress.Ref` |
 
 `OVDB.md`: `ovdb` (`analyseDatabase`, `frontmatter.ovdb !== 1`) is `OVDBMd.Version`;
 `publish` (`frontmatter.publish`, each entry, and `published.has(data.manifest)`) is
@@ -277,7 +277,7 @@ A length refusal says the length and the limit, not that the field is missing.
 
 The rule is the one of package `rules`: **the Go function never accepts a pair of
 documents that the JavaScript of the profile refuses**. The reference of the
-`Directory` profile is `openvaultdb/directory@e8db5488db31d3f63865e404acef487c33cf35df`: `parseFrontmatter` and `manifestProblems` of
+`Directory` profile is `openvaultdb/directory@087067483686865b13cb76511ff86f7364ea47ff`: `parseFrontmatter` and `manifestProblems` of
 `scripts/lib/directory.mjs`, called as they are; the `OVDB.md` checks that
 `analyseDatabase` keeps inline, and the record-stage refusals of the table above,
 composed from the same expressions (the generator fails if the pinned file no
@@ -290,7 +290,7 @@ verdict on each document (`directory.verdicts.json`), and the values its own cod
 derives for every field of the table above from each accepted manifest
 (`directory.facts.json`, as the difference from the facts of the document's base).
 `go test` reads them, applies the Go functions, starts no process and needs no
-network. The corpus is **7285 manifests and 658 OVDB.md documents** (1025
+network. The corpus is **7326 manifests and 658 OVDB.md documents** (1026
 KiB), stored as patches of whole lines against a few base documents (the real
 Chinook manifest and `OVDB.md`, the hoster example, the Directory's own fixture,
 JSON spellings of the manifests), with flags for CRLF, a byte-order mark, invalid
@@ -310,7 +310,7 @@ UTF-8 and padding to an exact size; Node v24.20.0 made the committed ones:
   spelling the record stage judges, and paths, licences, engines and addresses at
   and over their bounds;
 - the single-field edits of both test suites (`(m) => { ... }`) applied to the
-  own and the shared form: **200 of 292** found were applicable alone;
+  own and the shared form: **200 of 300** found were applicable alone;
 - the YAML text mutated line by line and spelled differently (CRLF, a lone CR, a
   byte-order mark, a Latin-1 byte, `---`, `...`, directives, several documents,
   keys that are numbers, escapes, `.inf`, integers beyond 2^53, documents at, and
@@ -330,15 +330,15 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **7145 agree, 798 stricter, 0 accepted by Go where the
+On the corpus: **7177 agree, 803 stricter, 4 accepted by Go where the
 Directory refuses**.
 
-On the facts: 2177 manifests and 267 OVDB.md documents have their facts compared.
+On the facts: 2193 manifests and 267 OVDB.md documents have their facts compared.
 
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 5403 manifests, 3226 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 5444 manifests, 3247 of them refused.
 
 ## The proof, Publisher profile
 
@@ -366,12 +366,12 @@ slice 3's. An `OVDB.md` case lists the real Chinook manifest under each entry, s
 checker accepts, these classes of refusal would follow from files (manifests, OVDB.md
 documents):
 
-- a tracked regular file (744 manifests, 130 OVDB.md documents)
-- model.address against the model file (734 manifests, 130 OVDB.md documents)
+- a tracked regular file (746 manifests, 130 OVDB.md documents)
+- model.address against the model file (736 manifests, 130 OVDB.md documents)
 - model.name against the model file (5 manifests, 0 OVDB.md documents)
-- recordsets against the model (744 manifests, 130 OVDB.md documents)
-- the meaning file against the manifest (744 manifests, 130 OVDB.md documents)
-- the model file: JSON, module and entities (744 manifests, 130 OVDB.md documents)
+- recordsets against the model (746 manifests, 130 OVDB.md documents)
+- the meaning file against the manifest (746 manifests, 130 OVDB.md documents)
+- the model file: JSON, module and entities (746 manifests, 130 OVDB.md documents)
 
 The corpus is the one of the Directory profile, **7285 manifests and 658
 OVDB.md documents**, judged again by this reference (it accepts 1372 manifests and
@@ -387,13 +387,13 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7453 agree, 490 stricter, 0 accepted by Go where the Chinook
-checker refuses**. The facts: under the Publisher profile, 908 manifests and 104
+On the corpus: **7494 agree, 490 stricter, 0 accepted by Go where the Chinook
+checker refuses**. The facts: under the Publisher profile, 912 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 5108 manifests, 366 OVDB.md documents and 5879 pairs (of 8601) that the
+every one of the 5129 manifests, 366 OVDB.md documents and 5900 pairs (of 8642) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -576,10 +576,24 @@ the free text of `title` and `description` and every key that no rule reads incl
 package reads (`generate.mjs` makes it in a canonical form: null, a boolean, a number as the 16 hex digits of its IEEE double, a string with its length in bytes,
 a sequence, a mapping with its keys in byte order); the test makes the digest of what the reader reads and compares them. The corpus has a family of
 scalars for it (numbers in many spellings, the booleans and nulls of YAML 1.1 and 1.2, strings and escapes, block scalars with their indents and blank lines,
-plain values over several lines, flow collections, nested block collections), in the manifests and in OVDB.md. Result: 5907 documents are read by both, 5902
+plain values over several lines, flow collections, nested block collections), in the manifests and in OVDB.md. Result: 5948 documents are read by both, 5943
 of them with the same values, and 5 that differ only in the integer -0: the `yaml` package reads `-0` as the number -0 and the Go reader as 0 (its integers
 are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
 reads 0 that the yaml package refuses.
+
+### Recorded differences: not yet ported (the Directory profile)
+
+The Directory's checker has moved since the first reference was pinned, and Go has not yet ported every rule it added. Where that makes Go
+refuse what the Directory accepts, the kind is recorded here, with its number of corpus documents, until its slice lands; where it makes Go accept what the
+Directory refuses (the four documents counted above) it is recorded in `testdata/reference/drift.json` and by the test that holds the
+corpus to it. These are not bounds and not choices. `testdata/reference/drift.json` is the whole list, in two classes (Go looser first), with the slice
+that removes each entry; `TestDrift` fails when the list and what Go does disagree, in either direction, so an entry is removed in the pull request
+that ports its rule. The rules of the Directory that the corpus does not reach are covered by `testdata/reference/drift.probes.json`: one manifest
+for each, with the verdict of the reference at the pin.
+
+| Kind | Documents | Why |
+| --- | --- | --- |
+| `manifest-url` | 5 | NOT A BOUND: not yet ported. The Directory accepts a global database identity, a url that ends in a slash, since 574a7ad; Go still refuses it (slice A0c, listed in drift.json). |
 
 ### Recorded differences: the Publisher profile's own
 

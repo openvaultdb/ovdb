@@ -26,7 +26,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { domainToASCII, fileURLToPath, pathToFileURL } from 'node:url';
-import { checkoutReference, references as pinnedReferences } from '../../../references.mjs';
+import { assertAnchors, checkoutReference, references as pinnedReferences } from '../../../references.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldenPath = join(here, 'matrix.golden.json');
@@ -51,12 +51,10 @@ const chinook = await load(chinookRoot, 'scripts/lib/directory-rules.mjs');
 // Two rules are kept inline in directory.mjs, not exported, so the verdicts below compose the same
 // expression. Fail loudly if the pinned file does not hold exactly the text that is copied.
 const directorySource = readFileSync(join(directoryRoot, 'scripts/lib/directory.mjs'), 'utf8');
-for (const expression of [
+assertAnchors(directorySource, 'scripts/lib/directory.mjs', pins.directory.commit, [
   "const isText = (value) => typeof value === 'string' && value.trim() !== '';",
   "if (!isText(entry) || !entry.startsWith('./') || !isRepositoryPath(entry.slice(2)))",
-]) {
-  if (!directorySource.includes(expression)) throw new Error(`directory.mjs at ${pins.directory.commit} no longer holds \`${expression}\`: the verdicts composed from it in generate.mjs are not the Directory's`);
-}
+]);
 
 // ---- the verdicts: true accepts, false refuses, undefined: the reference has no such rule ----
 
