@@ -1340,6 +1340,8 @@ const probeSpecs = [
   ['page-long-cjk-name', 'a recordset name of 230 CJK characters: its page is over 2048 characters (accepted)', (m) => { m.recordsets = [...m.recordsets, '\u8868'.repeat(230)]; return m; }],
   ['page-long-ascii-name', 'a recordset name of 256 letters (accepted)', (m) => { m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
   ['page-long-name-long-template', 'a 256-letter recordset name under a recordset_page of 1990 characters: the page is over 2048 characters (accepted)', (m) => { m.deployment.recordset_page = `https://cloud.openvaultdb.com/c/${'x'.repeat(1960)}/{name}`; m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
+  ['recorded-yaml-character', 'a recordset name with a literal U+0085 (the Directory accepts the name; the reader refuses the character in YAML: the recorded kind yaml-character)', (m) => { m.recordsets = [...m.recordsets, 'a\u0085b']; return m; }, 'yaml-character'],
+  ['recorded-template-2049', 'a recordset_page template of 2049 characters (the Directory has no bound; the recorded kind url-length)', (m) => { m.deployment.recordset_page = `https://cloud.openvaultdb.com/ovdb/dbs/${'x'.repeat(2003)}/{name}`; return m; }, 'url-length'],
   ['licence-compound-data', 'licences.data written as MIT AND CC0-1.0 (ff4abd0)', (m) => { m.licences.data = 'MIT AND CC0-1.0'; return m; }],
   ['licence-compound-duplicate', 'licences.data with a repeated atom, MIT AND MIT (ff4abd0)', (m) => { m.licences.data = 'MIT AND MIT'; return m; }],
   ['licence-compound-model', 'licences.model written as a compound (the Directory refuses: single ids only)', (m) => { m.licences.model = 'MIT AND CC0-1.0'; return m; }],
@@ -1393,10 +1395,10 @@ const probeSpecs = [
   ['envelope-many-keys', 'an envelope with 1000 keys', (m) => { m.representation_contract = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`k${i}`, i])); return m; }],
   ['envelope-duplicate-path', 'an envelope that writes path twice (the YAML is refused as a whole)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64) }; return jsonOf(m).replace('"path": "artifacts/representation.json",', '"path": "x.json",\n    "path": "artifacts/representation.json",'); }],
 ];
-const driftProbes = probeSpecs.map(([id, note, change]) => {
+const driftProbes = probeSpecs.map(([id, note, change, recorded]) => {
   const changed = change(probeBase());
   const text = typeof changed === 'string' ? changed : jsonOf(changed);
-  return { id, note, document: text, reference: manifestVerdict(Buffer.from(text)) };
+  return { id, note, document: text, reference: manifestVerdict(Buffer.from(text)), ...(recorded ? { recorded } : {}) };
 });
 if (driftProbes[0].reference !== 1) throw new Error('the base probe must be accepted by the reference');
 const probesText = `${JSON.stringify({ format: 'ovdb-drift-probes/1', references: meta.references, probes: driftProbes }, null, 1)}\n`;

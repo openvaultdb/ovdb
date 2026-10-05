@@ -588,6 +588,11 @@ of them with the same values, and 5 that differ only in the integer -0: the `yam
 are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
 reads 0 that the yaml package refuses.
 
+The page of every recordset (the template with the name written as one encoded path segment) is judged in both profiles, every bad name reported. The Directory
+profile did not judge pages until ovdb#58: the Directory refuses such a manifest in `analyseDatabase`, after the files are read, and the probes could not see it
+because a probe's reference verdict was `manifestProblems` alone; both were closed there. A probe may name a recorded stricter kind (`recorded` in
+`drift.probes.json`, such as `yaml-character` or `url-length`), which `TestDrift` then holds Go to differ by, and by nothing else.
+
 ### Recorded differences: not yet ported (the Directory profile)
 
 The Directory's checker has moved since the first reference was pinned, and Go has not yet ported every rule it added. Where that makes Go
