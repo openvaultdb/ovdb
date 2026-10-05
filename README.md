@@ -72,12 +72,14 @@ ovdb --help
   A copy anywhere else (`/usr/local/bin`, `~/go/bin`, `~/bin`, a Homebrew
   directory, ...) is classified as before. On Windows `ovdb` is published as a
   zip, so a copy unzipped under `%ProgramFiles%` is classified as managed too,
-  and `ovdb` says so: its hint there is "a new download of the ovdb zip from
-  the releases page, replacing the files (ovdb is published as a zip, not
-  through Windows Update or an installer)" instead of the library's Windows
-  Update and installer text, and on Linux "the package manager that installed
-  it or, for a copy extracted from a tar.gz archive, a new download of that
-  archive". macOS keeps the library's text.
+  and `ovdb` says so. Its hint for a copy under a system directory is, on
+  Windows, "a new download of the ovdb zip from
+  https://github.com/openvaultdb/ovdb/releases, replacing the files (ovdb is
+  published as a zip, not through Windows Update or an installer)", and on
+  Linux "the package manager that installed it or, for a copy extracted from a
+  tar.gz archive, a new download of that archive from
+  https://github.com/openvaultdb/ovdb/releases". macOS keeps the library's
+  text.
 - **`ovdb skills`** — list the AI agent skills and where each AI agent keeps
   them (`skills list`), and install one for the agents found on this computer
   (`skills install <openvaultdb|todo-demo>`, which asks first). A folder of
@@ -249,21 +251,31 @@ For scripts and API clients (`--json` is the body of the local API):
   to date") for a folder whose adoption an earlier request that did ask began
   and a crash interrupted: the library finishes that transaction forward. That
   is a success, not an error.
-- A skills folder where an earlier install was interrupted is
-  `"state":"recovery_pending"` (with `"state_reason"`), shown by `skills list`
-  and the terminal UI and web console as "interrupted install", never as "not
-  installed", "another skill with this name" or "not adoptable"; installing
-  finishes the recovery first. A dry run cannot plan there and says so. A
-  client that does not send `?recovery=1` is answered `storage_unavailable`
-  (HTTP 503) naming the folder instead of a state it cannot show. If the
-  library cannot finish or undo the interruption (an adoption interrupted
+- A skills folder where an earlier install was interrupted (a
+  `.cli-helpers-skills-recovery.json` is there) is `"state":"recovery_pending"`
+  (with `"state_reason"`), shown by `skills list`, the terminal UI and the web
+  console as "interrupted install", never as "not installed", "another skill
+  with this name" or "not adoptable". Installing finishes the recovery first
+  or, when the skills library cannot, says what to do. A dry run cannot plan
+  there and says so. A client that does not send `?recovery=1` is answered as
+  before the state existed: the folder is `"state":"not_ovdb"` and no new field
+  is sent; the listing is never replaced by an error because of one folder. If
+  the library cannot finish or undo the interruption (an adoption interrupted
   before its state was written leaves every later install failing with "skills
   sync state is corrupt",
   [strongo/cli-helpers#45](https://github.com/strongo/cli-helpers/issues/45)),
   the error says where your copy of the folder is kept
-  (`.cli-helpers-skills-adopted-backup` in that skills folder), names the issue
-  and says to move `.cli-helpers-skills-recovery.json` and the
-  `.cli-helpers-skills-txn-*` folder out of the skills folder and install again.
+  (`.cli-helpers-skills-adopted-backup` in that skills folder; it stays your
+  copy, because the backup a later install reports holds what is in the folder
+  by then), names the issue and says to move
+  `.cli-helpers-skills-recovery.json` and the `.cli-helpers-skills-txn-*`
+  folder out of the skills folder and install again.
+- A record the library cannot use (`.cli-helpers-skills-sync.json` that does not
+  parse, or written with a schema a newer tool uses) is not an interrupted
+  install and is not described as one. The state is `not_ovdb` with the
+  library's reason, and the install error says what the file is, that another
+  tool sharing the folder may have written it, and that moving it out makes the
+  skills it recorded show as not managed yet.
 - A folder that is a copy of the skill plus a stray file (a `.DS_Store`) is
   `"state":"not_ovdb"` with `"state_reason"` naming the file, and the lists
   show it.

@@ -38,9 +38,9 @@ func (s *localServer) installedSkills() []skills.Installed {
 // A client that does not send ?adoptable=1 does not know the state
 // "adoptable" (clients built before adoption existed), and is told not_ovdb.
 // A client that does not send ?recovery=1 does not know the state
-// "recovery_pending" or the field "state_reason" either; it is not told
-// something wrong ("not installed", "another skill") about a folder with an
-// interrupted install, so it gets an error that says so instead of a document.
+// "recovery_pending" or the field "state_reason" either; it is told not_ovdb for
+// a folder with an interrupted install, as before the state existed. The
+// listing is never replaced by an error because of one folder.
 func (s *localServer) getSkills(w http.ResponseWriter, r *http.Request) {
 	env, err := s.skillsEnv()
 	if err != nil {
@@ -52,13 +52,7 @@ func (s *localServer) getSkills(w http.ResponseWriter, r *http.Request) {
 		document = document.WithoutAdoptable()
 	}
 	if r.URL.Query().Get(skills.RecoveryParam) != "1" {
-		if target, pending := document.RecoveryPending(); pending {
-			envelope.Write(w, envelope.New(envelope.StorageUnavailable, uicopy.T("skills.list.failed", nil)).
-				WithReason(uicopy.T("skills.install.recovery_pending", map[string]string{"path": target.SkillsDir})).
-				WithNext(envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"}))
-			return
-		}
-		document = document.WithoutStateReasons()
+		document = document.WithoutRecoveryPending().WithoutStateReasons()
 	}
 	envelope.WriteJSON(w, http.StatusOK, document)
 }

@@ -74,12 +74,10 @@ func TestSkillsAPIAdoptsOnlyTheFoldersTheRequestNames(t *testing.T) {
 	})
 }
 
-// A folder with an interrupted install is not described as something else to a
-// client that cannot be told. With ?adoptable=1&recovery=1 it is its own state
-// with the library's reason; without ?recovery=1 the answer is an error that
-// says so, never a document that calls the folder "not installed" or "another
-// skill"; and a document without a pending recovery has no new field for a
-// client that predates it.
+// A folder with an interrupted install is its own state, with ovdb's reason, for
+// a client that asks (?adoptable=1&recovery=1). A client that does not is
+// answered as before the state existed (not_ovdb, no new field) and keeps the
+// whole listing; so does a document without a pending recovery.
 func TestSkillsAPITellsAPendingRecoveryOnlyToAClientThatKnowsIt(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -100,11 +98,13 @@ func TestSkillsAPITellsAPendingRecoveryOnlyToAClientThatKnowsIt(t *testing.T) {
 	}
 
 	skillstest.PutPendingRecovery(t, claudeSkills)
+	// A client that did not ask is answered as before the state existed: the
+	// listing stays, the folder is not_ovdb, and no new field is sent.
 	for _, query := range []string{"", "?adoptable=1"} {
 		code, body := get(query)
-		if code != http.StatusServiceUnavailable || !strings.Contains(body, `"code":"storage_unavailable"`) || !strings.Contains(body, "interrupted") ||
-			strings.Contains(body, "not_installed") || strings.Contains(body, `"state":"not_ovdb"`) {
-			t.Errorf("GET %q = %d %s, want an error that names the interrupted install", query, code, body)
+		if code != http.StatusOK || strings.Contains(body, "recovery_pending") || strings.Contains(body, "state_reason") ||
+			!strings.Contains(body, `"state":"not_ovdb"`) || !strings.Contains(body, `"id":"todo-demo"`) {
+			t.Errorf("GET %q = %d %s, want the old answer with the whole listing", query, code, body)
 		}
 	}
 	code, body := get("?adoptable=1&recovery=1")

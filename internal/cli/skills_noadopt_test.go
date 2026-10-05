@@ -43,6 +43,16 @@ func TestSkillsListSaysWhatIsWrongWithAFolder(t *testing.T) {
 			t.Errorf("list lacks %q:\n%s", want, list.stdout)
 		}
 	}
+	// The folder column starts in the same place whatever the state says.
+	offsets := map[int]bool{}
+	for _, line := range strings.Split(list.stdout, "\n") {
+		if i := strings.Index(line, e.userHome()); i >= 0 {
+			offsets[i] = true
+		}
+	}
+	if len(offsets) != 1 {
+		t.Errorf("the folder column is not aligned (offsets %v):\n%s", offsets, list.stdout)
+	}
 	var document skills.Document
 	if err := json.Unmarshal([]byte(e.ok("skills", "list", "--json").stdout), &document); err != nil {
 		t.Fatal(err)
@@ -132,5 +142,30 @@ func TestSkillInstallShowsAdviceForAnUnrecoverableInterruptedInstall(t *testing.
 		if !strings.Contains(strings.ReplaceAll(flat, " ", ""), backup) {
 			t.Errorf("%v does not say where the copy is kept (%s):\n%s", args, backup, out)
 		}
+	}
+}
+
+// A record the skills library cannot use is not an interrupted install: the
+// list and the install say what it is and what to do, with the library's own
+// reason, and nothing about a journal that is not there.
+func TestSkillsWithAnUnreadableRecordAreNotCalledInterrupted(t *testing.T) {
+	e := previewEnv(t)
+	e.vars[cli.EnvNonInteractive] = "1"
+	if r := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); r.code != 0 {
+		t.Fatalf("install: %+v", r)
+	}
+	claudeSkills := filepath.Join(e.userHome(), ".claude", "skills")
+	if err := os.WriteFile(filepath.Join(claudeSkills, ".cli-helpers-skills-sync.json"), []byte(`{"schema":2,"plug`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	list := e.ok("skills", "list")
+	if strings.Contains(list.stdout, "interrupted") || !strings.Contains(list.stdout, "corrupt") {
+		t.Errorf("list:\n%s", list.stdout)
+	}
+	r := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+	flat := strings.Join(strings.Fields(r.stdout+r.stderr), " ")
+	if r.code != 1 || strings.Contains(flat, "interrupted") || strings.Contains(flat, "issues/45") ||
+		!strings.Contains(flat, ".cli-helpers-skills-sync.json") || !strings.Contains(flat, "Another tool") {
+		t.Errorf("install = %+v", r)
 	}
 }

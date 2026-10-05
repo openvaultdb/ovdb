@@ -88,7 +88,7 @@ func targetLine(target skills.Target, withState bool) string {
 		case !target.Detected:
 			state = uicopy.T("skills.state.not_found", nil)
 		}
-		line += padRight(state, 22)
+		line += padRight(state, 30)
 	}
 	return line + target.Dir
 }

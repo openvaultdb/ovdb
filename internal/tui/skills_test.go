@@ -328,12 +328,12 @@ func TestAnInterruptedInstallIsShownAsSuch(t *testing.T) {
 	skillstest.PutPendingRecovery(t, dir)
 	m.screen = ScreenSkills
 	m = drain(t, m, m.loadSkillsCmd(""))
-	if view := flat(m.View().Content); !strings.Contains(view, "Interrupted install, finished by installing: Claude Code") {
+	if view := flat(m.View().Content); !strings.Contains(view, "Interrupted install, installing finishes it or says what to do: Claude Code") {
 		t.Errorf("list:\n%s", view)
 	}
 	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
 	view := flat(m.View().Content)
-	if !strings.Contains(view, "> [x] Claude Code") || !strings.Contains(view, "an earlier install here was interrupted — installing finishes it first") {
+	if !strings.Contains(view, "> [x] Claude Code") || !strings.Contains(view, "an earlier install here was interrupted — installing finishes it, or says what to do") {
 		t.Errorf("consent:\n%s", view)
 	}
 }

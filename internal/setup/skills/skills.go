@@ -217,23 +217,27 @@ const AdoptableParam = "adoptable"
 
 // RecoveryParam is the query parameter of GET /api/local/v1/skills with which a
 // client says it understands the state "recovery_pending" and the target field
-// "state_reason". Without it the server cannot tell the client that a skills
-// folder has an interrupted install (a client built before this has no text
-// for the state), so it answers that request with an error instead of a state
-// the client would show wrongly.
+// "state_reason". Without it the client is told what every version before this
+// told it for such a folder: not_ovdb (see Document.WithoutRecoveryPending).
+// The listing is never replaced by an error because one folder has an
+// interrupted install.
 const RecoveryParam = "recovery"
 
-// RecoveryPending reports the first target of d in the state
-// "recovery_pending", for a client that cannot be told that state.
-func (d Document) RecoveryPending() (Target, bool) {
-	for _, skill := range d.Skills {
-		for _, target := range skill.Targets {
-			if target.State == StateRecoveryPending {
-				return target, true
+// WithoutRecoveryPending is d as a client that does not know the state
+// "recovery_pending" is told it: a folder with an interrupted install is
+// another's folder, as it was before the state existed.
+func (d Document) WithoutRecoveryPending() Document {
+	d.Skills = slices.Clone(d.Skills)
+	for i := range d.Skills {
+		targets := slices.Clone(d.Skills[i].Targets)
+		for j := range targets {
+			if targets[j].State == StateRecoveryPending {
+				targets[j].State = StateNotOVDB
 			}
 		}
+		d.Skills[i].Targets = targets
 	}
-	return Target{}, false
+	return d
 }
 
 // WithoutStateReasons is d without the target field "state_reason", as a
@@ -301,8 +305,9 @@ var syncSkills = skillsync.Sync
 // inspected is what is known of one skill in one skills directory.
 type inspected struct {
 	state string
-	// reason is skillsync's own words for StateNotOVDB and
-	// StateRecoveryPending, "" otherwise.
+	// reason is skillsync's own words for StateNotOVDB, and ovdb's for
+	// StateRecoveryPending (the library's tell a person to rerun a sync ovdb
+	// has no command for); "" otherwise.
 	reason string
 }
 
@@ -325,11 +330,13 @@ func inspect(skillsDir string, d Definition) inspected {
 	}
 	report, err := syncSkills(context.Background(), cfg, skillsync.Options{Dir: skillsDir, DryRun: true, NoAdopt: true})
 	if err != nil {
-		reason := redact.String(err.Error())
-		if errors.Is(err, skillsync.ErrRecoveryPending) || errors.Is(err, skillsync.ErrStateCorrupt) {
-			return inspected{state: StateRecoveryPending, reason: reason}
+		// Only a journal that is there makes it an interrupted install. Any
+		// other corrupt state (a record that cannot be read, a schema a newer
+		// tool wrote) keeps the library's true reason.
+		if errors.Is(err, skillsync.ErrRecoveryPending) || stuckRecovery(skillsDir, err) {
+			return inspected{state: StateRecoveryPending, reason: uicopy.T("skills.state_reason.recovery_pending", nil)}
 		}
-		return inspected{state: StateNotOVDB, reason: reason}
+		return inspected{state: StateNotOVDB, reason: redact.String(err.Error())}
 	}
 	for _, change := range report.Changes {
 		if change.Name == d.Dir {
@@ -1018,23 +1025,42 @@ func (a advised) failure(path string) string {
 	return uicopy.T("skills.install.target_failed", map[string]string{"path": path, "reason": a.reason})
 }
 
+// recoveryJournal is skillsync's file of an install in progress.
+const recoveryJournal = ".cli-helpers-skills-recovery.json"
+
+// stuckRecovery reports whether err is skillsync refusing to recover the
+// journal that is in skillsDir (strongo/cli-helpers#45 is one such case): a
+// corrupt-state error that names the recovery, with the journal file there. The
+// library returns that error for other things too (a record that cannot be read,
+// a schema it does not know); those are not this.
+func stuckRecovery(skillsDir string, err error) bool {
+	if !errors.Is(err, skillsync.ErrStateCorrupt) || !strings.Contains(err.Error(), "recovery") {
+		return false
+	}
+	_, statErr := os.Lstat(filepath.Join(skillsDir, recoveryJournal))
+	return statErr == nil
+}
+
 // syncFailureAdvice words a failed sync of d in skillsDir. A pending recovery
 // (a dry run met an interrupted install) says how to finish it. A recovery
 // skillsync cannot do, which a crash in the middle of an adoption can leave
 // behind and every later install then refuses (strongo/cli-helpers#45), says
 // where the person's copy is kept and that the problem is known, instead of
-// the library's internal error. Anything else is the library's own words.
+// the library's internal error. A record the library cannot read says what the
+// file is and what a person can do. Anything else is the library's own words.
 func syncFailureAdvice(skillsDir string, d Definition, err error) advised {
 	switch {
 	case errors.Is(err, skillsync.ErrRecoveryPending):
 		return advised{whole: true, reason: uicopy.T("skills.install.recovery_pending", map[string]string{"path": skillsDir})}
-	case errors.Is(err, skillsync.ErrStateCorrupt):
+	case stuckRecovery(skillsDir, err):
 		params := map[string]string{"path": skillsDir, "reason": redact.String(err.Error())}
 		key := "skills.install.recovery_stuck"
 		if backup := adoptionBackupOf(skillsDir, d); backup != "" {
 			key, params["backup"] = "skills.install.recovery_stuck_backup", backup
 		}
 		return advised{whole: true, reason: uicopy.T(key, params)}
+	case errors.Is(err, skillsync.ErrStateCorrupt):
+		return advised{whole: true, reason: uicopy.T("skills.install.state_corrupt", map[string]string{"path": skillsDir, "reason": redact.String(err.Error())})}
 	}
 	return advised{reason: redact.String(err.Error())}
 }

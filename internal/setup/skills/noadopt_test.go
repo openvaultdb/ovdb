@@ -67,8 +67,8 @@ func TestPendingRecoveryIsItsOwnStateAndInstallingFinishesIt(t *testing.T) {
 	skillstest.PutPendingRecovery(t, dir)
 
 	listed := Inspect(e).Skills[0].Targets[0]
-	if listed.State != StateRecoveryPending || listed.Installed || listed.StateReason == "" {
-		t.Fatalf("listed = %+v, want recovery_pending with the library's reason", listed)
+	if listed.State != StateRecoveryPending || listed.Installed || !strings.Contains(listed.StateReason, "Install the skill again") || strings.Contains(listed.StateReason, "rerun sync") {
+		t.Fatalf("listed = %+v, want recovery_pending with ovdb's words (ovdb has no sync command)", listed)
 	}
 	if planned := e.Plan(d, []RequestTarget{target})[0]; planned.State != StateRecoveryPending {
 		t.Errorf("planned = %+v", planned)
@@ -237,6 +237,7 @@ func TestAnUnrecoverableJournalIsShownWithAdvice(t *testing.T) {
 	putCopy(t, filepath.Join(dir, d.Dir), map[string]string{"SKILL.md": "x"})
 	backup := filepath.Join(dir, adoptedBackupDirName, "20261005T120000.000000000Z", d.Dir)
 	putCopy(t, backup, map[string]string{"SKILL.md": "my original"})
+	skillstest.PutUnrecoverableRecovery(t, dir, d.Dir) // the journal is there; the seam makes the library refuse it
 	stuck := fmt.Errorf("%w: recovery target %s lacks prior ownership", skillsync.ErrStateCorrupt, d.Dir)
 	useSync(t, func(context.Context, skillsync.Config, skillsync.Options) (skillsync.Report, error) {
 		return skillsync.Report{}, stuck
@@ -244,7 +245,7 @@ func TestAnUnrecoverableJournalIsShownWithAdvice(t *testing.T) {
 
 	// The list shows it as its own state, with the library's reason.
 	listed := Inspect(e).Skills[0].Targets[0]
-	if listed.State != StateRecoveryPending || !strings.Contains(listed.StateReason, "lacks prior ownership") {
+	if listed.State != StateRecoveryPending || strings.Contains(listed.StateReason, "rerun sync") || !strings.Contains(listed.StateReason, "Install the skill again") {
 		t.Errorf("listed = %+v", listed)
 	}
 	for _, dry := range []bool{true, false} {
@@ -300,20 +301,14 @@ func TestAnotherFolderCarriesTheLibrarysReason(t *testing.T) {
 // A client that does not know the new vocabulary is not sent it.
 func TestDocumentForOlderClients(t *testing.T) {
 	doc := Document{Skills: []Skill{{Targets: []Target{{State: StateRecoveryPending, StateReason: "r"}, {State: StateNotOVDB, StateReason: "s"}}}}}
-	if target, ok := doc.RecoveryPending(); !ok || target.StateReason != "r" {
-		t.Errorf("RecoveryPending = %+v, %v", target, ok)
-	}
-	stripped := doc.WithoutStateReasons()
-	for _, target := range stripped.Skills[0].Targets {
-		if target.StateReason != "" {
-			t.Errorf("target still has a reason: %+v", target)
+	older := doc.WithoutRecoveryPending().WithoutStateReasons()
+	for _, target := range older.Skills[0].Targets {
+		if target.State != StateNotOVDB || target.StateReason != "" {
+			t.Errorf("target = %+v, want not_ovdb without a reason", target)
 		}
 	}
-	if doc.Skills[0].Targets[0].StateReason != "r" {
-		t.Error("WithoutStateReasons changed the document it was called on")
-	}
-	if _, ok := (Document{}).RecoveryPending(); ok {
-		t.Error("an empty document has a pending recovery")
+	if got := doc.Skills[0].Targets[0]; got.State != StateRecoveryPending || got.StateReason != "r" {
+		t.Errorf("the document was changed: %+v", got)
 	}
 }
 
@@ -340,5 +335,65 @@ func TestTheLibrarysOwnUnrecoverableJournalIsShownWithAdvice(t *testing.T) {
 		if !strings.Contains(failure.Reason, want) {
 			t.Errorf("advice lacks %q: %s", want, failure.Reason)
 		}
+	}
+}
+
+// A corrupt record that is not an interrupted install is not called one, and
+// gets no advice about a journal that is not there: the library's own reason
+// stays, with what the file is and what a person can do. The record here is
+// not parseable, or written with a schema a newer tool uses.
+func TestACorruptRecordIsNotAnInterruptedInstall(t *testing.T) {
+	for name, record := range map[string]string{
+		"unparseable":  `{"schema":2,"plug`,
+		"newer schema": `{"schema":99,"plugins":{}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := testEnv(t)
+			d, _ := Find(Storage)
+			dir, target := claudeTarget(t, e, d)
+			if _, err := (Build{}).Install(context.Background(), e, d, []RequestTarget{target}, false, false, Consent{}); err != nil {
+				t.Fatal(err)
+			}
+			recordPath := filepath.Join(dir, skillsync.StateFileName)
+			if err := os.WriteFile(recordPath, []byte(record), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			listed := Inspect(e).Skills[0].Targets[0]
+			if listed.State == StateRecoveryPending || !strings.Contains(listed.StateReason, "corrupt") {
+				t.Errorf("listed = %+v, want the library's reason and not an interrupted install", listed)
+			}
+			for _, dry := range []bool{true, false} {
+				_, err := Build{}.Install(context.Background(), e, d, []RequestTarget{target}, dry, false, Consent{})
+				var failure *envelope.Error
+				if !errors.As(err, &failure) {
+					t.Fatalf("dry=%v err = %v", dry, err)
+				}
+				for _, want := range []string{skillsync.StateFileName, "corrupt", "Another tool", "move the file out"} {
+					if !strings.Contains(failure.Reason, want) {
+						t.Errorf("dry=%v advice lacks %q: %s", dry, want, failure.Reason)
+					}
+				}
+				for _, not := range []string{"interrupted", "issues/45", ".cli-helpers-skills-recovery.json", ".cli-helpers-skills-txn"} {
+					if strings.Contains(failure.Reason, not) {
+						t.Errorf("dry=%v advice mentions %q though no install was interrupted: %s", dry, not, failure.Reason)
+					}
+				}
+			}
+		})
+	}
+}
+
+// The advice for a stuck recovery says the person's copy stays theirs.
+func TestStuckAdviceSaysWhichBackupIsTheirs(t *testing.T) {
+	e := testEnv(t)
+	d, _ := Find(Storage)
+	dir, target := claudeTarget(t, e, d)
+	putCopy(t, filepath.Join(dir, d.Dir), map[string]string{"SKILL.md": skillText(t, d.Dir)})
+	putCopy(t, filepath.Join(dir, adoptedBackupDirName, "20261005T120000.000000000Z", d.Dir), map[string]string{"SKILL.md": "mine"})
+	skillstest.PutUnrecoverableRecovery(t, dir, d.Dir)
+	_, err := Build{}.Install(context.Background(), e, d, []RequestTarget{target}, false, false, Consent{})
+	var failure *envelope.Error
+	if !errors.As(err, &failure) || !strings.Contains(failure.Reason, "stays your copy") {
+		t.Errorf("err = %v", err)
 	}
 }
