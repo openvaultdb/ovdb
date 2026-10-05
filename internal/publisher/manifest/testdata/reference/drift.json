@@ -4,7 +4,7 @@
   "repository": "openvaultdb/directory",
   "commit": "087067483686865b13cb76511ff86f7364ea47ff"
  },
- "about": "What Go does not yet do as the reference does, at the pinned Directory commit. Two classes, looser first: goLooser is where Go accepts and the reference refuses (it breaks 'Go never accepts what the reference refuses' until its slice lands, so those slices go first); goStricter is where Go refuses and the reference accepts. Each entry names the probes of manifest/testdata/reference/drift.probes.json, the findings of the registered repositories in repo/testdata/directory/verdicts.json, or the number of corpus documents, that it accounts for. TestDrift fails when this list and what Go does disagree, in either direction, so an entry is removed in the pull request of its slice.",
+ "about": "What Go does not yet do as the reference does, at the pinned Directory commit. Two classes, looser first: goLooser is where Go accepts and the reference refuses (it breaks 'Go never accepts what the reference refuses' until its slice lands, so those slices go first); goStricter is where Go refuses and the reference accepts. Each entry names the probes of manifest/testdata/reference/drift.probes.json, the findings of the registered repositories in repo/testdata/directory/verdicts.json, or the number of corpus documents, that it accounts for. TestDrift fails when this list and what Go does disagree, in either direction, so an entry is removed in the pull request of its slice. The corpus also carries stricter drift (the five `manifest-url` documents, recorded in the manifest README and counted by the reference test); the corpus count in this file covers looser documents only. A probe is one case of a rule: a kind is not closed while any probe of it still differs, so the probes name the sibling cases of each kind (name forms: slash, backslash, control character, DEL, length in UTF-16 units; the shapes of recordset_entities; the shapes of a global identity).",
  "goLooser": [
   {
    "kind": "representation-envelope",
@@ -96,7 +96,9 @@
    "why": "a canonical url with a trailing slash or without the ovdb marker is refused; the Directory accepts global identities (574a7ad)",
    "probes": [
     "identity-trailing-slash",
-    "identity-no-ovdb-marker"
+    "identity-no-ovdb-marker",
+    "identity-percent-segment",
+    "identity-two-segments"
    ],
    "real": [
     {
@@ -113,7 +115,9 @@
    "why": "the same, under the Directory profile",
    "probes": [
     "identity-trailing-slash",
-    "identity-no-ovdb-marker"
+    "identity-no-ovdb-marker",
+    "identity-percent-segment",
+    "identity-two-segments"
    ],
    "real": [
     {
