@@ -23,7 +23,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.3.2
-	github.com/strongo/cli-helpers v0.26.0
+	github.com/strongo/cli-helpers v0.27.0
 	github.com/strongo/deviceauth v0.0.2
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
