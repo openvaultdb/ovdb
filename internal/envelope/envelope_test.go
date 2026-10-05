@@ -73,7 +73,7 @@ func TestHTTPStatus(t *testing.T) {
 		NotFound: 404, AlreadyExists: 409, LocationNotEmpty: 409, ServerVersionMismatch: 409,
 		SchemaRequired: 422, ValidationFailed: 422, Unsupported: 501, StorageUnavailable: 503,
 		Internal: 500, PortInUse: 500, PortUnavailable: 500, ServerNotRunning: 500,
-		ServerStartFailed: 500, ServerConfigMismatch: 500, DependencyMissing: 500,
+		ServerStartFailed: 500, ServerConfigMismatch: 500, DependencyMissing: 500, Timeout: 500,
 	}
 	if len(want) != len(Codes) {
 		t.Fatalf("status table covers %d codes, closed list has %d", len(want), len(Codes))

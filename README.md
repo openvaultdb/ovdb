@@ -348,11 +348,11 @@ handed you, unless you have looked at its `.git/config`.
 | a `git` call that does not finish in 30 seconds | 2 | error on standard error |
 | standard output cannot be written (a full disk, a descriptor that is not open for writing) | 2 | error on standard error; with `--json` only the exit code |
 
-A pipe whose reader has gone (`ovdb publisher check | head -1`) ends the process by SIGPIPE, as it does any command; that is not this row.
+A pipe whose reader has gone ends the process by SIGPIPE, as it does any command; that is not this row.
 
 The rule: a wrong flag or path is the caller's mistake, and a machine whose `git` cannot be run, is too old, or does not finish gives
 no verdict about the repository, and a result that cannot be delivered is not a verdict: all are `2`. Everything about the repository itself, "not a repository" and "no commit yet" included, is a
-verdict: `1`. With `--json` a `2` is the same error envelope the other commands print (`{"schema":1,"error":{...}}`) on standard output.
+verdict: `1`. With `--json` a `2` is the same error envelope the other commands print (`{"schema":1,"error":{...}}`) on standard output, and its `code` says which: `invalid_argument` for a usage error, `dependency_missing` for a `git` that is missing or older than 2.45, `timeout` for a `git` that was found and did not finish in 30 seconds (in v0.28.0 and earlier that case said `dependency_missing`), and `internal` for a result that could not be written.
 
 **The output for people** is one block for each finding, in the order the check reports them: the file and line where
 there is one, the rule id in brackets, and the whole message the rule wrote (what is wrong and what to write); then one
