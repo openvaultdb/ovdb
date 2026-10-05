@@ -175,6 +175,8 @@ func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, st
 		c.add("OVDB.md", RuleManifests, md.EntryLines[MaxManifests], "OVDB.md lists %d manifests; at most %d are judged", len(md.Entries), MaxManifests)
 		return attachmentIndeterminate, head, c.res.Findings
 	}
+	descriptors, manifests := c.classify(md)
+	j.DescriptorPaired(len(descriptors) == 1 && len(manifests) == 1)
 	for i, path := range md.Entries {
 		if !c.require("OVDB.md", RuleManifest, md.EntryLines[i], "publish entry "+rules.Quote("./"+path), path) {
 			return attachmentIndeterminate, head, c.res.Findings
@@ -183,7 +185,7 @@ func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, st
 		if !ok {
 			return attachmentIndeterminate, head, c.res.Findings
 		}
-		if manifest.IsDescriptor(data) {
+		if _, isDescriptor := descriptors[i]; isDescriptor {
 			continue // a descriptor has no attachment, and is not judged as a manifest
 		}
 		attachment, err := manifest.RepresentationAttachment(data)
@@ -247,6 +249,30 @@ func (c *checker) run(o Options) {
 // manifest.
 func (c *checker) descriptors(md manifest.OVDBMd) map[int][]byte {
 	c.pairedIndex = -1
+	found, manifests := c.classify(md)
+	if len(found) == 0 {
+		return found
+	}
+	first := -1
+	for i := range found {
+		if first < 0 || i < first {
+			first = i
+		}
+	}
+	switch {
+	case len(manifests) == 0:
+		c.add("OVDB.md", RuleDescriptor, md.EntryLines[first], "OVDB.md lists the database descriptor %s and no manifest: a descriptor goes with a manifest, so list the manifest beside it", rules.Quote("./"+md.Entries[first]))
+	case len(manifests) > 1 || len(found) > 1:
+		c.add("OVDB.md", RuleDescriptor, md.EntryLines[first], "OVDB.md lists %d manifests and %d database descriptors: a descriptor goes with exactly one manifest, and a repository lists one descriptor with one manifest", len(manifests), len(found))
+	default:
+		c.pairedIndex = manifests[0]
+	}
+	// Not paired: the descriptors are not judged (c.pairedIndex is -1), and what refused them is the finding above.
+	return found
+}
+
+// classify tells the entries of OVDB.md that are database descriptors (with what they hold) from the ones that are judged as manifests, silently.
+func (c *checker) classify(md manifest.OVDBMd) (map[int][]byte, []int) {
 	found := map[int][]byte{}
 	var manifests []int
 	for i, path := range md.Entries {
@@ -270,26 +296,7 @@ func (c *checker) descriptors(md manifest.OVDBMd) map[int][]byte {
 		}
 		manifests = append(manifests, i)
 	}
-	if len(found) == 0 {
-		return found
-	}
-	first := -1
-	for i := range found {
-		if first < 0 || i < first {
-			first = i
-		}
-	}
-	switch {
-	case len(manifests) == 0:
-		c.add("OVDB.md", RuleDescriptor, md.EntryLines[first], "OVDB.md lists the database descriptor %s and no manifest: a descriptor goes with a manifest, so list the manifest beside it", rules.Quote("./"+md.Entries[first]))
-	case len(manifests) > 1 || len(found) > 1:
-		c.add("OVDB.md", RuleDescriptor, md.EntryLines[first], "OVDB.md lists %d manifests and %d database descriptors: a descriptor goes with exactly one manifest, and a repository lists one descriptor with one manifest", len(manifests), len(found))
-	default:
-		c.pairedIndex = manifests[0]
-		return found
-	}
-	// Not paired: the descriptors are not judged (c.pairedIndex is -1), and what refused them is the finding above.
-	return found
+	return found, manifests
 }
 
 // manifest judges the i-th manifest that OVDB.md lists, at path, and the files it names.

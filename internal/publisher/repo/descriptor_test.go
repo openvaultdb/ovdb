@@ -116,9 +116,16 @@ func TestTheOriginRuleOfTheDiscoveryIsWaivedForADescriptor(t *testing.T) {
 	if r := Check(m, publisher()); !r.OK() {
 		t.Errorf("with a descriptor: %v", r.Findings)
 	}
+	// The discovery of an attachment judges the manifest the same way, so it does not stop on what the descriptor waives.
+	if state, _, findings := discoverAttachment(m, manifest.Publisher); state != attachmentAbsent || len(findings) != 0 {
+		t.Errorf("discovery with a descriptor: %v, %v", state, findings)
+	}
 	m.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte(goodMD)}
 	if r := Check(m, publisher()); len(r.Findings) != 1 || r.Findings[0].Rule != "manifest-discovery" {
 		t.Errorf("without one: %v", r.Findings)
+	}
+	if state, _, findings := discoverAttachment(m, manifest.Publisher); state != attachmentIndeterminate || len(findings) != 1 {
+		t.Errorf("discovery without one: %v, %v", state, findings)
 	}
 }
 
