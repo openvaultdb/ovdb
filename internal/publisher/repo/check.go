@@ -166,8 +166,8 @@ func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, st
 		c.add("OVDB.md", RuleManifests, md.EntryLines[MaxManifests], "OVDB.md lists %d manifests; at most %d are judged", len(md.Entries), MaxManifests)
 		return attachmentIndeterminate, head, c.res.Findings
 	}
-	for _, path := range md.Entries {
-		if !c.require(path, RuleManifest, 0, "manifest", path) {
+	for i, path := range md.Entries {
+		if !c.require("OVDB.md", RuleManifest, md.EntryLines[i], "publish entry "+rules.Quote("./"+path), path) {
 			return attachmentIndeterminate, head, c.res.Findings
 		}
 		data, ok := c.read(path, path)
