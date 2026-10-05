@@ -159,6 +159,7 @@ reference's verdicts of the corpus include them):
 | --- | --- | --- |
 | `publisher.repository` | written and not the https URL of a repository on github.com (a blank, a number, a list, `.git`, a trailing slash, a third segment), at most 255 bytes (line 315: the record's repository is a repository key, so only a repository URL can equal it) | `manifest-publisher` |
 | `recordsets` | a name listed twice (`checkRecordsets`) | `manifest-recordsets` |
+| `representation_contract` | written and not exactly `path` and `sha256`: the path a repository path of at most 1024 bytes of `A-Z a-z 0-9 _ . -` with `/` between segments (a segment may be `$records`; none is `.`, `..` or `.git` in any case) ending in `.json`, the hash 64 lower-case hex digits (`checkRepresentationEnvelope`, line 261). Only the envelope: the file, its hash against the bytes and its schema are the attachment check (`repo.CheckRepresentation`), which `Check` does not run. Both profiles judge it; under the Publisher profile the key is also refused while it is not on the closed list (drift kind `representation-contract-key`). A hash written as a list of one valid hash, which the Directory's regular expression reads as the hash, is refused here (drift kind `representation-hash-list`) | `manifest-representation` |
 | `model.name` | written and not a module name (a letter or `_`, then letters, digits and `_`): it must equal the module, which `parseModelSpec` makes an identifier (lines 402, 552) | `manifest-model` |
 | `model.address` (own form) | not on a repository of github.com in lower case, or with `?ref=` (lines 420-425) | `manifest-model` |
 | `model.address`, `meaning.address` (shared form) | not on a repository of github.com in lower case (`spelled`, line 464) | `manifest-model`, `manifest-meaning` |
@@ -388,11 +389,14 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7422 agree, 490 stricter, 72 accepted by Go where the Chinook
+On the corpus: **7427 agree, 485 stricter, 72 accepted by Go where the Chinook
 checker refuses**: 72 of the 72 documents that the Publisher profile accepts and the Chinook checker refuses are explained by D0 (the lead's default; the founder may
-overrule it): the Directory at its pin is the reference for both profiles, and the Directory accepts each of them. `TestReferencePublisher` fails on a
-looser document that the Directory's verdict does not accept. They are documents the Chinook checker's own rules refused: a recordset not named like an
-entity, a canonical url that ends in a slash or has no `ovdb` marker. The facts: under the Publisher profile, 912 manifests and 104
+overrule it): the Directory at its pin is the reference for both profiles, the Directory accepts each of them, and every problem that the Chinook checker found
+in each is of a class that D0 drops, which the publisher golden records per document (`chinookClasses`): D, a recordset name that is not a ModelSpec entity
+identifier (the Directory takes recordsets as the database names them), which 66 of them have alone; K, `recordset_entities` as an unknown key (the
+Directory reads it), which one has beside D; and U, a canonical url that ends in a slash or has no `ovdb` marker (the Directory takes both), which the other five
+have alone. A document with any other problem of the checker's is not explained, whatever it is about.
+`TestReferencePublisher` holds each of the 72 to that, and fails on one that is not. The facts: under the Publisher profile, 917 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
@@ -429,7 +433,7 @@ it has none there: see the table of places.
 | `length-path` | 8 | 6 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
-| `url-length` | 5 | 7 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
+| `url-length` | 5 | 2 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
 | `yaml-character` | 25 | 12 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
@@ -584,6 +588,11 @@ plain values over several lines, flow collections, nested block collections), in
 of them with the same values, and 5 that differ only in the integer -0: the `yaml` package reads `-0` as the number -0 and the Go reader as 0 (its integers
 are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
 reads 0 that the yaml package refuses.
+
+The page of every recordset (the template with the name written as one encoded path segment) is judged in both profiles, every bad name reported. The Directory
+profile did not judge pages until ovdb#58: the Directory refuses such a manifest in `analyseDatabase`, after the files are read, and the probes could not see it
+because a probe's reference verdict was `manifestProblems` alone; both were closed there. A probe may name a recorded stricter kind (`recorded` in
+`drift.probes.json`, such as `yaml-character` or `url-length`), which `TestDrift` then holds Go to differ by, and by nothing else.
 
 ### Recorded differences: not yet ported (the Directory profile)
 

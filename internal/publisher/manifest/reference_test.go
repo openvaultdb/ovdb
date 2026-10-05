@@ -46,6 +46,9 @@ type verdictSet struct {
 	Accepted int    `json:"accepted"`
 	Refused  int    `json:"refused"`
 	Verdicts string `json:"verdicts"`
+	// ChinookClasses is, per manifest (comma separated), what the frozen Chinook checker refuses it for: D, the rule that recordset names look like ModelSpec
+	// entity names; K, recordset_entities as an unknown key; O, any other problem. Only the publisher golden has it.
+	ChinookClasses string `json:"chinookClasses"`
 }
 
 type factsFile struct {
@@ -310,6 +313,17 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 	return true
 }
 
+// d0Classes are the problems of the frozen Chinook checker that D0 explains Go not having: D, the rule that a recordset name looks like a ModelSpec entity
+// name, which the Directory at its pin no longer has (it takes native names), K, recordset_entities as an unknown key, which the Directory reads, and U, a canonical url with a trailing slash or without the ovdb marker, which the Directory takes (574a7ad).
+const d0Classes = "DKU"
+
+// d0Explained says whether a document that the Publisher profile accepts and the frozen Chinook checker refuses is explained by D0 (the Directory at its pin
+// is the reference for both profiles): the Directory accepts it too (the caller checks) and every problem the checker found in it is of a class in d0Classes.
+// A refused document whose classes include any other (O) is not explained, and nothing else about the document is looked at.
+func d0Explained(classes string) bool {
+	return classes != "" && strings.Trim(classes, d0Classes) == ""
+}
+
 func manifestAccepted(doc []byte) (bool, Finding) { return acceptManifest(Directory, doc) }
 
 func mdAccepted(doc []byte, path string) (bool, Finding) { return acceptMd(Directory, doc, path) }
@@ -412,13 +426,20 @@ func runReference(t *testing.T, spec referenceSpec) {
 	if spec.profile == Directory {
 		allowed = driftCorpusLooser(t)
 	}
-	d0 := 0 // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains: the Directory, the reference for both profiles, accepts each
-	for _, c := range manifests {
+	d0 := 0 // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains (see d0Explained)
+	var chinookClasses []string
+	if spec.profile == Publisher {
+		chinookClasses = strings.Split(verdicts.Manifest.ChinookClasses, ",")
+		if len(chinookClasses) != len(manifests) {
+			t.Fatalf("the publisher golden has the checker's problem classes of %d manifests, the corpus holds %d", len(chinookClasses), len(manifests))
+		}
+	}
+	for at, c := range manifests {
 		ok, first := acceptManifest(spec.profile, c.Document)
 		directoryAccepts := c.Verdict
 		c.Verdict = spec.verdict(c)
 		if !total.record(c, ok, first) && allowed == 0 {
-			if spec.profile == Publisher && directoryAccepts {
+			if spec.profile == Publisher && directoryAccepts && d0Explained(chinookClasses[at]) {
 				d0++
 			} else {
 				t.Errorf("manifest accepted where the %s refuses (%s): %q", spec.refName, c.Family, c.Document)
@@ -440,7 +461,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 		allowed = d0
 	}
 	if total.looser != allowed {
-		t.Fatalf("%d documents are accepted by Go and refused by the %s; drift.json accounts for %d (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
+		t.Fatalf("%d documents are accepted by Go and refused by the %s; %d are accounted for (the Directory profile: drift.json's looser entries; the Publisher profile: the documents that D0 explains, by the classes of the Chinook checker's problems). A document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove", total.looser, spec.refName, allowed)
 	}
 
 	// The corpus is as large and as varied as the proof claims.

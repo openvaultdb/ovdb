@@ -142,6 +142,9 @@ var goFns = map[string]func(string) bool{
 	"engine":       IsEngine,
 	"licence":      IsLicenceID,
 	"text":         func(s string) bool { return !IsBlank(s) },
+	// The envelope of representation_contract: the path and the hash, each judged with the other held valid.
+	"representation-path": IsRepresentationPath,
+	"representation-hash": IsRepresentationHash,
 	// The page of a recordset, from a template that is a plain public URL (see recordsetPageTemplate in the generator).
 	"global-id":      func(s string) bool { return GlobalDatabaseID(s) == nil },
 	"recordset-name": func(s string) bool { return RecordsetName(s) == nil },

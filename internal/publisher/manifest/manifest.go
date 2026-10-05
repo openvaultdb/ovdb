@@ -298,8 +298,30 @@ func (k *manifestChecker) check() {
 	licences := m.Field("licences")
 	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
 
+	k.representation()
 	k.recordsets()
 	k.recordsetEntities()
+	k.recordsetNames()
+}
+
+// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it. Every name
+// whose page fails is reported, as the Directory's loop does, so that a publisher fixes them in one round.
+func (k *manifestChecker) recordsetNames() {
+	f := &k.out.Recordsets
+	if !f.Usable() || !k.out.RecordsetPage.Usable() {
+		return
+	}
+	items := k.m.Field("recordsets").Items
+	refused := false
+	for i, name := range f.Value {
+		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
+			k.c.add("manifest-recordsets", items[i].Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
+			refused = true
+		}
+	}
+	if refused {
+		demote(f)
+	}
 }
 
 // model judges model and meaning, which the manifest writes in one of two forms
@@ -429,7 +451,7 @@ func (k *manifestChecker) recordsets() {
 		}
 	}
 	if !good {
-		k.c.add("manifest-recordsets", where(k.m, "recordsets"), "recordsets must be a non-empty list of names: write recordsets: with one name per line, each a ModelSpec entity")
+		k.c.add("manifest-recordsets", where(k.m, "recordsets"), "recordsets must be a non-empty list of names: write recordsets: with one name per line, each the name of a table or collection of the database (a ModelSpec entity, or a native name that recordset_entities maps to one)")
 		k.out.Recordsets = found(list, false, []string(nil))
 		return
 	}
@@ -496,4 +518,31 @@ func (k *manifestChecker) recordsetEntities() {
 		}
 	}
 	k.out.RecordsetEntities = found(n, good, mapping)
+}
+
+// representation judges the envelope of representation_contract, as the Directory's checkRepresentationEnvelope does: exactly the keys path and sha256, the
+// path in the form of a representation path ending in .json, the sha256 64 lower-case hex digits. The Directory's regular expression also takes a list of
+// one such text for the hash (JavaScript reads the list as its one text); this check refuses it, as the attachment check then does (the hash would not equal
+// the file's). That is the one recorded difference of the family (representation-hash-list). Only the envelope is judged, and no fact is kept: whether the file
+// is there, is the one the hash says and is a valid contract is the attachment check (repo.CheckRepresentation), which Check deliberately does not run until
+// A5 gives it the Directory's companions.
+func (k *manifestChecker) representation() {
+	n := k.m.Field("representation_contract")
+	if n == nil {
+		return
+	}
+	bad := func(format string, args ...any) {
+		k.c.add("manifest-representation", n.Line, format, args...)
+	}
+	if n.Kind != kindMap || len(n.Keys) != 2 || n.Field("path") == nil || n.Field("sha256") == nil {
+		bad("representation_contract must have exactly path and sha256 (got %s): write the path of the representation JSON file and its sha256", describe(n))
+		return
+	}
+	path, hash := n.Field("path"), n.Field("sha256")
+	switch {
+	case path.Kind != kindString || !rules.IsRepresentationPath(path.Text):
+		bad("representation_contract path %s is not a path to a .json file: write a repository path of letters, digits, _ . - and /, at most 1024 bytes, ending in .json", describe(path))
+	case hash.Kind != kindString || !rules.IsRepresentationHash(hash.Text):
+		bad("representation_contract sha256 %s is not a sha256: write 64 lower-case hex digits", describe(hash))
+	}
 }

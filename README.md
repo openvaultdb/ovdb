@@ -428,7 +428,7 @@ ovdb.yaml:59  [repo-recordsets]
   recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Track"
 
 ovdb.yaml:59  [repo-recordsets]
-  recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Tracks"
+  recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Tracks"; if they are the database's own names, map each to its entity under recordset_entities (name: Entity)
 
 Refused: 2 problems at commit 98ff05b4119c. Fix them, commit, and run the check again.
 ```
@@ -458,7 +458,7 @@ repository above:
 
 <!-- publisher-check-golden: refused.json -->
 ```json
-{"schema":1,"command":"publisher check","commit":"98ff05b4119c5985cade0f961ecdb25e8b1277b6","profile":"publisher","ok":false,"manifests":1,"findings":[{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets lacks the ModelSpec entities of \"model/chinook.modelspec.json\": \"Track\""},{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets names things that are not ModelSpec entities of \"model/chinook.modelspec.json\": \"Tracks\""}],"summary":{"errors":2,"capped":false,"omitted":0}}
+{"schema":1,"command":"publisher check","commit":"98ff05b4119c5985cade0f961ecdb25e8b1277b6","profile":"publisher","ok":false,"manifests":1,"findings":[{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets lacks the ModelSpec entities of \"model/chinook.modelspec.json\": \"Track\""},{"rule":"repo-recordsets","severity":"error","path":"ovdb.yaml","line":59,"message":"recordsets names things that are not ModelSpec entities of \"model/chinook.modelspec.json\": \"Tracks\"; if they are the database's own names, map each to its entity under recordset_entities (name: Entity)"}],"summary":{"errors":2,"capped":false,"omitted":0}}
 ```
 
 and for one with nothing wrong:

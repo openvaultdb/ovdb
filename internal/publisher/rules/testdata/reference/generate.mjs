@@ -46,6 +46,7 @@ const load = (root, file) => import(pathToFileURL(join(root, file)).href);
 const directory = await load(directoryRoot, 'scripts/lib/directory.mjs');
 const urls = await load(directoryRoot, 'scripts/lib/urls.mjs');
 const gitlib = await load(directoryRoot, 'scripts/lib/git.mjs');
+const representation = await load(directoryRoot, 'scripts/lib/representation.mjs');
 const chinook = await load(chinookRoot, 'scripts/lib/directory-rules.mjs');
 
 // Two rules are kept inline in directory.mjs, not exported, so the verdicts below compose the same
@@ -95,6 +96,7 @@ const claimRelation = (address, other) => {
 
 // fns[name][reference] is the verdict function of a reference for a Go function.
 const recordsetPageTemplate = 'https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}';
+const envelopeAccepts = (envelope) => { try { representation.checkRepresentationEnvelope(envelope); return true; } catch (error) { if (/representation_contract/.test(error.message)) return false; throw error; } };
 const fns = {
   url: {
     directory: (v) => urls.publicHttpsProblem(v) === null,
@@ -137,6 +139,9 @@ const fns = {
   'recordset-name': {
     directory: (v) => !directory.manifestProblems({ ...baseManifest(), recordsets: [v] }).some((problem) => problem.startsWith('recordsets ')),
   },
+  // The envelope of representation_contract: checkRepresentationEnvelope throws on a path or a hash it does not take (the other member is held valid).
+  'representation-path': { directory: (v) => envelopeAccepts({ path: v, sha256: 'a'.repeat(64) }) },
+  'representation-hash': { directory: (v) => envelopeAccepts({ path: 'a.json', sha256: v }) },
   'recordset-page': {
     directory: (v) => {
       const encoded = urls.encodePathSegment(v);
@@ -219,6 +224,8 @@ smallSweep('repository-repo', 'repository', 'https://github.com/org/r{C}o');
 smallSweep('repository-end', 'repository', 'https://github.com/org/repo{C}');
 smallSweep('repository-before', 'repository', '{C}https://github.com/org/repo');
 for (const [name, template] of [['path-middle', 'a{C}b/c.yaml'], ['path-first', '{C}a'], ['path-last', 'a{C}'], ['path-segment', 'a/{C}']]) smallSweep(name, 'path', template);
+for (const [name, template] of [['representation-path-middle', 'a{C}b/c.json'], ['representation-path-first', '{C}a.json'], ['representation-path-segment', 'a/{C}/b.json'], ['representation-path-before-suffix', 'a{C}.json'], ['representation-path-after-end', 'a.json{C}']]) smallSweep(name, 'representation-path', template);
+for (const [name, template] of [['representation-hash-first', '{C}' + 'a'.repeat(63)], ['representation-hash-last', 'a'.repeat(63) + '{C}'], ['representation-hash-after-end', 'a'.repeat(64) + '{C}'], ['representation-hash-before', '{C}' + 'a'.repeat(64)]]) smallSweep(name, 'representation-hash', template);
 for (const [name, template] of [['publish-middle', './a{C}b'], ['publish-dot', '.{C}/a'], ['publish-first', './{C}']]) smallSweep(name, 'publish', template);
 for (const [name, template] of [['engine-middle', 'a{C}b'], ['engine-first', '{C}a'], ['engine-last', 'a{C}']]) smallSweep(name, 'engine', template);
 for (const [name, template] of [['licence-middle', 'a{C}b'], ['licence-first', '{C}a'], ['licence-last', 'a{C}']]) smallSweep(name, 'licence', template);
@@ -245,6 +252,8 @@ const productSpecs = [
   { name: 'path-shape', fn: 'url', template: 'https://e.openvaultdb.com/{S}', alphabet: 'a./-~', min: 0, max: 5 },
   { name: 'id-shape', fn: 'id', template: '{S}', alphabet: 'a0-A_', min: 0, max: 5 },
   { name: 'path-segments', fn: 'path', template: '{S}', alphabet: 'a./-~', min: 1, max: 5 },
+  { name: 'representation-path-shape', fn: 'representation-path', template: '{S}', alphabet: 'a./$-J', min: 0, max: 5 },
+  { name: 'representation-path-json', fn: 'representation-path', template: '{S}.json', alphabet: 'a./$-', min: 0, max: 6 },
   { name: 'publish-segments', fn: 'publish', template: './{S}', alphabet: 'a./-', min: 0, max: 5 },
   { name: 'repository-segments', fn: 'repository', template: 'https://github.com/{S}', alphabet: 'a./-g', min: 1, max: 5 },
   { name: 'engine-shape', fn: 'engine', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
@@ -430,6 +439,19 @@ const textList = {
   ].map((input) => [input, verdicts(['text'], input)]),
 };
 
+const envelopeFns = ['representation-path', 'representation-hash'];
+const envelopeList = {
+  fns: envelopeFns,
+  cases: [
+    'a.json', 'a/b.json', 'artifacts/representation.json', '$records/a.json', 'a/$records/b.json', '$records.json', 'a$records/b.json', '$records$/a.json', '$/a.json', 'a$b.json', '$record/a.json', '$RECORDS/a.json',
+    '.json', 'json', 'a.JSON', 'a.json ', ' a.json', 'a.json\n', 'a.json/', '/a.json', 'a//b.json', './a.json', '../a.json', 'a/./b.json', 'a/../b.json', 'a/.git/b.json', '.git/a.json', '.GIT/a.json', '.Git/a.json', '.gitx/a.json', 'a/.git.json',
+    '.git', 'a.git', '..json', '...json', 'a b.json', 'a\\b.json', 'a:b.json', '\u00e9.json', 'a\u0000.json', 'a\u212a.json', '.gitignore.json', '-.json', '_.json', 'a-b_c.d.json', 'x.json.json', 'a.json.txt',
+    '', 'a', '.', '..',
+    rep('', 'a', 1019, '.json'), rep('', 'a', 1020, '.json'), rep('', 'a/', 511, 'a.json'), rep('', 'a/', 512, 'a.json'), rep('', 'a/', 600, 'b.json'),
+    ...[`${'0123456789abcdef'.repeat(4)}`, 'a'.repeat(64), 'A'.repeat(64), '0'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), '', ' ', `${'a'.repeat(63)}g`, `${'a'.repeat(63)}\n`, ` ${'a'.repeat(63)}`, `${'a'.repeat(64)}\n`, '0123456789ABCDEF'.repeat(4), 'f'.repeat(64), 'F'.repeat(32) + 'f'.repeat(32), `${'a'.repeat(63)}\u00e9`, `${'a'.repeat(32)}\u0000${'a'.repeat(31)}`, 'sha256:' + 'a'.repeat(57), '0x' + 'a'.repeat(62)],
+  ].map((input) => [input, verdicts(envelopeFns, expand(input))]),
+};
+
 const nameFns = ['recordset-name', 'recordset-page'];
 const astral = '\u{1f600}';
 const recordsetList = {
@@ -440,6 +462,8 @@ const recordsetList = {
     '%ED%A0%80', '%252', '%25%', '%2525', '%2F', '%5C', '%00', '%0a', '%7F', "a'b", 'a(b)', 'a!b', 'a*b', 'a~b', 'a_b', 'a-b', 'a&b', 'a"b', 'a<b>', 'a?b', 'a#b', 'a:b', 'a@b', 'a{b}', '{name}', 'a{name}b',
     '1a', 'a-b', 'A', 'a'.repeat(255), 'a'.repeat(256), 'a'.repeat(257), 'a'.repeat(1000), astral, astral.repeat(127), astral.repeat(128), astral.repeat(129), `${'a'.repeat(254)}${astral}`, `${'a'.repeat(255)}${astral}`,
     'a\u2028b', 'a\u2029b', 'Dbo.Table 1', 'x'.repeat(200),
+    // pages over 2048 characters, which the Directory takes (it bounds the name, not the page): the length is no kind of the page family
+    '\u20ac'.repeat(256), '\u20ac'.repeat(257), '\u8868'.repeat(230), '\u00e9'.repeat(400), 'a'.repeat(2100), '%'.repeat(1000), 'a%2Fb'.repeat(500),
   ].map((input) => [input, verdicts(nameFns, input)]),
 };
 const globalIdHosts = ['example', 'x.example', 'x.EXAMPLE', 'a.b.example', 'x.example.', 'x.examples', 'xexample', 'x.test', 'x.localhost', 'x.local', 'x.internal', 'ovdb.example', 'x.example.com', 'x.com.example', 'demodb.dev', 'localhost', '127.0.0.1', 'xn--bcher-kva.de'];
@@ -515,7 +539,7 @@ const countCases = () => {
   let total = 0;
   for (const sweep of sweeps) total += codesOf(sweepRanges[sweep.span]).length;
   for (const product of products) total += product.size;
-  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList]) total += list.cases.length * list.fns.length;
+  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList, envelopeList]) total += list.cases.length * list.fns.length;
   total += claimAddresses.length * claimAddresses.length;
   return total;
 };
@@ -530,7 +554,7 @@ const golden = {
   sweepRanges,
   sweeps,
   products,
-  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList],
+  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList, envelopeList],
   claims: claimList,
 };
 

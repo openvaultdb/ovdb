@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Rule names the rule that a refused input broke. It is stable: callers and
@@ -65,13 +67,29 @@ func Quote(s string) string { return show(s) }
 func show(s string) string {
 	cut := len(s) > maxShown
 	if cut {
-		s = s[:maxShown]
+		n := maxShown
+		for n > 0 && !utf8.RuneStart(s[n]) { // never cut inside a character
+			n--
+		}
+		for n > 0 && isMark(s[n:]) { // nor between a letter and the mark that combines with it
+			n--
+			for n > 0 && !utf8.RuneStart(s[n]) {
+				n--
+			}
+		}
+		s = s[:n]
 	}
 	quoted := strconv.QuoteToASCII(s)
 	if cut {
 		quoted += "..."
 	}
 	return quoted
+}
+
+// isMark reports whether s starts with a combining mark (category M), which belongs to the character before it.
+func isMark(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return unicode.Is(unicode.M, r)
 }
 
 // placeholder is the one literal a template URL may hold, in its path.
