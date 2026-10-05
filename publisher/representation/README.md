@@ -198,3 +198,45 @@ native data to the accepted decision's original pins. Structural validation at a
 new outer provider commit does not inherit that semantic acceptance. Packaging
 proof and source identity evidence must be reviewed before canonical admission;
 any semantic change requires the dedicated specialist decision.
+
+## Original descriptor association in native receipts
+
+A provider whose original snapshot uses named descriptors rather than filename
+keys can add this optional closed field to the generation receipt:
+
+```json
+"snapshot_association": {
+  "source": {"path": "source/generation-snapshot.json", "sha256": "<original hash>"},
+  "output_key": "sqlite"
+}
+```
+
+The existing `native_key` and embedded original `snapshot` remain intact. Presence
+selects the descriptor branch; absence preserves the reviewed filename-keyed ROR
+branch. A malformed explicit association fails, with no fallback. The source ref
+has only path/hash, resolves as bounded provider-local metadata at the outer
+immutable commit, and must appear with the same hash in the later metadata
+snapshot's artifacts. It must differ from the receipt, later metadata snapshot
+and logical dataset. No dataset, chunk or native keyset is read by this check.
+
+The original file is hash-checked and strictly parsed, including duplicate-key,
+Unicode, depth and byte checks. Its parsed object must equal the embedded snapshot
+while preserving numeric tokens rather than rounding through float64. Key order
+and whitespace can differ; equivalent numeric spellings such as `1` and `1.0`
+are conservatively rejected rather than normalized. The source bytes retain their
+exact original hash. `output_key` is one literal ASCII key of 1–128 bytes using
+letters, digits, underscores or hyphens; it has no path, expression, wildcard or
+transform meaning. Only original `outputs[output_key]` is selected. Its descriptor
+must have the exact consumed `file` and `sha256` fields matching the native data.
+Unrelated outputs, including ordered chunks arrays, stay original source evidence.
+Original `counts[entity]` must be a nonnegative int64 integer token equal to
+`native_key.records`; fractional, exponent and overflow counts are refused.
+
+The later metadata snapshot binds the unchanged dataset, model, binding,
+per-entity receipt and exact original snapshot. Provider generation/review proves
+actual key uniqueness and packaging reconstruction; this association checks their
+structural links and grants no semantic acceptance. Canonical consumers must adopt
+the reviewed helper pin before accepting this receipt shape. Both contract schema
+files, existing label bridges, default publisher closure and parity remain unchanged.
+The native-geonames fixture uses real original/provider metadata and an expressly
+hypothetical test input/decision; it is not an eligible user mapping.

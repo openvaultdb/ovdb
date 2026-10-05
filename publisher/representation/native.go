@@ -27,7 +27,7 @@ func (c Contract) MarshalJSON() ([]byte, error) {
 	}{c.Execution, c.Source, nativeTarget{Target: c.Target}, c.Native, c.Policy, c.Decision})
 }
 
-func checkNative(c Contract, model []byte, ctx Context) error {
+func checkNative(c Contract, model []byte, ctx Context, metadata []byte) error {
 	if c.Native == nil || c.Source.Namespace != c.Target.Namespace {
 		return fmt.Errorf("native identifier requires equal exact namespaces")
 	}
@@ -42,7 +42,7 @@ func checkNative(c Contract, model []byte, ctx Context) error {
 	if err != nil {
 		return err
 	}
-	if err = checkNativeProvenance(provenance, c); err != nil {
+	if err = checkNativeProvenance(provenance, c, ctx, metadata); err != nil {
 		return err
 	}
 	var spec struct {
@@ -121,12 +121,12 @@ func LookupNative(c Contract, source Source, ctx Context, raw string, query func
 
 // Generation claims are checked for exact association only. Independent review
 // must prove them against the native source; this is not an acceptance registry.
-func checkNativeProvenance(data []byte, c Contract) error {
+func checkNativeProvenance(data []byte, c Contract, ctx Context, metadata []byte) error {
 	var root map[string]any
 	if err := strictJSON(data, MaxDocumentBytes, &root); err != nil {
 		return err
 	}
-	if err := exactKeys(root, []string{"native_key", "snapshot"}, false); err != nil {
+	if err := exactKeys(root, []string{"native_key", "snapshot", "snapshot_association"}, false); err != nil {
 		return err
 	}
 	native, _ := root["native_key"].(map[string]any)
@@ -153,15 +153,19 @@ func checkNativeProvenance(data []byte, c Contract) error {
 	if err := exactKeys(snapshot, []string{"outputs", "counts"}, false); err != nil {
 		return err
 	}
-	counts, _ := snapshot["counts"].(map[string]any)
-	if _, ok := counts[c.Target.Entity].(float64); !ok {
-		return fmt.Errorf("original native snapshot count must exist as a JSON number")
-	}
-	outputs, _ := snapshot["outputs"].(map[string]any)
-	for _, raw := range outputs {
-		output, _ := raw.(map[string]any)
-		if err := exactKeys(output, []string{"sha256"}, false); err != nil {
-			return err
+	association, explicit := root["snapshot_association"]
+	if !explicit {
+		counts, _ := snapshot["counts"].(map[string]any)
+		if _, ok := counts[c.Target.Entity].(float64); !ok {
+			return fmt.Errorf("original native snapshot count must exist as a JSON number")
+		}
+
+		outputs, _ := snapshot["outputs"].(map[string]any)
+		for _, raw := range outputs {
+			output, _ := raw.(map[string]any)
+			if err := exactKeys(output, []string{"sha256"}, false); err != nil {
+				return err
+			}
 		}
 	}
 	var receipt struct {
@@ -176,12 +180,7 @@ func checkNativeProvenance(data []byte, c Contract) error {
 			Records    int64     `json:"records"`
 			Duplicates int64     `json:"duplicates"`
 		} `json:"native_key"`
-		Snapshot struct {
-			Outputs map[string]struct {
-				SHA256 string `json:"sha256"`
-			} `json:"outputs"`
-			Counts map[string]int64 `json:"counts"`
-		} `json:"snapshot"`
+		Snapshot json.RawMessage `json:"snapshot"`
 	}
 	if err := json.Unmarshal(data, &receipt); err != nil {
 		return err
@@ -190,7 +189,19 @@ func checkNativeProvenance(data []byte, c Contract) error {
 	if n.Module != c.Target.Module || n.Entity != c.Target.Entity || n.Property != c.Target.Property || n.Namespace != c.Target.Namespace || n.Model != c.Target.Model || n.Binding != c.Target.Binding.Document || n.Dataset != c.Native.Dataset || n.Records < 0 || n.Duplicates != 0 {
 		return fmt.Errorf("native generation receipt scope/model/binding/data/uniqueness association mismatch")
 	}
-	if receipt.Snapshot.Outputs[n.Dataset.Path].SHA256 != n.Dataset.SHA256 || receipt.Snapshot.Counts[n.Entity] != n.Records {
+	if explicit {
+		return checkSnapshotAssociation(association, data, c, ctx, metadata, n.Records)
+	}
+	var original struct {
+		Outputs map[string]struct {
+			SHA256 string `json:"sha256"`
+		} `json:"outputs"`
+		Counts map[string]int64 `json:"counts"`
+	}
+	if err := json.Unmarshal(receipt.Snapshot, &original); err != nil {
+		return err
+	}
+	if original.Outputs[n.Dataset.Path].SHA256 != n.Dataset.SHA256 || original.Counts[n.Entity] != n.Records {
 		return fmt.Errorf("native generation receipt does not bind original snapshot data/counts")
 	}
 	return nil

@@ -43,6 +43,10 @@ func realFixture(t *testing.T, name string) ([]byte, Context, map[Reference][]by
 		repo = "https://github.com/ingitdb/geo-ingitdb"
 		rev = "873538b63de475f8a04f5accdd9a14e51e59e90a"
 	}
+	if name == "native-geonames" {
+		repo = "https://github.com/ingitdb/geo-ingitdb"
+		rev = "7c0223df8e59b80df8ddf71e775197a153cf3e30"
+	}
 	ctx := Context{Repository: repo, Revision: rev, Resolve: func(r Reference) ([]byte, error) {
 		if b, ok := assets[r]; ok {
 			return b, nil
@@ -321,11 +325,11 @@ func TestNativeRequiredKeyAndProof(t *testing.T) {
 		}
 	}
 	c := d.Contracts[0]
-	if err := checkNative(c, assets[c.Target.Model], Context{}); err == nil {
+	if err := checkNative(c, assets[c.Target.Model], Context{}, nil); err == nil {
 		t.Fatal("unresolved receipt")
 	}
 	c.Native = &Native{Dataset: Reference{Path: "$shell/data", SHA256: strings.Repeat("a", 64)}}
-	if err := checkNative(c, nil, Context{}); err == nil {
+	if err := checkNative(c, nil, Context{}, nil); err == nil {
 		t.Fatal("invalid native ref")
 	}
 }
