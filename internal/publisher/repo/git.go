@@ -95,7 +95,7 @@ func isID(s string) bool {
 func (g *Git) Entries(dir string) ([]Entry, error) {
 	rev := cmp.Or(g.commit, "HEAD")
 	if dir != "" {
-		if !rules.IsRepositoryPath(dir) {
+		if !committedPath(dir) {
 			return nil, ErrMalformed
 		}
 		rev += ":" + dir
@@ -109,11 +109,32 @@ func (g *Git) Entries(dir string) ([]Entry, error) {
 
 // Blob reads a file of the commit.
 func (g *Git) Blob(path string, limit int) ([]byte, error) {
-	if !rules.IsRepositoryPath(path) {
+	if !committedPath(path) {
 		return nil, ErrMalformed
 	}
 	out, err := g.git(limit, "cat-file", "blob", cmp.Or(g.commit, "HEAD")+":"+path)
 	return out, g.unreadable(err)
+}
+
+// committedPath extends the legacy manifest grammar only for literal $records
+// components used by representation references. It leaves manifest validation
+// and working-tree pathspecs unchanged; the original spelling goes to git.
+func committedPath(path string) bool {
+	if len(path) > rules.MaxPathLength {
+		return false
+	}
+	if rules.IsRepositoryPath(path) {
+		return true
+	}
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		if part == "$records" {
+			parts[i] = "records"
+		} else if strings.Contains(part, "$") || strings.EqualFold(part, ".git") {
+			return false
+		}
+	}
+	return rules.IsRepositoryPath(strings.Join(parts, "/"))
 }
 
 // checkVersion refuses a `git version` output that is older than MinGit, or not one.
