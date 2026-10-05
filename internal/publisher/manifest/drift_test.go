@@ -50,6 +50,12 @@ func readDrift(t testing.TB) driftFile {
 	return d
 }
 
+// recordedProbeKinds are the stricter kinds that only probes show (no document of the corpus has them, so they have no row in the tables of sharedKinds):
+// what Go does differently from the reference on purpose, with the reason. A probe names one in `recorded`.
+var recordedProbeKinds = map[string]string{
+	"representation-hash-list": "a sha256 written as a list of one hash is read by the Directory's regular expression as that hash; Go refuses it (README)",
+}
+
 var driftSlice = regexp.MustCompile(`^(A0[a-z]|A[1-7]|X1|P-n)$`)
 
 // driftCorpusLooser is the number of documents of the corpus on which Go is looser than the Directory, as drift.json says.
@@ -75,6 +81,9 @@ func TestDrift(t *testing.T) {
 			Note      string `json:"note"`
 			Document  string `json:"document"`
 			Reference int    `json:"reference"`
+			// Recorded names a stricter kind of the README's tables (sharedKinds) that Go is expected to differ by on this probe: a choice of this check, not a
+			// slice to land. The probe is accounted for by that kind, and fails if Go refuses it for another reason, or agrees with the reference.
+			Recorded string `json:"recorded"`
 		} `json:"probes"`
 	}
 	readGolden(t, "drift.probes.json", &probes)
@@ -129,7 +138,18 @@ func TestDrift(t *testing.T) {
 			name string
 			p    Profile
 		}{{"directory", Directory}, {"publisher", Publisher}} {
-			ok, _ := acceptManifest(profile.p, []byte(p.Document))
+			ok, first := acceptManifest(profile.p, []byte(p.Document))
+			if p.Recorded != "" {
+				if _, shared := sharedKinds[p.Recorded]; !shared && recordedProbeKinds[p.Recorded] == "" {
+					t.Errorf("probe %s names the recorded kind %s, which is neither in sharedKinds nor in recordedProbeKinds", p.ID, p.Recorded)
+				}
+				if ok || p.Reference != 1 {
+					t.Errorf("probe %s names the recorded kind %s but Go (%s profile) agrees with the reference: remove the kind from the probe", p.ID, p.Recorded, profile.name)
+				} else if got := kindOf(first); got != p.Recorded {
+					t.Errorf("probe %s: Go (%s profile) refuses it as %s, not as the recorded kind %s: %s", p.ID, profile.name, got, p.Recorded, first.Message)
+				}
+				continue
+			}
 			switch {
 			case ok && p.Reference == 0:
 				observed[key{profile.name, "looser", p.ID}] = true

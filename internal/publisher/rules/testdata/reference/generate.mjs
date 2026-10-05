@@ -26,7 +26,9 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { domainToASCII, fileURLToPath, pathToFileURL } from 'node:url';
-import { assertAnchors, checkoutReference, references as pinnedReferences } from '../../../references.mjs';
+import { assertGeneratorNode, assertAnchors, checkoutReference, references as pinnedReferences } from '../../../references.mjs';
+
+assertGeneratorNode();
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldenPath = join(here, 'matrix.golden.json');
