@@ -47,7 +47,9 @@ func TestDataLicenceConjunctionAndLegacyProfiles(t *testing.T) {
 func TestManifestAttachmentShape(t *testing.T) {
 	for _, value := range []string{"null", "42", "{path: contract.json}", "{path: ../contract.json, sha256: " + strings.Repeat("a", 64) + "}", "{path: contract.yaml, sha256: " + strings.Repeat("a", 64) + "}", "{path: contract.json, sha256: no}", "{path: contract.json, sha256: " + strings.Repeat("a", 64) + ", accepted: true}"} {
 		data := []byte(ownManifest + "representation_contract: " + value + "\n")
-		if _, findings := CheckManifest(data, "ovdb.yaml", Publisher); len(findings) == 0 {
+		j, _ := NewJudge(Publisher)
+		_, attachment, findings := j.ManifestWithAttachment(data, "ovdb.yaml")
+		if len(findings) == 0 || !attachment.Unusable() || attachment.Value != nil {
 			t.Fatalf("bad attachment %s admitted", value)
 		}
 	}
@@ -58,6 +60,20 @@ func TestManifestAttachmentShape(t *testing.T) {
 	for _, legacy := range []string{ownManifest, "[a]", "bad: [", "null"} {
 		if ref, err := RepresentationAttachment([]byte(legacy)); ref != nil || err != nil {
 			t.Fatal("legacy gained attachment outcome")
+		}
+		j, _ := NewJudge(Publisher)
+		_, attachment, _ := j.ManifestWithAttachment([]byte(legacy), "ovdb.yaml")
+		if !attachment.Absent() {
+			t.Fatal("legacy gained a judged attachment")
+		}
+	}
+	for _, key := range []string{"representation_contract", `"representation_contract"`, `"representation\u005fcontract"`} {
+		data := []byte(strings.Replace(string(good), "representation_contract", key, 1))
+		j, _ := NewJudge(Publisher)
+		_, attachment, findings := j.ManifestWithAttachment(data, "ovdb.yaml")
+		ref, err := RepresentationAttachment(data)
+		if len(findings) != 0 || err != nil || !attachment.Usable() || ref == nil || attachment.Value == nil || *attachment.Value != *ref {
+			t.Fatalf("judged attachment %s differs from helper: %v, %v", key, findings, err)
 		}
 	}
 }

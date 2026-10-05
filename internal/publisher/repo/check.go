@@ -233,7 +233,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 			return
 		}
 	}
-	m, findings := c.j.Manifest(doc, path)
+	m, attachment, findings := c.j.ManifestWithAttachment(doc, path)
 	if i == 0 {
 		c.res.Manifest = m
 	}
@@ -242,7 +242,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		c.add(path, RuleRepository, r.Line, "publisher.repository and --repository must be written the same, letter case included: the manifest has %s, --repository is %s", rules.Quote(r.Value), rules.Quote(*o.Repository))
 	}
 	if m.Form != manifest.FormOwn {
-		c.attached(doc, m, o.Dependencies)
+		c.attached(m, attachment, o.Dependencies)
 		return
 	}
 	var own ownFiles
@@ -270,7 +270,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		}
 	}
 	c.content(path, m, own)
-	c.attached(doc, m, o.Dependencies)
+	c.attached(m, attachment, o.Dependencies)
 }
 
 // require says whether path is a tracked regular file of the commit, and when it is not,
@@ -447,14 +447,13 @@ func lookup(entries []Entry, name string) (Kind, string) {
 
 // attached completes structural closure and then the separate required data
 // stage. Neither establishes canonical semantic admission or runtime success.
-func (c *checker) attached(data []byte, m manifest.Manifest, dependencies DependencyReaders) {
-	a, err := manifest.RepresentationAttachment(data)
-	if err != nil || a == nil {
+func (c *checker) attached(m manifest.Manifest, attachment manifest.Fact[*representation.Reference], dependencies DependencyReaders) {
+	if !attachment.Usable() {
 		return
 	}
 	// Count findings through a separate helper result rather than the capped slice:
 	// once the shared budget is exhausted, absence of a stored finding is not success.
-	problems, doc := c.attachedMetadata(m, *a, dependencies)
+	problems, doc := c.attachedMetadata(m, *attachment.Value, dependencies)
 	for _, f := range problems {
 		c.add(f.Document, f.Rule, f.Line, "%s", f.Message)
 	}

@@ -91,30 +91,38 @@ func CheckManifest(doc []byte, path string, profile Profile) (Manifest, []Findin
 }
 
 func checkManifest(doc []byte, path string, b *budget, profile Profile) (Manifest, []Finding) {
+	m, _, findings := checkManifestWithAttachment(doc, path, b, profile)
+	return m, findings
+}
+
+func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Profile) (Manifest, Fact[*representation.Reference], []Finding) {
 	c := newCollector(path, b)
+	var attachment Fact[*representation.Reference]
 	if tooBig(c, doc) {
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	root := readDocument(c, doc, 0)
 	if root == nil {
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	if root.Kind != kindMap {
 		c.add("manifest-shape", root.Line, "is not a mapping: write the manifest as keys and values (format, id, title, ...)")
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	k := &manifestChecker{c: c, m: root, profile: profile}
 	k.out.Read = true
 	k.check()
 	if n := root.Field("representation_contract"); n != nil {
-		if _, err := representation.ParseAttachment(doc); err != nil {
+		ref, err := representation.ParseAttachment(doc)
+		attachment = found(n, err == nil, ref)
+		if err != nil {
 			c.add("representation-attachment", n.Line, "invalid representation_contract attachment: %s", plain(err.Error()))
 		}
 	}
 	if profile == Publisher {
 		k.publisher()
 	}
-	return k.out, c.findings
+	return k.out, attachment, c.findings
 }
 
 // A problem function returns what is wrong with a text, or "" when it is fine.
