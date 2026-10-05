@@ -2,7 +2,6 @@ package repo
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -178,6 +177,6 @@ func TestRealDirectoryEntries(t *testing.T) {
 	readJSON(t, "verdicts.json", &want)
 	if !reflect.DeepEqual(got, want) {
 		gb, _ := json.MarshalIndent(got, "", " ")
-		t.Fatal(fmt.Sprintf("the verdicts of the registered repositories are not testdata/directory/verdicts.json; run with OVDB_REAL_DIRECTORY=update and explain the change in manifest/testdata/reference/drift.json:\n%s", gb))
+		t.Fatalf("the verdicts of the registered repositories are not testdata/directory/verdicts.json; run with OVDB_REAL_DIRECTORY=update and explain the change in manifest/testdata/reference/drift.json:\n%s", gb)
 	}
 }

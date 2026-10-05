@@ -2,7 +2,6 @@ package manifest
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -230,5 +229,4 @@ func TestDrift(t *testing.T) {
 		t.Errorf("the corpus documents on which Go is looser are of the families %q, drift.json says they are recordset names", got)
 	}
 	t.Logf("drift: %d listed looser, %d listed stricter, %d probes, %d corpus documents", len(d.GoLooser), len(d.GoStricter), len(probes.Probes), corpus)
-	_ = fmt.Sprint
 }
