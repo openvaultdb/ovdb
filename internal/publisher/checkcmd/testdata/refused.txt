@@ -2,6 +2,6 @@ ovdb.yaml:59  [repo-recordsets]
   recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Track"
 
 ovdb.yaml:59  [repo-recordsets]
-  recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Tracks"
+  recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Tracks"; if they are the database's own names, map each to its entity under recordset_entities (name: Entity)
 
 Refused: 2 problems at commit 98ff05b4119c. Fix them, commit, and run the check again.

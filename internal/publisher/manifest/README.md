@@ -390,8 +390,8 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7497 agree, 495 stricter, 0 unrecorded Go acceptances where the Chinook
-checker refuses**. The facts: under the Publisher profile, 920 manifests and 104
+On the corpus: **7502 agree, 490 stricter, 0 unrecorded Go acceptances where the Chinook
+checker refuses**. The facts: under the Publisher profile, 925 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
@@ -429,7 +429,7 @@ it has none there: see the table of places.
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
 | `legacy-identity-url` | 5 | 5 | Released Go retains its canonical identity URL predicate: no trailing slash and an ovdb path marker; newer JavaScript accepts general identity paths. |
-| `url-length` | 5 | 7 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
+| `url-length` | 5 | 2 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
 | `yaml-character` | 25 | 12 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
@@ -691,6 +691,6 @@ completes structural associations and required format3 raw source-data proofs.
 
 Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
-The current Publisher validator is `demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Upstream native-recordset validation closes all four legacy Directory corpus differences. The Directory comparator permits no looser cases. Publisher cases accepted under the upstream D0 rule must also be accepted by Directory and have a native recordset name; every other unrecorded acceptance fails. The generated reference refusals remain intact.
+The current Publisher validator is `demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Upstream native-recordset validation closes all four legacy Directory corpus differences. The Directory comparator permits no looser cases. Publisher cases accepted under the upstream D0 rule must also be accepted by Directory, and every problem reported by the pinned Chinook checker must be classified as D (the dropped entity-name restriction) or K (the added recordset_entities key); every other unrecorded acceptance fails. The generated reference refusals remain intact.
 
-All 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by the upstream D0 native-recordset rule and also accepted by Directory.
+All 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by the upstream D0 rule and also accepted by Directory. The generated chinookClasses records every problem per manifest: D is the entity-name restriction and K is recordset_entities as an unknown key. Any other problem (O) prevents a D0 explanation; a native name alone never excuses another refusal.
