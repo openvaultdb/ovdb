@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -46,5 +47,24 @@ func TestPublisherCheckRefusalIsSilentOnStderr(t *testing.T) {
 	}
 	if code != 1 || stderr != "" || !strings.Contains(stdout, "[repo-unreadable]") || !strings.Contains(stdout, "Refused: git could not read a repository here.") {
 		t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
+// The JSON codes of the exit-2 errors of the command: a usage error is invalid_argument, git that is missing or too old is dependency_missing, git that
+// did not finish is timeout, a result that could not be written is internal (the README lists them).
+func TestPublisherCheckErrorCodes(t *testing.T) {
+	d := publisherDeps()
+	for name, c := range map[string]struct {
+		err  error
+		code envelope.Code
+	}{
+		"unrunnable": {d.Unrunnable("m", "r", "n"), envelope.DependencyMissing},
+		"timed out":  {d.TimedOut("m", "r", "n"), envelope.Timeout},
+		"write":      {d.WriteFailed("r"), envelope.Internal},
+	} {
+		var coder interface{ ExitCode() int }
+		if e := envelope.As(c.err); e == nil || e.Code != c.code || !errors.As(c.err, &coder) || coder.ExitCode() != 2 {
+			t.Errorf("%s: %v", name, c.err)
+		}
 	}
 }

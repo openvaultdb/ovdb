@@ -41,6 +41,7 @@ const (
 	ValidationFailed      Code = "validation_failed"
 	Unsupported           Code = "unsupported"
 	DependencyMissing     Code = "dependency_missing"
+	Timeout               Code = "timeout"
 	Internal              Code = "internal"
 )
 
@@ -49,7 +50,7 @@ var Codes = []Code{
 	InvalidArgument, ConfirmationRequired, NotFound, AlreadyExists, LocationNotEmpty,
 	PortInUse, PortUnavailable, ServerNotRunning, ServerStartFailed, ServerVersionMismatch,
 	ServerConfigMismatch, Unauthorized, Forbidden, StorageUnavailable, SchemaRequired,
-	ValidationFailed, Unsupported, DependencyMissing, Internal,
+	ValidationFailed, Unsupported, DependencyMissing, Timeout, Internal,
 }
 
 // HTTPStatus is the local API status for code. Client-side-only codes
