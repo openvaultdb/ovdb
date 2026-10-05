@@ -115,3 +115,86 @@ fixtures and wire `ParseAttachment`/`CheckRepresentation` into the default check
 Apps admission and immutable provider/model/meaning/decision generation reviews
 remain additional dependencies. This branch changes none of those sibling repos
 or their owners' publication queue.
+
+## Explicit native execution in contract format 2
+
+`schema2.json` has canonical schema ID
+`https://openvaultdb.com/schemas/representation-contract-2.json`, distinct from
+format1, so consumers can register both schemas together. The closed
+`ovdb-representation-contract/2` format adds a required `execution`
+discriminator. `label-bridge` keeps the reviewed bridge, key-index and collision
+checks. `native-identifier` forbids both `bridge` and `target.keys`; it requires:
+
+```json
+"native": {
+  "dataset": {"path": "ror.sqlite", "sha256": "<assembled native data hash>"},
+  "provenance": {"path": "source/validation.json", "sha256": "<receipt hash>"}
+}
+```
+
+The target must actually declare the required single-property native key in its
+ModelSpec. Its exact source and target namespaces must agree. An optional
+`native.serving_identity_column` must be a distinct existing field. Snapshot,
+model, binding, canonical meaning, user source schema and decision hashes/pins
+remain checked. The closed format1 schema and existing fixtures remain unchanged;
+format1 accepts no new execution fields. There is no inference from missing
+bridge fields, version fallback or second default publisher profile. Format2
+permits the literal canonical inGitDB `$records` path component; all other dollar
+components, traversal, URLs, absolute paths and percent encoding are rejected.
+
+`native.dataset` is a logical data-artifact descriptor, rather than a metadata
+file reference. `Check` never sends it to the metadata resolver, fetches its
+bytes or loads a native key corpus. The generation snapshot binds its path/hash
+alongside the exact model, binding and provenance receipt. Ordered published
+chunks may represent that assembled artifact. Offline publication can separately
+stream-hash the assembled bytes; discovery must remain within its metadata budget.
+
+The existing provider generation receipt is extended with this closed section:
+
+```json
+"native_key": {
+  "module": "ror", "entity": "organizations", "property": "id",
+  "namespace": "ROR:URL",
+  "model": {"path": "model/ror.modelspec.json", "sha256": "<hash>"},
+  "binding": {"path": "model/ror.meaning.yaml", "sha256": "<hash>"},
+  "dataset": {"path": "ror.sqlite", "sha256": "<hash>"},
+  "records": 141528, "duplicates": 0
+}
+```
+
+The checker verifies exact scope/ref association, nonnegative counts, zero
+claimed duplicates, the original `snapshot.outputs[dataset.path].sha256`, and
+original `snapshot.counts[entity]`. The receipt preserves that original embedded
+source-generation snapshot. A later metadata snapshot adds immutable `generator`
+and `artifacts` entries for the data, model, binding and extended receipt; the
+receipt must never embed that later snapshot, avoiding circular content hashes.
+Provider generation/tests and independent publication review must establish these
+claims against the source and native dataset. They are generation evidence, not a
+second acceptance registry, semantic verdict or proof from a checksum. Empty
+native datasets are expressible and yield unmatched lookup results.
+
+`LookupNative` issues an explicit `NativeLookupRequest` carrying the outer provider
+repository/revision, model/snapshot/dataset hashes, exact target property/namespace,
+raw input and `Limit: 2`. Its data reader must execute this keyed query against
+that immutable artifact with the caller's time/byte/cancellation bounds. Zero
+rows are unmatched; two or more rows are ambiguous; a single returned native key
+must equal the original UTF8 bytes. The statically typed reader returns string
+keys; a wire adapter must reject nonstring values before returning. A bounded
+response cannot establish global source uniqueness. ROR format/checksum validity,
+NULL/empty/invalid distinctions, preserved status warnings and affiliation/location
+grain belong to the reviewed user contract and app execution. This helper never
+substitutes a serving ID, trims values or certifies affiliation truth.
+
+The real GeoNames fixture exercises the corrected native country namespace and
+unchanged canonical decision path. The real ROR fixture exercises actual
+`organizations.id`, its required key and canonical binding, plus explicitly
+proposed additive receipt/snapshot linkage. Both remain staged fixtures without
+production eligibility. Directory, current demo-db/chinook checker, OVDB parity
+adoption and app admission companions remain prerequisites.
+
+A later provider packaging or wrapper revision needs explicit independent
+carry-forward review tying its unchanged semantic source, model, binding and
+native data to the accepted decision's original pins. Structural validation at a
+new outer provider commit does not inherit that semantic acceptance. Packaging
+proof and source identity evidence must be reviewed before canonical admission;
+any semantic change requires the dedicated specialist decision.

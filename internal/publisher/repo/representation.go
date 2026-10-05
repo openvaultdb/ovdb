@@ -65,7 +65,7 @@ func CheckRepresentation(r Reader, m manifest.Manifest, a representation.Referen
 		return c.res.Findings
 	}
 	for _, contract := range doc.Contracts {
-		if m.Form != manifest.FormOwn || !m.ModelSpec.Usable() || !m.MeaningFile.Usable() || contract.Target.Model.Path != m.ModelSpec.Value || contract.Target.Binding.Document.Path != m.MeaningFile.Value || !slices.Contains(m.Recordsets.Value, contract.Bridge.Table) || !slices.Contains(m.Recordsets.Value, contract.Target.Entity) {
+		if m.Form != manifest.FormOwn || !m.ModelSpec.Usable() || !m.MeaningFile.Usable() || contract.Target.Model.Path != m.ModelSpec.Value || contract.Target.Binding.Document.Path != m.MeaningFile.Value || (contract.Execution != representation.NativeIdentifier && !slices.Contains(m.Recordsets.Value, contract.Bridge.Table)) || !slices.Contains(m.Recordsets.Value, contract.Target.Entity) {
 			c.add(a.Path, "representation-manifest-link", 0, "target model/binding and native target/bridge recordsets must match this publisher manifest")
 		}
 	}
