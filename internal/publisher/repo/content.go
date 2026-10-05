@@ -95,7 +95,9 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	}
 	if recordsets := m.Recordsets; recordsets.Usable() && len(recordsets.Value) > MaxRecordsets {
 		c.add(path, RuleRecordsetsLimit, recordsets.Line, "recordsets lists %d names, which is more than the %d this check reads", len(recordsets.Value), MaxRecordsets)
-	} else if recordsets.Usable() && spec.hasEntities {
+	} else if recordsets.Usable() && spec.hasEntities && (!m.RecordsetEntities.Present || m.RecordsetEntities.Valid) {
+		// A recordset_entities that is itself wrong has been reported once by the manifest; judging the names against a mapping that was thrown away
+		// would add findings about names that the mapping covers.
 		// Each recordset is the entity that recordset_entities says, or the entity of its own name.
 		mapped := make([]string, len(recordsets.Value))
 		for i, r := range recordsets.Value {
@@ -122,7 +124,7 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordsets lacks the ModelSpec entities of %s: %s", rules.Quote(file), names(missing))
 		}
 		if len(extra) > 0 {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec entities of %s: %s", rules.Quote(file), names(extra))
+			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec entities of %s: %s; if they are the database's own names, map each to its entity under recordset_entities (name: Entity)", rules.Quote(file), names(extra))
 		}
 		if duplicate {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordset_entities maps more than one native recordset to the same ModelSpec entity; mappings must be one-to-one")

@@ -13,7 +13,8 @@ import (
 // MaxRecordsetNameLength is the longest recordset name, in UTF-16 code units, as JavaScript's String.length counts them: the Directory's bound.
 const MaxRecordsetNameLength = 256
 
-// RuleRecordsetName is the rule a refused recordset name broke.
+// RuleRecordsetName is the rule a refused recordset name broke. Like every Rule of this package it names the kind for callers and tests of the rules; a
+// finding of the check carries its own code (manifest-recordsets).
 const RuleRecordsetName Rule = "recordset-name"
 
 // RecordsetName reports why s is not a recordset name, or nil: text that is not blank by JavaScript's trim(), at most 256 UTF-16 code units, not "." or
@@ -66,19 +67,19 @@ func EncodePathSegment(s string) string {
 // https URL. One that does is accepted only when the segment is all that the {name} makes (nothing of the template shares its path segment), the
 // template holds {name} in its path, the name is neither "." nor "..", has no slash, backslash or control character, and nothing inside it, decoded
 // again and again, becomes one of those: a router that decodes a second time must not find a path separator or a dot segment. The rest of the URL is
-// held to the ordinary rules, and the whole page to the length of every URL.
+// held to the ordinary rules; the page has no length bound of its own, as the Directory has none (the name and the template are bounded).
 func RecordsetPage(template, name string) error {
 	return asError(checkRecordsetPage(template, name, defaults(false)))
 }
 
 func checkRecordsetPage(template, name string, o options) *Problem {
 	encoded := EncodePathSegment(name)
+	// The Directory puts no bound on the page: the name is bounded (256 UTF-16 code units, at most 2304 characters once encoded) and the template is
+	// a URL of at most 2048, so the page is bounded and judged in one pass. The 2048 of every other URL is not applied to what the name adds.
+	o.maxLen = len(template) + len(encoded)
 	at := strings.Index(template, placeholder)
 	if at < 0 || !strings.Contains(encoded, "%") {
 		return checkURL(strings.Replace(template, placeholder, encoded, 1), o)
-	}
-	if len(template)-len(placeholder)+len(encoded) > o.maxLen {
-		return problem(RuleLength, "is longer than %d characters", o.maxLen)
 	}
 	before, after := template[:at], template[at+len(placeholder):]
 	authority := strings.Index(strings.TrimPrefix(template, scheme), "/")

@@ -61,6 +61,7 @@ if (argValue('--chinookdb')) {
 const directory = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/directory.mjs')).href);
 const gitlib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/git.mjs')).href);
 const modelspec = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/modelspec.mjs')).href);
+const urlsLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/urls.mjs')).href);
 const meaningLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/meaning.mjs')).href);
 const chinook = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/ovdb-manifest.mjs')).href);
 const { isolatedGitEnv } = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/git-env.mjs')).href);
@@ -71,6 +72,8 @@ const read = (root, file) => readFileSync(join(root, file), 'utf8');
 const directorySource = read(directoryRoot, 'scripts/lib/directory.mjs');
 assertAnchors(directorySource, 'scripts/lib/directory.mjs', pins.directory.commit, [
   "const isText = (value) => typeof value === 'string' && value.trim() !== '';",
+  "const recordsetUrl = (name) => (manifest.deployment.recordset_page ? manifest.deployment.recordset_page.replace('{name}', encodePathSegment(name)) : undefined);",
+  "const problem = url === undefined ? null : publicHttpsProblem(url, { encodedPathSegment: encodedName.includes('%') ? encodedName : undefined });",
   'if (frontmatter.ovdb !== 1) bad(',
   "if (!Array.isArray(frontmatter.publish) || frontmatter.publish.length === 0) { bad('OVDB.md: publish must list at least one manifest path'); return stop(); }",
   "if (!isText(entry) || !entry.startsWith('./') || !isRepositoryPath(entry.slice(2))) bad(",
@@ -103,6 +106,9 @@ const isText = (value) => typeof value === 'string' && value.trim() !== '';
 //    numbers and lists too) equals none, and any other value equals the record that has it.
 //  - checkRecordsets: a name listed twice.
 //  - model.name (own form and shared): written, it must equal the module, which parseModelSpec makes an identifier.
+//  - analyseDatabase, "the recordset page of": every name of recordsets, written as one encoded path segment into deployment.recordset_page,
+//    makes a URL that publicHttpsProblem takes (with the segment allowed to hold escapes). The Directory judges it after the files are read; a
+//    manifest that fails it is refused by the Directory in the end, so a probe's reference verdict has it.
 //  - the spelling of an address: own model.address, and in the shared form model.address and meaning.address:
 //    a repository on a host the Directory reads, in lower case; an own model.address carries no ?ref=.
 // What needs a record, a registry or a file (the equality of url, id and graph id with the record's, the
@@ -114,6 +120,14 @@ const recordStageProblems = (manifest) => {
   const written = manifest.publisher.repository;
   if (written !== undefined && gitlib.repositoryKey(written) === null) problems.push('publisher.repository');
   if (new Set(manifest.recordsets).size !== manifest.recordsets.length) problems.push('recordsets twice');
+  const page = manifest.deployment?.recordset_page;
+  if (page && Array.isArray(manifest.recordsets)) {
+    for (const recordset of manifest.recordsets) {
+      if (typeof recordset !== 'string') continue;
+      const encoded = urlsLib.encodePathSegment(recordset);
+      if (urlsLib.publicHttpsProblem(page.replace('{name}', encoded), { encodedPathSegment: encoded.includes('%') ? encoded : undefined })) { problems.push('recordset page'); break; }
+    }
+  }
   const name = manifest.model?.name;
   if (name !== undefined && !(typeof name === 'string' && modelspec.identifierPattern.test(name))) problems.push('model.name');
   const spelled = (parsed) => gitlib.repositoryKey(`https://${parsed.repository}`) !== null && parsed.repository === lowerKey(parsed.repository);
@@ -1130,6 +1144,12 @@ thrown = 0;
 const publisherManifest = manifestBuffers.map((buffer) => publisherVerdict(publisherManifestHeld(buffer)));
 const publisherMd = mdBuffers.map((buffer) => publisherVerdict(publisherMdHeld(buffer)));
 const publisherThrown = thrown;
+// What the frozen Chinook checker refuses each manifest for, in classes: D, the rule that recordset names look like ModelSpec entity names (the
+// Directory's native names, 1c7e126, made it a name rule of its own, so D0 drops it); K, recordset_entities as an unknown key (the Directory reads it
+// since 1c7e126 and the key list here has gained it); O, any other problem. A Go test requires that a manifest which Go accepts and the checker
+// refuses has only D and K among its classes.
+const chinookClassOf = (problem) => (/^ovdb\.yaml: recordsets names must look like ModelSpec entity names/.test(problem) ? 'D' : problem === 'ovdb.yaml: unknown keys: recordset_entities' ? 'K' : 'O');
+const chinookClasses = manifestBuffers.map((buffer) => [...new Set(publisherProblems(publisherManifestHeld(buffer).consistent).map(chinookClassOf))].sort().join('')).join(',');
 // A sample of the cases again on real repositories: the in-memory repository must not change a verdict.
 let realChecked = 0;
 const sampled = (buffers, held, step) => buffers.forEach((buffer, at) => {
@@ -1184,7 +1204,7 @@ const publisherVerdictFile = {
   profile: 'publisher',
   thrown: publisherThrown,
   realChecked,
-  manifest: { accepted: count(publisherVerdicts.manifest, '1'), refused: count(publisherVerdicts.manifest, '0'), verdicts: publisherVerdicts.manifest },
+  manifest: { accepted: count(publisherVerdicts.manifest, '1'), refused: count(publisherVerdicts.manifest, '0'), verdicts: publisherVerdicts.manifest, chinookClasses },
   md: { accepted: count(publisherVerdicts.md, '1'), refused: count(publisherVerdicts.md, '0'), verdicts: publisherVerdicts.md },
   needsFiles,
   allowLists: { licences: [...chinook.licenceIds].sort(), keys: Object.fromEntries(Object.entries(chinookAllowedKeys).map(([where, keys]) => [where, [...keys].sort()])) },
@@ -1306,6 +1326,20 @@ const probeSpecs = [
   ['recordset-entities-number-entity', 'recordset_entities whose value is a number', (m) => { m.recordset_entities = { Album: 7 }; return m; }],
   ['recordset-entities-null-entity', 'recordset_entities whose value is null', (m) => { m.recordset_entities = { Album: null }; return m; }],
   ['recordset-entities-bad-key', 'recordset_entities whose key is a recordset name with a slash', (m) => { m.recordsets = [...m.recordsets, 'a/b']; m.recordset_entities = { 'a/b': 'Thing' }; return m; }],
+  ['page-encoded-slash-name', 'a recordset named %2F, with the base recordset_page: the name is text, written as %252F, which a router decodes to %2F (refused: a nested escape)', (m) => { m.recordsets = [...m.recordsets, '%2F']; return m; }],
+  ['page-nested-dots-name', 'a recordset named %2e%2e (decodes to a dot segment once; refused)', (m) => { m.recordsets = [...m.recordsets, '%2e%2e']; return m; }],
+  ['page-percent-name', 'a recordset named 100% (a bare percent, not an escape; accepted)', (m) => { m.recordsets = [...m.recordsets, '100%']; return m; }],
+  ['page-escape-shaped-name', 'a recordset named a%41b (an escape written in the name; accepted: it decodes to nothing unsafe)', (m) => { m.recordsets = [...m.recordsets, 'a%41b']; return m; }],
+  ['page-spaced-name-alone', 'a spaced recordset name, with the base recordset_page, where {name} is the whole last segment (accepted)', (m) => { m.recordsets = [...m.recordsets, 'Order Details']; return m; }],
+  ['page-spaced-name-html', 'a spaced recordset name with recordset_page ending in /{name}.html: the escape would share its segment with the template (refused)', (m) => { m.deployment.recordset_page = `${m.deployment.recordset_page}.html`; m.recordsets = [...m.recordsets, 'Order Details']; return m; }],
+  ['page-spaced-name-prefix', 'a spaced recordset name with recordset_page ending in /x{name} (refused: the escape shares a segment)', (m) => { m.deployment.recordset_page = m.deployment.recordset_page.replace('{name}', 'x{name}'); m.recordsets = [...m.recordsets, 'Order Details']; return m; }],
+  ['page-spaced-name-slash-after', 'a spaced recordset name with recordset_page ending in /{name}/ (accepted: the segment is alone)', (m) => { m.deployment.recordset_page = `${m.deployment.recordset_page}/`; m.recordsets = [...m.recordsets, 'Order Details']; return m; }],
+  ['page-plain-name-html', 'a plain recordset name with recordset_page ending in /{name}.html (accepted: nothing to encode)', (m) => { m.deployment.recordset_page = `${m.deployment.recordset_page}.html`; return m; }],
+  ['page-name-without-placeholder', 'a spaced recordset name with a recordset_page that has no {name} (refused by both: a recordset page must be a template that holds {name})', (m) => { m.deployment.recordset_page = 'https://cloud.openvaultdb.com/ovdb/dbs/chinook/all'; m.recordsets = [...m.recordsets, 'Order Details']; return m; }],
+  ['page-long-euro-name', 'a recordset name of 256 euro signs: its page is 2304 characters long (accepted: the Directory bounds the name, not the page)', (m) => { m.recordsets = [...m.recordsets, '\u20ac'.repeat(256)]; return m; }],
+  ['page-long-cjk-name', 'a recordset name of 230 CJK characters: its page is over 2048 characters (accepted)', (m) => { m.recordsets = [...m.recordsets, '\u8868'.repeat(230)]; return m; }],
+  ['page-long-ascii-name', 'a recordset name of 256 letters (accepted)', (m) => { m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
+  ['page-long-name-long-template', 'a 256-letter recordset name under a recordset_page of 1990 characters: the page is over 2048 characters (accepted)', (m) => { m.deployment.recordset_page = `https://cloud.openvaultdb.com/c/${'x'.repeat(1960)}/{name}`; m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
   ['licence-compound-data', 'licences.data written as MIT AND CC0-1.0 (ff4abd0)', (m) => { m.licences.data = 'MIT AND CC0-1.0'; return m; }],
   ['licence-compound-duplicate', 'licences.data with a repeated atom, MIT AND MIT (ff4abd0)', (m) => { m.licences.data = 'MIT AND MIT'; return m; }],
   ['licence-compound-model', 'licences.model written as a compound (the Directory refuses: single ids only)', (m) => { m.licences.model = 'MIT AND CC0-1.0'; return m; }],

@@ -77,7 +77,8 @@ func TestRecordsetPage(t *testing.T) {
 		{"cloud.openvaultdb.com/c/{name}", "a b", false, "no scheme"},
 		{"https://cloud.openvaultdb.com", "a b", false, "no placeholder, and a host without a path is not a URL here"},
 		{"https://cloud.openvaultdb.com/c/", "a b", true, "no placeholder: the template is the URL"},
-		{"https://cloud.openvaultdb.com/c/{name}", strings.Repeat("é", 400), false, "longer than every URL may be"},
+		{"https://cloud.openvaultdb.com/c/{name}", strings.Repeat("é", 400), true, "a long page: the Directory bounds the name, not the page"},
+		{"https://cloud.openvaultdb.com/c/" + strings.Repeat("x", 2000) + "/{name}", strings.Repeat("€", 256), true, "a page of 2000 plus 2304 characters"},
 	}
 	for _, c := range cases {
 		err := RecordsetPage(c.template, c.name)
@@ -132,5 +133,16 @@ func TestRepresentationEnvelopeMembers(t *testing.T) {
 	}
 	if equalFoldASCII("ab", "abc") || !equalFoldASCII(".GiT", ".git") || equalFoldASCII(".gix", ".git") {
 		t.Error("equalFoldASCII")
+	}
+}
+
+// A message quotes a name cut at a character, never inside one.
+func TestQuoteNeverCutsInsideACharacter(t *testing.T) {
+	got := Quote(strings.Repeat("€", 100))
+	if strings.Contains(got, `\xe2`) || strings.Contains(got, `\x`) || !strings.HasSuffix(got, `"...`) {
+		t.Errorf("Quote cut inside a character: %s", got)
+	}
+	if got := Quote(strings.Repeat("a", 100)); !strings.HasSuffix(got, `"...`) {
+		t.Errorf("Quote of a long ASCII text: %s", got)
 	}
 }

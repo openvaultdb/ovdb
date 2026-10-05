@@ -313,6 +313,23 @@ func (k *manifestChecker) check() {
 	k.representation()
 	k.recordsets()
 	k.recordsetEntities()
+	k.recordsetNames()
+}
+
+// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it.
+func (k *manifestChecker) recordsetNames() {
+	f := &k.out.Recordsets
+	if !f.Usable() || !k.out.RecordsetPage.Usable() {
+		return
+	}
+	items := k.m.Field("recordsets").Items
+	for i, name := range f.Value {
+		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
+			k.c.add("manifest-recordsets", items[i].Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
+			demote(f)
+			return
+		}
+	}
 }
 
 // model judges model and meaning, which the manifest writes in one of two forms
@@ -442,7 +459,7 @@ func (k *manifestChecker) recordsets() {
 		}
 	}
 	if !good {
-		k.c.add("manifest-recordsets", where(k.m, "recordsets"), "recordsets must be a non-empty list of names: write recordsets: with one name per line, each a ModelSpec entity")
+		k.c.add("manifest-recordsets", where(k.m, "recordsets"), "recordsets must be a non-empty list of names: write recordsets: with one name per line, each the name of a table or collection of the database (a ModelSpec entity, or a native name that recordset_entities maps to one)")
 		k.out.Recordsets = found(list, false, []string(nil))
 		return
 	}

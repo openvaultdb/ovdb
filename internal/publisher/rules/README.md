@@ -26,7 +26,7 @@ later changes and calls these functions.
 | `RecordsetName` | A recordset name as the Directory takes it since it took native names: text that is not blank by JavaScript's `trim()`, at most 256 UTF-16 code units (an astral character counts for two), not `.` or `..`, with no `/`, `\` or control character (U+0000 to U+001F, U+007F). A space, a dot and any non-ASCII letter are allowed: `dbo.DatabaseLog`, `Order Details`. |
 | `EncodePathSegment` | JavaScript's `encodeURIComponent`, with `! ' ( ) *` encoded too: everything except `A-Z a-z 0-9 - _ . ~` as `%XX`, in upper case. |
 | `IsRepresentationPath`, `IsRepresentationHash` | The two members of a `representation_contract` envelope, each judged as the Directory does (`checkRepresentationEnvelope`): the path is at most 1024 bytes of `A-Z a-z 0-9 _ . -` in segments joined by single slashes (a segment may be `$records`; none is `.`, `..` or `.git` in any case) and ends in `.json`; the hash is 64 lower-case hex digits. |
-| `RecordsetPage` | The page of a recordset: the `deployment.recordset_page` template with `{name}` replaced by the encoded name. A name that needs no encoding makes an ordinary public https URL. One that does is accepted only as one whole path segment of the template's path (nothing else shares it), when nothing in the name, decoded again and again, can become `.`, `..`, a slash, a backslash or a control character, and the rest of the URL passes the ordinary rules. |
+| `RecordsetPage` | The page of a recordset: the `deployment.recordset_page` template with `{name}` replaced by the encoded name. A name that needs no encoding makes an ordinary public https URL. One that does is accepted only as one whole path segment of the template's path (nothing else shares it), when nothing in the name, decoded again and again, can become `.`, `..`, a slash, a backslash or a control character, and the rest of the URL passes the ordinary rules. The page has no length bound of its own, as the Directory has none: the name is bounded (256 UTF-16 code units, 2304 characters at most once encoded) and the template is a URL of at most 2048, so a page is judged in one pass however long. |
 | `Compare`, `ClaimedForm` | How one claimed address stands to another: `Same` when they are equal, `Under` when the first sits under the second at a path-segment boundary (`/dbs/chinook2` is not under `/dbs/chinook`), `Over` when the second sits under the first, `Apart` otherwise, all case-insensitively with trailing slashes set aside. A caller asks `Relation.Conflicts()` (true for everything but `Apart`, and for `Incomparable`, which is also the zero value), and never compares with `Same` or `Under` itself. |
 
 A refused URL comes back as a `*Problem` with a stable `Rule` (match on that,
@@ -81,7 +81,7 @@ imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
 v24.20.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **2073437** verdicts:
+network. The matrix is **2073451** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a

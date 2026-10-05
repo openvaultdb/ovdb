@@ -369,7 +369,7 @@ func TestShow(t *testing.T) {
 		strings.Repeat("a", maxShown):      `"` + strings.Repeat("a", maxShown) + `"`,
 		strings.Repeat("a", maxShown+1):    `"` + strings.Repeat("a", maxShown) + `"...`,
 		strings.Repeat("\u00e9", 30):       `"` + strings.Repeat(`\u00e9`, 20) + `"...`,
-		strings.Repeat("a", 39) + "\u00e9": `"` + strings.Repeat("a", 39) + `\xc3"...`,
+		strings.Repeat("a", 39) + "\u00e9": `"` + strings.Repeat("a", 39) + `"...`,
 	} {
 		if got := show(in); got != want {
 			t.Errorf("show(%q) = %s, want %s", in, got, want)

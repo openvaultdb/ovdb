@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Rule names the rule that a refused input broke. It is stable: callers and
@@ -65,7 +66,11 @@ func Quote(s string) string { return show(s) }
 func show(s string) string {
 	cut := len(s) > maxShown
 	if cut {
-		s = s[:maxShown]
+		n := maxShown
+		for n > 0 && !utf8.RuneStart(s[n]) { // never cut inside a character
+			n--
+		}
+		s = s[:n]
 	}
 	quoted := strconv.QuoteToASCII(s)
 	if cut {
