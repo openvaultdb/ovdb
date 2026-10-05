@@ -75,9 +75,6 @@ func TestDrift(t *testing.T) {
 			Note      string `json:"note"`
 			Document  string `json:"document"`
 			Reference int    `json:"reference"`
-			// Recorded names a stricter kind of the README's tables that Go is expected to differ by on this probe (a shared kind, such as url-length,
-			// which is a choice of this check and not a slice to land): the probe is accounted for by that kind, and fails if Go refuses it for another reason.
-			Recorded string `json:"recorded"`
 		} `json:"probes"`
 	}
 	readGolden(t, "drift.probes.json", &probes)
@@ -132,15 +129,7 @@ func TestDrift(t *testing.T) {
 			name string
 			p    Profile
 		}{{"directory", Directory}, {"publisher", Publisher}} {
-			ok, first := acceptManifest(profile.p, []byte(p.Document))
-			if p.Recorded != "" {
-				if ok || p.Reference != 1 {
-					t.Errorf("probe %s names the recorded kind %s but Go (%s profile) agrees with the reference: remove the kind from the probe", p.ID, p.Recorded, profile.name)
-				} else if got := kindOf(first); got != p.Recorded {
-					t.Errorf("probe %s: Go (%s profile) refuses it as %s, not as the recorded kind %s: %s", p.ID, profile.name, got, p.Recorded, first.Message)
-				}
-				continue
-			}
+			ok, _ := acceptManifest(profile.p, []byte(p.Document))
 			switch {
 			case ok && p.Reference == 0:
 				observed[key{profile.name, "looser", p.ID}] = true

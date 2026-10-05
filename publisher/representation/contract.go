@@ -476,6 +476,10 @@ func tokens(dec *json.Decoder, depth int) error {
 	return err
 }
 func hex(s string, n int) bool { return len(s) == n && strings.Trim(s, "0123456789abcdef") == "" }
+
+// IsRepositoryRevision applies the representation grammar to an explicit immutable reader key.
+func IsRepositoryRevision(repo, revision string) bool { return repository(repo) && hex(revision, 40) }
+
 func repository(s string) bool {
 	parts := strings.Split(strings.TrimPrefix(s, "https://github.com/"), "/")
 	if !strings.HasPrefix(s, "https://github.com/") || len(parts) != 2 {

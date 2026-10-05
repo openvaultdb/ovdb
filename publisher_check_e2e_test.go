@@ -225,22 +225,47 @@ func TestPublisherCheckEndToEnd(t *testing.T) {
 			}
 		}
 	})
-	sub("the real ChinookDB repository at the pinned commit", func(t *testing.T) {
-		pins, err := os.ReadFile(filepath.Join("internal", "publisher", "references.mjs"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		m := regexp.MustCompile(`chinookdb: \{ repository: '([^']+)', commit: '([0-9a-f]{40})' \}`).FindSubmatch(pins)
-		if m == nil {
-			t.Fatal("references.mjs has no pin for chinookdb")
-		}
-		dir := t.TempDir()
-		gitIn(t, dir, "init", "--quiet", "-b", "main")
-		gitIn(t, dir, "fetch", "--quiet", "--depth", "1", "https://github.com/"+string(m[1])+".git", string(m[2]))
-		gitIn(t, dir, "checkout", "--quiet", "FETCH_HEAD")
-		stdout, stderr, code := runOVDB(t, nil, "publisher", "check", dir, "--repository", "https://github.com/"+string(m[1]))
-		if code != 0 || stderr != "" || !strings.HasPrefix(stdout, "OK: commit "+string(m[2])[:12]) {
-			t.Errorf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
-		}
-	})
+	for _, name := range []string{"fixtures", "chinookdb"} {
+		sub("real pinned Chinook repository: "+name, func(t *testing.T) {
+			pins, err := os.ReadFile(filepath.Join("internal", "publisher", "references.mjs"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := regexp.MustCompile(name + `: \{ repository: '([^']+)', commit: '([0-9a-f]{40})' \}`).FindSubmatch(pins)
+			if m == nil {
+				t.Fatal("references.mjs has no pin for " + name)
+			}
+			dir := t.TempDir()
+			gitIn(t, dir, "init", "--quiet", "-b", "main")
+			gitIn(t, dir, "fetch", "--quiet", "--depth", "1", "https://github.com/"+string(m[1])+".git", string(m[2]))
+			gitIn(t, dir, "checkout", "--quiet", "FETCH_HEAD")
+			stdout, stderr, code := runOVDB(t, nil, "publisher", "check", dir, "--repository", "https://github.com/"+string(m[1]), "--json")
+			var result struct {
+				Commit   string `json:"commit"`
+				OK       bool   `json:"ok"`
+				Findings []struct {
+					Rule string `json:"rule"`
+				} `json:"findings"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &result); err != nil || stderr != "" || result.Commit != string(m[2]) {
+				t.Fatalf("exit %d, stdout %q, stderr %q, decode %v", code, stdout, stderr, err)
+			}
+			if name == "fixtures" {
+				if code != 0 || !result.OK || len(result.Findings) != 0 {
+					t.Fatalf("legacy input: exit %d: %s", code, stdout)
+				}
+			} else {
+				// The current companion also publishes a JSON descriptor and a general
+				// identity URL. Those remain outside the released Go manifest profile.
+				url, format := false, false
+				for _, f := range result.Findings {
+					url = url || f.Rule == "manifest-url"
+					format = format || f.Rule == "manifest-format"
+				}
+				if code != 1 || result.OK || !url || !format {
+					t.Fatalf("expected legacy profile differences: exit %d: %s", code, stdout)
+				}
+			}
+		})
+	}
 }

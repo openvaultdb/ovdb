@@ -1,7 +1,6 @@
 # Scoped representation attachments
 
-`ovdb.yaml` is proposed to optionally attach provider-local execution metadata
-after the canonical companion validators land:
+`ovdb.yaml` optionally attaches provider-local execution metadata:
 
 ```yaml
 representation_contract:
@@ -26,12 +25,28 @@ itself, so no attachment embeds a self-commit or creates a circular hash. A sour
 schema, canonical meaning and decision provenance are immutable external files.
 Target models/bindings/snapshots/key indexes/bridge exports are provider-local.
 The resolver must read regular committed files at the exact external pin. The
-opt-in `repo.CheckRepresentation` helper accepts explicit offline dependency
+`repo.CheckRepresentation` helper accepts explicit offline dependency
 readers keyed by both repository and full revision; their HEAD must equal the
 requested revision, and no fetch occurs. It remains metadata-only.
-Default `ovdb publisher check` remains the exact closed legacy validator and
-rejects the proposed attachment until canonical companion support lands. No
-second manifest profile or permissive fallback is introduced.
+Default `ovdb publisher check` checks attached metadata and manifest associations,
+then separately requires every format3 `source.data` raw-byte proof. Missing readers,
+wrong revisions, nonregular files, hashes and byte caps refuse the check. Legacy
+manifests without attachments retain their existing checks. This offline result
+does not establish canonical semantic admission or runtime eligibility.
+
+Provision readers explicitly with repeatable literal bindings:
+
+```text
+ovdb publisher check /absolute/provider --dependency 'https://github.com/owner/repo@<40 lowercase hex digits>=/absolute/dependency'
+```
+
+The first `=` separates the immutable repository/revision from the absolute local
+checkout. Spaces, commas, later `=` and `@` stay literal; no shell expansion, fetch,
+branch switch or provider code runs. Identical bindings coalesce; conflicting paths
+for the same immutable key and malformed explicit flags are usage errors even with
+a legacy manifest. Only referenced readers are opened. Usage or unavailable/old/
+timed-out Git exits 2; a missing required binding or invalid byte proof exits 1.
+The schema1 CLI envelope stays unchanged.
 
 Bridge data is a bounded table export:
 
@@ -105,38 +120,31 @@ Formats 1 and 2 retain their original schemas and reject this extra member.
 The typed descriptor is part of exact source identity; metadata `Check` verifies
 its syntax but never passes it to `Context.Resolve`.
 
-`repo.VerifySourceData` is a separate opt-in stage for a structurally checked
+`repo.VerifySourceData` is a separate stage for a structurally checked
 format 3 document. It selects an explicitly supplied `(repository, revision)`
 reader, checks its pinned HEAD and tracked regular-file mode, and hashes at
 most 5 MiB of raw committed bytes per distinct reference. It reads references
-sequentially and caches proof only during one call. A successful byte proof
+sequentially and caches proof only during one call; the default repository check
+also deduplicates exact references across its attached manifests. A successful byte proof
 does not validate JSON rows or grant semantic or production admission.
-Default publisher validation and CLI dependency provisioning remain closed
-until the Directory and current Chinook companions land.
+Default publisher validation requires this stage for format 3. The CLI provisions
+only explicit immutable readers through repeatable `--dependency` arguments.
 
 Validation includes wrong source property/revision/namespace, case/space changes, JSON field aliases,
 invalid Unicode scalar escapes and ignored trailing YAML documents,
 mutable pins, altered hashes, missing keys, duplicate labels, path/URL escapes,
 unknown versions and unresolved dependencies. Legacy manifests remain compatible.
 
-## Canonical companion ownership and order
+## Canonical companion boundaries
 
-The current canonical provider checker is `demo-db/chinook`, verified at remote
-main `26e852cca00101f53a84ef8ee1f1ae389067f5cf` on 2026-10-05. Its
-`scripts/lib/ovdb-manifest.mjs` has a closed allowlist without this field. The
-historical Go parity references remain `openvaultdb/directory` at
-`087067483686865b13cb76511ff86f7364ea47ff` (moved from `e8db548` by the pin slice A0a; see `internal/publisher/manifest/testdata/reference/drift.json`) and `datatug/chinookdb` at
-`79e7bb0b1d6f0666dce465874990dec64348331f`; this staged change leaves their
-parity tests and every existing default publisher rule intact.
-
-Before wiring default success, the designated Directory owner must land canonical
-attachment shape/file/schema/reference/index support, and the canonical
-`demo-db/chinook` publisher checker owner must adopt faithful checked support.
-Then the OVDB tooling owner can update exact reference pins/regenerate parity
-fixtures and wire `ParseAttachment`/`CheckRepresentation` into the default check.
-Apps admission and immutable provider/model/meaning/decision generation reviews
-remain additional dependencies. This branch changes none of those sibling repos
-or their owners' publication queue.
+The default activation follows landed companions: Directory at
+`087067483686865b13cb76511ff86f7364ea47ff` and `demo-db/chinook` at
+`8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Reference generators execute those
+exact validators. The old `datatug/chinookdb` commit
+`79e7bb0b1d6f0666dce465874990dec64348331f` supplies frozen input documents and
+mined test literals only. Their provenance is recorded separately from validator
+provenance. Apps admission and immutable provider/model/meaning/decision reviews
+remain separate boundaries.
 
 ## Explicit native execution in contract format 2
 
@@ -259,6 +267,19 @@ per-entity receipt and exact original snapshot. Provider generation/review prove
 actual key uniqueness and packaging reconstruction; this association checks their
 structural links and grants no semantic acceptance. Canonical consumers must adopt
 the reviewed helper pin before accepting this receipt shape. Both contract schema
-files, existing label bridges, default publisher closure and parity remain unchanged.
+files, existing label bridges, legacy label validation remains unchanged.
 The native-geonames fixture uses real original/provider metadata and an expressly
 hypothetical test input/decision; it is not an eligible user mapping.
+
+Git-backed attached checks and dependency proofs disable replacement objects for
+commit, tree and blob reads. Default discovery also inspects original manifest
+bytes, so replacing a manifest cannot hide an attachment. Original discovery
+uncertainty retains original validation/refusal; only valid original manifests
+proven unattached retain legacy replacement behavior. Metadata helpers validate
+the selected original commit before reading provider modes or bytes; adaptation
+preserves an existing commit ID independently of later HEAD changes.
+Default discovery and validation retain that same selected ID. A late attachment
+in a legacy pass restarts original validation with fresh manifest and file/tree
+caches before any attached proof. Exact committed paths and hashes are checked
+independently of caller Git environment; no ancestry traversal or
+implicit fetch is part of a proof.

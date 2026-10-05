@@ -16,6 +16,7 @@
 
   FLAGS
 
+    --dependency  Bind a required immutable dependency: https://github.com/owner/repo@40-lowercase-hex-revision=/absolute/checkout (repeatable)
     -h --help     Help for check
     --json        Print the result as a JSON document for a CI job
     --repository  The repository this one is, as the manifests must say in publisher.repository (https://github.com/<owner>/<repository>)

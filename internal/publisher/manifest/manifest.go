@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
+	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
 // ManifestFormat is the format a manifest declares.
@@ -92,25 +93,38 @@ func CheckManifest(doc []byte, path string, profile Profile) (Manifest, []Findin
 }
 
 func checkManifest(doc []byte, path string, b *budget, profile Profile) (Manifest, []Finding) {
+	m, _, findings := checkManifestWithAttachment(doc, path, b, profile)
+	return m, findings
+}
+
+func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Profile) (Manifest, Fact[*representation.Reference], []Finding) {
 	c := newCollector(path, b)
+	var attachment Fact[*representation.Reference]
 	if tooBig(c, doc) {
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	root := readDocument(c, doc, 0)
 	if root == nil {
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	if root.Kind != kindMap {
 		c.add("manifest-shape", root.Line, "is not a mapping: write the manifest as keys and values (format, id, title, ...)")
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	k := &manifestChecker{c: c, m: root, profile: profile}
 	k.out.Read = true
 	k.check()
+	if n := root.Field("representation_contract"); n != nil {
+		ref, err := representation.ParseAttachment(doc)
+		attachment = found(n, err == nil, ref)
+		if err != nil {
+			c.add("representation-attachment", n.Line, "invalid representation_contract attachment: %s", plain(err.Error()))
+		}
+	}
 	if profile == Publisher {
 		k.publisher()
 	}
-	return k.out, c.findings
+	return k.out, attachment, c.findings
 }
 
 // A problem function returns what is wrong with a text, or "" when it is fine.
@@ -296,31 +310,26 @@ func (k *manifestChecker) check() {
 	out.PublisherRepository = k.text(repository)
 
 	licences := m.Field("licences")
-	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
+	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: dataLicenceProblem})
 
-	k.representation()
 	k.recordsets()
 	k.recordsetEntities()
 	k.recordsetNames()
 }
 
-// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it. Every name
-// whose page fails is reported, as the Directory's loop does, so that a publisher fixes them in one round.
+// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it.
 func (k *manifestChecker) recordsetNames() {
 	f := &k.out.Recordsets
 	if !f.Usable() || !k.out.RecordsetPage.Usable() {
 		return
 	}
 	items := k.m.Field("recordsets").Items
-	refused := false
 	for i, name := range f.Value {
 		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
 			k.c.add("manifest-recordsets", items[i].Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
-			refused = true
+			demote(f)
+			return
 		}
-	}
-	if refused {
-		demote(f)
 	}
 }
 
@@ -472,6 +481,17 @@ func (k *manifestChecker) recordsets() {
 	k.out.Recordsets = found(list, good, names)
 }
 
+// RepresentationAttachment reads the optional attachment only from a manifest
+// that the strict manifest reader can read. Invalid manifest syntax is already a
+// manifest finding; absence keeps legacy behavior independent of attachment YAML.
+func RepresentationAttachment(data []byte) (*representation.Reference, error) {
+	root, err := parseYAML(data)
+	if err != nil || root == nil || root.Kind != kindMap || root.Field("representation_contract") == nil {
+		return nil, nil
+	}
+	return representation.ParseAttachment(data)
+}
+
 // recordsetEntities judges recordset_entities, which says which ModelSpec entity each native recordset name is: a mapping from names that recordsets
 // lists, each a recordset name, to entity names, no entity twice.
 func (k *manifestChecker) recordsetEntities() {
@@ -518,31 +538,4 @@ func (k *manifestChecker) recordsetEntities() {
 		}
 	}
 	k.out.RecordsetEntities = found(n, good, mapping)
-}
-
-// representation judges the envelope of representation_contract, as the Directory's checkRepresentationEnvelope does: exactly the keys path and sha256, the
-// path in the form of a representation path ending in .json, the sha256 64 lower-case hex digits. The Directory's regular expression also takes a list of
-// one such text for the hash (JavaScript reads the list as its one text); this check refuses it, as the attachment check then does (the hash would not equal
-// the file's). That is the one recorded difference of the family (representation-hash-list). Only the envelope is judged, and no fact is kept: whether the file
-// is there, is the one the hash says and is a valid contract is the attachment check (repo.CheckRepresentation), which Check deliberately does not run until
-// A5 gives it the Directory's companions.
-func (k *manifestChecker) representation() {
-	n := k.m.Field("representation_contract")
-	if n == nil {
-		return
-	}
-	bad := func(format string, args ...any) {
-		k.c.add("manifest-representation", n.Line, format, args...)
-	}
-	if n.Kind != kindMap || len(n.Keys) != 2 || n.Field("path") == nil || n.Field("sha256") == nil {
-		bad("representation_contract must have exactly path and sha256 (got %s): write the path of the representation JSON file and its sha256", describe(n))
-		return
-	}
-	path, hash := n.Field("path"), n.Field("sha256")
-	switch {
-	case path.Kind != kindString || !rules.IsRepresentationPath(path.Text):
-		bad("representation_contract path %s is not a path to a .json file: write a repository path of letters, digits, _ . - and /, at most 1024 bytes, ending in .json", describe(path))
-	case hash.Kind != kindString || !rules.IsRepresentationHash(hash.Text):
-		bad("representation_contract sha256 %s is not a sha256: write 64 lower-case hex digits", describe(hash))
-	}
 }

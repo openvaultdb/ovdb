@@ -112,6 +112,17 @@ func TestHexValue(t *testing.T) {
 	}
 }
 
+// A message quotes a name cut at a character, never inside one.
+func TestQuoteNeverCutsInsideACharacter(t *testing.T) {
+	got := Quote(strings.Repeat("€", 100))
+	if strings.Contains(got, `\xe2`) || strings.Contains(got, `\x`) || !strings.HasSuffix(got, `"...`) {
+		t.Errorf("Quote cut inside a character: %s", got)
+	}
+	if got := Quote(strings.Repeat("a", 100)); !strings.HasSuffix(got, `"...`) {
+		t.Errorf("Quote of a long ASCII text: %s", got)
+	}
+}
+
 func TestGlobalDatabaseID(t *testing.T) {
 	for in, want := range map[string]bool{
 		"https://demodb.dev/sakila/":                 true,
@@ -145,40 +156,5 @@ func TestGlobalDatabaseID(t *testing.T) {
 	}
 	if u, err := ParseGlobalDatabaseID("https://demodb.dev/a/b/"); err != nil || u.Host != "demodb.dev" || u.Path != "/a/b/" {
 		t.Errorf("ParseGlobalDatabaseID: %+v, %v", u, err)
-	}
-}
-
-func TestRepresentationEnvelopeMembers(t *testing.T) {
-	for in, want := range map[string]bool{
-		"a.json": true, "a/b.json": true, "$records/a.json": true, "a-b_c.d.json": true, "x.json.json": true, ".gitx/a.json": true,
-		"": false, ".json": true, "json": false, "a.JSON": false, "a.json/": false, "/a.json": false, "a//b.json": false, "./a.json": false, "a/../b.json": false,
-		"a/.GIT/b.json": false, "$records.json": false, "a$b.json": false, "$x/a.json": false, "a b.json": false, "é.json": false, "..json": true,
-		strings.Repeat("a", 1019) + ".json": true, strings.Repeat("a", 1020) + ".json": false,
-	} {
-		if got := IsRepresentationPath(in); got != want {
-			t.Errorf("IsRepresentationPath(%.30q) = %v, want %v", in, got, want)
-		}
-	}
-	for in, want := range map[string]bool{
-		strings.Repeat("a", 64): true, strings.Repeat("0", 64): true, strings.Repeat("A", 64): false, strings.Repeat("a", 63): false,
-		strings.Repeat("a", 63) + "g": false, "": false,
-	} {
-		if got := IsRepresentationHash(in); got != want {
-			t.Errorf("IsRepresentationHash(%.30q) = %v, want %v", in, got, want)
-		}
-	}
-	if equalFoldASCII("ab", "abc") || !equalFoldASCII(".GiT", ".git") || equalFoldASCII(".gix", ".git") {
-		t.Error("equalFoldASCII")
-	}
-}
-
-// A message quotes a name cut at a character, never inside one.
-func TestQuoteNeverCutsInsideACharacter(t *testing.T) {
-	got := Quote(strings.Repeat("€", 100))
-	if strings.Contains(got, `\xe2`) || strings.Contains(got, `\x`) || !strings.HasSuffix(got, `"...`) {
-		t.Errorf("Quote cut inside a character: %s", got)
-	}
-	if got := Quote(strings.Repeat("a", 100)); !strings.HasSuffix(got, `"...`) {
-		t.Errorf("Quote of a long ASCII text: %s", got)
 	}
 }

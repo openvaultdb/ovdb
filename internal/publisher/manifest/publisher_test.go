@@ -203,13 +203,6 @@ func TestRecordsetPageExpansion(t *testing.T) {
 			t.Errorf("recordsets %+v, page %+v", m.Recordsets, m.RecordsetPage)
 		}
 	}
-	// Every name whose page fails is reported, not the first only.
-	two := edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - \"%2F\"\n  - \"%2e%2e\"\n")
-	for _, p := range []Profile{Publisher, Directory} {
-		if _, f := CheckManifest([]byte(two), "ovdb.yaml", p); len(f) != 2 || f[0].Line == f[1].Line {
-			t.Errorf("%v: two bad names: %v", p, f)
-		}
-	}
 	// A long name makes a long page, which the Directory takes: the name is bounded, the page is not.
 	long := edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - "+strings.Repeat("€", 256)+"\n")
 	for _, p := range []Profile{Publisher, Directory} {

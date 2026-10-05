@@ -314,8 +314,8 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 }
 
 // d0Classes are the problems of the frozen Chinook checker that D0 explains Go not having: D, the rule that a recordset name looks like a ModelSpec entity
-// name, which the Directory at its pin no longer has (it takes native names), K, recordset_entities as an unknown key, which the Directory reads, and U, a canonical url with a trailing slash or without the ovdb marker, which the Directory takes (574a7ad).
-const d0Classes = "DKU"
+// name, which the Directory at its pin no longer has (it takes native names) and K, recordset_entities as an unknown key, which the Directory reads.
+const d0Classes = "DK"
 
 // d0Explained says whether a document that the Publisher profile accepts and the frozen Chinook checker refuses is explained by D0 (the Directory at its pin
 // is the reference for both profiles): the Directory accepts it too (the caller checks) and every problem the checker found in it is of a class in d0Classes.
@@ -422,7 +422,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 	var verdicts verdictFile
 	readGolden(t, spec.golden, &verdicts)
 	var total accounting
-	allowed := 0 // the documents of the corpus on which Go is looser than the reference, which drift.json lists (the Directory profile only)
+	allowed := 0
 	if spec.profile == Directory {
 		allowed = driftCorpusLooser(t)
 	}
@@ -451,7 +451,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 	for _, c := range mds {
 		ok, first := acceptMd(spec.profile, c.Document, c.Path)
 		c.Verdict = spec.verdict(c)
-		if !total.record(c, ok, first) && allowed == 0 {
+		if !total.record(c, ok, first) {
 			t.Errorf("OVDB.md accepted where the %s refuses (%s, path %q): %q", spec.refName, c.Family, c.Path, c.Document)
 		}
 		_, findings := CheckOVDBMd(c.Document, spec.profile)
@@ -461,7 +461,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 		allowed = d0
 	}
 	if total.looser != allowed {
-		t.Fatalf("%d documents are accepted by Go and refused by the %s; %d are accounted for (the Directory profile: drift.json's looser entries; the Publisher profile: the documents that D0 explains, by the classes of the Chinook checker's problems). A document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove", total.looser, spec.refName, allowed)
+		t.Fatalf("%d documents are accepted by Go and refused by the %s; drift.json accounts for %d (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
 	}
 
 	// The corpus is as large and as varied as the proof claims.
@@ -563,7 +563,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 		pinOf(corpus, "directory"), pinOf(corpus, "chinookdb"),
 		fmt.Sprintf("%d manifests and %d OVDB.md documents", len(manifests), len(mds)),
 		fmt.Sprintf("%d of %d", corpus.MinedEdits.Applied, corpus.MinedEdits.Found),
-		fmt.Sprintf("**%d agree, %d stricter, %d accepted by Go where the %s refuses**", total.agree, total.stricter, total.looser, spec.refName),
+		fmt.Sprintf("**%d agree, %d stricter, 0 unrecorded Go acceptances where the %s refuses**", total.agree, total.stricter, spec.refName),
 	} {
 		if !strings.Contains(flat, want) {
 			t.Errorf("README does not state %q", want)
@@ -994,21 +994,23 @@ func TestPublisherRefusesWhatTheDirectoryRefuses(t *testing.T) {
 // madeByRepo are the rules that need files or input, with the rules that make them (package repo, and for the meaning file Judge.Meaning of this
 // package): the README's table has the same cell in the column of the rule of Go. Every rule of the table is made.
 var madeByRepo = map[string]string{
-	"the repository can be read at HEAD (it is a git repository with a commit)":            "package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version`",
-	"OVDB.md is a tracked regular file":                                                    "package repo: `repo-ovdbmd`",
-	"OVDB.md can be read (and is not over 16 MB)":                                          "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
-	"every manifest that OVDB.md lists is a tracked regular file":                          "package repo: `repo-manifest`",
-	"every manifest that OVDB.md lists can be read (and is not over 16 MB)":                "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
-	"every manifest that OVDB.md lists is checked":                                         "package repo: `manifest.Judge`",
-	"every file a manifest names is a tracked regular file":                                "package repo: `repo-file`",
-	"every file a manifest names can be read (and is not over 16 MB)":                      "package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
-	"publisher.repository is the repository the check is run in (the --repository option)": "package repo: `repo-repository`",
-	"the model file is JSON with a module name and entities":                               "package repo: `repo-model-json`, `repo-model-depth`, `repo-model-module`, `repo-model-entities`",
-	"own form: model.name is the module of the model file":                                 "package repo: `repo-model-name`",
-	"own form: the module of model.address is the model file's":                            "package repo: `repo-model-address`",
-	"the meaning file is YAML whose id and license are the manifest's":                     "package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules",
-	"the meaning file's models: entry for the module is model.hcl":                         "package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl`",
-	"own form: recordsets are exactly the model's entities":                                "package repo: `repo-recordsets`",
+	"the optional attachment has a locally checked structural precheck; external closure remains partial": "package repo: structural metadata associations and required format3 raw data proofs; no canonical admission",
+	"a JSON database descriptor uses its separate pinned schema":                                          "outside the legacy Go manifest profile (`manifest-format`)",
+	"the repository can be read at HEAD (it is a git repository with a commit)":                           "package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version`",
+	"OVDB.md is a tracked regular file":                                                                   "package repo: `repo-ovdbmd`",
+	"OVDB.md can be read (and is not over 16 MB)":                                                         "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
+	"every manifest that OVDB.md lists is a tracked regular file":                                         "package repo: `repo-manifest`",
+	"every manifest that OVDB.md lists can be read (and is not over 16 MB)":                               "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
+	"every manifest that OVDB.md lists is checked":                                                        "package repo: `manifest.Judge`",
+	"every file a manifest names is a tracked regular file":                                               "package repo: `repo-file`",
+	"every file a manifest names can be read (and is not over 16 MB)":                                     "package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",
+	"publisher.repository is the repository the check is run in (the --repository option)":                "package repo: `repo-repository`",
+	"the model file is JSON with a module name and entities":                                              "package repo: `repo-model-json`, `repo-model-depth`, `repo-model-module`, `repo-model-entities`",
+	"own form: model.name is the module of the model file":                                                "package repo: `repo-model-name`",
+	"own form: the module of model.address is the model file's":                                           "package repo: `repo-model-address`",
+	"the meaning file is YAML whose id and license are the manifest's":                                    "package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules",
+	"the meaning file's models: entry for the module is model.hcl":                                        "package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl`",
+	"own form: recordsets are exactly the model's entities":                                               "package repo: `repo-recordsets`",
 }
 
 var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input|dropped) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)

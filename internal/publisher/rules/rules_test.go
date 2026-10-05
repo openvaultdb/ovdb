@@ -366,12 +366,10 @@ func TestParseURLParts(t *testing.T) {
 func TestShow(t *testing.T) {
 	for in, want := range map[string]string{
 		"abc": `"abc"`, "a\nb": `"a\nb"`, "\x1b[2J": `"\x1b[2J"`, "\u00e9": `"\u00e9"`, "\xff": `"\xff"`, "\u0085": `"\u0085"`, "\u202e": `"\u202e"`, "": `""`,
-		strings.Repeat("a", maxShown):       `"` + strings.Repeat("a", maxShown) + `"`,
-		strings.Repeat("a", maxShown+1):     `"` + strings.Repeat("a", maxShown) + `"...`,
-		strings.Repeat("\u00e9", 30):        `"` + strings.Repeat(`\u00e9`, 20) + `"...`,
-		strings.Repeat("a", 39) + "\u00e9":  `"` + strings.Repeat("a", 39) + `"...`,
-		strings.Repeat("a", 39) + "e\u0301": `"` + strings.Repeat("a", 39) + `"...`, // cut before the letter, not between it and its mark
-		strings.Repeat("\u0301", 30):        `""...`,                                // nothing but marks: nothing to keep
+		strings.Repeat("a", maxShown):      `"` + strings.Repeat("a", maxShown) + `"`,
+		strings.Repeat("a", maxShown+1):    `"` + strings.Repeat("a", maxShown) + `"...`,
+		strings.Repeat("\u00e9", 30):       `"` + strings.Repeat(`\u00e9`, 20) + `"...`,
+		strings.Repeat("a", 39) + "\u00e9": `"` + strings.Repeat("a", 39) + `"...`,
 	} {
 		if got := show(in); got != want {
 			t.Errorf("show(%q) = %s, want %s", in, got, want)

@@ -67,7 +67,7 @@ func EncodePathSegment(s string) string {
 // https URL. One that does is accepted only when the segment is all that the {name} makes (nothing of the template shares its path segment), the
 // template holds {name} in its path, the name is neither "." nor "..", has no slash, backslash or control character, and nothing inside it, decoded
 // again and again, becomes one of those: a router that decodes a second time must not find a path separator or a dot segment. The rest of the URL is
-// held to the ordinary rules; the page has no length bound of its own, as the Directory has none: the name is bounded here, and the template is bounded by the template rule (PublicHTTPSURLTemplate, 2048 bytes) that a caller runs on it first, so a caller that skips that rule has no bound on the page.
+// held to the ordinary rules; the page has no length bound of its own, as the Directory has none (the name and the template are bounded).
 func RecordsetPage(template, name string) error {
 	return asError(checkRecordsetPage(template, name, defaults(false)))
 }

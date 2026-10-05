@@ -51,6 +51,7 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkoutReference, references as pins } from '../../../references.mjs';
+import { representationStages } from './representation-stages.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const goldenPath = join(here, 'repository.json');
@@ -61,15 +62,16 @@ const sha = (text) => createHash('sha256').update(text).digest('hex');
 // ---- the checker, at the pinned commit ----
 
 const directoryRoot = checkoutReference('directory', { explicit: argValue('--directory') });
+const stageDigest = await representationStages(directoryRoot, process.argv.includes('--check'));
 const chinookRoot = checkoutReference('chinookdb', { explicit: argValue('--chinookdb') });
+const fixtureRoot = checkoutReference('fixtures', { explicit: argValue('--fixtures') });
 // The checker imports `yaml`, which its own checkout does not have installed: a checkout that we fetched gets a link to the copy that the
 // Directory's checkout installed from its lock file (see internal/publisher/manifest/testdata/reference/generate.mjs, which does the same).
 if (argValue('--chinookdb')) {
-  if (!existsSync(join(chinookRoot, 'node_modules', 'yaml'))) throw new Error(`${chinookRoot} has no node_modules/yaml, which ovdb-manifest.mjs imports`);
+  if (!existsSync(join(chinookRoot, 'node_modules', 'yaml')) || !existsSync(join(chinookRoot, 'node_modules', 'ajv'))) throw new Error(`${chinookRoot} has no node_modules/yaml or node_modules/ajv, which ovdb-manifest.mjs imports`);
 } else {
   rmSync(join(chinookRoot, 'node_modules'), { recursive: true, force: true });
-  mkdirSync(join(chinookRoot, 'node_modules'), { recursive: true });
-  symlinkSync(join(directoryRoot, 'node_modules', 'yaml'), join(chinookRoot, 'node_modules', 'yaml'), 'dir');
+  symlinkSync(join(directoryRoot, 'node_modules'), join(chinookRoot, 'node_modules'), 'dir');
 }
 const chinook = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/ovdb-manifest.mjs')).href);
 const { parse: parseYaml } = createRequire(join(directoryRoot, 'package.json'))('yaml');
@@ -80,7 +82,7 @@ const gitEnv = isolatedGitEnv();
 // ---- the base repository ----
 
 const own = 'https://github.com/datatug/chinookdb';
-const read = (file) => readFileSync(join(chinookRoot, file), 'utf8');
+const read = (file) => readFileSync(join(fixtureRoot, file), 'utf8');
 const manifestPath = 'ovdb.yaml';
 const modelPath = 'model/chinook.modelspec.json';
 const hclPath = 'model/chinook.modelspec.hcl';
@@ -679,7 +681,7 @@ const golden = `${JSON.stringify({
   counts,
   cases: cases.map((c) => ({ group: c.group, name: c.name, ops: c.ops, repository: c.repository, verdict: `${c.plain}${c.with}` })),
 }, null, 1)}\n`;
-const digests = `${JSON.stringify({ 'repo/testdata/reference/repository.json': sha(golden) }, null, 1)}\n`;
+const digests = `${JSON.stringify({ 'repo/testdata/reference/repository.json': sha(golden), 'repo/testdata/reference/representation-stages.json': stageDigest }, null, 1)}\n`;
 const targets = [[goldenPath, golden], [digestsPath, digests]];
 if (thrown > 0) console.error(`note: the checker threw on ${thrown} case(s); they are recorded as refused`);
 if (process.argv.includes('--check')) {

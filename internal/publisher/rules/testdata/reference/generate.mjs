@@ -42,11 +42,11 @@ const checkout = (name) => checkoutReference(name, { explicit: argValue(`--${nam
 
 const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');
+const fixtureRoot = checkout('fixtures');
 const load = (root, file) => import(pathToFileURL(join(root, file)).href);
 const directory = await load(directoryRoot, 'scripts/lib/directory.mjs');
 const urls = await load(directoryRoot, 'scripts/lib/urls.mjs');
 const gitlib = await load(directoryRoot, 'scripts/lib/git.mjs');
-const representation = await load(directoryRoot, 'scripts/lib/representation.mjs');
 const chinook = await load(chinookRoot, 'scripts/lib/directory-rules.mjs');
 
 // Two rules are kept inline in directory.mjs, not exported, so the verdicts below compose the same
@@ -96,7 +96,6 @@ const claimRelation = (address, other) => {
 
 // fns[name][reference] is the verdict function of a reference for a Go function.
 const recordsetPageTemplate = 'https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}';
-const envelopeAccepts = (envelope) => { try { representation.checkRepresentationEnvelope(envelope); return true; } catch (error) { if (/representation_contract/.test(error.message)) return false; throw error; } };
 const fns = {
   url: {
     directory: (v) => urls.publicHttpsProblem(v) === null,
@@ -139,9 +138,6 @@ const fns = {
   'recordset-name': {
     directory: (v) => !directory.manifestProblems({ ...baseManifest(), recordsets: [v] }).some((problem) => problem.startsWith('recordsets ')),
   },
-  // The envelope of representation_contract: checkRepresentationEnvelope throws on a path or a hash it does not take (the other member is held valid).
-  'representation-path': { directory: (v) => envelopeAccepts({ path: v, sha256: 'a'.repeat(64) }) },
-  'representation-hash': { directory: (v) => envelopeAccepts({ path: 'a.json', sha256: v }) },
   'recordset-page': {
     directory: (v) => {
       const encoded = urls.encodePathSegment(v);
@@ -224,8 +220,6 @@ smallSweep('repository-repo', 'repository', 'https://github.com/org/r{C}o');
 smallSweep('repository-end', 'repository', 'https://github.com/org/repo{C}');
 smallSweep('repository-before', 'repository', '{C}https://github.com/org/repo');
 for (const [name, template] of [['path-middle', 'a{C}b/c.yaml'], ['path-first', '{C}a'], ['path-last', 'a{C}'], ['path-segment', 'a/{C}']]) smallSweep(name, 'path', template);
-for (const [name, template] of [['representation-path-middle', 'a{C}b/c.json'], ['representation-path-first', '{C}a.json'], ['representation-path-segment', 'a/{C}/b.json'], ['representation-path-before-suffix', 'a{C}.json'], ['representation-path-after-end', 'a.json{C}']]) smallSweep(name, 'representation-path', template);
-for (const [name, template] of [['representation-hash-first', '{C}' + 'a'.repeat(63)], ['representation-hash-last', 'a'.repeat(63) + '{C}'], ['representation-hash-after-end', 'a'.repeat(64) + '{C}'], ['representation-hash-before', '{C}' + 'a'.repeat(64)]]) smallSweep(name, 'representation-hash', template);
 for (const [name, template] of [['publish-middle', './a{C}b'], ['publish-dot', '.{C}/a'], ['publish-first', './{C}']]) smallSweep(name, 'publish', template);
 for (const [name, template] of [['engine-middle', 'a{C}b'], ['engine-first', '{C}a'], ['engine-last', 'a{C}']]) smallSweep(name, 'engine', template);
 for (const [name, template] of [['licence-middle', 'a{C}b'], ['licence-first', '{C}a'], ['licence-last', 'a{C}']]) smallSweep(name, 'licence', template);
@@ -252,8 +246,6 @@ const productSpecs = [
   { name: 'path-shape', fn: 'url', template: 'https://e.openvaultdb.com/{S}', alphabet: 'a./-~', min: 0, max: 5 },
   { name: 'id-shape', fn: 'id', template: '{S}', alphabet: 'a0-A_', min: 0, max: 5 },
   { name: 'path-segments', fn: 'path', template: '{S}', alphabet: 'a./-~', min: 1, max: 5 },
-  { name: 'representation-path-shape', fn: 'representation-path', template: '{S}', alphabet: 'a./$-J', min: 0, max: 5 },
-  { name: 'representation-path-json', fn: 'representation-path', template: '{S}.json', alphabet: 'a./$-', min: 0, max: 6 },
   { name: 'publish-segments', fn: 'publish', template: './{S}', alphabet: 'a./-', min: 0, max: 5 },
   { name: 'repository-segments', fn: 'repository', template: 'https://github.com/{S}', alphabet: 'a./-g', min: 1, max: 5 },
   { name: 'engine-shape', fn: 'engine', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
@@ -307,7 +299,7 @@ const literalsOf = (file) => {
 };
 const suites = {
   directory: join(directoryRoot, 'scripts/test.mjs'),
-  chinookdb: join(chinookRoot, 'scripts/test-model.mjs'),
+  fixtures: join(fixtureRoot, 'scripts/test-model.mjs'),
 };
 const mined = Object.fromEntries(Object.entries(suites).map(([name, file]) => [name, literalsOf(file)]));
 
@@ -368,7 +360,7 @@ const structured = [
   rep(`https://e.${b}/`, '.', 1500), rep(`https://e.${b}/`, 'a', 300, '/{name}'), rep(`https://e.${b}/{name}/`, 'a', 3000),
 ];
 const urlFns = ['url', 'url-template', 'homepage'];
-const urlLike = [...new Set([...structured, ...mined.directory, ...mined.chinookdb])];
+const urlLike = [...new Set([...structured, ...mined.directory, ...mined.fixtures])];
 
 // RFC 3492 encoder, only to spell the labels whose decoded text has the shapes a rule is about (the verdicts are the
 // references', never this function's).
@@ -437,19 +429,6 @@ const textList = {
     '', ' ', 'a', ' a ', '\t\n\v\f\r ', '\u0085', '\ufeff', '\u180e', '\u200b', '\u200c', '\u200d', '\u2060', '\u00a0', '\u00a0x', '\u1680', '\u2000', '\u200a', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000',
     ' \ufeff\u3000\n', '\ufeff\u0085', '\u0085 ', '0', '-', '\u0000', '\u00ad', 'é', '\ud800', ' \ud800', 'a\u0085',
   ].map((input) => [input, verdicts(['text'], input)]),
-};
-
-const envelopeFns = ['representation-path', 'representation-hash'];
-const envelopeList = {
-  fns: envelopeFns,
-  cases: [
-    'a.json', 'a/b.json', 'artifacts/representation.json', '$records/a.json', 'a/$records/b.json', '$records.json', 'a$records/b.json', '$records$/a.json', '$/a.json', 'a$b.json', '$record/a.json', '$RECORDS/a.json',
-    '.json', 'json', 'a.JSON', 'a.json ', ' a.json', 'a.json\n', 'a.json/', '/a.json', 'a//b.json', './a.json', '../a.json', 'a/./b.json', 'a/../b.json', 'a/.git/b.json', '.git/a.json', '.GIT/a.json', '.Git/a.json', '.gitx/a.json', 'a/.git.json',
-    '.git', 'a.git', '..json', '...json', 'a b.json', 'a\\b.json', 'a:b.json', '\u00e9.json', 'a\u0000.json', 'a\u212a.json', '.gitignore.json', '-.json', '_.json', 'a-b_c.d.json', 'x.json.json', 'a.json.txt',
-    '', 'a', '.', '..',
-    rep('', 'a', 1019, '.json'), rep('', 'a', 1020, '.json'), rep('', 'a/', 511, 'a.json'), rep('', 'a/', 512, 'a.json'), rep('', 'a/', 600, 'b.json'),
-    ...[`${'0123456789abcdef'.repeat(4)}`, 'a'.repeat(64), 'A'.repeat(64), '0'.repeat(64), 'a'.repeat(63), 'a'.repeat(65), '', ' ', `${'a'.repeat(63)}g`, `${'a'.repeat(63)}\n`, ` ${'a'.repeat(63)}`, `${'a'.repeat(64)}\n`, '0123456789ABCDEF'.repeat(4), 'f'.repeat(64), 'F'.repeat(32) + 'f'.repeat(32), `${'a'.repeat(63)}\u00e9`, `${'a'.repeat(32)}\u0000${'a'.repeat(31)}`, 'sha256:' + 'a'.repeat(57), '0x' + 'a'.repeat(62)],
-  ].map((input) => [input, verdicts(envelopeFns, expand(input))]),
 };
 
 const nameFns = ['recordset-name', 'recordset-page'];
@@ -539,7 +518,7 @@ const countCases = () => {
   let total = 0;
   for (const sweep of sweeps) total += codesOf(sweepRanges[sweep.span]).length;
   for (const product of products) total += product.size;
-  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList, envelopeList]) total += list.cases.length * list.fns.length;
+  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList]) total += list.cases.length * list.fns.length;
   total += claimAddresses.length * claimAddresses.length;
   return total;
 };
@@ -548,13 +527,13 @@ const golden = {
   format: 'ovdb-publisher-rules-reference/1',
   generatedBy: 'internal/publisher/rules/testdata/reference/generate.mjs',
   node: process.version,
-  references: Object.fromEntries(Object.entries(pins).map(([name, pin]) => [name, { ...pin, files: name === 'directory' ? ['scripts/lib/urls.mjs', 'scripts/lib/git.mjs', 'scripts/lib/directory.mjs'] : ['scripts/lib/directory-rules.mjs'], testSuite: name === 'directory' ? 'scripts/test.mjs' : 'scripts/test-model.mjs', literalsMined: mined[name].length }])),
+  references: Object.fromEntries(Object.entries(pins).map(([name, pin]) => [name, { ...pin, files: name === 'directory' ? ['scripts/lib/urls.mjs', 'scripts/lib/git.mjs', 'scripts/lib/directory.mjs'] : name === 'chinookdb' ? ['scripts/lib/directory-rules.mjs'] : ['scripts/test-model.mjs'], testSuite: name === 'directory' ? 'scripts/test.mjs' : name === 'fixtures' ? 'scripts/test-model.mjs' : null, literalsMined: mined[name]?.length ?? 0 }])),
   referenceCalls: { thrown },
   matrixSize: countCases(),
   sweepRanges,
   sweeps,
   products,
-  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList, envelopeList],
+  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList],
   claims: claimList,
 };
 

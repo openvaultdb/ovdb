@@ -121,3 +121,22 @@ func TestExactDataCoordinatesAndSourceEquality(t *testing.T) {
 		}
 	}
 }
+
+func TestImmutableReaderKeyGrammar(t *testing.T) {
+	rev := strings.Repeat("a", 40)
+	for _, repo := range []string{"https://github.com/example/source", "https://github.com/a.b-c_d/e.f-g_h"} {
+		if !IsRepositoryRevision(repo, rev) {
+			t.Fatal(repo)
+		}
+	}
+	for _, repo := range []string{"https://github.com/Example/source", "https://github.com/a/source.git", "https://github.com/a/source/", "https://github.com/./source", "https://github.com/a/..", "https://github.com/a/source?x=y", "https://github.com/a/source@x", "https://github.com/a/source=x"} {
+		if IsRepositoryRevision(repo, rev) {
+			t.Fatal(repo)
+		}
+	}
+	for _, rev := range []string{"main", strings.Repeat("A", 40), strings.Repeat("a", 39), strings.Repeat("a", 41)} {
+		if IsRepositoryRevision("https://github.com/a/b", rev) {
+			t.Fatal(rev)
+		}
+	}
+}
