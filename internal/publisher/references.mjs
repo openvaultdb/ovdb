@@ -122,3 +122,14 @@ export function assertAnchors(source, file, commit, anchors, { err = console.err
   err('Read the reference at that commit, update the copied expression and the verdict composed from it together, then run the generator again.');
   exit(1);
 }
+
+// The goldens record the version of Node that made them (`node` in each golden, and in the digests), because the references are run by it and a different
+// version may differ in what its regular expressions, Unicode tables and URL parser do. CI makes and checks them with this one (the node-version of
+// .github/workflows/ci.yml, which references.test.mjs holds to this constant). A generator, to write or to check, stops at once under any other version and
+// says which to use, instead of reporting goldens that are stale for a reason that is not in the files.
+export const generatorNode = 'v24.19.0';
+export function assertGeneratorNode(version = process.version, { err = console.error, exit = process.exit } = {}) {
+  if (version === generatorNode) return;
+  err(`these goldens are made and checked with Node ${generatorNode} (the version of CI), and this is Node ${version}: run the generator with Node ${generatorNode} (for example npx node@${generatorNode.slice(1)} <generator>), or the goldens it writes would say another version and fail CI.`);
+  exit(1);
+}

@@ -25,7 +25,9 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertAnchors, checkoutReference, references as pinnedReferences } from '../../../references.mjs';
+import { assertGeneratorNode, assertAnchors, checkoutReference, references as pinnedReferences } from '../../../references.mjs';
+
+assertGeneratorNode();
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = join(here, 'corpus.json');
@@ -1347,6 +1349,57 @@ const probeSpecs = [
   ['page-long-cjk-name', 'a recordset name of 230 CJK characters: its page is over 2048 characters (accepted)', (m) => { m.recordsets = [...m.recordsets, '\u8868'.repeat(230)]; return m; }],
   ['page-long-ascii-name', 'a recordset name of 256 letters (accepted)', (m) => { m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
   ['page-long-name-long-template', 'a 256-letter recordset name under a recordset_page of 1990 characters: the page is over 2048 characters (accepted)', (m) => { m.deployment.recordset_page = `https://cloud.openvaultdb.com/c/${'x'.repeat(1960)}/{name}`; m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
+  ['envelope-path-records', 'path with a $records segment (accepted)', (m) => { m.representation_contract = { path: '$records/a.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-nested', 'path of three segments (accepted)', (m) => { m.representation_contract = { path: 'a/b/c.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-missing-sha', 'an envelope with a path and no sha256', (m) => { m.representation_contract = { path: 'artifacts/representation.json' }; return m; }],
+  ['envelope-missing-path', 'an envelope with a sha256 and no path', (m) => { m.representation_contract = { sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-null', 'representation_contract written as null', (m) => { m.representation_contract = null; return m; }],
+  ['envelope-empty-map', 'an empty envelope', (m) => { m.representation_contract = {}; return m; }],
+  ['envelope-list', 'an envelope that is a list', (m) => { m.representation_contract = ['artifacts/representation.json']; return m; }],
+  ['envelope-string', 'an envelope that is text', (m) => { m.representation_contract = 'artifacts/representation.json'; return m; }],
+  ['envelope-number', 'an envelope that is a number', (m) => { m.representation_contract = 7; return m; }],
+  ['envelope-true', 'an envelope that is true', (m) => { m.representation_contract = true; return m; }],
+  ['envelope-extra-key', 'an envelope with a third key', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64), format: 'x' }; return m; }],
+  ['envelope-other-keys', 'two keys that are not path and sha256', (m) => { m.representation_contract = { path: 'artifacts/representation.json', hash: 'a'.repeat(64) }; return m; }],
+  ['envelope-repository-key', 'an envelope that names a repository (the attachment must be provider-local)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64), repository: 'https://github.com/a/b' }; return m; }],
+  ['envelope-path-number', 'path that is a number', (m) => { m.representation_contract = { path: 7, sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-null', 'path that is null', (m) => { m.representation_contract = { path: null, sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-list', 'path that is a list', (m) => { m.representation_contract = { path: ['artifacts/representation.json'], sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-empty', 'path that is empty', (m) => { m.representation_contract = { path: '', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-no-json', 'path that does not end in .json', (m) => { m.representation_contract = { path: 'a/b.yaml', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-upper-json', 'path ending in .JSON', (m) => { m.representation_contract = { path: 'a.JSON', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-dotdot', 'path with a .. segment', (m) => { m.representation_contract = { path: '../a.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-dot', 'path with a . segment', (m) => { m.representation_contract = { path: 'a/./b.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-empty-segment', 'path with an empty segment', (m) => { m.representation_contract = { path: 'a//b.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-leading-slash', 'path with a leading slash', (m) => { m.representation_contract = { path: '/a.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-git', 'path with a .git segment in any case', (m) => { m.representation_contract = { path: 'a/.GIT/b.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-dollar', 'path with a $ segment that is not $records', (m) => { m.representation_contract = { path: '$x/a.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-space', 'path with a space', (m) => { m.representation_contract = { path: 'a b.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-backslash', 'path with a backslash', (m) => { m.representation_contract = { path: 'a\\b.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-non-ascii', 'path with a non-ASCII letter', (m) => { m.representation_contract = { path: '\u00e9.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-1024', 'path of exactly 1024 bytes (accepted)', (m) => { m.representation_contract = { path: 'a'.repeat(1019) + '.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-1025', 'path of 1025 bytes', (m) => { m.representation_contract = { path: 'a'.repeat(1020) + '.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-path-huge', 'path of 200000 bytes', (m) => { m.representation_contract = { path: 'a'.repeat(200000) + '.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['envelope-sha-upper', 'sha256 in upper case', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'A'.repeat(64) }; return m; }],
+  ['envelope-sha-63', 'sha256 of 63 digits', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(63) }; return m; }],
+  ['envelope-sha-65', 'sha256 of 65 digits', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(65) }; return m; }],
+  ['envelope-sha-non-hex', 'sha256 with a g', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(63) + 'g' }; return m; }],
+  ['envelope-sha-number', 'sha256 written as a number', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: Number('7'.repeat(64)) }; return m; }],
+  ['envelope-sha-null', 'sha256 that is null', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: null }; return m; }],
+  ['envelope-sha-empty', 'sha256 that is empty', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: '' }; return m; }],
+  ['envelope-sha-list-two', 'sha256 as a list of two valid hashes', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: ['a'.repeat(64), 'a'.repeat(64)] }; return m; }],
+  ['envelope-sha-list-empty', 'sha256 as an empty list', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: [] }; return m; }],
+  ['envelope-sha-map', 'sha256 as a mapping', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: { a: 1 } }; return m; }],
+  ['envelope-sha-huge', 'sha256 of 200000 digits', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(200000) }; return m; }],
+  ['envelope-many-keys', 'an envelope with 1000 keys', (m) => { m.representation_contract = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`k${i}`, i])); return m; }],
+  ['envelope-duplicate-path', 'an envelope that writes path twice (the YAML is refused as a whole)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64) }; return jsonOf(m).replace('"path": "artifacts/representation.json",', '"path": "x.json",\n    "path": "artifacts/representation.json",'); }],
+  ['envelope-duplicate-path', 'an envelope that writes path twice (the YAML is refused as a whole)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64) }; return jsonOf(m).replace('"path": "artifacts/representation.json",', '"path": "x.json",\n    "path": "artifacts/representation.json",'); }],
+  ['envelope-many-keys', 'an envelope with 1000 keys', (m) => { m.representation_contract = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`k${i}`, i])); return m; }],
+  ['recorded-envelope-sha-tag', 'sha256 written with a !!str tag: the Directory reads the tag, the reader refuses tags (recorded kind yaml-tag)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'PLACEHOLDER' }; return jsonOf(m).replace('"PLACEHOLDER"', '!!str ' + 'a'.repeat(64)); }, 'yaml-tag'],
+  ['recorded-name-c1', 'a recordset name with a literal U+0085 (the Directory accepts the name; the reader refuses the character: recorded kind yaml-character)', (m) => { m.recordsets = [...m.recordsets, 'a\u0085b']; return m; }, 'yaml-character'],
+  ['recorded-template-2049', 'a recordset_page template of 2049 characters (the Directory has no bound; recorded kind url-length)', (m) => { m.deployment.recordset_page = `https://cloud.openvaultdb.com/ovdb/dbs/${'x'.repeat(2003)}/{name}`; return m; }, 'url-length'],
+  ['recorded-envelope-sha-list', 'sha256 as a list of one valid hash: JavaScript reads the list as its one text and the Directory accepts the envelope (recorded kind representation-hash-list)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: ['a'.repeat(64)] }; return m; }, 'representation-hash-list'],
+  ['recorded-envelope-sha-list-nested', 'sha256 as a list in a list of one valid hash (the same coercion)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: [['a'.repeat(64)]] }; return m; }, 'representation-hash-list'],
   ['licence-compound-data', 'licences.data written as MIT AND CC0-1.0 (ff4abd0)', (m) => { m.licences.data = 'MIT AND CC0-1.0'; return m; }],
   ['licence-compound-duplicate', 'licences.data with a repeated atom, MIT AND MIT (ff4abd0)', (m) => { m.licences.data = 'MIT AND MIT'; return m; }],
   ['licence-compound-model', 'licences.model written as a compound (the Directory refuses: single ids only)', (m) => { m.licences.model = 'MIT AND CC0-1.0'; return m; }],
@@ -1354,9 +1407,10 @@ const probeSpecs = [
   ['representation-envelope-valid', 'a representation_contract with a path and a sha256 (ff4abd0)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64) }; return m; }],
   ['representation-envelope-bad', 'a representation_contract that is not a closed path and sha256 (ff4abd0)', (m) => { m.representation_contract = { path: 7 }; return m; }],
 ];
-const driftProbes = probeSpecs.map(([id, note, change]) => {
-  const text = jsonOf(change(probeBase()));
-  return { id, note, document: text, reference: manifestVerdict(Buffer.from(text)) };
+const driftProbes = probeSpecs.map(([id, note, change, recorded]) => {
+  const changed = change(probeBase());
+  const text = typeof changed === 'string' ? changed : jsonOf(changed);
+  return { id, note, document: text, reference: manifestVerdict(Buffer.from(text)), ...(recorded ? { recorded } : {}) };
 });
 if (driftProbes[0].reference !== 1) throw new Error('the base probe must be accepted by the reference');
 const probesText = `${JSON.stringify({ format: 'ovdb-drift-probes/1', references: meta.references, probes: driftProbes }, null, 1)}\n`;
