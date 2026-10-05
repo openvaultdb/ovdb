@@ -21,10 +21,20 @@ import (
 //go:embed schema.json
 var schemaJSON string
 
+//go:embed schema2.json
+var schema2JSON string
+
 // Schema returns the closed version-one interchange schema as an independent copy.
 func Schema() []byte { return []byte(schemaJSON) }
 
 const Format = "ovdb-representation-contract/1"
+const Format2 = "ovdb-representation-contract/2"
+const LabelBridge = "label-bridge"
+const NativeIdentifier = "native-identifier"
+
+// Schema2 returns the closed discriminated execution schema.
+func Schema2() []byte { return []byte(schema2JSON) }
+
 const MaxDocumentBytes = 2 << 20
 const MaxArtifactBytes = 4 << 20
 
@@ -83,12 +93,19 @@ type Decision struct {
 	Document Reference `json:"document"`
 	Scope    string    `json:"scope"`
 }
+type Native struct {
+	Dataset               Reference `json:"dataset"`
+	Provenance            Reference `json:"provenance"`
+	ServingIdentityColumn string    `json:"serving_identity_column,omitempty"`
+}
 type Contract struct {
-	Source   Source   `json:"source"`
-	Target   Target   `json:"target"`
-	Bridge   Bridge   `json:"bridge"`
-	Policy   Policy   `json:"policy"`
-	Decision Decision `json:"decision"`
+	Execution string   `json:"execution,omitempty"`
+	Native    *Native  `json:"native,omitempty"`
+	Source    Source   `json:"source"`
+	Target    Target   `json:"target"`
+	Bridge    Bridge   `json:"bridge"`
+	Policy    Policy   `json:"policy"`
+	Decision  Decision `json:"decision"`
 }
 type Document struct {
 	Format    string     `json:"format"`
@@ -124,7 +141,11 @@ func Parse(data []byte) (*Document, error) {
 	if err := strictJSON(data, MaxDocumentBytes, &value); err != nil {
 		return nil, err
 	}
-	schema, err := compileSchema("schema.json", []byte(schemaJSON))
+	schemaData := schemaJSON
+	if object, ok := value.(map[string]any); ok && object["format"] == Format2 {
+		schemaData = schema2JSON
+	}
+	schema, err := compileSchema("schema.json", []byte(schemaData))
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +239,15 @@ func checkContract(c Contract, ctx Context) error {
 	if err = checkBinding(binding, meaning, c.Target); err != nil {
 		return err
 	}
+	if c.Decision.Document.Repository == "" {
+		return fmt.Errorf("decision provenance must be externally pinned")
+	}
+	if _, err = read(c.Decision.Document, ctx); err != nil {
+		return err
+	}
+	if c.Execution == NativeIdentifier {
+		return checkNative(c, model, ctx)
+	}
 	if c.Bridge.RawLabelColumn == c.Bridge.TargetKeyColumn || c.Bridge.ServingIdentityColumn != "" && (c.Bridge.ServingIdentityColumn == c.Bridge.RawLabelColumn || c.Bridge.ServingIdentityColumn == c.Bridge.TargetKeyColumn) {
 		return fmt.Errorf("native/raw columns must differ from serving identity")
 	}
@@ -249,12 +279,6 @@ func checkContract(c Contract, ctx Context) error {
 			return fmt.Errorf("empty or duplicate raw-label collision is ineligible")
 		}
 		labels[row.RawLabel] = true
-	}
-	if c.Decision.Document.Repository == "" {
-		return fmt.Errorf("decision provenance must be externally pinned")
-	}
-	if _, err = read(c.Decision.Document, ctx); err != nil {
-		return err
 	}
 	keyData, err := read(c.Target.Keys, ctx)
 	if err != nil {
@@ -298,7 +322,7 @@ func property(data []byte, module, entity, key, datatype string) error {
 			} `json:"properties"`
 		} `json:"entities"`
 	}
-	if err := exactModel(data, &spec); err != nil {
+	if err := exactModel(data, &spec, false); err != nil {
 		return err
 	}
 	p, ok := spec.Entities[entity].Properties[key]
@@ -429,11 +453,11 @@ func repository(s string) bool {
 	return !strings.HasSuffix(s, ".git")
 }
 func path(s string) bool {
-	if len(s) == 0 || len(s) > 1024 || strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./-") != "" {
+	if len(s) == 0 || len(s) > 1024 || strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./$-") != "" {
 		return false
 	}
 	for _, p := range strings.Split(s, "/") {
-		if p == "" || p == "." || p == ".." || strings.EqualFold(p, ".git") {
+		if p == "" || p == "." || p == ".." || strings.EqualFold(p, ".git") || strings.Contains(p, "$") && p != "$records" {
 			return false
 		}
 	}
@@ -444,6 +468,9 @@ func path(s string) bool {
 // trimming. nil means an unmatched exception, never a guessed target. Callers
 // must first verify/admit the immutable Document through canonical metadata.
 func Lookup(c Contract, source Source, rows []Row, raw string) (*string, error) {
+	if c.Execution == NativeIdentifier {
+		return nil, fmt.Errorf("native mode requires bounded keyed lookup")
+	}
 	if c.Source != source {
 		return nil, fmt.Errorf("source scope/revision/namespace mismatch")
 	}
@@ -486,7 +513,13 @@ func checkSnapshot(data []byte, c Contract) error {
 		seen[artifact.Path] = true
 		found[Reference{Path: artifact.Path, SHA256: artifact.SHA256}] = true
 	}
-	if !found[c.Bridge.Artifact] || !found[c.Target.Keys] {
+	if c.Execution == NativeIdentifier {
+		for _, ref := range []Reference{c.Native.Dataset, c.Native.Provenance, c.Target.Model, c.Target.Binding.Document} {
+			if !found[ref] {
+				return fmt.Errorf("native data/model/binding/provenance must match snapshot artifact checksums")
+			}
+		}
+	} else if !found[c.Bridge.Artifact] || !found[c.Target.Keys] {
 		return fmt.Errorf("bridge and native key index must match snapshot artifact checksums")
 	}
 	return nil

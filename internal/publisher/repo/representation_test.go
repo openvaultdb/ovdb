@@ -128,3 +128,57 @@ func TestRepresentationAttachmentMustBeLocal(t *testing.T) {
 		t.Fatal("external attachment admitted")
 	}
 }
+
+type pinnedFixtureReader struct {
+	*Memory
+	revision string
+}
+
+func (r pinnedFixtureReader) Head() (string, error) { return r.revision, nil }
+func TestNativeRepresentationRepository(t *testing.T) {
+	dir := "../../../publisher/representation/testdata/real-ror/"
+	data, err := os.ReadFile(dir + "contract.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []struct {
+		Reference representation.Reference `json:"reference"`
+		File      string                   `json:"file"`
+	}
+	refs, err := os.ReadFile(dir + "references.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(refs, &entries); err != nil {
+		t.Fatal(err)
+	}
+	provider := &Memory{Nodes: map[string]Node{"contract.json": {Kind: File, Content: data}}}
+	deps := map[string]Reader{}
+	for _, entry := range entries {
+		bytes, err := os.ReadFile(dir + entry.File)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader := provider
+		if entry.Reference.Repository != "" {
+			existing, ok := deps[entry.Reference.Repository]
+			if !ok {
+				existing = pinnedFixtureReader{Memory: &Memory{Nodes: map[string]Node{}}, revision: entry.Reference.Revision}
+				deps[entry.Reference.Repository] = existing
+			}
+			reader = existing.(pinnedFixtureReader).Memory
+		}
+		reader.Nodes[entry.Reference.Path] = Node{Kind: File, Content: bytes}
+	}
+	m := manifest.Manifest{Form: manifest.FormOwn, PublisherRepository: manifest.Fact[string]{Present: true, Valid: true, Value: "https://github.com/ingitdb/ror-ingitdb"}, ModelSpec: manifest.Fact[string]{Present: true, Valid: true, Value: "model/ror.modelspec.json"}, MeaningFile: manifest.Fact[string]{Present: true, Valid: true, Value: "model/ror.meaning.yaml"}, Recordsets: manifest.Fact[[]string]{Present: true, Valid: true, Value: []string{"organizations"}}}
+	r := pinnedFixtureReader{Memory: provider, revision: "bbbec903248680caea04e68f94b9a957b6efc55b"}
+	a := representation.Reference{Path: "contract.json", SHA256: representation.Hash(data)}
+	if problems := CheckRepresentation(r, m, a, deps); len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	// There is deliberately no native data file or key corpus in this reader.
+	m.Recordsets.Value = nil
+	if len(CheckRepresentation(r, m, a, deps)) == 0 {
+		t.Fatal("undeclared native target recordset accepted")
+	}
+}

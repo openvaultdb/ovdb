@@ -1,0 +1,79 @@
+{
+  "format": "ovdb-representation-contract/2",
+  "contracts": [
+    {
+      "execution": "native-identifier",
+      "source": {
+        "schema": {
+          "path": "libs/datatug/main/src/lib/queries/fixtures/public-data-fabric/affiliations.modelspec.json",
+          "sha256": "cfe958f12d9a70bb7533499b76bf01c9447f81f0862852e460b095bb75e1b9cf",
+          "repository": "https://github.com/datatug/datatug-apps",
+          "revision": "e7362033ec79c6663d7dbe0483b62fab01f7b9cd"
+        },
+        "module": "affiliations",
+        "entity": "Affiliation",
+        "property": "ror_id",
+        "datatype": "string",
+        "namespace": "ROR:URL"
+      },
+      "target": {
+        "snapshot": {
+          "path": "snapshot.json",
+          "sha256": "e50b7b514d93cb2f07f691b57ee3853909ea58d3808afdc32d980bc89cb4e53f"
+        },
+        "model": {
+          "path": "model/ror.modelspec.json",
+          "sha256": "9694a0b6d7aba0bd26be22e8ee3501cf944463617839623e6b5b15d8068fd0ae"
+        },
+        "module": "ror",
+        "entity": "organizations",
+        "property": "id",
+        "datatype": "string",
+        "namespace": "ROR:URL",
+        "binding": {
+          "document": {
+            "path": "model/ror.meaning.yaml",
+            "sha256": "70e54d63b0d564edc73149154f84374cdff30a17b8631c56ecab06dd93d452e9"
+          },
+          "concept": "research-organization",
+          "role": "identifier",
+          "meaning": {
+            "document": {
+              "path": "identity.meaning.yaml",
+              "sha256": "b0eb207d1e2e68572a47b4a08d02aa10389e2788c20a9796c812a4fcda894c33",
+              "repository": "https://github.com/meaninggraph/core",
+              "revision": "982916d73f0a35ff2558b0062f58aa3ac4f24d97"
+            },
+            "concept": "organization"
+          }
+        }
+      },
+      "native": {
+        "dataset": {
+          "path": "ror.sqlite",
+          "sha256": "afdf978130ee9899fedb698f0e9d18399efdea40ea92f01f26d6055ef1ed5d38"
+        },
+        "provenance": {
+          "path": "source/validation.json",
+          "sha256": "b7368624b57390fb2d132f4958b176f7e1173a63196f65017eed107aa1187644"
+        }
+      },
+      "policy": {
+        "transform": "identity",
+        "equality": "utf8-byte-exact",
+        "cardinality": "zero-or-one",
+        "unmatched": "exception",
+        "collision": "ineligible"
+      },
+      "decision": {
+        "document": {
+          "path": "spec/research/public-data-fabric/evidence/w1-ror-user-decision.json",
+          "sha256": "a4caa4b6461230a3fa2ae8548121344cb286cfb98a9e19761a207c9f74479595",
+          "repository": "https://github.com/datatug/datatug",
+          "revision": "f8093950122e000aaccffefb7c478adeaf275fbf"
+        },
+        "scope": "w1-ror-user-native-url"
+      }
+    }
+  ]
+}

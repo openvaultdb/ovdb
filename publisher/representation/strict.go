@@ -31,7 +31,7 @@ func exactKeys(object map[string]any, fields []string, closed bool) error {
 	return nil
 }
 
-func exactModel(data []byte, out any) error {
+func exactModel(data []byte, out any, native bool) error {
 	var root map[string]any
 	if err := strictJSON(data, MaxArtifactBytes, &root); err != nil {
 		return err
@@ -46,13 +46,21 @@ func exactModel(data []byte, out any) error {
 	entities, _ := root["entities"].(map[string]any)
 	for _, raw := range entities {
 		entity, _ := raw.(map[string]any)
-		if err := exactKeys(entity, []string{"properties"}, false); err != nil {
+		entityFields := []string{"properties"}
+		if native {
+			entityFields = append(entityFields, "key")
+		}
+		if err := exactKeys(entity, entityFields, false); err != nil {
 			return err
 		}
 		properties, _ := entity["properties"].(map[string]any)
 		for _, raw := range properties {
 			property, _ := raw.(map[string]any)
-			if err := exactKeys(property, []string{"type"}, false); err != nil {
+			propertyFields := []string{"type"}
+			if native {
+				propertyFields = append(propertyFields, "required")
+			}
+			if err := exactKeys(property, propertyFields, false); err != nil {
 				return err
 			}
 		}

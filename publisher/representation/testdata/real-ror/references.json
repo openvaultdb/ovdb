@@ -1,0 +1,57 @@
+[
+  {
+    "reference": {
+      "path": "model/ror.modelspec.json",
+      "sha256": "9694a0b6d7aba0bd26be22e8ee3501cf944463617839623e6b5b15d8068fd0ae"
+    },
+    "file": "0.json"
+  },
+  {
+    "reference": {
+      "path": "model/ror.meaning.yaml",
+      "sha256": "70e54d63b0d564edc73149154f84374cdff30a17b8631c56ecab06dd93d452e9"
+    },
+    "file": "1.yaml"
+  },
+  {
+    "reference": {
+      "path": "libs/datatug/main/src/lib/queries/fixtures/public-data-fabric/affiliations.modelspec.json",
+      "sha256": "cfe958f12d9a70bb7533499b76bf01c9447f81f0862852e460b095bb75e1b9cf",
+      "repository": "https://github.com/datatug/datatug-apps",
+      "revision": "e7362033ec79c6663d7dbe0483b62fab01f7b9cd"
+    },
+    "file": "2.json"
+  },
+  {
+    "reference": {
+      "path": "identity.meaning.yaml",
+      "sha256": "b0eb207d1e2e68572a47b4a08d02aa10389e2788c20a9796c812a4fcda894c33",
+      "repository": "https://github.com/meaninggraph/core",
+      "revision": "982916d73f0a35ff2558b0062f58aa3ac4f24d97"
+    },
+    "file": "3.yaml"
+  },
+  {
+    "reference": {
+      "path": "spec/research/public-data-fabric/evidence/w1-ror-user-decision.json",
+      "sha256": "a4caa4b6461230a3fa2ae8548121344cb286cfb98a9e19761a207c9f74479595",
+      "repository": "https://github.com/datatug/datatug",
+      "revision": "f8093950122e000aaccffefb7c478adeaf275fbf"
+    },
+    "file": "4.json"
+  },
+  {
+    "reference": {
+      "path": "source/validation.json",
+      "sha256": "b7368624b57390fb2d132f4958b176f7e1173a63196f65017eed107aa1187644"
+    },
+    "file": "5.json"
+  },
+  {
+    "reference": {
+      "path": "snapshot.json",
+      "sha256": "e50b7b514d93cb2f07f691b57ee3853909ea58d3808afdc32d980bc89cb4e53f"
+    },
+    "file": "6.json"
+  }
+]
