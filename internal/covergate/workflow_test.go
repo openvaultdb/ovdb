@@ -76,7 +76,7 @@ func packagesWithGo(t *testing.T, fsys fs.FS, dir string) []string {
 
 // gatedRoots are the directories that the gate's list names packages in: every
 // package below them is gated.
-var gatedRoots = []string{"internal/publisher", "internal/covergate", "cmd/covergate"}
+var gatedRoots = []string{"internal/publisher", "publisher/representation", "internal/covergate", "cmd/covergate"}
 
 // The gate takes a list, and the list is in the workflow. This keeps it equal to
 // every package below the directories that it names, so that a package added
@@ -134,7 +134,7 @@ func TestWorkflowRunsTheTestsOfTheSamePackages(t *testing.T) {
 	if testStep == nil {
 		t.Fatal("ci.yml has no go test step that writes the publisher cover profile")
 	}
-	if got, want := testStep[1], "./internal/publisher/... ./internal/covergate/... ./cmd/covergate/..."; got != want {
+	if got, want := testStep[1], "./internal/publisher/... ./publisher/representation ./internal/covergate/... ./cmd/covergate/..."; got != want {
 		t.Errorf("the test step runs %q, want %q", got, want)
 	}
 	if !strings.Contains(text, `./cmd/covergate "$RUNNER_TEMP/publisher-cover.out"`) {
