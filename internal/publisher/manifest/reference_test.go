@@ -310,6 +310,19 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 	return true
 }
 
+// d0Explained says whether a document that the Publisher profile accepts and the frozen Chinook checker refuses is explained by D0 (the Directory at its pin
+// is the reference for both profiles): the Directory accepts it too (the caller checks) and it names a recordset that is not a ModelSpec entity identifier,
+// the one rule of the checker that the profile no longer has.
+func d0Explained(doc []byte) bool {
+	m, _ := CheckManifest(doc, "ovdb.yaml", Publisher)
+	for _, name := range m.Recordsets.Value {
+		if !isModuleName(name) {
+			return true
+		}
+	}
+	return false
+}
+
 func manifestAccepted(doc []byte) (bool, Finding) { return acceptManifest(Directory, doc) }
 
 func mdAccepted(doc []byte, path string) (bool, Finding) { return acceptMd(Directory, doc, path) }
@@ -412,11 +425,17 @@ func runReference(t *testing.T, spec referenceSpec) {
 	if spec.profile == Directory {
 		allowed = driftCorpusLooser(t)
 	}
+	d0 := 0 // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains (see d0Explained)
 	for _, c := range manifests {
 		ok, first := acceptManifest(spec.profile, c.Document)
+		directoryAccepts := c.Verdict
 		c.Verdict = spec.verdict(c)
 		if !total.record(c, ok, first) && allowed == 0 {
-			t.Errorf("manifest accepted where the %s refuses (%s): %q", spec.refName, c.Family, c.Document)
+			if spec.profile == Publisher && directoryAccepts && d0Explained(c.Document) {
+				d0++
+			} else {
+				t.Errorf("manifest accepted where the %s refuses (%s): %q", spec.refName, c.Family, c.Document)
+			}
 		}
 		_, findings := CheckManifest(c.Document, "ovdb.yaml", spec.profile)
 		assertFindings(t, findings)
@@ -429,6 +448,9 @@ func runReference(t *testing.T, spec referenceSpec) {
 		}
 		_, findings := CheckOVDBMd(c.Document, spec.profile)
 		assertFindings(t, findings)
+	}
+	if spec.profile == Publisher {
+		allowed = d0
 	}
 	if total.looser != allowed {
 		t.Fatalf("%d documents are accepted by Go and refused by the %s; drift.json accounts for %d (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
@@ -539,11 +561,15 @@ func runReference(t *testing.T, spec referenceSpec) {
 			t.Errorf("README does not state %q", want)
 		}
 	}
+	if want := fmt.Sprintf("%d of the %d documents that the Publisher profile accepts and the Chinook checker refuses", d0, total.looser); spec.profile == Publisher && !strings.Contains(flat, want) {
+		t.Errorf("README does not state %q", want)
+	}
 }
 
 // publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker through rules that only it has (the
 // others are sharedKinds).
 var publisherKinds = map[string]string{
+	"manifest-recordsets":  "Not a bound: D0 (the lead's default; the Directory at its pin is the reference for both profiles). The Directory refuses a recordset name over 256 UTF-16 code units (nativeRecordsetNameProblem, 1c7e126); the Chinook checker, which read every name as an entity identifier, accepted it.",
 	"graph-address-case":   "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
 	"graph-address-scheme": "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
 }
@@ -678,8 +704,15 @@ func factValues(m Manifest) map[string]any {
 		"meaning.file":    text(m.MeaningFile), "meaning.graph.id": text(m.GraphID), "meaning.graph.address": text(m.GraphAddress),
 		"licences.model": text(m.LicenceModel), "licences.meaning": text(m.LicenceMeaning), "licences.data": text(m.LicenceData),
 		"publisher.name": text(m.PublisherName), "publisher.url": text(m.PublisherURL), "publisher.repository": text(m.PublisherRepository),
-		"recordsets":                 state(m.Recordsets, func(names []string) any { return names }),
-		"recordsets_partial":         state(m.RecordsetsPartial, func(b bool) any { return b }),
+		"recordsets":         state(m.Recordsets, func(names []string) any { return names }),
+		"recordsets_partial": state(m.RecordsetsPartial, func(b bool) any { return b }),
+		"recordset_entities": state(m.RecordsetEntities, func(entities map[string]string) any {
+			out := make(map[string]any, len(entities))
+			for name, entity := range entities {
+				out[name] = entity
+			}
+			return out
+		}),
 		"form":                       string(m.Form),
 		"model.address.repository":   address(m.ModelAddress, func(a Address) any { return orNil(a.Repository) }),
 		"model.address.module":       address(m.ModelAddress, func(a Address) any { return orNil(a.Module) }),
@@ -697,7 +730,7 @@ var factFields = map[string]string{
 	"meaning.address": "MeaningAddress", "meaning.file": "MeaningFile", "meaning.graph.id": "GraphID", "meaning.graph.address": "GraphAddress",
 	"licences.model": "LicenceModel", "licences.meaning": "LicenceMeaning", "licences.data": "LicenceData",
 	"publisher.name": "PublisherName", "publisher.url": "PublisherURL", "publisher.repository": "PublisherRepository",
-	"recordsets": "Recordsets", "recordsets_partial": "RecordsetsPartial", "form": "Form",
+	"recordsets": "Recordsets", "recordsets_partial": "RecordsetsPartial", "recordset_entities": "RecordsetEntities", "form": "Form",
 	"model.address.repository": "ModelAddress.Repository", "model.address.module": "ModelAddress.Module", "model.address.ref": "ModelAddress.Ref",
 	"meaning.address.repository": "MeaningAddress.Repository", "meaning.address.ref": "MeaningAddress.Ref",
 }
@@ -829,10 +862,10 @@ func TestPresenceAgreesWithTheReference(t *testing.T) {
 	_, _, manifests, _ := loadReference(t)
 	var facts factsFile
 	readGolden(t, "directory.facts.json", &facts)
-	if len(facts.Presence) != len(manifests) || len(facts.Fields) < 26 {
+	if len(facts.Presence) != len(manifests) || len(facts.Fields) < 27 {
 		t.Fatalf("the facts golden holds %d presence masks for %d manifests", len(facts.Presence), len(manifests))
 	}
-	names := facts.Fields[:26]
+	names := facts.Fields[:27]
 	compared, refused := 0, 0
 	for i, c := range manifests {
 		m, findings := CheckManifest(c.Document, "ovdb.yaml", Directory)
@@ -972,7 +1005,7 @@ var madeByRepo = map[string]string{
 	"own form: recordsets are exactly the model's entities":                                "package repo: `repo-recordsets`",
 }
 
-var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)
+var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input|dropped) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)
 
 // The README lists every rule that the Chinook checker adds to the Directory's, who
 // decides it (the two documents, other files, or the caller's input), the rule of
@@ -992,12 +1025,15 @@ func TestPublisherRulesTable(t *testing.T) {
 	for _, m := range readmeRule.FindAllStringSubmatch(readReadme(t), -1) {
 		rows[m[1]] = [4]string{m[2], m[3], m[4]}
 	}
-	documents, other := 0, 0
+	documents, other, dropped := 0, 0, 0
 	for _, rule := range golden.Rules {
 		row, ok := rows[rule.ID]
 		goCell := madeByRepo[rule.ID]
 		if rule.Go != "" {
 			goCell = "`" + strings.ReplaceAll(rule.Go, ", ", "`, `") + "`"
+		}
+		if rule.Who == "dropped" {
+			goCell = "none (D0)"
 		}
 		var lines []string
 		for _, n := range rule.Lines {
@@ -1006,20 +1042,26 @@ func TestPublisherRulesTable(t *testing.T) {
 		if !ok || row[0] != rule.Who || row[1] != goCell || row[2] != strings.Join(lines, ", ") {
 			t.Errorf("rule %q: README row %v, want %s, %s, %s", rule.ID, row, rule.Who, goCell, strings.Join(lines, ", "))
 		}
-		if rule.Who == "documents" {
+		switch rule.Who {
+		case "dropped":
+			dropped++
+			if rule.Go != "" {
+				t.Errorf("a rule that Go no longer has names a rule of Go: %q", rule.ID)
+			}
+		case "documents":
 			documents++
 			if rule.Go == "" {
 				t.Errorf("a rule decided by the documents has no rule of Go: %q", rule.ID)
 			}
-		} else {
+		default:
 			other++
 			if rule.Go != "" {
 				t.Errorf("a rule that needs other files or input has a rule of Go: %q", rule.ID)
 			}
 		}
 	}
-	if len(rows) != len(golden.Rules) || documents < 15 || other < 8 {
-		t.Errorf("README lists %d rules, the generator %d (%d by the documents, %d by other files or input)", len(rows), len(golden.Rules), documents, other)
+	if len(rows) != len(golden.Rules) || documents < 15 || other < 8 || dropped != 1 {
+		t.Errorf("README lists %d rules, the generator %d (%d by the documents, %d by other files or input, %d dropped)", len(rows), len(golden.Rules), documents, other, dropped)
 	}
 	// What only other files decide, recorded as classes with the number of accepted cases that a repository of wrong or missing files would refuse.
 	classes := map[string]bool{}

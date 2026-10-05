@@ -96,18 +96,36 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	if recordsets := m.Recordsets; recordsets.Usable() && len(recordsets.Value) > MaxRecordsets {
 		c.add(path, RuleRecordsetsLimit, recordsets.Line, "recordsets lists %d names, which is more than the %d this check reads", len(recordsets.Value), MaxRecordsets)
 	} else if recordsets.Usable() && spec.hasEntities {
-		listed := make(map[string]bool, len(recordsets.Value))
-		for _, r := range recordsets.Value {
-			listed[r] = true
+		// Each recordset is the entity that recordset_entities says, or the entity of its own name.
+		mapped := make([]string, len(recordsets.Value))
+		for i, r := range recordsets.Value {
+			mapped[i] = r
+			if entity, ok := m.RecordsetEntities.Value[r]; ok {
+				mapped[i] = entity
+			}
+		}
+		listed := make(map[string]bool, len(mapped))
+		duplicate := false
+		for _, e := range mapped {
+			duplicate = duplicate || listed[e]
+			listed[e] = true
 		}
 		missing := slices.DeleteFunc(slices.Clone(spec.entities), func(e string) bool { return listed[e] })
-		extra := slices.DeleteFunc(slices.Clone(recordsets.Value), func(r string) bool { _, ok := spec.set[r]; return ok })
+		var extra []string
+		for i, e := range mapped {
+			if _, ok := spec.set[e]; !ok {
+				extra = append(extra, recordsets.Value[i])
+			}
+		}
 		slices.Sort(extra)
 		if len(missing) > 0 {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordsets lacks the ModelSpec entities of %s: %s", rules.Quote(file), names(missing))
 		}
 		if len(extra) > 0 {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec entities of %s: %s", rules.Quote(file), names(extra))
+		}
+		if duplicate {
+			c.add(path, RuleRecordsets, recordsets.Line, "recordset_entities maps more than one native recordset to the same ModelSpec entity; mappings must be one-to-one")
 		}
 	}
 	return spec.module

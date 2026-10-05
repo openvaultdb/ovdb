@@ -56,6 +56,8 @@ type Manifest struct {
 
 	Recordsets        Fact[[]string]
 	RecordsetsPartial Fact[bool]
+	// RecordsetEntities maps native recordset names to the ModelSpec entities they are (recordset_entities).
+	RecordsetEntities Fact[map[string]string]
 }
 
 // isText is the references' isText: text that is not blank by JavaScript's trim().
@@ -309,6 +311,7 @@ func (k *manifestChecker) check() {
 	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
 
 	k.recordsets()
+	k.recordsetEntities()
 }
 
 // model judges model and meaning, which the manifest writes in one of two forms
@@ -446,6 +449,10 @@ func (k *manifestChecker) recordsets() {
 	seen := map[string]bool{}
 	for i, item := range list.Items {
 		names[i] = item.Text
+		if err := rules.RecordsetName(item.Text); err != nil {
+			good = false
+			k.c.add("manifest-recordsets", item.Line, "recordsets name %s %s", rules.Quote(item.Text), err.Error())
+		}
 		if seen[item.Text] {
 			good = false
 			k.c.add("manifest-recordsets", item.Line, "recordsets lists %s twice: list each name once", rules.Quote(item.Text))
@@ -453,4 +460,52 @@ func (k *manifestChecker) recordsets() {
 		seen[item.Text] = true
 	}
 	k.out.Recordsets = found(list, good, names)
+}
+
+// recordsetEntities judges recordset_entities, which says which ModelSpec entity each native recordset name is: a mapping from names that recordsets
+// lists, each a recordset name, to entity names, no entity twice.
+func (k *manifestChecker) recordsetEntities() {
+	n := k.m.Field("recordset_entities")
+	if n == nil {
+		return
+	}
+	if n.Kind != kindMap {
+		k.c.add("manifest-recordsets", n.Line, "recordset_entities must map native recordset names to ModelSpec entity names: write one name: Entity pair per line")
+		k.out.RecordsetEntities = found(n, false, map[string]string(nil))
+		return
+	}
+	listed := map[string]bool{}
+	if list := k.m.Field("recordsets"); list != nil && list.Kind == kindSeq {
+		for _, item := range list.Items {
+			if item.Kind == kindString {
+				listed[item.Text] = true
+			}
+		}
+	}
+	good := true
+	mapping := make(map[string]string, len(n.Keys))
+	usedBy := map[string]string{}
+	for _, name := range n.Keys {
+		entity := n.Field(name)
+		bad := func(format string, args ...any) {
+			good = false
+			k.c.add("manifest-recordsets", entity.Line, format, args...)
+		}
+		if !listed[name] {
+			bad("recordset_entities names %s, which is not in recordsets", rules.Quote(name))
+		}
+		if err := rules.RecordsetName(name); err != nil {
+			bad("recordset_entities key %s %s", rules.Quote(name), err.Error())
+		}
+		switch {
+		case entity.Kind != kindString || !isModuleName(entity.Text):
+			bad("recordset_entities value for %s must be a ModelSpec entity identifier (a letter or _, then letters, digits and _)", rules.Quote(name))
+		case usedBy[entity.Text] != "":
+			bad("recordset_entities maps both %s and %s to ModelSpec entity %s; mappings must be one-to-one", rules.Quote(usedBy[entity.Text]), rules.Quote(name), entity.Text)
+		default:
+			usedBy[entity.Text] = name
+			mapping[name] = entity.Text
+		}
+	}
+	k.out.RecordsetEntities = found(n, good, mapping)
 }
