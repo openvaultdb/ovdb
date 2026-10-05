@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -32,15 +33,20 @@ import (
 var wantState = []struct {
 	action skillsync.Action
 	reason string
-	state  string
+	// adoptable is Change.Adoptable: a conflict NoAdopt caused for a folder
+	// the library would otherwise adopt.
+	adoptable bool
+	state     string
 }{
-	{skillsync.Added, "", StateNotInstalled},
-	{skillsync.Updated, "", StateUpdateAvailable},
-	{skillsync.Unchanged, "", StateInstalled},
-	{skillsync.Adopted, "", StateAdoptable},
-	{skillsync.Conflict, modifiedTarget, StateChanged},
-	{skillsync.Conflict, "unmanaged target", StateNotOVDB},
-	{skillsync.Removed, "", StateNotOVDB},
+	{skillsync.Added, "", false, StateNotInstalled},
+	{skillsync.Updated, "", false, StateUpdateAvailable},
+	{skillsync.Unchanged, "", false, StateInstalled},
+	{skillsync.Adopted, "", false, StateAdoptable},
+	{skillsync.Conflict, modifiedTarget, false, StateChanged},
+	{skillsync.Conflict, "unmanaged target", true, StateAdoptable},
+	{skillsync.Conflict, "unmanaged target", false, StateNotOVDB},
+	{skillsync.Conflict, "unmanaged target: openvaultdb/.DS_Store is not part of this skill's bundle", false, StateNotOVDB},
+	{skillsync.Removed, "", false, StateNotOVDB},
 }
 
 // Every action skillsync defines has text for "skills.result.<action>" and a
@@ -54,8 +60,8 @@ func TestEverySkillsyncActionIsHandled(t *testing.T) {
 	var covered []string
 	for _, row := range wantState {
 		covered = append(covered, string(row.action))
-		if got := stateFor(skillsync.Change{Action: row.action, Reason: row.reason}); got != row.state {
-			t.Errorf("stateFor(%s, %q) = %s, want %s", row.action, row.reason, got, row.state)
+		if got := stateFor(skillsync.Change{Action: row.action, Reason: row.reason, Adoptable: row.adoptable}); got != row.state {
+			t.Errorf("stateFor(%s, %q, adoptable=%v) = %s, want %s", row.action, row.reason, row.adoptable, got, row.state)
 		}
 	}
 	for _, action := range actions {
@@ -160,5 +166,18 @@ func TestEveryHarnessHasAName(t *testing.T) {
 		if !slices.Contains(ids, id) {
 			t.Errorf("harnessNames names %q, which skillsync no longer knows: remove it", id)
 		}
+	}
+}
+
+// The read path asks the library whether a folder would be adopted
+// (Change.Adoptable of a dry run with NoAdopt) and the install path hands it
+// the decision (NoAdopt); a library without them would compile ovdb into
+// classifying the folder itself again.
+func TestSkillsyncStillHasTheAdoptionOptions(t *testing.T) {
+	if _, ok := reflect.TypeOf(skillsync.Options{}).FieldByName("NoAdopt"); !ok {
+		t.Error("skillsync.Options has no NoAdopt: the install path can no longer leave the adoption decision to the library")
+	}
+	if _, ok := reflect.TypeOf(skillsync.Change{}).FieldByName("Adoptable"); !ok {
+		t.Error("skillsync.Change has no Adoptable: the read path can no longer tell an adoptable folder from another's")
 	}
 }

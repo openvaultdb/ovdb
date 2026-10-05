@@ -37,6 +37,10 @@ func (s *localServer) installedSkills() []skills.Installed {
 //
 // A client that does not send ?adoptable=1 does not know the state
 // "adoptable" (clients built before adoption existed), and is told not_ovdb.
+// A client that does not send ?recovery=1 does not know the state
+// "recovery_pending" or the field "state_reason" either; it is not told
+// something wrong ("not installed", "another skill") about a folder with an
+// interrupted install, so it gets an error that says so instead of a document.
 func (s *localServer) getSkills(w http.ResponseWriter, r *http.Request) {
 	env, err := s.skillsEnv()
 	if err != nil {
@@ -46,6 +50,15 @@ func (s *localServer) getSkills(w http.ResponseWriter, r *http.Request) {
 	document := skills.Inspect(env)
 	if r.URL.Query().Get(skills.AdoptableParam) != "1" {
 		document = document.WithoutAdoptable()
+	}
+	if r.URL.Query().Get(skills.RecoveryParam) != "1" {
+		if target, pending := document.RecoveryPending(); pending {
+			envelope.Write(w, envelope.New(envelope.StorageUnavailable, uicopy.T("skills.list.failed", nil)).
+				WithReason(uicopy.T("skills.install.recovery_pending", map[string]string{"path": target.SkillsDir})).
+				WithNext(envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"}))
+			return
+		}
+		document = document.WithoutStateReasons()
 	}
 	envelope.WriteJSON(w, http.StatusOK, document)
 }
@@ -94,11 +107,13 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 			DryRun    bool     `json:"dry_run"`
 			// The consent step's "replace my changes" choice.
 			ReplaceChanged bool `json:"replace_changed"`
-			// ...and its "take over the copy that is already there" choice.
-			Adopt bool `json:"adopt"`
+			// ...and its "take over the copy that is already there" choice:
+			// the agents it showed as having one, which it ticked.
+			Adopt          bool     `json:"adopt"`
+			AdoptHarnesses []string `json:"adopt_harnesses"`
 		}
 		err = decoder.Decode(&sessionRequest)
-		request = skills.InstallRequest{Skill: sessionRequest.Skill, Harnesses: sessionRequest.Harnesses, DryRun: sessionRequest.DryRun, ReplaceChanged: sessionRequest.ReplaceChanged, Adopt: sessionRequest.Adopt}
+		request = skills.InstallRequest{Skill: sessionRequest.Skill, Harnesses: sessionRequest.Harnesses, DryRun: sessionRequest.DryRun, ReplaceChanged: sessionRequest.ReplaceChanged, Adopt: sessionRequest.Adopt, AdoptHarnesses: sessionRequest.AdoptHarnesses}
 	} else {
 		err = decoder.Decode(&request)
 	}
@@ -134,7 +149,7 @@ func (s *localServer) installSkill(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	document, err := skills.Build{Version: s.opts.Record.Version}.Install(r.Context(), env, d, targets, request.DryRun, request.ReplaceChanged, request.Adopt)
+	document, err := skills.Build{Version: s.opts.Record.Version}.Install(r.Context(), env, d, targets, request.DryRun, request.ReplaceChanged, request.Consent())
 	if err != nil {
 		writeError(w, err)
 		return

@@ -10,7 +10,7 @@ import (
 // States are the Target states, in the order this package defines them. Every
 // one has a "skills.state.<state>" entry in copy/en.json
 // (TestEveryStateAndResultHasText).
-var States = []string{StateNotInstalled, StateInstalled, StateUpdateAvailable, StateChanged, StateNotOVDB, StateAdoptable}
+var States = []string{StateNotInstalled, StateInstalled, StateUpdateAvailable, StateChanged, StateNotOVDB, StateAdoptable, StateRecoveryPending}
 
 // plainText is the copy at key when there is such an entry and it is a plain
 // label: one that needs no parameters, so a value that merely spells the name

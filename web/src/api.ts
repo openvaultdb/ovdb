@@ -166,7 +166,9 @@ export interface SkillTarget {
   dir: string
   detected: boolean
   installed: boolean
-  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb' | 'adoptable'
+  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb' | 'adoptable' | 'recovery_pending'
+  /** skillsync's own words where they say more than the state: what is in another's folder, what is wrong with an interrupted install. */
+  state_reason?: string
 }
 
 export interface Skill {
@@ -182,8 +184,10 @@ export interface Skill {
 
 /**
  * GET /api/local/v1/skills: the harnesses are the ones the server found. The
- * console asks with ?adoptable=1, saying it knows that state; without it the
- * server reports such a target as not_ovdb.
+ * console asks with ?adoptable=1&recovery=1, saying it knows the states
+ * adoptable and recovery_pending and the field state_reason; without the first
+ * the server reports an adoptable target as not_ovdb, and without the second it
+ * answers with an error when a folder has an interrupted install.
  */
 export interface SkillsDocument {
   schema: number
