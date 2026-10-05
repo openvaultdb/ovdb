@@ -125,7 +125,7 @@ The current canonical provider checker is `demo-db/chinook`, verified at remote
 main `26e852cca00101f53a84ef8ee1f1ae389067f5cf` on 2026-10-05. Its
 `scripts/lib/ovdb-manifest.mjs` has a closed allowlist without this field. The
 historical Go parity references remain `openvaultdb/directory` at
-`e8db5488db31d3f63865e404acef487c33cf35df` and `datatug/chinookdb` at
+`087067483686865b13cb76511ff86f7364ea47ff` (moved from `e8db548` by the pin slice A0a; see `internal/publisher/manifest/testdata/reference/drift.json`) and `datatug/chinookdb` at
 `79e7bb0b1d6f0666dce465874990dec64348331f`; this staged change leaves their
 parity tests and every existing default publisher rule intact.
 

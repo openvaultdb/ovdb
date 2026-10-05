@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 export const references = {
-  directory: { repository: 'openvaultdb/directory', commit: 'e8db5488db31d3f63865e404acef487c33cf35df' },
+  directory: { repository: 'openvaultdb/directory', commit: '087067483686865b13cb76511ff86f7364ea47ff' },
   chinookdb: { repository: 'datatug/chinookdb', commit: '79e7bb0b1d6f0666dce465874990dec64348331f' },
 };
 
@@ -108,4 +108,16 @@ export function checkoutReference(name, { explicit, parent, pin = references[nam
   assertAsCommitted(dir, repository, commit);
   if (name === 'directory') run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
   return dir;
+}
+
+// A generator composes some verdicts from expressions that the reference keeps inline (not exported), copied into the generator. When the reference
+// moves, those expressions may change; a generator that went on would write verdicts that are not the reference's. This names every anchor that the
+// pinned file does not hold, one per line, says what to do, and stops with exit status 1, with no stack: the message is the whole report.
+export function assertAnchors(source, file, commit, anchors, { err = console.error, exit = process.exit } = {}) {
+  const missing = anchors.filter((anchor) => !source.includes(anchor));
+  if (missing.length === 0) return;
+  err(`${file} at ${commit} no longer holds ${missing.length} of the ${anchors.length} expressions that this generator copies; the verdicts composed from them would not be the reference's:`);
+  for (const anchor of missing) err(`  missing anchor: ${anchor}`);
+  err('Read the reference at that commit, update the copied expression and the verdict composed from it together, then run the generator again.');
+  exit(1);
 }

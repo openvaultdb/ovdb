@@ -25,7 +25,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkoutReference, references as pinnedReferences } from '../../../references.mjs';
+import { assertAnchors, checkoutReference, references as pinnedReferences } from '../../../references.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = join(here, 'corpus.json');
@@ -34,6 +34,7 @@ const factsPath = join(here, 'directory.facts.json');
 const publisherVerdictsPath = join(here, 'publisher.verdicts.json');
 const publisherFactsPath = join(here, 'publisher.facts.json');
 const valuesPath = join(here, 'values.json');
+const probesPath = join(here, 'drift.probes.json');
 const digestsPath = join(here, 'digests.json');
 
 const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
@@ -68,7 +69,7 @@ const read = (root, file) => readFileSync(join(root, file), 'utf8');
 
 // The inline OVDB.md rules of analyseDatabase, and isText, are copied below: fail loudly if the pinned file differs.
 const directorySource = read(directoryRoot, 'scripts/lib/directory.mjs');
-for (const expression of [
+assertAnchors(directorySource, 'scripts/lib/directory.mjs', pins.directory.commit, [
   "const isText = (value) => typeof value === 'string' && value.trim() !== '';",
   'if (frontmatter.ovdb !== 1) bad(',
   "if (!Array.isArray(frontmatter.publish) || frontmatter.publish.length === 0) { bad('OVDB.md: publish must list at least one manifest path'); return stop(); }",
@@ -76,7 +77,7 @@ for (const expression of [
   "else published.add(entry.slice(2));",
   'if (!published.has(data.manifest)) {',
   'try { manifest = parseYaml(manifestText); } catch (parseError) {',
-  'const missing = manifestProblems(manifest);',
+  'const missing = manifestProblems(manifest, { databaseManifest: data.database_manifest !== undefined });',
   // the record-stage refusals that need nothing but the two documents (see recordStageProblems below)
   "if (manifest.publisher.repository !== undefined && lowerKey(repositoryKey(manifest.publisher.repository) ?? '') !== lowerKey(repositoryKey(data.repository))) {",
   'if (new Set(listed).size !== listed.length) bad(',
@@ -87,9 +88,7 @@ for (const expression of [
   'const spelled = (label, address, parsed, kind) => {',
   'if (!modelSpelled || !graphSpelled) return stop();',
   "const lowerKey = (value) => value.toLowerCase();",
-]) {
-  if (!directorySource.includes(expression)) throw new Error(`directory.mjs at ${pins.directory.commit} no longer holds \`${expression}\`: the verdicts composed from it in generate.mjs are not the Directory's`);
-}
+]);
 
 // ---- the verdicts of the Directory profile: 1 accepts, 0 refuses ----
 
@@ -1273,6 +1272,39 @@ const publisherFactsText = [
   '  "md": [', publisherLists.map((entry) => `    ${JSON.stringify(entry)}`).join(',\n'), '  ]',
   '}', '',
 ].join('\n');
+// ---- the probes of the drift list: what the reference does with manifests that carry the rules the Directory added after the first pin ----
+// The corpus above is made from the Chinook files and the Directory's own fixtures, so it does not reach the rules of 1c7e126, 574a7ad, d089fa8 and ff4abd0
+// (global identities, native recordset names, recordset_entities, compound data licences, the representation envelope). Each probe is one manifest
+// (the own-form Chinook manifest, with one change) and the verdict of the reference on it: 1 accepts, 0 refuses. `drift.json` lists, by probe, the
+// probes on which Go does not give the reference's verdict, and a test fails when the list and the Go verdicts disagree in either direction.
+const probeBase = () => clone(ownObject);
+const probeSpecs = [
+  ['base', 'the own-form Chinook manifest, unchanged (a control: both accept)', (m) => m],
+  ['identity-trailing-slash', 'a global database identity: the canonical url ends in a slash (574a7ad)', (m) => { m.url = 'https://demodb.dev/chinook/'; m.deployment.discovery = 'https://demodb.dev/.well-known/openvaultdb'; return m; }],
+  ['identity-no-ovdb-marker', 'a canonical url without ovdb as a path segment or subdomain, no trailing slash (574a7ad)', (m) => { m.url = 'https://demodb.dev/chinook'; m.deployment.discovery = 'https://demodb.dev/.well-known/openvaultdb'; return m; }],
+  ['recordset-dotted-name', 'a native recordset name with a dot, dbo.DatabaseLog (1c7e126, d089fa8)', (m) => { m.recordsets = [...m.recordsets, 'dbo.DatabaseLog']; return m; }],
+  ['recordset-spaced-name', 'a native recordset name with a space (1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'Order Details']; return m; }],
+  ['recordset-slash-name', 'a recordset name with a slash (refused since 1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'a/b']; return m; }],
+  ['recordset-dot-segment-name', 'a recordset name that is a dot segment, .. (refused since d089fa8)', (m) => { m.recordsets = [...m.recordsets, '..']; return m; }],
+  ['recordset-long-name', 'a recordset name of 257 characters (refused since 1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'r'.repeat(257)]; return m; }],
+  ['recordset-entities-valid', 'recordset_entities that maps one listed native name to an entity name (1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'dbo.DatabaseLog']; m.recordset_entities = { 'dbo.DatabaseLog': 'DatabaseLog' }; return m; }],
+  ['recordset-entities-not-a-mapping', 'recordset_entities that is a list', (m) => { m.recordset_entities = ['Album']; return m; }],
+  ['recordset-entities-unlisted-key', 'recordset_entities that names a recordset that is not listed', (m) => { m.recordset_entities = { NotListed: 'Album' }; return m; }],
+  ['recordset-entities-not-one-to-one', 'recordset_entities that maps two recordsets to one entity', (m) => { m.recordsets = [...m.recordsets, 'dbo.One']; m.recordset_entities = { Album: 'Thing', 'dbo.One': 'Thing' }; return m; }],
+  ['recordset-entities-bad-entity', 'recordset_entities whose value is not an identifier', (m) => { m.recordset_entities = { Album: 'not an entity' }; return m; }],
+  ['licence-compound-data', 'licences.data written as MIT AND CC0-1.0 (ff4abd0)', (m) => { m.licences.data = 'MIT AND CC0-1.0'; return m; }],
+  ['licence-compound-duplicate', 'licences.data with a repeated atom, MIT AND MIT (ff4abd0)', (m) => { m.licences.data = 'MIT AND MIT'; return m; }],
+  ['licence-compound-model', 'licences.model written as a compound (the Directory refuses: single ids only)', (m) => { m.licences.model = 'MIT AND CC0-1.0'; return m; }],
+  ['licence-cc-by-sa-3', 'licences.data, model and meaning CC-BY-SA-3.0 (the Directory takes any SPDX-shaped id)', (m) => { m.licences.data = 'CC-BY-SA-3.0'; m.licences.model = 'CC-BY-SA-3.0'; m.licences.meaning = 'CC-BY-SA-3.0'; return m; }],
+  ['representation-envelope-valid', 'a representation_contract with a path and a sha256 (ff4abd0)', (m) => { m.representation_contract = { path: 'artifacts/representation.json', sha256: 'a'.repeat(64) }; return m; }],
+  ['representation-envelope-bad', 'a representation_contract that is not a closed path and sha256 (ff4abd0)', (m) => { m.representation_contract = { path: 7 }; return m; }],
+];
+const driftProbes = probeSpecs.map(([id, note, change]) => {
+  const text = jsonOf(change(probeBase()));
+  return { id, note, document: text, reference: manifestVerdict(Buffer.from(text)) };
+});
+if (driftProbes[0].reference !== 1) throw new Error('the base probe must be accepted by the reference');
+const probesText = `${JSON.stringify({ format: 'ovdb-drift-probes/1', references: meta.references, probes: driftProbes }, null, 1)}\n`;
 const sha = (data) => createHash('sha256').update(data).digest('hex');
 // The values that the `yaml` package reads from each document (what the Directory's code and the Chinook checker get from parse): for each
 // document, a digest of every value of it in a canonical form, which the Go test makes of what the Go reader reads and compares, wherever both
@@ -1309,11 +1341,12 @@ const digestText = `${JSON.stringify({
   'manifest/testdata/reference/publisher.verdicts.json': sha(publisherVerdictText),
   'manifest/testdata/reference/publisher.facts.json': sha(publisherFactsText),
   'manifest/testdata/reference/values.json': sha(valuesText),
+  'manifest/testdata/reference/drift.probes.json': sha(probesText),
   'rules/testdata/reference/matrix.golden.json': sha(readFileSync(rulesGolden)),
 }, null, 1)}\n`;
 
 if (thrown > 0) console.error(`note: the reference threw on ${thrown} document(s); they are recorded as refused`);
-const targets = [[corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [valuesPath, valuesText], [digestsPath, digestText]];
+const targets = [[probesPath, probesText], [corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [valuesPath, valuesText], [digestsPath, digestText]];
 if (process.argv.includes('--check')) {
   if (targets.some(([path, text]) => readFileSync(path, 'utf8') !== text)) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
   console.log(`the goldens are up to date (${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents)`);

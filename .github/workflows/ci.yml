@@ -264,3 +264,26 @@ jobs:
       # uses no network).
       - name: ovdb publisher check, end to end
         run: OVDB_REAL_GIT=1 go test -count=1 -v -run PublisherCheckEndToEnd .
+
+  # The databases registered in the OVDB Directory at the commit the references pin (internal/publisher/references.mjs), checked as registered: each
+  # repository fetched at the commit its record names, and what the check says of it compared with
+  # internal/publisher/repo/testdata/directory/verdicts.json. The verdicts are explained, finding by finding, by internal/publisher/manifest/
+  # testdata/reference/drift.json (a default test holds the two together). This job needs the network (the Directory and six repositories on github.com), which
+  # is why it is not part of `go test`; it never reads a moving branch, only commits named in the files it checks.
+  publisher-real-entries:
+    name: The Directory's registered databases, as registered (publisher check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.20.0'
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.0'
+          cache: true
+      - name: entries.json is what the Directory registers at the pinned commit
+        run: node internal/publisher/repo/testdata/directory/entries.mjs --check
+      - name: The verdicts on the registered repositories are the recorded ones
+        run: OVDB_REAL_DIRECTORY=1 go test -count=1 -v -run TestRealDirectoryEntries ./internal/publisher/repo/

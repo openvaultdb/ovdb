@@ -69,7 +69,7 @@ them (both in JavaScript, which is where a publisher's check meets them today):
 
 | Reference | Repository | Commit | Files |
 | --- | --- | --- | --- |
-| directory | `openvaultdb/directory` (CC0-1.0) | `e8db5488db31d3f63865e404acef487c33cf35df` | `scripts/lib/urls.mjs`, `git.mjs`, `directory.mjs` |
+| directory | `openvaultdb/directory` (CC0-1.0) | `087067483686865b13cb76511ff86f7364ea47ff` | `scripts/lib/urls.mjs`, `git.mjs`, `directory.mjs` |
 | chinookdb | `datatug/chinookdb` (MIT) | `79e7bb0b1d6f0666dce465874990dec64348331f` | `scripts/lib/directory-rules.mjs` |
 
 `testdata/reference/generate.mjs` fetches those files at exactly those commits,
@@ -77,7 +77,7 @@ imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
 v24.20.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **1497310** verdicts:
+network. The matrix is **1497564** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a
