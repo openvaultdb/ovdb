@@ -164,8 +164,17 @@ func TestPortLeaseIsExclusiveAcrossProcessesAndTCPStaysBindable(t *testing.T) {
 // which Windows needs before it can delete the temporary directories.
 func stopOnCleanup(t *testing.T, dirs paths.Dirs) {
 	t.Cleanup(func() {
+		record, _ := runtime.ReadRecord(dirs.Runtime)
 		if _, err := runtime.Stop(context.Background(), dirs.Runtime, 0); err != nil {
 			t.Logf("cleanup stop: %v", err)
+		}
+		// Nothing the test started is left running: a server that outlives its test would, under `go test`, hold the process list of the job (and on a
+		// machine that is not a CI runner, a port and a lease).
+		if record != nil {
+			if process, err := os.FindProcess(record.PID); err == nil && processAlive(process) {
+				_ = process.Kill()
+				t.Errorf("the server of the test (pid %d) is still alive after Stop", record.PID)
+			}
 		}
 	})
 }
