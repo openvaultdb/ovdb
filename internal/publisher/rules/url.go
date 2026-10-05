@@ -314,7 +314,7 @@ func scanHost(rest string, o options) (int, *Problem) {
 	if numericLabel(lastLabel) {
 		return 0, problem(RuleHostNumeric, "host %s is an IP address, or could be read as one; a public mapping names a host", show(rest[:i]))
 	}
-	if reservedLabels[lastLabel] && !(o.example && lastLabel == "example") || prevLabel+"."+lastLabel == homeArpa {
+	if reservedLabels[lastLabel] && (!o.example || lastLabel != "example") || prevLabel+"."+lastLabel == homeArpa {
 		return 0, problem(RuleHostReserved, "host %s is a local, internal or reserved name, not a public host", show(rest[:i]))
 	}
 	return i, nil
