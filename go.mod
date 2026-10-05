@@ -19,6 +19,7 @@ require (
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.0
 	github.com/meaninggraph/cli v0.2.0
 	github.com/openvaultdb/openvaultdb-go v0.9.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.3.2
 	github.com/strongo/cli-helpers v0.26.0
@@ -91,7 +92,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/strongo/random v0.0.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
