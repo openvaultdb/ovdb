@@ -35,12 +35,18 @@ const (
 	AlsoNot = Other("other2")
 	Plain = "plain"
 	Computed Action = prefix + "x"
+	// The forms that were skipped: a typed constant that also converts, and
+	// several names at once.
+	C Action = Action("c")
+	D, E Action = "d", "e"
+	F, G = Action("f"), Action("g")
+	H, I Action = "h", "i"
 )
 const prefix = "p"
 `, `package p
 const Later = Action("later")
 `)
-	if got, want := StringConstsOfType(files, "Action"), []string{"added", "later", "skipped"}; !slices.Equal(got, want) {
+	if got, want := StringConstsOfType(files, "Action"), []string{"added", "c", "d", "e", "f", "g", "h", "i", "later", "skipped"}; !slices.Equal(got, want) {
 		t.Errorf("Action constants = %v, want %v", got, want)
 	}
 }
