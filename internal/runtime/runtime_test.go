@@ -49,6 +49,8 @@ func TestMain(m *testing.M) {
 		os.Exit(childServe())
 	case "start":
 		os.Exit(childStart())
+	case "exit":
+		os.Exit(0)
 	case "sleep":
 		time.Sleep(time.Minute)
 		os.Exit(0)
@@ -171,8 +173,10 @@ func stopOnCleanup(t *testing.T, dirs paths.Dirs) {
 		// Nothing the test started is left running: a server that outlives its test would, under `go test`, hold the process list of the job (and on a
 		// machine that is not a CI runner, a port and a lease).
 		if record != nil {
-			if process, err := os.FindProcess(record.PID); err == nil && processAlive(process) {
-				_ = process.Kill()
+			if alive, err := processAlive(record.PID); err != nil {
+				t.Errorf("check the server of the test: %v", err)
+			} else if alive {
+				_ = daemonlifecycle.TerminateIfSameProcess(record.PID, record.ProcessIdentity)
 				t.Errorf("the server of the test (pid %d) is still alive after Stop", record.PID)
 			}
 		}
@@ -392,7 +396,11 @@ func TestStopNeverKillsReusedPID(t *testing.T) {
 	if err != nil || state.Running {
 		t.Errorf("Inspect = %+v, %v; want not running", state, err)
 	}
-	if !processAlive(sleeper.Process) {
+	alive, err := processAlive(sleeper.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !alive {
 		t.Fatal("the unrelated process was killed")
 	}
 }
@@ -487,18 +495,98 @@ func TestLogRotatesAndRestartReplacesServer(t *testing.T) {
 	}
 }
 
-func processAlive(process *os.Process) bool {
+// An exited Unix child still has a pid until its parent waits for it. Signal 0
+// can succeed in that interval; the stop contract is that no process is running.
+// Keep the child deliberately unreaped until the liveness assertion has run.
+func TestExitedUnreapedChildIsNotAlive(t *testing.T) {
 	if goruntime.GOOS == "windows" {
-		done := make(chan struct{})
-		go func() { _, _ = process.Wait(); close(done) }()
+		t.Skip("Unix zombie process semantics")
+	}
+	child := exec.Command(os.Args[0])
+	child.Env = append(os.Environ(), childEnv+"=exit")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	deadline := time.NewTimer(runtime.DefaultTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_, err := daemonlifecycle.ProcessIdentity(child.Process.Pid)
+		if errors.Is(err, daemonlifecycle.ErrProcessNotFound) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
 		select {
-		case <-done:
-			return false
-		case <-time.After(200 * time.Millisecond):
-			return true
+		case <-deadline.C:
+			t.Fatal("the test child did not exit")
+		case <-ticker.C:
 		}
 	}
-	return process.Signal(syscall.Signal(0)) == nil
+	alive, err := processAlive(child.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alive {
+		t.Error("an exited unreaped child was reported as alive")
+	}
+}
+
+// Liveness uses the stop API's kernel identity predicate. In particular, an
+// exited Unix child awaiting Wait is gone even though signal 0 still succeeds.
+// Return query failures so callers cannot silently treat an unknown process as gone.
+func processAlive(pid int) (bool, error) {
+	_, err := daemonlifecycle.ProcessIdentity(pid)
+	if errors.Is(err, daemonlifecycle.ErrProcessNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// A successfully reaped child has no process to open on Windows. Both the
+// direct liveness check and server cleanup must treat that PID as stopped.
+func TestReapedChildIsNotAliveDuringCleanup(t *testing.T) {
+	child := exec.Command(os.Args[0])
+	child.Env = append(os.Environ(), childEnv+"=exit")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	pid := child.Process.Pid
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if alive, err := processAlive(pid); err != nil || alive {
+		t.Fatalf("reaped child: alive=%t, err=%v; want stopped", alive, err)
+	}
+	dirs := testDirs(t)
+	if _, err := runtime.PrepareDirs(dirs, "test"); err != nil {
+		t.Fatal(err)
+	}
+	record := fmt.Sprintf(`{"schema":1,"instance_id":"reaped","home":%q,"pid":%d,"process_identity":"exited-child","port":%d,"version":"x"}`,
+		dirs.Home, pid, freePort(t))
+	if err := paths.WriteFilePrivate(filepath.Join(dirs.Runtime, runtime.RecordFile), []byte(record)); err != nil {
+		t.Fatal(err)
+	}
+	stopOnCleanup(t, dirs)
+}
+
+func TestProcessAliveReportsRunningChildAndQueryErrors(t *testing.T) {
+	child := exec.Command(os.Args[0])
+	child.Env = append(os.Environ(), childEnv+"=sleep")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	if alive, err := processAlive(child.Process.Pid); err != nil || !alive {
+		t.Fatalf("running child: alive=%t, err=%v", alive, err)
+	}
+	if alive, err := processAlive(0); err == nil || alive {
+		t.Fatalf("invalid pid query: alive=%t, err=%v; want an error", alive, err)
+	}
 }
 
 // AC:impostor-port: a program only on [::1] makes start fail with

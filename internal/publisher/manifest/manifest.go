@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
+	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
 // ManifestFormat is the format a manifest declares.
@@ -92,25 +93,38 @@ func CheckManifest(doc []byte, path string, profile Profile) (Manifest, []Findin
 }
 
 func checkManifest(doc []byte, path string, b *budget, profile Profile) (Manifest, []Finding) {
+	m, _, findings := checkManifestWithAttachment(doc, path, b, profile)
+	return m, findings
+}
+
+func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Profile) (Manifest, Fact[*representation.Reference], []Finding) {
 	c := newCollector(path, b)
+	var attachment Fact[*representation.Reference]
 	if tooBig(c, doc) {
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	root := readDocument(c, doc, 0)
 	if root == nil {
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	if root.Kind != kindMap {
 		c.add("manifest-shape", root.Line, "is not a mapping: write the manifest as keys and values (format, id, title, ...)")
-		return Manifest{}, c.findings
+		return Manifest{}, attachment, c.findings
 	}
 	k := &manifestChecker{c: c, m: root, profile: profile}
 	k.out.Read = true
 	k.check()
+	if n := root.Field("representation_contract"); n != nil {
+		ref, err := representation.ParseAttachment(doc)
+		attachment = found(n, err == nil, ref)
+		if err != nil {
+			c.add("representation-attachment", n.Line, "invalid representation_contract attachment: %s", plain(err.Error()))
+		}
+	}
 	if profile == Publisher {
 		k.publisher()
 	}
-	return k.out, c.findings
+	return k.out, attachment, c.findings
 }
 
 // A problem function returns what is wrong with a text, or "" when it is fine.
@@ -308,7 +322,7 @@ func (k *manifestChecker) check() {
 	out.PublisherRepository = k.text(repository)
 
 	licences := m.Field("licences")
-	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: licenceProblem})
+	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: dataLicenceProblem})
 
 	k.recordsets()
 	k.recordsetEntities()
@@ -477,6 +491,17 @@ func (k *manifestChecker) recordsets() {
 		seen[item.Text] = true
 	}
 	k.out.Recordsets = found(list, good, names)
+}
+
+// RepresentationAttachment reads the optional attachment only from a manifest
+// that the strict manifest reader can read. Invalid manifest syntax is already a
+// manifest finding; absence keeps legacy behavior independent of attachment YAML.
+func RepresentationAttachment(data []byte) (*representation.Reference, error) {
+	root, err := parseYAML(data)
+	if err != nil || root == nil || root.Kind != kindMap || root.Field("representation_contract") == nil {
+		return nil, nil
+	}
+	return representation.ParseAttachment(data)
 }
 
 // recordsetEntities judges recordset_entities, which says which ModelSpec entity each native recordset name is: a mapping from names that recordsets

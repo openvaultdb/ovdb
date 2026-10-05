@@ -4,7 +4,7 @@ Judges a repository: the presence of files and what they say, for `ovdb publishe
 (package `internal/publisher/checkcmd`, which the shipped binary links). It reads one commit, at HEAD,
 as committed and never the working tree, through a `Reader`, and hands OVDB.md and
 the manifests to package `manifest`. The reference is the Chinook checker
-(`datatug/chinookdb@79e7bb0b1d6f0666dce465874990dec64348331f`,
+(`demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`,
 `scripts/lib/ovdb-manifest.mjs`): Go never accepts a repository that it refuses, and
 every repository that Go refuses and it accepts is a recorded kind below, with cases.
 
@@ -60,7 +60,7 @@ What the reader trusts, and what it does not:
   `core.alternateRefsCommand`, `uploadpack.packObjectsHook`, `core.gitProxy`, credential helpers).
   A `.git` file that points elsewhere is followed, as the checker does. Check a clone you made,
   not a directory that someone else handed you, unless you have looked at its `.git/config`.
-- **`refs/replace` is honoured**, as the checker does: "the commit as committed" is the commit as
+- **For legacy manifests without attachments, `refs/replace` is honoured**, as the checker does: "the commit as committed" is the commit as
   this clone's replace refs show it. Turning them off would make this check accept a repository the
   checker refuses. The Directory reads the hosted repository, not this clone, and will not see
   replace refs.
@@ -229,3 +229,66 @@ A path that git cannot report is not tested: git prints only the modes 100644, 1
 Node 24, git and the network, like the other generators, and fetches the references fresh. A clone passed with
 `--directory` or `--chinookdb` is checked as committed (no `extensions.worktreeConfig`, no `config.worktree`), but
 its `node_modules/yaml` is not: a clone you pass is trusted code.
+
+## Attached representation checks
+
+Default `Check` uses the same immutable repository/revision reader pool for
+metadata closure and the separate format3 exact raw source-data proof. The
+attachment must match this manifest's local model, binding and published target/
+bridge recordsets. Metadata resolution never reads `source.data`, `native.dataset`,
+native chunks or a native key corpus. Source-data proofs hash raw committed bytes
+(including malformed UTF8 or a BOM) without parsing rows, at a separate exact
+5MiB cap. Distinct full references are verified sequentially and deduplicated only
+within this repository check, across at most 32 manifests with 32 contracts each.
+Proof caching retains bounded metadata and releases source bytes.
+
+The metadata-only `CheckRepresentation` helper does not prove source-data bytes.
+The default check requires them and refuses missing proof. Neither result grants
+semantic admission, guarantees row interpretation or runtime success, or substitutes
+for Directory's independent canonical admission review. Chinook's offline precheck
+retains explicit unresolved external notes and is a partial result.
+
+Reference pins are in `../references.mjs`. Like-strength structural/data parity
+with Directory preserves conservative JavaScript safe-integer and null-count
+refusals; Go retains exact integer tokens for native count associations. These
+expected differences do not constitute full canonical or runtime parity.
+
+Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+
+The checked `representation-stages.json` golden compares 26 cases across two
+independent native metadata fixtures at the landed Directory validator. Metadata
+never reads source or native data; the separate byte stage includes 5MiB boundaries,
+raw BOM/invalid UTF8 bytes and reader/mode/hash refusals. Its result strength is
+explicitly structural metadata plus offline raw bytes, without canonical admission.
+
+The general canonical identity URL predicate in newer JavaScript companions
+accepts root/nested identity paths and trailing slashes. Released Go at
+`27f2664782e01feb4fb5938f28b8f8eae0a868a8` requires an `ovdb` marker and refuses a
+trailing slash; this pre-existing stricter Go predicate is preserved. W1 Cloud
+`/ovdb/dbs/` identities satisfy it. The frozen corpus stays at its exact legacy
+fixture bytes, while the reference code runs at the current landed JS pins.
+
+Attached Git checks and all explicit Git dependency readers use original commit,
+tree and blob objects, with `git --no-replace-objects` on every command. The policy
+is selected by the reader, independent of caller environment variables. An already
+selected commit ID is retained and its original commit type is independently
+verified; an unselected view pins HEAD before any provider reads. Dependency revision
+comparison, tracked regular-file mode, direct commit path and raw-byte checksum
+must all match. Grafts can alter ancestry but these checks never traverse ancestry.
+Existing environment isolation and promisor lazy-fetch refusal still apply.
+
+A bounded discovery pass examines the original commit's `OVDB.md` and at most 32
+listed manifests (256 KiB per document), plus the legacy view when needed. It reads
+no models, meaning files, source bytes or native corpus. This prevents replacement
+objects from hiding an original attachment. Discovery distinguishes presence,
+confirmed absence and uncertainty. Original read, type, size, parsing or count
+failures select original validation and retain the refusal even if a retry succeeds.
+Only valid original manifests all proven unattached permit the legacy reader;
+an attachment declared by the legacy view still selects original validation.
+Discovery, mode selection and full validation retain one selected commit ID.
+If an attachment appears later in the legacy validation pass, the check restarts
+on that commit's original objects with a fresh judge and empty file/tree/proof
+caches; no legacy manifest association or metadata contributes to its proofs.
+The metadata-only helper pins original provider objects before mode or byte reads
+and also selects original dependency objects.
+Caller-supplied non-Git readers remain trusted immutable-reader seams.

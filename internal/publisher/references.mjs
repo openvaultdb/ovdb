@@ -10,7 +10,8 @@ import { join, resolve } from 'node:path';
 
 export const references = {
   directory: { repository: 'openvaultdb/directory', commit: '087067483686865b13cb76511ff86f7364ea47ff' },
-  chinookdb: { repository: 'datatug/chinookdb', commit: '79e7bb0b1d6f0666dce465874990dec64348331f' },
+  chinookdb: { repository: 'demo-db/chinook', commit: '8b904298d0c3bba20c12dfbc29bb75bf5c37f683' },
+  fixtures: { repository: 'datatug/chinookdb', commit: '79e7bb0b1d6f0666dce465874990dec64348331f' },
 };
 
 // The URL a reference is fetched from.

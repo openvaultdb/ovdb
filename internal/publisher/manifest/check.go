@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
+	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
 // Profile says whose rules judge the documents.
@@ -154,6 +155,13 @@ func (j *Judge) OVDBMd(doc []byte) (OVDBMd, []Finding) { return checkOVDBMd(doc,
 // Manifest judges the manifest at path.
 func (j *Judge) Manifest(doc []byte, path string) (Manifest, []Finding) {
 	return checkManifest(doc, path, j.b, j.profile)
+}
+
+// ManifestWithAttachment also returns the attachment judged from the same
+// parsed manifest. A written but invalid attachment is present and unusable;
+// a document the strict reader refuses yields no usable attachment.
+func (j *Judge) ManifestWithAttachment(doc []byte, path string) (Manifest, Fact[*representation.Reference], []Finding) {
+	return checkManifestWithAttachment(doc, path, j.b, j.profile)
 }
 
 // Report is a finding of the caller's about document, made the way the findings

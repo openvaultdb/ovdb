@@ -241,7 +241,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
-          node-version: '24.20.0'
+          node-version: '24.19.0'
       - name: The reference checkout rule
         run: node --test internal/publisher/references.test.mjs
       - name: The goldens of package rules are current
@@ -281,7 +281,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
-          node-version: '24.20.0'
+          node-version: '24.19.0'
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.0'

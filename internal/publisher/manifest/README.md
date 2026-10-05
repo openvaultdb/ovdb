@@ -192,7 +192,7 @@ rule of `Directory` first and adds what the Chinook checker adds; a fact that a 
 | Shared form | `meaning.graph.address`, when given, is a `meaning://` address | And it is `meaning.address` without its pin |
 | Licences | An SPDX-shaped id | One of 18 ids |
 | `meaning.graph.id` | Text | Lower-case letters, digits and single hyphens |
-| Recordsets | A non-empty list of names, each once | And each name looks like a ModelSpec entity |
+| Recordsets | A non-empty list of native names, each once, bounded to 256 UTF-16 code units and free of path separators, dot segments and controls | Same native-name rules; `recordset_entities` maps names to distinct ModelSpec entity identifiers |
 
 Both judge `homepage`, the engine, the form and the number of keys the same way.
 
@@ -209,41 +209,43 @@ its README; the ones that need the content of the model file or the meaning file
 
 | Rule | Who | Rule of Go | Lines |
 | --- | --- | --- | --- |
-| unknown keys at every level of a manifest | documents | `manifest-keys` | ovdb-manifest.mjs 251, 254, 255 |
-| id is a lower-case id of at most 80 characters | documents | `manifest-id` | ovdb-manifest.mjs 260 |
-| deployment.discovery is on the origin of url, at /.well-known/openvaultdb | documents | `manifest-discovery` | ovdb-manifest.mjs 289, 290 |
-| deployment.recordset_page is on the origin of deployment.url | documents | `manifest-url` | ovdb-manifest.mjs 295 |
-| publisher.url is https://github.com/<owner> | documents | `manifest-publisher` | ovdb-manifest.mjs 302 |
-| publisher.repository is required, a github.com repository, owned by the owner of publisher.url | documents | `manifest-publisher` | ovdb-manifest.mjs 305, 306, 308 |
-| model.address names a repository of github.com and a module that starts with a letter | documents | `manifest-model` | ovdb-manifest.mjs 67, 319, 320 |
-| model.name is a module name that starts with a letter | documents | `manifest-model` | ovdb-manifest.mjs 322, 323 |
-| model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file) | documents | `manifest-model` | ovdb-manifest.mjs 486, 487 |
-| shared form: neither address is the publisher's own repository | documents | `manifest-model`, `manifest-meaning` | ovdb-manifest.mjs 333, 334, 485, 499 |
-| own form: model.hcl is required, model.modelspec ends in .modelspec.json | documents | `manifest-required`, `manifest-model` | ovdb-manifest.mjs 378, 387, 388 |
-| own form: model.address is this repository (publisher.repository), without a pin | documents | `manifest-model` | ovdb-manifest.mjs 426, 427, 428, 429 |
-| meaning.graph.id is a registry id (lower-case letters, digits, single hyphens) | documents | `manifest-meaning` | ovdb-manifest.mjs 437, 507 |
-| own form: meaning.graph.address is publisher.repository as an address, in any case | documents | `manifest-meaning` | ovdb-manifest.mjs 476, 477, 478 |
-| shared form: meaning.graph.address, when given, is meaning.address without its pin | documents | `manifest-meaning` | ovdb-manifest.mjs 510, 511 |
-| each licence is one of 18 SPDX ids | documents | `manifest-licence` | ovdb-manifest.mjs 356, 360 |
-| recordsets are names that look like ModelSpec entities | dropped | none (D0) | ovdb-manifest.mjs 525, 526 |
-| every recordset page the template makes is a public https URL | documents | `manifest-recordsets` | ovdb-manifest.mjs 528, 529, 530, 531 |
-| OVDB.md has no key but ovdb and publish | documents | `ovdbmd-keys` | ovdb-manifest.mjs 198, 199 |
-| publish lists each manifest once | documents | `ovdbmd-duplicate` | ovdb-manifest.mjs 216, 217 |
-| the repository can be read at HEAD (it is a git repository with a commit) | files | package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version` | ovdb-manifest.mjs 186, 187 |
-| OVDB.md is a tracked regular file | files | package repo: `repo-ovdbmd` | ovdb-manifest.mjs 188, 189 |
-| OVDB.md can be read (and is not over 16 MB) | files | package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 194 |
-| every manifest that OVDB.md lists is a tracked regular file | files | package repo: `repo-manifest` | ovdb-manifest.mjs 221, 222, 223 |
-| every manifest that OVDB.md lists can be read (and is not over 16 MB) | files | package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 244, 246 |
-| every manifest that OVDB.md lists is checked | files | package repo: `manifest.Judge` | ovdb-manifest.mjs 226 |
-| every file a manifest names is a tracked regular file | files | package repo: `repo-file` | ovdb-manifest.mjs 391, 392 |
-| every file a manifest names can be read (and is not over 16 MB) | files | package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 345, 347 |
-| the model file is JSON with a module name and entities | files | package repo: `repo-model-json`, `repo-model-depth`, `repo-model-module`, `repo-model-entities` | ovdb-manifest.mjs 408, 410, 413, 415 |
-| own form: model.name is the module of the model file | files | package repo: `repo-model-name` | ovdb-manifest.mjs 420 |
-| own form: the module of model.address is the model file's | files | package repo: `repo-model-address` | ovdb-manifest.mjs 427, 429 |
-| the meaning file is YAML whose id and license are the manifest's | files | package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules | ovdb-manifest.mjs 448, 451, 453, 455 |
-| the meaning file's models: entry for the module is model.hcl | files | package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl` | ovdb-manifest.mjs 459, 461, 467, 468 |
-| own form: recordsets are exactly the model's entities | files | package repo: `repo-recordsets` | ovdb-manifest.mjs 535, 538, 539 |
-| publisher.repository is the repository the check is run in (the --repository option) | input | package repo: `repo-repository` | ovdb-manifest.mjs 309 |
+| unknown keys at every level of a manifest | documents | `manifest-keys` | ovdb-manifest.mjs 277, 280, 281 |
+| id is a lower-case id of at most 80 characters | documents | `manifest-id` | ovdb-manifest.mjs 286 |
+| deployment.discovery is on the origin of url, at /.well-known/openvaultdb | documents | `manifest-discovery` | ovdb-manifest.mjs 315, 316 |
+| deployment.recordset_page is on the origin of deployment.url | documents | `manifest-url` | ovdb-manifest.mjs 321 |
+| publisher.url is https://github.com/<owner> | documents | `manifest-publisher` | ovdb-manifest.mjs 328 |
+| publisher.repository is required, a github.com repository, owned by the owner of publisher.url | documents | `manifest-publisher` | ovdb-manifest.mjs 331, 332, 334 |
+| model.address names a repository of github.com and a module that starts with a letter | documents | `manifest-model` | ovdb-manifest.mjs 82, 345, 346 |
+| model.name is a module name that starts with a letter | documents | `manifest-model` | ovdb-manifest.mjs 348, 349 |
+| model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file) | documents | `manifest-model` | ovdb-manifest.mjs 515, 516 |
+| shared form: neither address is the publisher's own repository | documents | `manifest-model`, `manifest-meaning` | ovdb-manifest.mjs 359, 360, 514, 528 |
+| own form: model.hcl is required, model.modelspec ends in .modelspec.json | documents | `manifest-required`, `manifest-model` | ovdb-manifest.mjs 407, 416, 417 |
+| own form: model.address is this repository (publisher.repository), without a pin | documents | `manifest-model` | ovdb-manifest.mjs 455, 456, 457, 458 |
+| meaning.graph.id is a registry id (lower-case letters, digits, single hyphens) | documents | `manifest-meaning` | ovdb-manifest.mjs 466, 536 |
+| own form: meaning.graph.address is publisher.repository as an address, in any case | documents | `manifest-meaning` | ovdb-manifest.mjs 505, 506, 507 |
+| shared form: meaning.graph.address, when given, is meaning.address without its pin | documents | `manifest-meaning` | ovdb-manifest.mjs 539, 540 |
+| licences are known SPDX atoms; data permits bounded conjunctions | documents | `manifest-licence` | ovdb-manifest.mjs 385, 388 |
+| recordsets are names that look like ModelSpec entities | dropped | none (D0) | ovdb-manifest.mjs 554, 555 |
+| every recordset page the template makes is a public https URL | documents | `manifest-recordsets` | ovdb-manifest.mjs 557, 558, 559, 560 |
+| OVDB.md has no key but ovdb and publish | documents | `ovdbmd-keys` | ovdb-manifest.mjs 223, 224 |
+| publish lists each manifest once | documents | `ovdbmd-duplicate` | ovdb-manifest.mjs 241, 242 |
+| the repository can be read at HEAD (it is a git repository with a commit) | files | package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version` | ovdb-manifest.mjs 211, 212 |
+| OVDB.md is a tracked regular file | files | package repo: `repo-ovdbmd` | ovdb-manifest.mjs 213, 214 |
+| OVDB.md can be read (and is not over 16 MB) | files | package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 219 |
+| every manifest that OVDB.md lists is a tracked regular file | files | package repo: `repo-manifest` | ovdb-manifest.mjs 246, 247, 248 |
+| every manifest that OVDB.md lists can be read (and is not over 16 MB) | files | package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 269, 271 |
+| every manifest that OVDB.md lists is checked | files | package repo: `manifest.Judge` | ovdb-manifest.mjs 251 |
+| every file a manifest names is a tracked regular file | files | package repo: `repo-file` | ovdb-manifest.mjs 420, 421 |
+| every file a manifest names can be read (and is not over 16 MB) | files | package repo: `repo-file-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates` | ovdb-manifest.mjs 371, 373 |
+| the model file is JSON with a module name and entities | files | package repo: `repo-model-json`, `repo-model-depth`, `repo-model-module`, `repo-model-entities` | ovdb-manifest.mjs 437, 439, 442, 444 |
+| own form: model.name is the module of the model file | files | package repo: `repo-model-name` | ovdb-manifest.mjs 449 |
+| own form: the module of model.address is the model file's | files | package repo: `repo-model-address` | ovdb-manifest.mjs 456, 458 |
+| the meaning file is YAML whose id and license are the manifest's | files | package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules | ovdb-manifest.mjs 477, 480, 482, 484 |
+| the meaning file's models: entry for the module is model.hcl | files | package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl` | ovdb-manifest.mjs 488, 490, 496, 497 |
+| own form: recordsets are exactly the model's entities | files | package repo: `repo-recordsets` | ovdb-manifest.mjs 564, 567, 568 |
+| the optional attachment has a locally checked structural precheck; external closure remains partial | files | package repo: structural metadata associations and required format3 raw data proofs; no canonical admission | ovdb-manifest.mjs 573 |
+| a JSON database descriptor uses its separate pinned schema | files | outside the legacy Go manifest profile (`manifest-format`) | ovdb-manifest.mjs 587, 591, 597, 605, 607, 609 |
+| publisher.repository is the repository the check is run in (the --repository option) | input | package repo: `repo-repository` | ovdb-manifest.mjs 335 |
 
 Not judged, whatever the profile: that the named files are tracked regular files at HEAD
 and of a size, and anything read through a registry. A required text is checked with
@@ -291,11 +293,11 @@ verdict on each document (`directory.verdicts.json`), and the values its own cod
 derives for every field of the table above from each accepted manifest
 (`directory.facts.json`, as the difference from the facts of the document's base).
 `go test` reads them, applies the Go functions, starts no process and needs no
-network. The corpus is **7326 manifests and 658 OVDB.md documents** (1026
+network. The corpus is **7401 manifests and 658 OVDB.md documents** (1032
 KiB), stored as patches of whole lines against a few base documents (the real
 Chinook manifest and `OVDB.md`, the hoster example, the Directory's own fixture,
 JSON spellings of the manifests), with flags for CRLF, a byte-order mark, invalid
-UTF-8 and padding to an exact size; Node v24.20.0 made the committed ones:
+UTF-8 and padding to an exact size; Node v24.19.0 made the committed ones:
 
 - every field removed, renamed, given each of ten wrong types, given each
   white-space and format character alone (U+0000 to U+3000 and the zero-width and
@@ -331,15 +333,15 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **7181 agree, 803 stricter, 0 accepted by Go where the
+On the corpus: **7256 agree, 803 stricter, 0 unrecorded Go acceptances where the
 Directory refuses**.
 
-On the facts: 2193 manifests and 267 OVDB.md documents have their facts compared.
+On the facts: 2207 manifests and 267 OVDB.md documents have their facts compared.
 
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 5444 manifests, 3251 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 5519 manifests, 3312 of them refused.
 
 ## The proof, Publisher profile
 
@@ -363,20 +365,20 @@ repository holds only `OVDB.md` and the manifest; the *wrong* one has well forme
 that disagree with the manifest; the *broken* one has files that are not JSON and not YAML.
 What these refuse and the consistent one does not **needs other files** and is
 slice 3's. An `OVDB.md` case lists the real Chinook manifest under each entry, so that only
-`OVDB.md` can be wrong. Of the 1372 manifests and 130 OVDB.md documents that the
+`OVDB.md` can be wrong. Of the 1389 manifests and 130 OVDB.md documents that the
 checker accepts, these classes of refusal would follow from files (manifests, OVDB.md
 documents):
 
-- a tracked regular file (746 manifests, 130 OVDB.md documents)
-- model.address against the model file (736 manifests, 130 OVDB.md documents)
+- a tracked regular file (753 manifests, 130 OVDB.md documents)
+- model.address against the model file (743 manifests, 130 OVDB.md documents)
 - model.name against the model file (5 manifests, 0 OVDB.md documents)
-- recordsets against the model (746 manifests, 130 OVDB.md documents)
-- the meaning file against the manifest (746 manifests, 130 OVDB.md documents)
-- the model file: JSON, module and entities (746 manifests, 130 OVDB.md documents)
+- recordsets against the model (753 manifests, 130 OVDB.md documents)
+- the meaning file against the manifest (753 manifests, 130 OVDB.md documents)
+- the model file: JSON, module and entities (753 manifests, 130 OVDB.md documents)
 
-The corpus is the one of the Directory profile, **7285 manifests and 658
-OVDB.md documents**, judged again by this reference (it accepts 1372 manifests and
-130 OVDB.md documents and refuses 5913 and 528), with the rows aimed at what
+The corpus is the one of the Directory profile, **7401 manifests and 658
+OVDB.md documents**, judged again by this reference (it accepts 1389 manifests and
+130 OVDB.md documents and refuses 6012 and 528), with the rows aimed at what
 only this profile refuses: every manifest edit of the checker's own test suite that
 applies on its own (the single-field edits of `scripts/test-model.mjs`, with bodies of
 several lines too), each licence id in and out of the list and in other letter case in
@@ -388,18 +390,13 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7432 agree, 485 stricter, 67 accepted by Go where the Chinook
-checker refuses**: 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by D0 (the lead's default; the founder may
-overrule it): the Directory at its pin is the reference for both profiles, the Directory accepts each of them, and every problem that the Chinook checker found
-in each is of a class that D0 drops, which the publisher golden records per document (`chinookClasses`): D, a recordset name that is not a ModelSpec entity
-identifier (the Directory takes recordsets as the database names them), which 66 of them have alone; and K, `recordset_entities` as an unknown key (the
-Directory reads it), which the other one has beside D. A document with any other problem of the checker's is not explained, whatever its recordsets.
-`TestReferencePublisher` holds each of the 67 to that, and fails on one that is not. The facts: under the Publisher profile, 917 manifests and 104
+On the corpus: **7502 agree, 490 stricter, 0 unrecorded Go acceptances where the Chinook
+checker refuses**. The facts: under the Publisher profile, 925 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 5133 manifests, 366 OVDB.md documents and 5904 pairs (of 8642) that the
+every one of the 5194 manifests, 366 OVDB.md documents and 5965 pairs (of 8717) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -431,6 +428,7 @@ it has none there: see the table of places.
 | `length-path` | 8 | 6 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
+| `legacy-identity-url` | 5 | 5 | Released Go retains its canonical identity URL predicate: no trailing slash and an ovdb path marker; newer JavaScript accepts general identity paths. |
 | `url-length` | 5 | 2 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
@@ -582,7 +580,7 @@ the free text of `title` and `description` and every key that no rule reads incl
 package reads (`generate.mjs` makes it in a canonical form: null, a boolean, a number as the 16 hex digits of its IEEE double, a string with its length in bytes,
 a sequence, a mapping with its keys in byte order); the test makes the digest of what the reader reads and compares them. The corpus has a family of
 scalars for it (numbers in many spellings, the booleans and nulls of YAML 1.1 and 1.2, strings and escapes, block scalars with their indents and blank lines,
-plain values over several lines, flow collections, nested block collections), in the manifests and in OVDB.md. Result: 5948 documents are read by both, 5943
+plain values over several lines, flow collections, nested block collections), in the manifests and in OVDB.md. Result: 6023 documents are read by both, 6018
 of them with the same values, and 5 that differ only in the integer -0: the `yaml` package reads `-0` as the number -0 and the Go reader as 0 (its integers
 are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
 reads 0 that the yaml package refuses.
@@ -590,20 +588,18 @@ reads 0 that the yaml package refuses.
 ### Recorded differences: not yet ported (the Directory profile)
 
 The Directory's checker has moved since the first reference was pinned, and Go has not yet ported every rule it added. Where that makes Go
-refuse what the Directory accepts, the kind is recorded here, with its number of corpus documents, until its slice lands; where it makes Go accept what the
-Directory refuses (the four documents counted above) it is recorded in `testdata/reference/drift.json` and by the test that holds the
+refuse what the Directory accepts, the global-identity kind is recorded in the shared table above under both current profiles, until its slice lands; where it makes Go accept what the
+Directory refuses (no remaining looser corpus documents) it is recorded in `testdata/reference/drift.json` and by the test that holds the
 corpus to it. These are not bounds and not choices. `testdata/reference/drift.json` is the whole list, in two classes (Go looser first), with the slice
 that removes each entry; `TestDrift` fails when the list and what Go does disagree, in either direction, so an entry is removed in the pull request
 that ports its rule. The rules of the Directory that the corpus does not reach are covered by `testdata/reference/drift.probes.json`: one manifest
 for each, with the verdict of the reference at the pin.
 
-| Kind | Documents | Why |
-| --- | --- | --- |
-| `manifest-url` | 5 | NOT A BOUND: not yet ported. The Directory accepts a global database identity, a url that ends in a slash, since 574a7ad; Go still refuses it (slice A0c, listed in drift.json). |
+The five `legacy-identity-url` corpus differences are the global-identity gap (slice A0c in `drift.json`). The representation envelope and compound data licence probes now agree with the Directory: this implementation validates the optional envelope and accepts bounded compound data licences in both profiles. All probes remain committed, so `TestDrift` detects regressions.
 
 ### Recorded differences: the Publisher profile's own
 
-Three kinds are made by rules that the Publisher profile alone has, both about `meaning.graph.address` in the own form: the Directory's rule that the
+Three kinds are made by rules that the Publisher profile alone has: the native recordset-name bound, and two about `meaning.graph.address` in the own form: the Directory's rule that the
 address starts with the literal `meaning://` still applies (the Chinook checker accepts `MEANING://` and `Meaning://`: it compares the address in
 lower case), and the address is compared with `publisher.repository` in ASCII case only (see below).
 
@@ -668,7 +664,7 @@ tables above. The digests of the rules golden are read from its committed file: 
 `internal/publisher/rules/testdata/reference/generate.mjs` first when the rules change.
 
 The job `publisher-goldens` of `.github/workflows/ci.yml` runs the three generators with `--check` and `node --test internal/publisher/references.test.mjs`, with Node
-24.20.0 (the version that the goldens record, so that a new Node is a change of the workflow and a regeneration together), on every pull request and push to
+24.19.0 (the version that the goldens record, so that a new Node is a change of the workflow and a regeneration together), on every pull request and push to
 main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoScheduledWorkflows`).
 
 ## What remains
@@ -678,3 +674,23 @@ main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoSc
   here for the meaning file), each held to the checker's lines and proved on whole repositories (see the README of package `repo`).
 - The command itself, `ovdb publisher check`, is built (package `internal/publisher/checkcmd`; the README of the module is its manual).
 - The Directory's own record and registry checks stay with the Directory.
+
+## Bounded data licence conjunctions
+
+Only `licences.data` may additionally contain 2–4 distinct current Publisher
+allowlist atoms separated by exactly ` AND `, at most 64 ASCII bytes. Both profiles
+preserve the scalar expression and authored order without normalization. Model
+and meaning predicates are unchanged. Directory's existing single-token shape
+acceptance remains separate from Publisher's exact 18-ID allowlist, including
+legacy plus forms, LicenseRef, unknown shaped IDs and case. Syntax success makes
+no legal compatibility or distribution-compliance claim.
+
+`representation_contract` is an optional closed provider-local JSON path and
+lowercase SHA256 pair. Manifest validation checks its shape; repository validation
+completes structural associations and required format3 raw source-data proofs.
+
+Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+
+The current Publisher validator is `demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Upstream native-recordset validation closes all four legacy Directory corpus differences. The Directory comparator permits no looser cases. Publisher cases accepted under the upstream D0 rule must also be accepted by Directory, and every problem reported by the pinned Chinook checker must be classified as D (the dropped entity-name restriction) or K (the added recordset_entities key); every other unrecorded acceptance fails. The generated reference refusals remain intact.
+
+All 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by the upstream D0 rule and also accepted by Directory. The generated chinookClasses records every problem per manifest: D is the entity-name restriction and K is recordset_entities as an unknown key. Any other problem (O) prevents a D0 explanation; a native name alone never excuses another refusal.

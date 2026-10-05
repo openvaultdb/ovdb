@@ -29,7 +29,7 @@ var allowedKeys = []struct {
 	path  []string
 	keys  []string
 }{
-	{"the manifest", nil, []string{"format", "id", "title", "description", "url", "deployment", "model", "meaning", "publisher", "licences", "recordsets", "recordsets_partial", "recordset_entities", "homepage"}},
+	{"the manifest", nil, []string{"format", "id", "title", "description", "url", "deployment", "model", "meaning", "publisher", "licences", "recordsets", "recordsets_partial", "recordset_entities", "homepage", "representation_contract"}},
 	{"deployment", []string{"deployment"}, []string{"url", "engine", "discovery", "recordset_page"}},
 	{"model", []string{"model"}, []string{"modelspec", "hcl", "address", "name"}},
 	{"meaning", []string{"meaning"}, []string{"file", "graph", "address"}},
@@ -109,7 +109,7 @@ func (k *manifestChecker) publisher() {
 		label string
 		fact  *Fact[string]
 	}{{"licences.model", &out.LicenceModel}, {"licences.meaning", &out.LicenceMeaning}, {"licences.data", &out.LicenceData}} {
-		if l.fact.Usable() && !slices.Contains(licenceIDs, l.fact.Value) {
+		if l.fact.Usable() && !slices.Contains(licenceIDs, l.fact.Value) && (l.label != "licences.data" || !dataConjunction(l.fact.Value)) {
 			c.add("manifest-licence", l.fact.Line, "%s must be one of the known SPDX licence ids (%s), got %s", l.label, strings.Join(licenceIDs, ", "), rules.Quote(l.fact.Value))
 			demote(l.fact)
 		}

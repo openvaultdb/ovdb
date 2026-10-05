@@ -3,10 +3,12 @@ package repo
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
+	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
 // MaxManifests is the most manifests of OVDB.md that are judged; the rest are one finding.
@@ -17,8 +19,8 @@ type Options struct {
 	// Repository, when set, is the repository the manifests must say they are in: each
 	// publisher.repository must equal it exactly, as the Chinook checker's --repository does.
 	Repository *string
-	// Dependencies are explicitly provisioned immutable readers for optional
-	// representation checks. Ordinary manifest checks never open them.
+	// Dependencies are explicitly provisioned immutable readers for attached
+	// metadata and exact source-data proofs. No-attachment checks never open them.
 	Dependencies DependencyReaders
 	// Profile says whose rules judge the documents; see package manifest.
 	Profile manifest.Profile
@@ -48,13 +50,16 @@ const (
 
 // checker holds one check.
 type checker struct {
-	r     Reader
-	j     *manifest.Judge
-	res   manifest.Result
-	dirs  map[string]dirResult
-	seen  map[string]bool
-	files map[string]fileRead // the result of reading each file that a manifest names, while there is room
-	kept  int                 // the bytes in files
+	r               Reader
+	j               *manifest.Judge
+	res             manifest.Result
+	dirs            map[string]dirResult
+	seen            map[string]bool
+	files           map[string]fileRead                // the result of reading each file that a manifest names, while there is room
+	kept            int                                // the bytes in files
+	sourceProofs    map[representation.Reference]error // raw-byte proofs, this repository check only
+	original        Reader                             // original view of the same selected commit, when running legacy
+	restartOriginal bool                               // an attachment appeared during legacy validation
 }
 
 // fileRead is what reading a file gave.
@@ -72,7 +77,10 @@ type dirResult struct {
 // is a tracked regular file; every manifest it lists is one, and is judged by
 // manifest.Judge.Manifest, and every file such a manifest names (model.modelspec,
 // model.hcl and meaning.file of an own-form manifest) is one; and publisher.repository
-// is Options.Repository when that is set. It reads no file but OVDB.md and the manifests.
+// is Options.Repository when that is set. Legacy manifests read their existing own
+// model/meaning files. An attached manifest additionally requires structural
+// metadata closure, manifest associations and exact format3 source-data byte proofs.
+// All external reads use explicitly provided immutable dependencies.
 //
 // The result is the shape of manifest.Check's: the findings are at most
 // manifest.MaxFindings, each message at most manifest.MaxMessageBytes, in the order
@@ -84,10 +92,99 @@ func Check(r Reader, o Options) manifest.Result {
 	if j == nil {
 		return manifest.Result{Profile: o.Profile, Findings: bad}
 	}
-	c := &checker{r: r, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]fileRead{}}
+	var discoveryFindings []manifest.Finding
+	var originalForLegacy Reader
+	if original, changed := OriginalObjects(r); changed {
+		state, id, findings := discoverAttachment(original, o.Profile)
+		if state != attachmentAbsent {
+			r = original
+			if state == attachmentIndeterminate {
+				discoveryFindings = findings
+			}
+		} else {
+			// Discovery pinned original before any mode decision. The legacy
+			// view must inspect and validate that same ID, even if HEAD moves.
+			r = AtCommit(r, id)
+			if legacy, _, _ := discoverAttachment(r, o.Profile); legacy == attachmentPresent {
+				r = original
+			} else {
+				originalForLegacy = original
+			}
+		}
+	}
+	c := &checker{r: r, original: originalForLegacy, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]fileRead{}}
 	c.run(o)
+	if c.restartOriginal {
+		// Discard every legacy manifest, finding and cache. Attached proofs
+		// and their manifest associations come only from the original view.
+		j, _ = manifest.NewJudge(o.Profile)
+		c = &checker{r: originalForLegacy, j: j, res: manifest.Result{Profile: o.Profile}, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]fileRead{}}
+		c.run(o)
+	}
+	// A retry cannot erase the refusal that prevented confirmed absence. Reuse
+	// the normal finding budget, and avoid repeating a persistent failure.
+	for _, finding := range discoveryFindings {
+		if !slices.Contains(c.res.Findings, finding) {
+			c.add(finding.Document, finding.Rule, finding.Line, "%s", finding.Message)
+		}
+	}
 	c.res.Findings = append(c.res.Findings, j.Notice("OVDB.md")...)
 	return c.res
+}
+
+type attachmentState uint8
+
+const (
+	attachmentAbsent attachmentState = iota // every listed original manifest was valid and unattached
+	attachmentPresent
+	attachmentIndeterminate
+)
+
+// Discovery reads the original commit too: replacements must not hide a required
+// attachment proof. Only OVDB.md and at most MaxManifests bounded manifests are
+// read, never model/source/native data. Failure is never confirmed absence.
+func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, string, []manifest.Finding) {
+	j, _ := manifest.NewJudge(profile)
+	c := &checker{r: r, j: j, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]fileRead{}}
+	head, err := r.Head()
+	if err != nil {
+		c.add("repository", ruleOf(err), 0, "cannot be read: %s", ascii(err.Error()))
+		return attachmentIndeterminate, "", c.res.Findings
+	}
+	if !c.require("OVDB.md", RuleOVDBMd, 0, "OVDB.md", "OVDB.md") {
+		return attachmentIndeterminate, head, c.res.Findings
+	}
+	data, ok := c.read("OVDB.md", "OVDB.md")
+	if !ok {
+		return attachmentIndeterminate, head, c.res.Findings
+	}
+	md, findings := j.OVDBMd(data)
+	if len(findings) != 0 {
+		return attachmentIndeterminate, head, findings
+	}
+	if len(md.Entries) > MaxManifests {
+		c.add("OVDB.md", RuleManifests, md.EntryLines[MaxManifests], "OVDB.md lists %d manifests; at most %d are judged", len(md.Entries), MaxManifests)
+		return attachmentIndeterminate, head, c.res.Findings
+	}
+	for i, path := range md.Entries {
+		if !c.require("OVDB.md", RuleManifest, md.EntryLines[i], "publish entry "+rules.Quote("./"+path), path) {
+			return attachmentIndeterminate, head, c.res.Findings
+		}
+		data, ok := c.read(path, path)
+		if !ok {
+			return attachmentIndeterminate, head, c.res.Findings
+		}
+		attachment, err := manifest.RepresentationAttachment(data)
+		if attachment != nil || err != nil {
+			return attachmentPresent, head, nil
+		}
+		// RepresentationAttachment deliberately leaves malformed syntax to the
+		// manifest judge. Only a successfully judged manifest proves absence.
+		if _, findings := j.Manifest(data, path); len(findings) != 0 {
+			return attachmentIndeterminate, head, findings
+		}
+	}
+	return attachmentAbsent, head, nil
 }
 
 func (c *checker) add(document, rule string, line int, format string, args ...any) {
@@ -115,6 +212,9 @@ func (c *checker) run(o Options) {
 			return
 		}
 		c.manifest(o, i, path, md.EntryLines[i])
+		if c.restartOriginal {
+			return
+		}
 	}
 }
 
@@ -127,7 +227,13 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 	if !ok {
 		return
 	}
-	m, findings := c.j.Manifest(doc, path)
+	if c.original != nil {
+		if attachment, err := manifest.RepresentationAttachment(doc); attachment != nil || err != nil {
+			c.restartOriginal = true
+			return
+		}
+	}
+	m, attachment, findings := c.j.ManifestWithAttachment(doc, path)
 	if i == 0 {
 		c.res.Manifest = m
 	}
@@ -136,6 +242,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		c.add(path, RuleRepository, r.Line, "publisher.repository and --repository must be written the same, letter case included: the manifest has %s, --repository is %s", rules.Quote(r.Value), rules.Quote(*o.Repository))
 	}
 	if m.Form != manifest.FormOwn {
+		c.attached(m, attachment, o.Dependencies)
 		return
 	}
 	var own ownFiles
@@ -163,6 +270,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		}
 	}
 	c.content(path, m, own)
+	c.attached(m, attachment, o.Dependencies)
 }
 
 // require says whether path is a tracked regular file of the commit, and when it is not,
@@ -335,4 +443,36 @@ func lookup(entries []Entry, name string) (Kind, string) {
 		}
 	}
 	return Missing, ""
+}
+
+// attached completes structural closure and then the separate required data
+// stage. Neither establishes canonical semantic admission or runtime success.
+func (c *checker) attached(m manifest.Manifest, attachment manifest.Fact[*representation.Reference], dependencies DependencyReaders) {
+	if !attachment.Usable() {
+		return
+	}
+	// Count findings through a separate helper result rather than the capped slice:
+	// once the shared budget is exhausted, absence of a stored finding is not success.
+	problems, doc := c.attachedMetadata(m, *attachment.Value, dependencies)
+	for _, f := range problems {
+		c.add(f.Document, f.Rule, f.Line, "%s", f.Message)
+	}
+	if len(problems) != 0 {
+		return
+	}
+	if c.sourceProofs == nil {
+		c.sourceProofs = map[representation.Reference]error{}
+	}
+	proof := verifySourceData(doc, dependencies, c.sourceProofs)
+	for _, f := range proof.Findings {
+		c.add(f.Document, f.Rule, f.Line, "%s", f.Message)
+	}
+}
+
+func (c *checker) attachedMetadata(m manifest.Manifest, a representation.Reference, dependencies DependencyReaders) ([]manifest.Finding, *representation.Document) {
+	j, _ := manifest.NewJudge(manifest.Publisher)
+	helper := &checker{r: c.r, j: j, dirs: c.dirs, seen: map[string]bool{}, files: c.files, kept: c.kept}
+	doc := helper.representation(m, a, dependencies)
+	c.kept = helper.kept
+	return append(helper.res.Findings, j.Notice(a.Path)...), doc
 }
