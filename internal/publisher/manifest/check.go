@@ -66,7 +66,7 @@ func Check(ovdbMd []byte, manifestPath string, manifest []byte, profile Profile)
 		c.add("ovdbmd-unlisted", md.Publish.Line, "OVDB.md does not list %s in publish (it lists %s); the publisher has not opted this manifest in: add %s to publish", rules.Quote("./"+manifestPath), listed(md.Entries), rules.Quote("./"+manifestPath))
 		findings = append(findings, c.findings...)
 	}
-	m, more := checkManifest(manifest, manifestPath, b, profile)
+	m, more := checkManifest(manifest, manifestPath, b, profile, false)
 	findings = append(append(findings, more...), b.notice(manifestPath)...)
 	return Result{Profile: profile, Findings: findings, OVDBMd: md, Manifest: m}
 }
@@ -138,6 +138,7 @@ func tooBig(c *collector, text []byte) bool {
 type Judge struct {
 	b       *budget
 	profile Profile
+	paired  bool // a database descriptor goes with the manifests judged from now on
 }
 
 // NewJudge returns a Judge for the profile, or, for a profile this package does
@@ -149,19 +150,23 @@ func NewJudge(profile Profile) (*Judge, []Finding) {
 	return &Judge{b: newBudget(), profile: profile}, nil
 }
 
+// DescriptorPaired says whether a database descriptor goes with the manifests judged from now on, which the Directory then does not hold to having
+// deployment.discovery on the origin of url.
+func (j *Judge) DescriptorPaired(paired bool) { j.paired = paired }
+
 // OVDBMd judges OVDB.md.
 func (j *Judge) OVDBMd(doc []byte) (OVDBMd, []Finding) { return checkOVDBMd(doc, j.b, j.profile) }
 
 // Manifest judges the manifest at path.
 func (j *Judge) Manifest(doc []byte, path string) (Manifest, []Finding) {
-	return checkManifest(doc, path, j.b, j.profile)
+	return checkManifest(doc, path, j.b, j.profile, j.paired)
 }
 
 // ManifestWithAttachment also returns the attachment judged from the same
 // parsed manifest. A written but invalid attachment is present and unusable;
 // a document the strict reader refuses yields no usable attachment.
 func (j *Judge) ManifestWithAttachment(doc []byte, path string) (Manifest, Fact[*representation.Reference], []Finding) {
-	return checkManifestWithAttachment(doc, path, j.b, j.profile)
+	return checkManifestWithAttachment(doc, path, j.b, j.profile, j.paired)
 }
 
 // Report is a finding of the caller's about document, made the way the findings

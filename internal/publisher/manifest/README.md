@@ -244,7 +244,7 @@ its README; the ones that need the content of the model file or the meaning file
 | the meaning file's models: entry for the module is model.hcl | files | package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl` | ovdb-manifest.mjs 488, 490, 496, 497 |
 | own form: recordsets are exactly the model's entities | files | package repo: `repo-recordsets` | ovdb-manifest.mjs 564, 567, 568 |
 | the optional attachment has a locally checked structural precheck; external closure remains partial | files | package repo: structural metadata associations and required format3 raw data proofs; no canonical admission | ovdb-manifest.mjs 573 |
-| a JSON database descriptor uses its separate pinned schema | files | outside the legacy Go manifest profile (`manifest-format`) | ovdb-manifest.mjs 587, 591, 597, 605, 607, 609 |
+| a JSON database descriptor uses its separate pinned schema | files | package manifest, `Judge.Descriptor`: the Directory's structural rules (`descriptor-*`); the pinned JSON schema that the Chinook companion runs with ajv is not run (see the descriptor section) | ovdb-manifest.mjs 587, 591, 597, 605, 607, 609 |
 | publisher.repository is the repository the check is run in (the --repository option) | input | package repo: `repo-repository` | ovdb-manifest.mjs 335 |
 
 Not judged, whatever the profile: that the named files are tracked regular files at HEAD
@@ -587,6 +587,36 @@ reads 0 that the yaml package refuses.
 The page of every recordset (the template with the name written as one encoded path segment) is judged in both profiles, every bad name reported. The
 Directory profile did not judge pages until ovdb#58: the Directory refuses such a manifest in `analyseDatabase`, after the files are read, and the probes could
 not see it because a probe's reference verdict was `manifestProblems` alone; both were closed there.
+
+### The database descriptor
+
+A repository may publish, beside its manifest, a JSON database descriptor (`ovdb-database/draft-1`) that separates its global identity from its server: OVDB.md lists
+it in `publish` next to the manifest. The Directory knows it by the field of the registry's record that names it (`database_manifest`); a repository has no record,
+so `manifest.IsDescriptor` tells it from a manifest by its `format`, text beginning `ovdb-database/`, and a repository lists one descriptor with one manifest
+(`repo-descriptor` otherwise: a descriptor and no manifest, several manifests or several descriptors, since nothing says which belongs to which). The rules are
+the Directory's `databaseDescriptorProblems` and its check of the manifest's `id` against the descriptor's `localId`, for both profiles (`Judge.Descriptor`):
+
+| Rule | Finding |
+| --- | --- |
+| a JSON object (the text is read as `JSON.parse` reads it) | `descriptor-json` |
+| `format` is `ovdb-database/draft-1` | `descriptor-format` |
+| `id`, `localId`, `serverId`, `serverDbBaseUrl`, `apiUrl` are non-empty text | `descriptor-required` |
+| `id` is the url of the manifest, as text, and a global database identity (package `rules`, `GlobalDatabaseID`) | `descriptor-id` |
+| `localId` is `^[a-z][a-z0-9-]{0,39}$` | `descriptor-local-id` |
+| `serverId`, `serverDbBaseUrl`, `apiUrl` are public https URLs | `descriptor-url` |
+| `serverDbBaseUrl`, `apiUrl` and `deployment.discovery` are on the host of `serverId`; `deployment.discovery` is a public https URL and the manifest's own text (these are asked only when `serverId` and `localId` are good, as the Directory asks them) | `descriptor-origin`, `descriptor-discovery` |
+| the manifest's `id` is the descriptor's `localId` (the registry's record key stands in for a `localId` that is not written, which a repository has not) | `manifest-id` |
+
+With a descriptor beside it a manifest is not held to having `deployment.discovery` on the origin of its `url` (the Directory's `databaseManifest` option); the
+descriptor's rules tie the discovery to the server instead. The descriptor is read only after its manifest has no findings, as the Directory stops at the manifest's
+problems first. What belongs to the registry alone (the claims, the server-id exceptions, the record key) is not judged here (slice A1).
+
+`testdata/reference/descriptor.json` holds the pairs of a manifest and a descriptor with the verdict of the Directory's own code on each (`databaseDescriptorProblems`
+is not exported, so the generator cuts its source from the pinned file between two anchors and runs it as it is). The Directory profile agrees on every pair; the Publisher
+profile refuses every pair the Directory refuses and, beyond them, only by a rule of its own that the manifest of the pair breaks. Recorded differences: a descriptor nested
+more than 64 levels deep is refused (`descriptor-depth`; the Directory reads any depth). **Not ported:** the Chinook companion also validates a descriptor against a pinned
+JSON schema (`schemas/ovdb-database-draft-1.schema.json`, with ajv); the Directory leaves that to the provider, and this check does not run it, so a descriptor that breaks
+only the schema is accepted here (a looser difference from the companion, under D0 the Directory being the reference).
 
 ### Recorded differences of the probes
 

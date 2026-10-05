@@ -46,6 +46,7 @@ const (
 	RuleCase         = "repo-case-collision" // two names of a directory that differ only in case
 	RuleManifests    = "repo-manifests-limit"
 	RuleRepository   = "repo-repository" // publisher.repository is not the --repository given
+	RuleDescriptor   = "repo-descriptor" // a database descriptor that does not go with exactly one manifest
 )
 
 // checker holds one check.
@@ -60,6 +61,14 @@ type checker struct {
 	sourceProofs    map[representation.Reference]error // raw-byte proofs, this repository check only
 	original        Reader                             // original view of the same selected commit, when running legacy
 	restartOriginal bool                               // an attachment appeared during legacy validation
+
+	// The database descriptor of the repository, when OVDB.md lists one with exactly one manifest: the manifest it goes with, as judged.
+	preread        map[string][]byte // the entries of OVDB.md read to tell descriptors from manifests, handed to the first read of each
+	judgedFirst    bool              // c.res.Manifest is the first manifest judged
+	pairedIndex    int               // the entry of OVDB.md that is the manifest a descriptor goes with, or -1
+	pairedManifest manifest.Manifest
+	pairedPath     string
+	pairedClean    bool // the manifest was judged without findings, as the Directory needs before it reads the descriptor
 }
 
 // fileRead is what reading a file gave.
@@ -174,6 +183,9 @@ func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, st
 		if !ok {
 			return attachmentIndeterminate, head, c.res.Findings
 		}
+		if manifest.IsDescriptor(data) {
+			continue // a descriptor has no attachment, and is not judged as a manifest
+		}
 		attachment, err := manifest.RepresentationAttachment(data)
 		if attachment != nil || err != nil {
 			return attachmentPresent, head, nil
@@ -206,16 +218,78 @@ func (c *checker) run(o Options) {
 	md, findings := c.j.OVDBMd(doc)
 	c.res.OVDBMd = md
 	c.res.Findings = append(c.res.Findings, findings...)
+	descriptors := c.descriptors(md)
+	c.j.DescriptorPaired(c.pairedIndex >= 0)
 	for i, path := range md.Entries {
 		if i == MaxManifests {
 			c.add("OVDB.md", RuleManifests, md.EntryLines[i], "OVDB.md lists %d manifests; at most %d are judged", len(md.Entries), MaxManifests)
 			return
+		}
+		if _, ok := descriptors[i]; ok {
+			continue // judged with its manifest, below
 		}
 		c.manifest(o, i, path, md.EntryLines[i])
 		if c.restartOriginal {
 			return
 		}
 	}
+	for i, doc := range descriptors {
+		if c.pairedIndex >= 0 && c.pairedClean {
+			_, findings := c.j.Descriptor(doc, md.Entries[i], c.pairedManifest, c.pairedPath)
+			c.res.Findings = append(c.res.Findings, findings...)
+		}
+	}
+}
+
+// descriptors gives the entries of OVDB.md (of the first MaxManifests) that are database descriptors, with what they hold, as manifest.IsDescriptor tells them from manifests, and
+// whether one goes with a manifest: a repository has no record to say which manifest a descriptor belongs to, so it lists one descriptor and one
+// manifest, and anything else is the finding RuleDescriptor. It reads silently: an entry that cannot be read is judged, and its problem reported, as a
+// manifest.
+func (c *checker) descriptors(md manifest.OVDBMd) map[int][]byte {
+	c.pairedIndex = -1
+	found := map[int][]byte{}
+	var manifests []int
+	for i, path := range md.Entries {
+		if i == MaxManifests {
+			break
+		}
+		if kind, _, err := c.kind(path); err != nil || !kind.Regular() {
+			manifests = append(manifests, i)
+			continue
+		}
+		doc, err := c.r.Blob(path, manifest.MaxDocumentBytes+1)
+		if err == nil && manifest.IsDescriptor(doc) {
+			found[i] = doc
+			continue
+		}
+		if err == nil {
+			if c.preread == nil {
+				c.preread = map[string][]byte{}
+			}
+			c.preread[path] = doc
+		}
+		manifests = append(manifests, i)
+	}
+	if len(found) == 0 {
+		return found
+	}
+	first := -1
+	for i := range found {
+		if first < 0 || i < first {
+			first = i
+		}
+	}
+	switch {
+	case len(manifests) == 0:
+		c.add("OVDB.md", RuleDescriptor, md.EntryLines[first], "OVDB.md lists the database descriptor %s and no manifest: a descriptor goes with a manifest, so list the manifest beside it", rules.Quote("./"+md.Entries[first]))
+	case len(manifests) > 1 || len(found) > 1:
+		c.add("OVDB.md", RuleDescriptor, md.EntryLines[first], "OVDB.md lists %d manifests and %d database descriptors: a descriptor goes with exactly one manifest, and a repository lists one descriptor with one manifest", len(manifests), len(found))
+	default:
+		c.pairedIndex = manifests[0]
+		return found
+	}
+	// Not paired: the descriptors are not judged (c.pairedIndex is -1), and what refused them is the finding above.
+	return found
 }
 
 // manifest judges the i-th manifest that OVDB.md lists, at path, and the files it names.
@@ -234,8 +308,11 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		}
 	}
 	m, attachment, findings := c.j.ManifestWithAttachment(doc, path)
-	if i == 0 {
-		c.res.Manifest = m
+	if !c.judgedFirst {
+		c.res.Manifest, c.judgedFirst = m, true
+	}
+	if i == c.pairedIndex {
+		c.pairedManifest, c.pairedPath, c.pairedClean = m, path, len(findings) == 0
 	}
 	c.res.Findings = append(c.res.Findings, findings...)
 	if r := m.PublisherRepository; o.Repository != nil && r.Usable() && r.Value != *o.Repository {
@@ -297,6 +374,10 @@ func (c *checker) require(document, rule string, line int, subject, path string)
 // read reads a document of at most manifest.MaxDocumentBytes; a document over it is read
 // as far as its size shows, and the document is judged by its size alone.
 func (c *checker) read(document, path string) ([]byte, bool) {
+	if doc, ok := c.preread[path]; ok {
+		delete(c.preread, path)
+		return doc, true
+	}
 	doc, err := c.r.Blob(path, manifest.MaxDocumentBytes+1)
 	switch {
 	case errors.Is(err, ErrTooLarge):

@@ -6,148 +6,24 @@
    "id": "adventureworks",
    "commit": "5028a27189b487d6fd8025fafc1307aada707fd2",
    "publisher": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-id",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-keys",
-      "count": 11
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    },
    "directory": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    }
   },
   {
    "id": "chinook",
    "commit": "26e852cca00101f53a84ef8ee1f1ae389067f5cf",
    "publisher": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-id",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-keys",
-      "count": 11
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    },
    "directory": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    }
   },
   {
@@ -157,46 +33,6 @@
     "ok": false,
     "findings": [
      {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-id",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-keys",
-      "count": 11
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-licence",
-      "count": 3
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     },
-     {
       "path": "ovdb.yaml",
       "rule": "manifest-licence",
       "count": 3
@@ -204,256 +40,44 @@
     ]
    },
    "directory": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    }
   },
   {
    "id": "northwind",
    "commit": "e74726515c3833620b54b7a50d1d273276dd23c1",
    "publisher": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-id",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-keys",
-      "count": 11
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    },
    "directory": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    }
   },
   {
    "id": "pubs",
    "commit": "6c06c5c7395b03ff1a02c2b1a21485add3e1b65b",
    "publisher": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-id",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-keys",
-      "count": 11
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    },
    "directory": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    }
   },
   {
    "id": "sakila",
    "commit": "cb9a81a8cbedcd8831737f281f888d5d584fae85",
    "publisher": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-id",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-keys",
-      "count": 11
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    },
    "directory": {
-    "ok": false,
-    "findings": [
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-format",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-meaning",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-model",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb-database.json",
-      "rule": "manifest-required",
-      "count": 3
-     }
-    ]
+    "ok": true,
+    "findings": []
    }
   }
  ]

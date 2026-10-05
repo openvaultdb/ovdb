@@ -64,3 +64,20 @@ func IsLicenceID(s string) bool {
 
 func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
 func isDigit(c byte) bool  { return c >= '0' && c <= '9' }
+
+// MaxLocalIDLength is the longest descriptor localId.
+const MaxLocalIDLength = 40
+
+// IsLocalID reports whether s is the localId of a database descriptor, as the Directory has it (localIdPattern): a lower-case letter, then up to 39
+// lower-case letters, digits and hyphens (^[a-z][a-z0-9-]{0,39}$). Unlike IsID it allows a hyphen at the end and two in a row.
+func IsLocalID(s string) bool {
+	if s == "" || len(s) > MaxLocalIDLength || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if c := s[i]; (c < 'a' || c > 'z') && !isDigit(c) && c != '-' {
+			return false
+		}
+	}
+	return true
+}

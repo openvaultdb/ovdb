@@ -250,22 +250,10 @@ func TestPublisherCheckEndToEnd(t *testing.T) {
 			if err := json.Unmarshal([]byte(stdout), &result); err != nil || stderr != "" || result.Commit != string(m[2]) {
 				t.Fatalf("exit %d, stdout %q, stderr %q, decode %v", code, stdout, stderr, err)
 			}
-			if name == "fixtures" {
-				if code != 0 || !result.OK || len(result.Findings) != 0 {
-					t.Fatalf("legacy input: exit %d: %s", code, stdout)
-				}
-			} else {
-				// The current companion also publishes a JSON descriptor, which is still judged as a
-				// manifest (slice A0b). Its general identity URL (a trailing slash, no ovdb marker)
-				// is accepted, as the Directory accepts it (slice A0c).
-				url, format := false, false
-				for _, f := range result.Findings {
-					url = url || f.Rule == "manifest-url"
-					format = format || f.Rule == "manifest-format"
-				}
-				if code != 1 || result.OK || url || !format {
-					t.Fatalf("expected the descriptor to be refused and the identity URL accepted: exit %d: %s", code, stdout)
-				}
+			// Both are accepted: the frozen fixtures as they always were, and the current companion, whose descriptor (judged since slice A0b) and general identity
+			// URL (since A0c) were its refusals before.
+			if code != 0 || !result.OK || len(result.Findings) != 0 {
+				t.Fatalf("%s: exit %d: %s", name, code, stdout)
 			}
 		})
 	}

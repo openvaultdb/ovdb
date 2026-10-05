@@ -130,6 +130,6 @@ export function assertAnchors(source, file, commit, anchors, { err = console.err
 export const generatorNode = 'v24.19.0';
 export function assertGeneratorNode(version = process.version, { err = console.error, exit = process.exit } = {}) {
   if (version === generatorNode) return;
-  err(`these goldens are made and checked with Node ${generatorNode} (the version of CI), and this is Node ${version}: run the generator with Node ${generatorNode} (for example npx node@${generatorNode.slice(1)} <generator>), or the goldens it writes would say another version and fail CI.`);
+  err(`these goldens are made and checked with Node ${generatorNode} (the version of CI), and this is Node ${version}: run the generator with Node ${generatorNode} (install it with a Node version manager such as nvm, fnm or asdf, or from nodejs.org/dist), or the goldens it writes would say another version and fail CI.`);
   exit(1);
 }
