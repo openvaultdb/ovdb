@@ -317,19 +317,23 @@ func (k *manifestChecker) check() {
 	k.recordsetNames()
 }
 
-// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it.
+// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it. Every name
+// whose page fails is reported, as the Directory's loop does, so that a publisher fixes them in one round.
 func (k *manifestChecker) recordsetNames() {
 	f := &k.out.Recordsets
 	if !f.Usable() || !k.out.RecordsetPage.Usable() {
 		return
 	}
 	items := k.m.Field("recordsets").Items
+	refused := false
 	for i, name := range f.Value {
 		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
 			k.c.add("manifest-recordsets", items[i].Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
-			demote(f)
-			return
+			refused = true
 		}
+	}
+	if refused {
+		demote(f)
 	}
 }
 

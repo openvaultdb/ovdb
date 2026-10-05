@@ -584,6 +584,20 @@ of them with the same values, and 5 that differ only in the integer -0: the `yam
 are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
 reads 0 that the yaml package refuses.
 
+The page of every recordset (the template with the name written as one encoded path segment) is judged in both profiles, every bad name reported. The
+Directory profile did not judge pages until ovdb#58: the Directory refuses such a manifest in `analyseDatabase`, after the files are read, and the probes could
+not see it because a probe's reference verdict was `manifestProblems` alone; both were closed there.
+
+### Recorded differences of the probes
+
+A probe of `drift.probes.json` may name, in `recorded`, a stricter kind that Go is expected to differ by on it: a kind of the tables above (`yaml-tag`,
+`yaml-character`, `url-length`), or one that no corpus document shows and so has no row there (`recordedProbeKinds` in `drift_test.go`). `TestDrift` fails
+when Go refuses such a probe for another reason, or agrees with the reference.
+
+| Kind | Why |
+| --- | --- |
+| `representation-hash-list` | A representation_contract whose sha256 is a list of one hash (also nested). JavaScript applies the Directory's regular expression to the text of any value and reads the list as that hash, so the Directory accepts the envelope and refuses the same document one step later, in the attachment, where the hash it computes does not equal the list. Go refuses it at once (`representation-attachment`), the safe direction. Not a slice to land. |
+
 ### Recorded differences: not yet ported (the Directory profile)
 
 The Directory's checker has moved since the first reference was pinned, and Go has not yet ported every rule it added. Where that makes Go

@@ -50,7 +50,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkoutReference, references as pins } from '../../../references.mjs';
+import { assertGeneratorNode, checkoutReference, references as pins } from '../../../references.mjs';
+
+assertGeneratorNode();
 import { representationStages } from './representation-stages.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));

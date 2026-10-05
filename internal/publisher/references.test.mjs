@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { assertAnchors, assertAsCommitted, checkoutReference } from './references.mjs';
+import { assertAnchors, assertAsCommitted, assertGeneratorNode, checkoutReference, generatorNode } from './references.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 let scratch; let remote; let pin;
@@ -193,4 +193,22 @@ test('assertAnchors is silent when every anchor is held, and otherwise names eac
   assert.deepEqual(codes, [1]);
   assert.match(lines[0], /f\.mjs at c0ffee no longer holds 2 of the 3 expressions/);
   assert.deepEqual(lines.filter((line) => line.startsWith('  missing anchor: ')), ['  missing anchor: four', '  missing anchor: five']);
+});
+
+test('a generator stops under any Node but the one of CI, and says which to use', () => {
+  const lines = []; const codes = [];
+  const options = { err: (line) => lines.push(line), exit: (code) => codes.push(code) };
+  assertGeneratorNode(generatorNode, options);
+  assert.deepEqual([lines, codes], [[], []]);
+  assertGeneratorNode('v24.20.0', options);
+  assert.deepEqual(codes, [1]);
+  assert.ok(lines[0].includes(`Node ${generatorNode}`) && lines[0].includes('Node v24.20.0'));
+});
+
+test('the Node of CI is the one that the generators require', () => {
+  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  // the jobs of the publisher check pin a full version (24.x.y); the web job's '22' is another matter
+  const versions = [...ci.matchAll(/node-version: '(\d+\.\d+\.\d+)'/g)].map((match) => `v${match[1]}`);
+  assert.ok(versions.length >= 2);
+  for (const version of versions) assert.equal(version, generatorNode);
 });

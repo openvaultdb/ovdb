@@ -264,6 +264,8 @@ var readerKinds = map[string]bool{
 // kindOf names the kind of a refusal that the reference does not make.
 func kindOf(f Finding) string {
 	switch {
+	case f.Rule == "representation-attachment" && strings.Contains(f.Message, "requires lower-case SHA256"):
+		return "representation-hash-list"
 	case strings.Contains(f.Message, "is longer than 2048 characters"):
 		return "url-length"
 	case f.Rule == "document-size":
@@ -461,7 +463,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 		allowed = d0
 	}
 	if total.looser != allowed {
-		t.Fatalf("%d documents are accepted by Go and refused by the %s; drift.json accounts for %d (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
+		t.Fatalf("%d documents are accepted by Go and refused by the %s; %d are accounted for (the Directory profile: drift.json's looser entries; the Publisher profile: the documents that D0 explains, by the classes of the Chinook checker's problems) (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
 	}
 
 	// The corpus is as large and as varied as the proof claims.
