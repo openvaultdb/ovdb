@@ -246,6 +246,12 @@ var v1Codes = map[string]envelope.Code{
 // has no schema (schema.ValidateRecord).
 const noSchemaDeclared = "no schema declared"
 
+// undeclaredCollection is how openvaultdb-go (v0.11.8 and later) says a SQL
+// mount's manifest does not declare the collection of a key: a 404 not_found
+// before the adapter is called (core.GuardCollection). Before v0.11.8 the same
+// write reached strict mode and answered schema_validation, noSchemaDeclared.
+const undeclaredCollection = "is not declared by this database"
+
 // MapV1 maps a /v1 failure to the envelope people see, with a next step.
 // A body that is not a /v1 error keeps its bytes and maps to internal.
 func MapV1(status int, body []byte, op DataOp) *V1Error {
@@ -254,7 +260,8 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 	v1Code, v1Message := strings.ToLower(parsed.Error.Code), parsed.Error.Message
 	code, known := v1Codes[v1Code]
 	switch {
-	case v1Code == "schema_validation" && strings.Contains(v1Message, noSchemaDeclared):
+	case v1Code == "schema_validation" && strings.Contains(v1Message, noSchemaDeclared),
+		v1Code == "not_found" && strings.Contains(v1Message, undeclaredCollection):
 		code = envelope.SchemaRequired
 	case v1Code == "schema_validation":
 		code = envelope.ValidationFailed

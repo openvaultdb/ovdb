@@ -186,6 +186,27 @@ func TestMapV1InvalidKey(t *testing.T) {
 	}
 }
 
+// openvaultdb-go v0.11.8 and later answer a write (or read) of a collection the manifest
+// does not declare with 404 not_found before the adapter, where v0.9.0 answered
+// 422 "no schema declared". Both mean the same to a person: describe the
+// collection in the manifest and reload; listing records of it helps nothing.
+func TestMapV1UndeclaredCollectionPointsToTheManifest(t *testing.T) {
+	t.Parallel()
+	path, _ := datapath.Parse("/orders/a")
+	body := []byte(`{"error":{"code":"not_found","message":"op 0 (set): record not found: collection \"orders\" is not declared by this database"}}`)
+	e := MapV1(http.StatusNotFound, body, DataOp{Verb: "set", Database: "shop", Path: path, Suffix: " --db shop"}).Envelope
+	if e.Code != envelope.SchemaRequired || len(e.Next) != 2 || e.Next[0].Command != "ovdb databases reload shop" ||
+		!strings.Contains(e.Next[0].Label, "Describe the orders collection in the manifest of shop") {
+		t.Errorf("undeclared collection = %+v", e)
+	}
+	// Any other not_found still lists what is there.
+	other := MapV1(http.StatusNotFound, []byte(`{"error":{"code":"not_found","message":"record not found"}}`),
+		DataOp{Verb: "get", Database: "shop", Path: path, Suffix: " --db shop"}).Envelope
+	if other.Code != envelope.NotFound || len(other.Next) != 1 || other.Next[0].Command != "ovdb list /orders --db shop" {
+		t.Errorf("plain not_found = %+v", other)
+	}
+}
+
 // Review F10: a path typed with a leading ~ (the TUI and web have no shell
 // to expand it) means the home folder.
 func TestConnectExpandsHome(t *testing.T) {
