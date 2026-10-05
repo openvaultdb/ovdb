@@ -246,7 +246,7 @@ func checkContract(c Contract, ctx Context) error {
 		return err
 	}
 	if c.Execution == NativeIdentifier {
-		return checkNative(c, model, ctx)
+		return checkNative(c, model, ctx, snapshot)
 	}
 	if c.Bridge.RawLabelColumn == c.Bridge.TargetKeyColumn || c.Bridge.ServingIdentityColumn != "" && (c.Bridge.ServingIdentityColumn == c.Bridge.RawLabelColumn || c.Bridge.ServingIdentityColumn == c.Bridge.TargetKeyColumn) {
 		return fmt.Errorf("native/raw columns must differ from serving identity")
