@@ -428,6 +428,8 @@ const recordsetList = {
     '%ED%A0%80', '%252', '%25%', '%2525', '%2F', '%5C', '%00', '%0a', '%7F', "a'b", 'a(b)', 'a!b', 'a*b', 'a~b', 'a_b', 'a-b', 'a&b', 'a"b', 'a<b>', 'a?b', 'a#b', 'a:b', 'a@b', 'a{b}', '{name}', 'a{name}b',
     '1a', 'a-b', 'A', 'a'.repeat(255), 'a'.repeat(256), 'a'.repeat(257), 'a'.repeat(1000), astral, astral.repeat(127), astral.repeat(128), astral.repeat(129), `${'a'.repeat(254)}${astral}`, `${'a'.repeat(255)}${astral}`,
     'a\u2028b', 'a\u2029b', 'Dbo.Table 1', 'x'.repeat(200),
+    // pages over 2048 characters, which the Directory takes (it bounds the name, not the page): the length is no kind of the page family
+    '\u20ac'.repeat(256), '\u20ac'.repeat(257), '\u8868'.repeat(230), '\u00e9'.repeat(400), 'a'.repeat(2100), '%'.repeat(1000), 'a%2Fb'.repeat(500),
   ].map((input) => [input, verdicts(nameFns, input)]),
 };
 const urlList = { fns: urlFns, cases: [...urlLike, ...punycodeInputs].map((input) => [input, verdicts(urlFns, expand(input))]) };

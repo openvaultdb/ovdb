@@ -114,7 +114,6 @@ func (k *manifestChecker) publisher() {
 			demote(l.fact)
 		}
 	}
-	k.recordsetNames()
 }
 
 // lowerASCII lower-cases A to Z and leaves every other byte as written. It is the
@@ -198,21 +197,6 @@ func (k *manifestChecker) ownForm(own string) {
 	if out.GraphAddress.Usable() && own != "" && lowerASCII(out.GraphAddress.Value) != "meaning://"+own {
 		c.add("manifest-meaning", out.GraphAddress.Line, "meaning.graph.address must be meaning://%s (in any case), derived from publisher.repository, got %s", own, rules.Quote(out.GraphAddress.Value))
 		demote(&out.GraphAddress)
-	}
-}
-
-// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it.
-func (k *manifestChecker) recordsetNames() {
-	f := &k.out.Recordsets
-	if !f.Usable() || !k.out.RecordsetPage.Usable() {
-		return
-	}
-	for _, name := range f.Value {
-		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
-			k.c.add("manifest-recordsets", f.Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
-			demote(f)
-			return
-		}
 	}
 }
 

@@ -190,21 +190,25 @@ func TestOwnerBoundary(t *testing.T) {
 	}
 }
 
-// A recordset page is judged for every name of recordsets, so an expansion that is too long is refused at
-// the line of recordsets, and it makes recordsets not usable (the template alone is fine).
+// A recordset page is judged for every name of recordsets, in both profiles, as the Directory judges it: a name that needs encoding must be the whole of
+// its path segment. The finding is at the line of the name, and recordsets is then not usable (the template alone is fine).
 func TestRecordsetPageExpansion(t *testing.T) {
-	long := "L" + strings.Repeat("x", 200)
-	doc := edit(t, edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - "+long+"\n"), "collections/{name}", "collections/"+strings.Repeat("y", 1900)+"/{name}")
-	m, findings := CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
-	if len(findings) != 1 || findings[0].Rule != "manifest-recordsets" || findings[0].Line != 30 || !strings.Contains(findings[0].Message, "the recordset page of") {
-		t.Fatalf("%v", findings)
+	doc := edit(t, edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - Order Details\n"), "collections/{name}", "collections/{name}.html")
+	for _, p := range []Profile{Publisher, Directory} {
+		m, findings := CheckManifest([]byte(doc), "ovdb.yaml", p)
+		if len(findings) != 1 || findings[0].Rule != "manifest-recordsets" || findings[0].Line != 32 || !strings.Contains(findings[0].Message, `the recordset page of "Order Details"`) {
+			t.Fatalf("%v: %v", p, findings)
+		}
+		if !m.Recordsets.Present || m.Recordsets.Usable() || len(m.Recordsets.Value) != 0 || !m.RecordsetPage.Usable() {
+			t.Errorf("recordsets %+v, page %+v", m.Recordsets, m.RecordsetPage)
+		}
 	}
-	if !m.Recordsets.Present || m.Recordsets.Usable() || len(m.Recordsets.Value) != 0 || !m.RecordsetPage.Usable() {
-		t.Errorf("recordsets %+v, page %+v", m.Recordsets, m.RecordsetPage)
-	}
-	// The Directory profile has no such rule: it judges the template, which is fine.
-	if _, f := CheckManifest([]byte(doc), "ovdb.yaml", Directory); len(f) != 0 {
-		t.Errorf("the Directory profile: %v", f)
+	// A long name makes a long page, which the Directory takes: the name is bounded, the page is not.
+	long := edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - "+strings.Repeat("€", 256)+"\n")
+	for _, p := range []Profile{Publisher, Directory} {
+		if _, f := CheckManifest([]byte(long), "ovdb.yaml", p); len(f) != 0 {
+			t.Errorf("%v: a name of 256 euro signs: %v", p, f)
+		}
 	}
 }
 

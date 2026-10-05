@@ -388,11 +388,13 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7427 agree, 490 stricter, 67 accepted by Go where the Chinook
+On the corpus: **7432 agree, 485 stricter, 67 accepted by Go where the Chinook
 checker refuses**: 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by D0 (the lead's default; the founder may
-overrule it): the Directory at its pin is the reference for both profiles, the Directory accepts each of them, and each names a recordset that is not a
-ModelSpec entity identifier, the one rule of the Chinook checker that the profile no longer has (the Directory takes recordsets as the database names them).
-`TestReferencePublisher` holds each of the 67 to that, and fails on one that is not. The facts: under the Publisher profile, 912 manifests and 104
+overrule it): the Directory at its pin is the reference for both profiles, the Directory accepts each of them, and every problem that the Chinook checker found
+in each is of a class that D0 drops, which the publisher golden records per document (`chinookClasses`): D, a recordset name that is not a ModelSpec entity
+identifier (the Directory takes recordsets as the database names them), which 66 of them have alone; and K, `recordset_entities` as an unknown key (the
+Directory reads it), which the other one has beside D. A document with any other problem of the checker's is not explained, whatever its recordsets.
+`TestReferencePublisher` holds each of the 67 to that, and fails on one that is not. The facts: under the Publisher profile, 917 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
@@ -429,7 +431,7 @@ it has none there: see the table of places.
 | `length-path` | 8 | 6 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
-| `url-length` | 5 | 7 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
+| `url-length` | 5 | 2 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
 | `yaml-character` | 25 | 12 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
