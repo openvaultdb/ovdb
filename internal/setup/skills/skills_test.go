@@ -103,7 +103,7 @@ func mustInstall(t *testing.T, e Env, request InstallRequest) InstallDocument {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := Build{Version: "1.2.3"}.Install(context.Background(), e, d, targets, request.DryRun, request.ReplaceChanged, request.Adopt)
+	doc, err := Build{Version: "1.2.3"}.Install(context.Background(), e, d, targets, request.DryRun, request.ReplaceChanged, request.Consent())
 	if err != nil {
 		t.Fatalf("install %s: %v", request.Skill, err)
 	}
@@ -200,7 +200,7 @@ func TestDryRunAndConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, targets, _ := e.Resolve(InstallRequest{Skill: Storage, Harnesses: []string{"claude"}})
-	_, err := Build{}.Install(context.Background(), e, d, targets, false, false, false)
+	_, err := Build{}.Install(context.Background(), e, d, targets, false, false, Consent{})
 	if problem := envelope.As(err); problem == nil || !strings.Contains(problem.Reason, "wasn't installed by OVDB") {
 		t.Fatalf("conflict = %v", err)
 	}
@@ -364,7 +364,7 @@ func TestChangedSinceInstall(t *testing.T) {
 		t.Errorf("state = %+v", target)
 	}
 	d, targets, _ := e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
-	_, err := Build{}.Install(context.Background(), e, d, targets, false, false, false)
+	_, err := Build{}.Install(context.Background(), e, d, targets, false, false, Consent{})
 	problem := envelope.As(err)
 	if problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "changed since OVDB installed it") ||
 		len(problem.Next) == 0 || !strings.Contains(problem.Next[0].Command, "--replace-changed") {
@@ -373,7 +373,7 @@ func TestChangedSinceInstall(t *testing.T) {
 	if data, _ := os.ReadFile(edited); string(data) != "my own notes" {
 		t.Error("the edit was overwritten without being asked")
 	}
-	doc, err := Build{}.Install(context.Background(), e, d, targets, false, true, false)
+	doc, err := Build{}.Install(context.Background(), e, d, targets, false, true, Consent{})
 	if err != nil || doc.Outcomes[0].State != StateInstalled {
 		t.Fatalf("replace = %+v %v", doc, err)
 	}
@@ -389,7 +389,7 @@ func TestChangedSinceInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, targets, _ = e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"codex"}})
-	_, err = Build{}.Install(context.Background(), e, d, targets, false, true, false)
+	_, err = Build{}.Install(context.Background(), e, d, targets, false, true, Consent{})
 	if problem := envelope.As(err); problem == nil || problem.Code != envelope.AlreadyExists || !strings.Contains(problem.Reason, "wasn't installed by OVDB") {
 		t.Fatalf("foreign = %+v", err)
 	}
@@ -433,7 +433,7 @@ func TestInstallEntriesAskFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, targets, _ := e.Resolve(InstallRequest{Skill: Todo, Harnesses: []string{"claude"}})
-	_, err := Build{}.Install(context.Background(), e, d, targets, false, false, false)
+	_, err := Build{}.Install(context.Background(), e, d, targets, false, false, Consent{})
 	found += askFirst(t, "changed", envelope.As(err).Next)
 	if found < 8 {
 		t.Errorf("only %d install entries checked", found)

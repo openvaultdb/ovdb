@@ -230,7 +230,7 @@ func goldensSteps(node string) []any {
 
 // goldensJob is the job, as a workflow has it.
 func goldensJob(node string) map[string]any {
-	return map[string]any{"runs-on": "ubuntu-latest", "steps": goldensSteps(node)}
+	return map[string]any{"runs-on": "ubuntu-latest", "timeout-minutes": 25, "steps": goldensSteps(node)}
 }
 
 // withoutNames drops the `name` of the job and of each step, which label and decide nothing.
@@ -272,8 +272,8 @@ func goldensJobProblems(doc map[string]any, node string) []string {
 	}
 	want := goldensJob(node)
 	got := withoutNames(job)
-	if !reflect.DeepEqual(got["runs-on"], want["runs-on"]) || len(got) != len(want) {
-		problems = append(problems, fmt.Sprintf("the job has the keys %v with runs-on %v, want runs-on and steps only, on %v", slices.Sorted(maps.Keys(got)), got["runs-on"], want["runs-on"]))
+	if !reflect.DeepEqual(got["runs-on"], want["runs-on"]) || !reflect.DeepEqual(got["timeout-minutes"], want["timeout-minutes"]) || len(got) != len(want) {
+		problems = append(problems, fmt.Sprintf("the job has the keys %v with runs-on %v, want runs-on, timeout-minutes %v and steps only, on %v", slices.Sorted(maps.Keys(got)), got["runs-on"], want["timeout-minutes"], want["runs-on"]))
 	}
 	gotSteps, _ := got["steps"].([]any)
 	wantSteps := want["steps"].([]any)
@@ -358,6 +358,8 @@ func TestWorkflowChecksTheGoldens(t *testing.T) {
 		"needs a job that is skipped":   jobKey("needs", []any{"strongo_workflow"}),
 		"an empty matrix":               jobKey("strategy", map[string]any{"matrix": map[string]any{"os": []any{}}}),
 		"timeout-minutes 0":             jobKey("timeout-minutes", 0),
+		"timeout-minutes 360":           jobKey("timeout-minutes", 360),
+		"timeout-minutes missing":       func(_ map[string]any, job map[string]any) { delete(job, "timeout-minutes") },
 		"a defaults.run shell":          jobKey("defaults", map[string]any{"run": map[string]any{"shell": "true {0}"}}),
 		"NODE_OPTIONS in the env":       jobKey("env", map[string]any{"NODE_OPTIONS": "--require /dev/null"}),
 		"a runner that does not exist":  jobKey("runs-on", "no-such-runner"),
@@ -474,6 +476,25 @@ func TestNoScheduledWorkflows(t *testing.T) {
 	} {
 		if scheduled(parseWorkflow(t, []byte(text))) {
 			t.Errorf("%s: scheduled", name)
+		}
+	}
+}
+
+// A hung job fails with a log after a bounded time: every job of ci.yml that is not a call of a reusable workflow (which may not set one) has a
+// timeout-minutes of at most an hour.
+func TestEveryJobOfCIHasATimeout(t *testing.T) {
+	doc := parseWorkflow(t, []byte(workflow(t, moduleRoot())))
+	jobs, _ := doc["jobs"].(map[string]any)
+	if len(jobs) < 5 {
+		t.Fatalf("only %d jobs found", len(jobs))
+	}
+	for name, raw := range jobs {
+		job, _ := raw.(map[string]any)
+		if _, calls := job["uses"]; calls {
+			continue
+		}
+		if minutes, ok := job["timeout-minutes"].(int); !ok || minutes < 1 || minutes > 60 {
+			t.Errorf("job %s has timeout-minutes %v: a job that hangs would run for six hours", name, job["timeout-minutes"])
 		}
 	}
 }

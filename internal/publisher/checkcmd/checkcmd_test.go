@@ -59,6 +59,9 @@ func deps(reader repo.Reader) Deps {
 		Unrunnable: func(message, reason, next string) error {
 			return exitcode.Usage(envelope.New(envelope.DependencyMissing, message).WithReason(reason).WithNext(envelope.Next{Label: next}))
 		},
+		TimedOut: func(message, reason, next string) error {
+			return exitcode.Usage(envelope.New(envelope.Timeout, message).WithReason(reason).WithNext(envelope.Next{Label: next}))
+		},
 		WriteFailed: func(reason string) error {
 			return exitcode.Usage(envelope.New(envelope.Internal, uicopy.T("publisher.write.failed", nil)).WithReason(reason))
 		},
@@ -379,9 +382,13 @@ func (s scripted) Run(args []string, limit int) ([]byte, error) {
 func TestGitThatDoesNotFinishIsCouldNotRun(t *testing.T) {
 	for _, call := range []string{"ls-tree", "cat-file"} {
 		out, err := execute(t, deps(repo.NewGit(scripted{failOn: call})), "check", "repo")
-		if exitCode(err) != 2 || out != "" || !strings.Contains(err.Error(), "Couldn't finish the check") || !strings.Contains(err.Error(), "git was found, but it did not finish in 30 seconds") || errors.Is(err, ErrRefused) || envelope.As(err) == nil || len(envelope.As(err).Next) != 1 || !strings.Contains(envelope.As(err).Next[0].Label, "`git status`") || strings.Contains(envelope.As(err).Next[0].Label, "Install git") {
+		if exitCode(err) != 2 || out != "" || !strings.Contains(err.Error(), "Couldn't finish the check") || !strings.Contains(err.Error(), "git was found, but it did not finish in 30 seconds") || errors.Is(err, ErrRefused) || envelope.As(err) == nil || envelope.As(err).Code != envelope.Timeout || len(envelope.As(err).Next) != 1 || !strings.Contains(envelope.As(err).Next[0].Label, "`git status`") || strings.Contains(envelope.As(err).Next[0].Label, "Install git") {
 			t.Errorf("%s: exit %d, output %q, err %v", call, exitCode(err), out, err)
 		}
+	}
+	// Git that is missing or too old is another code: the timeout's is its own.
+	if _, err := execute(t, deps(&repo.Memory{Err: repo.ErrOldGit}), "check", "repo"); envelope.As(err) == nil || envelope.As(err).Code != envelope.DependencyMissing {
+		t.Errorf("old git: %v", err)
 	}
 	// The same through a Blob that times out after the tree was listed.
 	m := chinook(t)

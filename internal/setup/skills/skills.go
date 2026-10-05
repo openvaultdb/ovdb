@@ -17,6 +17,7 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -68,6 +69,18 @@ const (
 	// this skill already (its SKILL.md names it, and it holds nothing the
 	// skill doesn't): installing takes it over, keeping a backup of it.
 	StateAdoptable = "adoptable"
+	// StateRecoveryPending is a skills folder where an earlier install was
+	// interrupted and left its recovery journal: skillsync cannot plan
+	// anything there until a real install has finished or undone it, so what
+	// would happen to this skill is not known (and it is not "not installed",
+	// "another skill" or "not adoptable"). Installing finishes the recovery
+	// first, and takes over nothing the person did not agree to.
+	StateRecoveryPending = "recovery_pending"
+	// StateRecordUnusable is a skills folder whose record of what OVDB (or
+	// another tool) installed cannot be used: the file does not parse, or a newer
+	// tool wrote a schema this build does not know. Nothing about this skill can
+	// be said, and it is not "another skill with this name".
+	StateRecordUnusable = "record_unusable"
 )
 
 // Publisher is the skillsync publisher of the CLI and of every bundle.
@@ -170,6 +183,12 @@ type Target struct {
 	Installed bool   `json:"installed"`
 	// State is one of the State constants.
 	State string `json:"state"`
+	// StateReason is skillsync's own reason for the state where it says more
+	// than the state does: for another's folder what was found in it (a stray
+	// ".DS_Store" in a copy of this skill), for a pending recovery what is
+	// wrong. Empty for every other state, and left out of documents for
+	// clients that predate it (see Document.ForClient).
+	StateReason string `json:"state_reason,omitempty"`
 }
 
 // Skill is one skill in the skills document.
@@ -201,6 +220,46 @@ type Document struct {
 // existed has no text for the new state.
 const AdoptableParam = "adoptable"
 
+// RecoveryParam is the query parameter of GET /api/local/v1/skills with which a
+// client says it understands the state "recovery_pending" and the target field
+// "state_reason". Without it the client is told what every version before this
+// told it for such a folder: not_ovdb (see Document.WithoutRecoveryPending).
+// The listing is never replaced by an error because one folder has an
+// interrupted install.
+const RecoveryParam = "recovery"
+
+// WithoutRecoveryPending is d as a client that does not know the states
+// "recovery_pending" and "record_unusable" is told them: a folder with an
+// interrupted install, or whose record cannot be used, is another's folder, as
+// it was before those states existed.
+func (d Document) WithoutRecoveryPending() Document {
+	d.Skills = slices.Clone(d.Skills)
+	for i := range d.Skills {
+		targets := slices.Clone(d.Skills[i].Targets)
+		for j := range targets {
+			if targets[j].State == StateRecoveryPending || targets[j].State == StateRecordUnusable {
+				targets[j].State = StateNotOVDB
+			}
+		}
+		d.Skills[i].Targets = targets
+	}
+	return d
+}
+
+// WithoutStateReasons is d without the target field "state_reason", as a
+// client that predates it is sent the document.
+func (d Document) WithoutStateReasons() Document {
+	d.Skills = slices.Clone(d.Skills)
+	for i := range d.Skills {
+		targets := slices.Clone(d.Skills[i].Targets)
+		for j := range targets {
+			targets[j].StateReason = ""
+		}
+		d.Skills[i].Targets = targets
+	}
+	return d
+}
+
 // WithoutAdoptable is d as a client that does not know the state "adoptable"
 // is told it: an adoptable target is another's folder.
 func (d Document) WithoutAdoptable() Document {
@@ -231,7 +290,7 @@ func (e Env) target(h cobracmd.Harness, d Definition) Target {
 	dir := h.SkillsDir(e.Home, e.Getenv)
 	t := Target{Harness: h.ID, Name: HarnessName(h.ID), SkillsDir: dir, Dir: filepath.Join(dir, d.Dir),
 		Detected: h.Present(e.Home, e.Getenv)}
-	t.setState(stateOf(dir, d))
+	t.setInspected(inspect(dir, d))
 	return t
 }
 
@@ -240,26 +299,66 @@ func (t *Target) setState(state string) {
 	t.Installed = state == StateInstalled || state == StateUpdateAvailable || state == StateChanged
 }
 
-// stateOf compares d in skillsDir with this build's copy through a skillsync
-// dry run, which reads and never writes.
-func stateOf(skillsDir string, d Definition) string {
+func (t *Target) setInspected(i inspected) {
+	t.setState(i.state)
+	t.StateReason = i.reason
+}
+
+// syncSkills is skillsync.Sync; tests replace it to inject what a library
+// failure looks like.
+var syncSkills = skillsync.Sync
+
+// inspected is what is known of one skill in one skills directory.
+type inspected struct {
+	state string
+	// reason is skillsync's own words for StateNotOVDB, and ovdb's for
+	// StateRecoveryPending (the library's tell a person to rerun a sync ovdb
+	// has no command for); "" otherwise.
+	reason string
+}
+
+// stateOf is the state of d in skillsDir.
+func stateOf(skillsDir string, d Definition) string { return inspect(skillsDir, d).state }
+
+// inspect compares d in skillsDir with this build's copy through a skillsync
+// dry run that does not adopt, which reads and never writes. A folder that
+// would be adopted shows as such because the library says so
+// (Change.Adoptable), not because ovdb classifies the folder a second time. A
+// pending recovery journal makes the dry run fail before it plans anything;
+// that is its own state, never "not installed" or "not adoptable".
+func inspect(skillsDir string, d Definition) inspected {
 	if _, err := os.Lstat(filepath.Join(skillsDir, d.Dir)); err != nil {
-		return StateNotInstalled
+		return inspected{state: StateNotInstalled}
 	}
 	cfg, err := Build{}.config(d)
 	if err != nil {
-		return StateNotOVDB
+		return inspected{state: StateNotOVDB}
 	}
-	report, err := skillsync.Sync(context.Background(), cfg, skillsync.Options{Dir: skillsDir, DryRun: true})
+	report, err := syncSkills(context.Background(), cfg, skillsync.Options{Dir: skillsDir, DryRun: true, NoAdopt: true})
 	if err != nil {
-		return StateNotOVDB
+		// What is on disk decides, not the library's words: a journal that is
+		// there is an interrupted install (whatever the library refused), and a
+		// record that cannot be read, with no journal, is an unusable record.
+		facts := factsAt(skillsDir)
+		switch {
+		case errors.Is(err, skillsync.ErrRecoveryPending), facts.journal && errors.Is(err, skillsync.ErrStateCorrupt):
+			return inspected{state: StateRecoveryPending, reason: uicopy.T("skills.state_reason.recovery_pending", nil)}
+		case errors.Is(err, skillsync.ErrStateCorrupt) && facts.recordUnreadable:
+			return inspected{state: StateRecordUnusable, reason: redact.String(err.Error())}
+		}
+		return inspected{state: StateNotOVDB, reason: redact.String(err.Error())}
 	}
 	for _, change := range report.Changes {
 		if change.Name == d.Dir {
-			return stateFor(change)
+			state := stateFor(change)
+			result := inspected{state: state}
+			if state == StateNotOVDB && change.Action == skillsync.Conflict {
+				result.reason = redact.String(change.Reason)
+			}
+			return result
 		}
 	}
-	return StateNotOVDB
+	return inspected{state: StateNotOVDB}
 }
 
 // stateFor is the state of a skill from what skillsync would do to it.
@@ -281,6 +380,12 @@ func stateFor(change skillsync.Change) string {
 		if change.Reason == modifiedTarget {
 			return StateChanged
 		}
+		// A refusal NoAdopt caused: the folder is this skill and a call
+		// without NoAdopt would take it over. The reason alone
+		// ("unmanaged target") says only that it is another's.
+		if change.Adoptable {
+			return StateAdoptable
+		}
 	case skillsync.Removed:
 		// Never planned for an embedded bundle that lists the skill.
 	}
@@ -290,10 +395,6 @@ func stateFor(change skillsync.Change) string {
 // modifiedTarget is skillsync's conflict reason for an owned skill whose
 // files changed since it installed them.
 const modifiedTarget = "modified target"
-
-// unmanagedTarget is skillsync's conflict reason (until v0.21.0, its whole
-// reason; later versions append what was found) for a folder it does not own.
-const unmanagedTarget = "unmanaged target"
 
 // Targets are the harnesses shown for d: every one found, plus Claude Code and
 // Codex, in cobracmd.DefaultHarnesses order.
@@ -400,12 +501,44 @@ type InstallRequest struct {
 	// ReplaceChanged replaces a copy the person edited since OVDB installed
 	// it; only after they agreed to lose those edits.
 	ReplaceChanged bool `json:"replace_changed,omitempty"`
-	// Adopt takes over a folder that was already there and already is this
-	// skill, keeping a backup of it; only after the person agreed to that.
-	// Without it such a folder is refused and left untouched, which is what
-	// every client built before adoption existed (v0.21.0) expects: the server
-	// never sends one a state or result it did not ask for.
+	// Adopt takes over, in every target, a folder that was already there and
+	// already is this skill, keeping a backup of it; only after the person
+	// agreed to that. It is what clients from v0.22.0 to v0.28.x send. Without
+	// it (and without AdoptDirs and AdoptHarnesses) such a folder is refused
+	// and left untouched, which is what every client built before adoption
+	// existed (v0.21.0) expects: the server never sends one a state or result
+	// it did not ask for.
 	Adopt bool `json:"adopt,omitempty"`
+	// AdoptDirs are the skill folders (Target.Dir) the person was shown as
+	// already there and agreed to have taken over. A folder that became
+	// adoptable after they were shown the list is not among them, so it is
+	// refused. The CLI and TUI send it instead of Adopt.
+	AdoptDirs []string `json:"adopt_dirs,omitempty"`
+	// AdoptHarnesses is AdoptDirs for the web console, which names harnesses
+	// and never a directory.
+	AdoptHarnesses []string `json:"adopt_harnesses,omitempty"`
+}
+
+// Consent is the folders a person agreed to have taken over, as a request says
+// it.
+func (r InstallRequest) Consent() Consent {
+	return Consent{All: r.Adopt, Dirs: r.AdoptDirs, Harnesses: r.AdoptHarnesses}
+}
+
+// Consent says which target folders an install may take over. The zero value
+// is none, the answer every client that does not know adoption expects.
+type Consent struct {
+	// All is a person's yes for every target (the request field "adopt").
+	All       bool
+	Dirs      []string
+	Harnesses []string
+}
+
+// covers reports whether the person agreed to have d's folder in target
+// taken over.
+func (c Consent) covers(d Definition, t RequestTarget) bool {
+	return c.All || slices.Contains(c.Dirs, filepath.Join(t.SkillsDir, d.Dir)) ||
+		(t.Harness != "" && slices.Contains(c.Harnesses, t.Harness))
 }
 
 // Outcome is what installing did in one target.
@@ -668,7 +801,7 @@ func (b Build) config(d Definition) (skillsync.Config, error) {
 // target and only d's bundle (capability 21). Targets must already be checked.
 // Every target is attempted; a failure in any makes the whole install fail,
 // naming each outcome.
-func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged, adopt bool) (InstallDocument, error) {
+func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged bool, consent Consent) (InstallDocument, error) {
 	doc := InstallDocument{Schema: envelope.Schema, Skill: d.ID, Dir: d.Dir, Name: uicopy.T(d.nameKey, nil), DryRun: dryRun, AlreadyUpToDate: true}
 	cfg, err := b.config(d)
 	if err != nil {
@@ -684,27 +817,22 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			if err := os.RemoveAll(outcome.Dir); err != nil {
 				failure := envelope.New(envelope.StorageUnavailable, installFailed(d)).
 					WithReason(uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": redact.String(err.Error())}))
-				return withOutcomes(doc, failure, nil, dryRun, adopt)
+				return withOutcomes(doc, d, failure, nil, dryRun, consent)
 			}
 		}
-		if outcome.State == StateAdoptable && !adopt {
-			// Nobody asked for adoption: this is the refusal every version
-			// before adoption answers for such a folder, and nothing is touched.
-			// skillsync has no option to turn adoption off, so this reads the
-			// state a moment before Sync does.
-			outcome.State = StateNotOVDB
-			outcome.Result, outcome.Reason = string(skillsync.Conflict), unmanagedTarget
-			failures = append(failures, uicopy.T("skills.install.target_conflict", map[string]string{"path": outcome.Dir}))
-			doc.AlreadyUpToDate = false
-			doc.Outcomes = append(doc.Outcomes, outcome)
-			continue
-		}
-		report, err := skillsync.Sync(ctx, cfg, skillsync.Options{Dir: t.SkillsDir, DryRun: dryRun})
+		// Whether this folder may be taken over is decided by the library,
+		// inside its lock after it has recovered any interrupted install, from
+		// NoAdopt: a request that did not name this folder gets the refusal
+		// every version before adoption answers, with no check made here that
+		// could go stale before the write.
+		outcome.StateReason = ""
+		report, err := syncSkills(ctx, cfg, skillsync.Options{Dir: t.SkillsDir, DryRun: dryRun, NoAdopt: !consent.covers(d, t)})
 		switch {
 		case err != nil:
-			outcome.Result, outcome.Reason = string(skillsync.Conflict), redact.String(err.Error())
+			advice := syncFailureAdvice(t.SkillsDir, d, err)
+			outcome.Result, outcome.Reason = string(skillsync.Conflict), advice.reason
 			conflictsOnly = false
-			failures = append(failures, uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": outcome.Reason}))
+			failures = append(failures, advice.failure(outcome.Dir))
 		default:
 			outcome.Result = string(skillsync.Unchanged)
 			for _, change := range report.Changes {
@@ -726,6 +854,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 		if !dryRun {
 			outcome.setState(stateOf(t.SkillsDir, d))
 		}
+		outcome.StateReason = ""
 		doc.Outcomes = append(doc.Outcomes, outcome)
 	}
 	if len(failures) > 0 {
@@ -738,7 +867,7 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			next = append(next, envelope.Next{Label: uicopy.T("skills.next.replace_changed", nil), Command: "ovdb skills install " + d.ID + " --replace-changed"})
 		}
 		next = append(next, envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
-		return withOutcomes(doc, envelope.New(code, installFailed(d)).WithNext(next...), failures, dryRun, adopt)
+		return withOutcomes(doc, d, envelope.New(code, installFailed(d)).WithNext(next...), failures, dryRun, consent)
 	}
 	if dryRun {
 		// Nothing was installed: the next step is the install it previewed.
@@ -754,24 +883,23 @@ func (b Build) Install(ctx context.Context, e Env, d Definition, targets []Reque
 			command += " --replace-changed"
 		}
 		doc.Next = []envelope.Next{{Label: uicopy.T("skills.next.install_previewed", nil), Command: command}}
-		return withOutcomes(doc, nil, nil, dryRun, adopt)
+		return withOutcomes(doc, d, nil, nil, dryRun, consent)
 	}
 	doc.Next = installedNext(d)
-	return withOutcomes(doc, nil, nil, dryRun, adopt)
+	return withOutcomes(doc, d, nil, nil, dryRun, consent)
 }
 
-// withOutcomes finishes an install: a client that did not ask for adoption is
-// never shown the state "adoptable"; and a failure that left some targets
-// changed (or, in a dry run, would) says which, in its reason and in its
-// targets, since the person is otherwise told only that the install failed.
-// failure is nil for a success, which is returned with doc unchanged but for
-// that state.
-func withOutcomes(doc InstallDocument, failure *envelope.Error, failures []string, dryRun, adopt bool) (InstallDocument, error) {
-	if !adopt {
-		for i := range doc.Outcomes {
-			if doc.Outcomes[i].State == StateAdoptable {
-				doc.Outcomes[i].State = StateNotOVDB
-			}
+// withOutcomes finishes an install: a client that did not agree to a folder
+// being taken over is never shown that folder in the state "adoptable"; and a
+// failure that left some targets changed (or, in a dry run, would) says which,
+// in its reason and in its targets, since the person is otherwise told only
+// that the install failed. failure is nil for a success, which is returned
+// with doc unchanged but for that state.
+func withOutcomes(doc InstallDocument, d Definition, failure *envelope.Error, failures []string, dryRun bool, consent Consent) (InstallDocument, error) {
+	for i := range doc.Outcomes {
+		o := doc.Outcomes[i]
+		if o.State == StateAdoptable && !consent.covers(d, RequestTarget{Harness: o.Harness, SkillsDir: o.SkillsDir}) {
+			doc.Outcomes[i].State = StateNotOVDB
 		}
 	}
 	if failure == nil {
@@ -886,4 +1014,110 @@ func (r *rootDir) ReadDir(n int) ([]fs.DirEntry, error) {
 	}
 	r.read = true
 	return r.o.ReadDir(".")
+}
+
+// adoptedBackupDirName is where skillsync keeps the copy of a folder it
+// adopted, beside the folder (skillsync's own name for it).
+const adoptedBackupDirName = ".cli-helpers-skills-adopted-backup"
+
+// advised is a failed sync said as a person can act on it.
+type advised struct {
+	reason string
+	// whole is the failure as one sentence; otherwise the reason goes into
+	// "Couldn't write to {path}: {reason}."
+	whole bool
+}
+
+func (a advised) failure(path string) string {
+	if a.whole {
+		return a.reason
+	}
+	return uicopy.T("skills.install.target_failed", map[string]string{"path": path, "reason": a.reason})
+}
+
+// recoveryJournal is skillsync's file of an install in progress.
+const recoveryJournal = ".cli-helpers-skills-recovery.json"
+
+// diskFacts are what a skills folder shows, which is what decides what a person
+// is told when the library reports a corrupt state: the library returns that one
+// error for about forty conditions.
+type diskFacts struct {
+	// journal: the recovery journal of an install is in the folder.
+	journal bool
+	// recordUnreadable: the record file (.cli-helpers-skills-sync.json) cannot
+	// be read by the library (it does not parse, a newer schema, a symlink).
+	recordUnreadable bool
+}
+
+func factsAt(skillsDir string) diskFacts {
+	var facts diskFacts
+	if _, err := os.Lstat(filepath.Join(skillsDir, recoveryJournal)); err == nil {
+		facts.journal = true
+	}
+	if _, err := skillsync.ReadStatus(skillsDir); errors.Is(err, skillsync.ErrStateCorrupt) {
+		facts.recordUnreadable = true
+	}
+	return facts
+}
+
+// syncFailureAdvice words a failed sync of d in skillsDir. A pending recovery
+// (a dry run met an interrupted install) says how to finish it. For a corrupt
+// state the facts on disk decide, never the words of the error:
+//
+//   - a journal is there and the record reads: an earlier install was
+//     interrupted and the library cannot finish or undo it (strongo/cli-helpers#45
+//     is one such case): where the person's copy is kept, that the problem is
+//     known, and to move the journal and the transaction folder out;
+//   - a journal is there and the record cannot be read either: the library reads
+//     the record first, so that file is moved first, then the journal's advice;
+//   - no journal, the record cannot be read: what the file is, that another tool
+//     may have written it, and to move it out;
+//   - neither: the library stopped a running install; nothing is recorded, run
+//     it again.
+//
+// Anything that is not a corrupt state is the library's own words.
+func syncFailureAdvice(skillsDir string, d Definition, err error) advised {
+	if errors.Is(err, skillsync.ErrRecoveryPending) {
+		return advised{whole: true, reason: uicopy.T("skills.install.recovery_pending", map[string]string{"path": skillsDir})}
+	}
+	if !errors.Is(err, skillsync.ErrStateCorrupt) {
+		return advised{reason: redact.String(err.Error())}
+	}
+	facts := factsAt(skillsDir)
+	params := map[string]string{"path": skillsDir, "reason": redact.String(err.Error())}
+	switch {
+	case facts.journal && facts.recordUnreadable:
+		key := "skills.install.recovery_and_record"
+		if backup := adoptionBackupOf(skillsDir, d); backup != "" {
+			key, params["backup"] = "skills.install.recovery_and_record_backup", backup
+		}
+		return advised{whole: true, reason: uicopy.T(key, params)}
+	case facts.journal:
+		key := "skills.install.recovery_stuck"
+		if backup := adoptionBackupOf(skillsDir, d); backup != "" {
+			key, params["backup"] = "skills.install.recovery_stuck_backup", backup
+		}
+		return advised{whole: true, reason: uicopy.T(key, params)}
+	case facts.recordUnreadable:
+		return advised{whole: true, reason: uicopy.T("skills.install.state_corrupt", params)}
+	}
+	return advised{whole: true, reason: uicopy.T("skills.install.stopped", params)}
+}
+
+// adoptionBackupOf is the newest backup of d's folder skillsync kept in
+// skillsDir, or "" when there is none.
+func adoptionBackupOf(skillsDir string, d Definition) string {
+	root := filepath.Join(skillsDir, adoptedBackupDirName)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		if path := filepath.Join(root, entries[i].Name(), d.Dir); entries[i].IsDir() {
+			if _, err := os.Lstat(path); err == nil {
+				return path
+			}
+		}
+	}
+	return ""
 }

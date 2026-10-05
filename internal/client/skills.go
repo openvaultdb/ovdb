@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/openvaultdb/ovdb/internal/envelope"
@@ -84,9 +83,20 @@ func (l *Local) PlanSkill(request skills.InstallRequest) (SkillPlan, error) {
 	}
 	request.Harnesses, request.Targets = nil, targets
 	planned := env.Plan(d, targets)
-	// Adoption is asked for only when the plan has a folder to take over, so a
-	// request that has none is the one every version of the server understands.
-	request.Adopt = slices.ContainsFunc(planned, func(t skills.Target) bool { return t.State == skills.StateAdoptable })
+	// The person agrees to the folders the plan lists as already there, so
+	// those, and no others, are what the request names for adoption: a folder
+	// that becomes adoptable after this plan is not taken over. A caller that
+	// showed a person its own list (the TUI's consent step) sends that list
+	// (a non-nil AdoptDirs) and it is kept. A plan with none names no folder,
+	// the request every version of the server understands.
+	if request.AdoptDirs == nil {
+		request.AdoptDirs = []string{}
+		for _, t := range planned {
+			if t.State == skills.StateAdoptable {
+				request.AdoptDirs = append(request.AdoptDirs, t.Dir)
+			}
+		}
+	}
 	return SkillPlan{Skill: env.Describe(d), Request: request, Targets: planned}, nil
 }
 
@@ -106,8 +116,8 @@ func (l *Local) InstallSkill(ctx context.Context, plan SkillPlan, noStart bool) 
 // say that the server must be restarted, which is what is wrong.
 func (l *Local) postInstall(ctx context.Context, c *Client, request skills.InstallRequest) ([]byte, error) {
 	response, err := c.Do(ctx, http.MethodPost, SkillsInstallPath, request)
-	if e := envelope.As(err); e != nil && request.Adopt && c.state.Whoami != nil && c.state.Whoami.Version != l.Version &&
-		e.Code == envelope.InvalidArgument && strings.Contains(e.Reason, `"adopt"`) {
+	if e := envelope.As(err); e != nil && (request.Adopt || len(request.AdoptDirs) > 0) && c.state.Whoami != nil && c.state.Whoami.Version != l.Version &&
+		e.Code == envelope.InvalidArgument && (strings.Contains(e.Reason, `"adopt"`) || strings.Contains(e.Reason, `"adopt_dirs"`)) {
 		mismatch := VersionMismatch(c.state.Whoami.Version, l.Version)
 		return envelope.MarshalError(mismatch), mismatch
 	}
@@ -122,7 +132,7 @@ func (l *Local) DryRunSkill(ctx context.Context, plan SkillPlan) ([]byte, error)
 		return nil, err
 	}
 	d, _ := skills.Find(plan.Skill.ID)
-	document, err := skills.Build{Version: l.Version}.Install(ctx, env, d, plan.Request.Targets, true, false, plan.Request.Adopt)
+	document, err := skills.Build{Version: l.Version}.Install(ctx, env, d, plan.Request.Targets, true, false, plan.Request.Consent())
 	if err != nil {
 		return nil, err
 	}

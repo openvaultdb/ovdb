@@ -307,7 +307,7 @@ func TestStrictModeError(t *testing.T) {
 	e.in(t.TempDir())
 	e.ok("databases", "create", "shop", "--engine", "sqlite")
 	body := e.fails("add", "/orders", `{"total":1}`, "--db", "shop", "--json")
-	if !strings.HasPrefix(body.stdout, `{"error":{"code":"schema_validation","message":"collection \"orders\": no schema declared`) {
+	if !strings.HasPrefix(body.stdout, `{"error":{"code":"not_found","message":"op 0 (insert): record not found: collection \"orders\" is not declared by this database`) {
 		t.Errorf("--json = %s", body.stdout)
 	}
 	human := e.fails("add", "/orders", `{"total":1}`, "--db", "shop")

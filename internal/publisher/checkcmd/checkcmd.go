@@ -40,7 +40,9 @@ type Deps struct {
 	// check (the same, for a missing tool: exit code 2 too), and JSON writes a schema-1 document, as every ovdb --json document is written.
 	Usage      func(cmd *cobra.Command, reason string) error
 	Unrunnable func(message, reason, next string) error
-	JSON       func(v any) []byte
+	// TimedOut is Unrunnable for a git that was found and did not finish in time: the same exit code, a code of its own in the JSON envelope.
+	TimedOut func(message, reason, next string) error
+	JSON     func(v any) []byte
 	// WriteFailed makes the error for a result that could not be written to standard output (a closed or full pipe): exit code 2, the check could not
 	// deliver what it was asked for, and a pass that printed nothing must not look like one.
 	WriteFailed func(reason string) error
@@ -213,7 +215,7 @@ func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository,
 		}
 	}
 	if errors.Is(unrunnable, repo.ErrTimeout) {
-		return c.Unrunnable(c.T("publisher.env.timeout", nil), c.T("publisher.env.timeout_reason", nil), c.T("publisher.env.timeout_next", nil))
+		return c.TimedOut(c.T("publisher.env.timeout", nil), c.T("publisher.env.timeout_reason", nil), c.T("publisher.env.timeout_next", nil))
 	}
 	if unrunnable != nil {
 		return c.Unrunnable(c.T("publisher.env.failed", nil), safe(unrunnable.Error()), c.T("publisher.env.next", nil))

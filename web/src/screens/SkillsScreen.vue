@@ -37,7 +37,7 @@ const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSea
 const from = /^\/[a-z]/.test(query.get('from') ?? '') ? query.get('from')! : null
 
 async function load() {
-  const response = await api<SkillsDocument>('GET', '/api/local/v1/skills?adoptable=1')
+  const response = await api<SkillsDocument>('GET', '/api/local/v1/skills?adoptable=1&recovery=1')
   if (!response.ok) {
     loadProblem.value = response.error
     return
@@ -69,7 +69,7 @@ function resultLine(target: SkillInstallDocument['targets'][number]): string {
 }
 
 function selectable(target: SkillTarget): boolean {
-  return target.detected && !!target.harness && target.state !== 'not_ovdb'
+  return target.detected && !!target.harness && target.state !== 'not_ovdb' && target.state !== 'record_unusable'
 }
 
 function offer(skill: Skill) {
@@ -94,6 +94,13 @@ async function notNow() {
   window.document.querySelector<HTMLElement>('main h1')?.focus()
 }
 
+// The ticked agents whose folder was shown as already there.
+function adoptHarnesses(): string[] {
+  return (offered.value?.targets ?? [])
+    .filter((target) => target.state === 'adoptable' && chosen.value.includes(target.harness!))
+    .map((target) => target.harness!)
+}
+
 async function install() {
   if (!offered.value || chosen.value.length === 0) return
   problem.value = null
@@ -102,9 +109,11 @@ async function install() {
     skill: offered.value.id,
     harnesses: chosen.value,
     replace_changed: offered.value.targets.some((target) => target.state === 'changed' && chosen.value.includes(target.harness!)),
-    // Sent only when a ticked agent has a copy to take over: a server before
-    // adoption existed refuses the field, and this is the person's yes to it.
-    ...(offered.value.targets.some((target) => target.state === 'adoptable' && chosen.value.includes(target.harness!)) ? { adopt: true } : {}),
+    // The agents the person ticked whose copy the screen showed as already
+    // there: their yes covers those and no others, so one that became
+    // adoptable after this screen was drawn is refused. Sent only when there
+    // is one: a server before adoption existed refuses the field.
+    ...(adoptHarnesses().length > 0 ? { adopt_harnesses: adoptHarnesses() } : {}),
   })
   installing.value = false
   if (response.ok) {
@@ -132,6 +141,13 @@ function installedFor(skill: Skill): string {
     .filter((target) => target.installed)
     .map((target) => (target.state === 'installed' ? target.name : `${target.name} (${stateText(target.state)})`))
   return names.length ? t('skills.list.installed_for', { agents: names.join(', ') }) : t('skills.list.not_installed')
+}
+
+// The agents whose skills folder has an interrupted install, which installing
+// finishes: said on the list, never as "not installed".
+function interruptedFor(skill: Skill): string {
+  const names = skill.targets.filter((target) => target.state === 'recovery_pending').map((target) => target.name)
+  return names.length ? t('skills.list.recovery_pending', { agents: names.join(', ') }) : ''
 }
 
 function go(event: MouseEvent, path: string) {
@@ -177,11 +193,16 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
                   <span v-if="target.state === 'changed'" class="text-sm text-muted">{{ t('skills.consent.changed') }}</span>
                   <span v-else-if="target.state === 'update_available'" class="text-sm text-muted">{{ t('skills.consent.update_available') }}</span>
                   <span v-else-if="target.state === 'adoptable'" class="text-sm text-muted">{{ t('skills.consent.adoptable') }}</span>
+                  <span v-else-if="target.state === 'recovery_pending'" class="text-sm text-muted">{{ t('skills.consent.recovery_pending') }}</span>
                 </span>
               </label>
               <p v-else class="flex items-start gap-3 text-muted" :data-harness="target.harness">
                 <span aria-hidden="true" class="mt-1 size-5 shrink-0"></span>
-                <span>{{ target.name }} — {{ target.state === 'not_ovdb' ? t('skills.state.not_ovdb') : t('skills.state.not_found') }}</span>
+                <span>
+                  {{ target.name }} —
+                  {{ target.state === 'not_ovdb' || target.state === 'record_unusable' ? stateText(target.state) : t('skills.state.not_found') }}
+                  <template v-if="(target.state === 'not_ovdb' || target.state === 'record_unusable') && target.state_reason"> ({{ target.state_reason }})</template>
+                </span>
               </p>
             </template>
           </fieldset>
@@ -247,6 +268,7 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
               <h2 class="text-lg font-semibold tracking-tight">{{ skill.name }}</h2>
               <p>{{ skill.purpose }}</p>
               <p class="text-muted" data-testid="installed-for">{{ installedFor(skill) }}</p>
+              <p v-if="interruptedFor(skill)" class="text-muted" data-testid="interrupted-for">{{ interruptedFor(skill) }}</p>
               <div>
                 <OvButton variant="secondary" :data-testid="`offer-${skill.id}`" @click="offer(skill)">
                   {{ t('skills.list.install_button', { name: skill.name }) }}

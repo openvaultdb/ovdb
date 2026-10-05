@@ -649,7 +649,7 @@ moves, change `references.mjs`, regenerate, and read the diff of the goldens and
 tables above. The digests of the rules golden are read from its committed file: run
 `internal/publisher/rules/testdata/reference/generate.mjs` first when the rules change.
 
-The job `publisher-goldens` of `.github/workflows/ci.yml` runs both generators with `--check` and `node --test internal/publisher/references.test.mjs`, with Node
+The job `publisher-goldens` of `.github/workflows/ci.yml` runs the three generators with `--check` and `node --test internal/publisher/references.test.mjs`, with Node
 24.19.0 (the version that the goldens record, so that a new Node is a change of the workflow and a regeneration together), on every pull request and push to
 main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoScheduledWorkflows`).
 
@@ -658,7 +658,7 @@ main; it fails when a golden is stale. No workflow runs on a schedule (`TestNoSc
 - Nothing of the table above: slice 3b-1 made the rules about the presence and the readability of files and the `--repository`
   option, and slice 3b-2 the rules about the content of the model file and the meaning file (package `repo`, with `Judge.Meaning`
   here for the meaning file), each held to the checker's lines and proved on whole repositories (see the README of package `repo`).
-- The command itself, `ovdb publisher check` (slice 3c).
+- The command itself, `ovdb publisher check`, is built (package `internal/publisher/checkcmd`; the README of the module is its manual).
 - The Directory's own record and registry checks stay with the Directory.
 
 ## Bounded data licence conjunctions

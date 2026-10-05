@@ -57,6 +57,9 @@ func (a *App) skillsListCmd() *cobra.Command {
 					say(w, "  "+skill.Purpose)
 					for _, target := range skill.Targets {
 						say(w, "  "+targetLine(target, true))
+						if target.StateReason != "" {
+							say(w, "    "+target.StateReason)
+						}
 					}
 					say(w, "  "+uicopy.T("skills.list.install", map[string]string{"command": skill.Command}))
 				}
@@ -78,12 +81,14 @@ func targetLine(target skills.Target, withState bool) string {
 	if withState {
 		state := uicopy.T("skills.state.not_installed", nil)
 		switch {
-		case target.Installed, target.State == skills.StateAdoptable:
+		case target.Installed, target.State == skills.StateAdoptable, target.State == skills.StateNotOVDB, target.State == skills.StateRecoveryPending, target.State == skills.StateRecordUnusable:
+			// Another's folder and an interrupted install are said as what
+			// they are, never as "not installed".
 			state = skills.StateText(target.State)
 		case !target.Detected:
 			state = uicopy.T("skills.state.not_found", nil)
 		}
-		line += padRight(state, 22)
+		line += padRight(state, 30)
 	}
 	return line + target.Dir
 }
@@ -231,6 +236,9 @@ func (a *App) confirmSkill(cmd *cobra.Command, plan *client.SkillPlan, id string
 	say(w, uicopy.T("skills.consent.install_for", nil))
 	for _, target := range plan.Targets {
 		say(w, "  "+targetLine(target, true))
+		if target.StateReason != "" {
+			say(w, "    "+target.StateReason)
+		}
 	}
 	if len(adopted) > 0 {
 		say(w, "")

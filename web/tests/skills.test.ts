@@ -32,6 +32,7 @@ const target = (harness: string, name: string, dir: string, detected: boolean, i
   detected,
   installed,
   state: installed ? 'installed' : 'not_installed',
+  state_reason: undefined as string | undefined,
 })
 
 function skill(id: string, dir: string, name: string, purpose: string, example: string, installedForClaude = false) {
@@ -86,7 +87,7 @@ describe('AI agent skills', () => {
     let installed = false
     const calls = installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills?adoptable=1': () => json(200, document(installed)),
+      'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, document(installed)),
       'POST /api/local/v1/skills/install': () => {
         installed = true
         return json(201, installedDocument)
@@ -126,7 +127,7 @@ describe('AI agent skills', () => {
 
   it('Not now writes nothing and returns to where the offer came from', async () => {
     window.history.replaceState({}, '', '/skills?skill=todo-demo&from=/demo')
-    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1': () => json(200, document()) })
+    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, document()) })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
     await flushPromises()
     await wrapper.get('[data-testid="not-now"]').trigger('click')
@@ -137,7 +138,7 @@ describe('AI agent skills', () => {
 
   it('an unticked agent is not sent, and nothing is sent with no agent chosen', async () => {
     window.history.replaceState({}, '', '/skills')
-    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1': () => json(200, document()) })
+    const calls = installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, document()) })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
     await flushPromises()
     expect(wrapper.get('h1').text()).toBe('AI agent skills')
@@ -160,7 +161,7 @@ describe('AI agent skills', () => {
     changed.skills[1].targets[1] = { ...changed.skills[1].targets[1], detected: true, state: 'not_ovdb' }
     const calls = installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills?adoptable=1': () => json(200, changed),
+      'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, changed),
       'POST /api/local/v1/skills/install': () => json(200, installedDocument),
     })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
@@ -185,7 +186,7 @@ describe('AI agent skills', () => {
     let adopted = false
     const calls = installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills?adoptable=1': () => json(200, adoptable),
+      'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, adoptable),
       'POST /api/local/v1/skills/install': () => {
         adopted = true
         return json(201, {
@@ -212,18 +213,88 @@ describe('AI agent skills', () => {
     await claude.get('input').setValue(true)
     await wrapper.get('[data-testid="install-skill"]').trigger('click')
     await flushPromises()
-    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: false, adopt: true })
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ skill: 'todo-demo', harnesses: ['claude'], replace_changed: false, adopt_harnesses: ['claude'] })
     expect(wrapper.get('[data-testid="skill-result"]').text()).toContain(
       'Claude Code: /home/a/.claude/skills/openvaultdb-todo-demo (already there, now managed by OVDB; your copy is kept at ' +
         '/home/a/.claude/skills/.cli-helpers-skills-adopted-backup/20261004T120000.000000000Z/openvaultdb-todo-demo)',
     )
   })
 
+  it('sends only the agents it showed as having a copy to take over, never one that is merely ticked', async () => {
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const both = document()
+    both.skills[1].targets = [
+      { ...both.skills[1].targets[0], state: 'adoptable' },
+      { ...both.skills[1].targets[0], harness: 'codex', name: 'Codex', detected: true, dir: '/home/a/.codex/skills/openvaultdb-todo-demo', skills_dir: '/home/a/.codex/skills', state: 'not_installed' },
+    ]
+    const calls = installFetch({
+      ...defaultRoutes,
+      'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, both),
+      'POST /api/local/v1/skills/install': () => json(201, installedDocument),
+    })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    await wrapper.get('[data-harness="claude"] input').setValue(true)
+    await wrapper.get('[data-testid="install-skill"]').trigger('click')
+    await flushPromises()
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+      skill: 'todo-demo',
+      harnesses: ['codex', 'claude'],
+      replace_changed: false,
+      adopt_harnesses: ['claude'],
+    })
+  })
+
+  it('says an interrupted install is one, with a note, on the list and the consent step', async () => {
+    window.history.replaceState({}, '', '/skills')
+    const pending = document()
+    pending.skills[1].targets[0] = { ...pending.skills[1].targets[0], state: 'recovery_pending', state_reason: 'skills sync recovery is pending' }
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, pending) })
+    const list = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    expect(list.get('[data-skill="todo-demo"] [data-testid="interrupted-for"]').text()).toBe('Interrupted install, installing finishes it or says what to do: Claude Code')
+    list.unmount()
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    const claude = wrapper.get('[data-harness="claude"]')
+    expect(claude.text()).toContain('an earlier install here was interrupted — installing finishes it, or says what to do')
+    expect((claude.get('input').element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it("shows the library's reason for a folder that is another skill, such as a stray file in a copy", async () => {
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const stray = document()
+    stray.skills[1].targets[0] = {
+      ...stray.skills[1].targets[0],
+      state: 'not_ovdb',
+      state_reason: 'unmanaged target: openvaultdb-todo-demo/.DS_Store is not part of this skill\'s bundle; remove it or back up the folder yourself before syncing',
+    }
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, stray) })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    expect(wrapper.get('[data-harness="claude"]').text()).toContain('another skill with this name')
+    expect(wrapper.get('[data-harness="claude"]').text()).toContain('.DS_Store is not part of this skill')
+  })
+
+  it("says OVDB's own skill whose record cannot be read is that, with the library's reason, and does not offer it", async () => {
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const broken = document()
+    broken.skills[1].targets[0] = { ...broken.skills[1].targets[0], state: 'record_unusable', state_reason: 'skills sync state is corrupt: parse x: unexpected end of JSON input' }
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, broken) })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    const claude = wrapper.get('[data-harness="claude"]')
+    expect(claude.text()).toContain("its record can't be read")
+    expect(claude.text()).toContain('unexpected end of JSON input')
+    expect(claude.find('input').exists()).toBe(false)
+  })
+
   it('shows a state this build has no text for as it came instead of blanking the screen', async () => {
     window.history.replaceState({}, '', '/skills')
     const newer = document(true)
     newer.skills[1].targets[0] = { ...newer.skills[1].targets[0], installed: true, state: 'from_a_newer_ovdb' as never }
-    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1': () => json(200, newer) })
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, newer) })
     const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
     await flushPromises()
     expect(wrapper.get('[data-skill="todo-demo"] [data-testid="installed-for"]').text()).toBe('Installed for Claude Code (from_a_newer_ovdb)')
@@ -234,7 +305,7 @@ describe('AI agent skills', () => {
     let reads = 0
     installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills?adoptable=1': () => {
+      'GET /api/local/v1/skills?adoptable=1&recovery=1': () => {
         reads++
         return json(200, document())
       },
@@ -264,7 +335,7 @@ describe('AI agent skills', () => {
     window.history.replaceState({}, '', '/skills?skill=openvaultdb')
     installFetch({
       ...defaultRoutes,
-      'GET /api/local/v1/skills?adoptable=1': () => json(200, document()),
+      'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, document()),
       'POST /api/local/v1/skills/install': () =>
         json(400, {
           schema: 1,

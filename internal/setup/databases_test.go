@@ -248,7 +248,10 @@ func TestCreateSQLiteSchemaThenReload(t *testing.T) {
 			}
 		}
 	}
-	if rec := f.data(t, http.MethodPut, "/v1/databases/shop/records/items/a", `{"data":{"title":"A"}}`); rec.Code != http.StatusUnprocessableEntity {
+	if rec := f.data(t, http.MethodPut, "/v1/databases/shop/records/items/a", `{"data":{"title":"A"}}`); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "is not declared by this database") {
+		// openvaultdb-go v0.11.8 and later refuse a collection the manifest does not
+		// declare before the adapter (404 not_found); v0.9.0 answered 422
+		// schema_validation "no schema declared".
 		t.Errorf("undescribed write = %d %s", rec.Code, rec.Body)
 	}
 

@@ -95,14 +95,14 @@ func TestParallelLeasesAreDistinct(t *testing.T) {
 	}
 }
 
-// LeaseRun gives consecutive ports that are all held, and a number something
-// listens on is not leased.
-func TestLeaseRunIsConsecutiveAndSkipsWhatIsListenedOn(t *testing.T) {
-	first := LeaseRun(t, 4)
-	if first < First || first+3 >= First+Count {
+// LeaseRun gives consecutive ports that are all held. The neighbour the test
+// listens on is leased too (five numbers), so no other test can have it.
+func TestLeaseRunIsConsecutiveAndHoldsEveryNumber(t *testing.T) {
+	first := LeaseRun(t, 5)
+	if first < First || first+4 >= First+Count {
 		t.Fatalf("ports %d.. are outside the private range", first)
 	}
-	for p := first; p < first+4; p++ {
+	for p := first; p < first+5; p++ {
 		if release, ok := Hold(p); ok {
 			release()
 			t.Errorf("port %d of the run is not held", p)
@@ -110,18 +110,50 @@ func TestLeaseRunIsConsecutiveAndSkipsWhatIsListenedOn(t *testing.T) {
 	}
 	busy, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(first+4))
 	if err != nil {
-		t.Skipf("neighbouring port taken: %v", err)
+		t.Fatalf("a leased number cannot be listened on: %v", err)
 	}
 	defer func() { _ = busy.Close() }()
-	if release, ok := Hold(first + 4); ok {
-		release()
-		t.Error("Hold took a number something listens on")
-	}
 	if free(first + 4) {
 		t.Error("free reports a listened-on port as free")
 	}
 	if !free(first) {
 		t.Error("free reports an idle leased port as busy")
+	}
+}
+
+// A number something listens on is not taken by Hold.
+func TestHoldRefusesANumberSomethingListensOn(t *testing.T) {
+	port := First + 2000 + os.Getpid()%500
+	busy, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Skipf("port %d taken on this machine: %v", port, err)
+	}
+	defer func() { _ = busy.Close() }()
+	if release, ok := Hold(port); ok {
+		release()
+		t.Error("Hold took a number something listens on")
+	}
+}
+
+// A lease is given back when its test ends: nothing else would, and a run
+// that never gave its numbers back would exhaust the range.
+func TestALeaseIsGivenBackWhenItsTestEnds(t *testing.T) {
+	var port, run int
+	t.Run("holds", func(t *testing.T) {
+		port = Lease(t)
+		run = LeaseRun(t, 3)
+		if release, ok := Hold(port); ok {
+			release()
+			t.Fatal("the lease is not held while its test runs")
+		}
+	})
+	for _, p := range []int{port, run, run + 1, run + 2} {
+		release, ok := Hold(p)
+		if !ok {
+			t.Errorf("port %d was not given back when its test ended", p)
+			continue
+		}
+		release()
 	}
 }
 

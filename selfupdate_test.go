@@ -2,7 +2,10 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -135,5 +138,54 @@ func TestSelfUpdateErrors(t *testing.T) {
 	available := selfupdate.CheckResult{Current: "1.2.3", Latest: "1.3.0", Verdict: selfupdate.UpdateAvailable}
 	if got := (selfUpdateErrors{}).UpdateAvailable(available).Error(); !strings.Contains(got, "1.2.3 -> 1.3.0") {
 		t.Errorf("UpdateAvailable(...) = %q", got)
+	}
+}
+
+// ovdb is published as a zip on Windows and a tar.gz elsewhere, never as an
+// installer or distribution package, so what a person is told for a copy under
+// a system directory must be true of that: on Windows the new zip, on Linux the
+// package manager or a new archive, and the library's own text (empty here)
+// for macOS.
+func TestSystemPackageHintSaysWhatIsTrueForOvdbOnEachOS(t *testing.T) {
+	for goos, want := range map[string][]string{
+		"windows": {"zip", "replacing the files", releasesURL},
+		"linux":   {"package manager", "tar.gz", releasesURL},
+		"darwin":  nil,
+	} {
+		hint := systemPackageHint(goos, "")
+		if want == nil {
+			if hint != "" {
+				t.Errorf("%s: hint = %q, want the library's text (empty)", goos, hint)
+			}
+			continue
+		}
+		for _, part := range want {
+			if !strings.Contains(hint, part) {
+				t.Errorf("%s: hint %q lacks %q", goos, hint, part)
+			}
+		}
+	}
+	if hint := systemPackageHint("windows", ""); strings.Contains(hint, "MSI") || strings.Contains(hint, "Update it") {
+		t.Errorf("windows hint = %q must not send a person to an installer", hint)
+	}
+}
+
+// The configuration both `self-update` and `upgrade` build carries the hint,
+// and a copy in this host's own system directory is told it.
+func TestSelfUpdateAndUpgradeShowTheHintForACopyInASystemDirectory(t *testing.T) {
+	cfg := newSelfUpdateConfig("1.2.3")
+	if cfg.SystemPackageHintFor == nil {
+		t.Fatal("newSelfUpdateConfig sets no SystemPackageHintFor")
+	}
+	dirs := selfupdate.SystemPackageDirs(runtime.GOOS, os.Getenv)
+	if len(dirs) == 0 {
+		t.Skip("no system package directory in this environment")
+	}
+	detection := cfg.Classify(filepath.Join(dirs[0], "ovdb"))
+	if detection.Method != selfupdate.Managed || detection.Manager == nil {
+		t.Fatalf("detection = %+v", detection)
+	}
+	if want := systemPackageHint(runtime.GOOS, dirs[0]); want != "" && detection.Manager.UpgradeHint != want {
+		t.Errorf("hint = %q, want ovdb's %q", detection.Manager.UpgradeHint, want)
 	}
 }

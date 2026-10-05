@@ -15,7 +15,9 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -797,9 +799,31 @@ func TestConnectProbesAreBoundedAndUnlocked(t *testing.T) {
 		t.Skip("uses a shell script as git")
 	}
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+	// The sleeper replaces the shell (exec): killing git at the deadline kills the sleeper, and nothing is left to hold git's pipes. It writes its pid so the
+	// test can show that it is gone.
+	pidFile := filepath.Join(bin, "git.pid")
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\necho $$ > '"+pidFile+"'\nexec sleep 30\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		raw, err := os.ReadFile(pidFile)
+		if err != nil {
+			return // git was never run
+		}
+		pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+		process, err := os.FindProcess(pid)
+		if err != nil {
+			return
+		}
+		// Killed at the deadline, and reaped by the code that started it, a moment after the probe has answered: wait for that, and no longer.
+		for end := time.Now().Add(3 * time.Second); process.Signal(syscall.Signal(0)) == nil; time.Sleep(20 * time.Millisecond) {
+			if time.Now().After(end) {
+				_ = process.Kill()
+				t.Errorf("the fake git (pid %d) is still alive after the test", pid)
+				return
+			}
+		}
+	})
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	f := &registryFixture{dirs: testDirs(t), opts: RegistryOptions{MountTimeout: 500 * time.Millisecond}}
 	for _, dir := range []string{f.dirs.Home, f.dirs.Runtime} {
