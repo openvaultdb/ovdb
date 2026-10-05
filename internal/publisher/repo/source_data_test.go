@@ -16,7 +16,7 @@ type sourceReader struct {
 	limits    []int
 }
 
-func (r *sourceReader) Head() (string, error) { return r.revision, r.Memory.Err }
+func (r *sourceReader) Head() (string, error) { return r.revision, r.Err }
 func (r *sourceReader) Blob(path string, limit int) ([]byte, error) {
 	r.blobCalls++
 	r.limits = append(r.limits, limit)
