@@ -1,5 +1,7 @@
 # ovdb
 
+<img src="ovdb-logo.png" alt="ovdb logo: an open safe holding a database, with a branch symbol on its door" width="160" align="right">
+
 `ovdb` is the OpenVaultDB command-line interface — the canonical
 developer/admin tool for creating, running, and operating an OpenVaultDB
 instance: user-owned, portable databases with pluggable storage engines
