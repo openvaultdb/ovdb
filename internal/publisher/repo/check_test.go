@@ -702,9 +702,14 @@ func TestRecordsetsAreTheEntitiesThroughTheMapping(t *testing.T) {
 	if r := Check(m, publisher()); len(r.Findings) != 2 || !strings.Contains(r.Findings[0].Message, `lacks the ModelSpec entities of "model/chinook.modelspec.json": "Artist"`) || !strings.Contains(r.Findings[1].Message, `are not ModelSpec entities of "model/chinook.modelspec.json": "dbo.Artist"`) {
 		t.Errorf("a name mapped to an entity that is not there: %v", r.Findings)
 	}
-	// A mapping that the manifest rules refuse maps nothing: the manifest's own finding is made, and the entity is as lacking as without it.
+	// A mapping that the manifest rules refuse is reported once, by the manifest: the names are not judged against a mapping that was thrown away.
 	m, _ = withManifest("  - Album\n  - Artist\n", "  - Album\n  - dbo.Artist\nrecordset_entities:\n  - Artist\n")
-	if r := Check(m, publisher()); len(r.Findings) == 0 || r.Findings[0].Rule != "manifest-recordsets" {
+	if r := Check(m, publisher()); len(r.Findings) != 1 || r.Findings[0].Rule != "manifest-recordsets" {
+		t.Errorf("findings %v", r.Findings)
+	}
+	// A name that maps nowhere is told where to map it.
+	m, _ = withManifest("  - Album\n  - Artist\n", "  - Album\n  - Order Details\n")
+	if r := Check(m, publisher()); len(r.Findings) != 2 || !strings.Contains(r.Findings[1].Message, "map each to its entity under recordset_entities") {
 		t.Errorf("findings %v", r.Findings)
 	}
 }
@@ -736,7 +741,7 @@ func TestRecordsetsAreTheEntitiesOfTheModelFile(t *testing.T) {
 		t.Errorf("another case, one name too many: %v", r.Findings)
 	}
 	m, _ = withManifest("  - Artist\n", "  - Zed\n  - Artist\n  - Extra\n")
-	if f := Check(m, publisher()).Findings; len(f) != 1 || !strings.HasSuffix(f[0].Message, `: "Extra", "Zed"`) {
+	if f := Check(m, publisher()).Findings; len(f) != 1 || !strings.Contains(f[0].Message, `: "Extra", "Zed"; if they are`) {
 		t.Errorf("the names that are not entities are listed in order: %v", f)
 	}
 	// Both ways at once, and the recordsets of a manifest that the rules refuse are not compared.
