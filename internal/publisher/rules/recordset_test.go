@@ -110,3 +110,27 @@ func TestHexValue(t *testing.T) {
 		}
 	}
 }
+
+func TestRepresentationEnvelopeMembers(t *testing.T) {
+	for in, want := range map[string]bool{
+		"a.json": true, "a/b.json": true, "$records/a.json": true, "a-b_c.d.json": true, "x.json.json": true, ".gitx/a.json": true,
+		"": false, ".json": true, "json": false, "a.JSON": false, "a.json/": false, "/a.json": false, "a//b.json": false, "./a.json": false, "a/../b.json": false,
+		"a/.GIT/b.json": false, "$records.json": false, "a$b.json": false, "$x/a.json": false, "a b.json": false, "é.json": false, "..json": true,
+		strings.Repeat("a", 1019) + ".json": true, strings.Repeat("a", 1020) + ".json": false,
+	} {
+		if got := IsRepresentationPath(in); got != want {
+			t.Errorf("IsRepresentationPath(%.30q) = %v, want %v", in, got, want)
+		}
+	}
+	for in, want := range map[string]bool{
+		strings.Repeat("a", 64): true, strings.Repeat("0", 64): true, strings.Repeat("A", 64): false, strings.Repeat("a", 63): false,
+		strings.Repeat("a", 63) + "g": false, "": false,
+	} {
+		if got := IsRepresentationHash(in); got != want {
+			t.Errorf("IsRepresentationHash(%.30q) = %v, want %v", in, got, want)
+		}
+	}
+	if equalFoldASCII("ab", "abc") || !equalFoldASCII(".GiT", ".git") || equalFoldASCII(".gix", ".git") {
+		t.Error("equalFoldASCII")
+	}
+}

@@ -774,3 +774,46 @@ func TestUnusableFactsStayPresent(t *testing.T) {
 		}
 	}
 }
+
+// The envelope of representation_contract is judged as the Directory's checkRepresentationEnvelope judges it, in both profiles, and nothing of the
+// attachment is read. Under the Publisher profile the key itself is also refused (it is not on the closed list until A5), so the Directory profile is
+// the one whose findings are counted.
+func TestRepresentationEnvelope(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	for _, c := range []struct {
+		name, value string
+		ok          bool
+	}{
+		{"path and sha256", "\n  path: artifacts/representation.json\n  sha256: " + hash, true},
+		{"a $records segment", "\n  path: $records/a.json\n  sha256: " + hash, true},
+		{"nothing", " null", false},
+		{"text", " artifacts/representation.json", false},
+		{"a list", "\n  - a.json", false},
+		{"one key", "\n  path: a.json", false},
+		{"a third key", "\n  path: a.json\n  sha256: " + hash + "\n  format: x", false},
+		{"other keys", "\n  path: a.json\n  hash: " + hash, false},
+		{"a path that is a list", "\n  path: [a.json]\n  sha256: " + hash, false},
+		{"a path that is not json", "\n  path: a.yaml\n  sha256: " + hash, false},
+		{"a path with a dot segment", "\n  path: a/../b.json\n  sha256: " + hash, false},
+		{"a hash in upper case", "\n  path: a.json\n  sha256: " + strings.ToUpper(hash), false},
+		{"a hash that is a number", "\n  path: a.json\n  sha256: 7", false},
+		{"a hash that is a list of one hash (the Directory reads it as the hash)", "\n  path: a.json\n  sha256: [" + hash + "]", false},
+	} {
+		doc := ownManifest + "representation_contract:" + c.value + "\n"
+		_, findings := CheckManifest([]byte(doc), "ovdb.yaml", Directory)
+		switch {
+		case c.ok && len(findings) != 0:
+			t.Errorf("%s: %v", c.name, findings)
+		case !c.ok && (len(findings) != 1 || findings[0].Rule != "manifest-representation"):
+			t.Errorf("%s: %v", c.name, findings)
+		}
+		_, findings = CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
+		wantPublisher := 1
+		if !c.ok {
+			wantPublisher = 2 // the envelope and the key
+		}
+		if len(findings) != wantPublisher {
+			t.Errorf("%s, the Publisher profile: %v", c.name, findings)
+		}
+	}
+}
