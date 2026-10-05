@@ -87,6 +87,9 @@ func TestSourceDataProofRefusals(t *testing.T) {
 		"submodule": func(_ *representation.Reference, reader *sourceReader, _ DependencyReaders) {
 			reader.Nodes[ref.Path] = Node{Kind: Submodule}
 		},
+		"tree error": func(_ *representation.Reference, reader *sourceReader, _ DependencyReaders) {
+			reader.BrokenDirs = map[string]error{"": errors.New("unreadable tree")}
+		},
 		"blob error": func(_ *representation.Reference, reader *sourceReader, _ DependencyReaders) {
 			reader.BrokenBlobs = map[string]error{ref.Path: errors.New("unreadable")}
 		},
@@ -101,6 +104,23 @@ func TestSourceDataProofRefusals(t *testing.T) {
 				t.Fatalf("bad source accepted: %+v", proof)
 			}
 		})
+	}
+}
+
+func TestSourceDataProofRequiresClosedContractShape(t *testing.T) {
+	revision := strings.Repeat("a", 40)
+	ref, reader := sourceProofFixture([]byte("raw"), revision)
+	deps := DependencyReaders{{Repository: ref.Repository, Revision: revision}: reader}
+	for _, doc := range []*representation.Document{
+		{Format: representation.Format3},
+		sourceDocument(make([]representation.Reference, 33)...),
+		{Format: representation.Format3, Contracts: []representation.Contract{{Execution: representation.NativeIdentifier}}},
+		{Format: representation.Format3, Contracts: []representation.Contract{{Execution: representation.LabelBridge, Source: representation.Source{Data: &ref}}}},
+	} {
+		proof := VerifySourceData(doc, deps)
+		if proof.Stage != SourceDataRefused || len(proof.Findings) == 0 || reader.blobCalls != 0 {
+			t.Fatalf("bad contract gained a byte proof: %+v", proof)
+		}
 	}
 }
 
