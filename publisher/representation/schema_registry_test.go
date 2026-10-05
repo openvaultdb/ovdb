@@ -9,11 +9,11 @@ import (
 
 func TestSchemaRegistryCoexistence(t *testing.T) {
 	compiler := jsonschema.NewCompiler()
-	schemas := make([]*jsonschema.Schema, 2)
-	ids := []string{"https://openvaultdb.com/schemas/representation-contract-1.json", "https://openvaultdb.com/schemas/representation-contract-2.json"}
+	schemas := make([]*jsonschema.Schema, 3)
+	ids := []string{"https://openvaultdb.com/schemas/representation-contract-1.json", "https://openvaultdb.com/schemas/representation-contract-2.json", "https://openvaultdb.com/schemas/representation-contract-3.json"}
 	// Register both exported schemas under their declared canonical IDs before
 	// compiling either. This reproduces a normal consumer's shared registry.
-	for i, data := range [][]byte{Schema(), Schema2()} {
+	for i, data := range [][]byte{Schema(), Schema2(), Schema3()} {
 		var value map[string]any
 		if err := json.Unmarshal(data, &value); err != nil {
 			t.Fatal(err)
@@ -36,10 +36,12 @@ func TestSchemaRegistryCoexistence(t *testing.T) {
 	legacy, _ := fixture(t)
 	native, _, _ := realFixture(t, "real-ror")
 	geo, _, _ := realFixture(t, "real-geonames")
+	exact, _, _ := exactDataFixture(t, "real-ror")
+	exactBytes, _ := json.Marshal(exact)
 	for _, tc := range []struct {
 		data    []byte
 		version int
-	}{{legacy, 0}, {native, 1}, {geo, 1}} {
+	}{{legacy, 0}, {native, 1}, {geo, 1}, {exactBytes, 2}} {
 		var value any
 		if err := json.Unmarshal(tc.data, &value); err != nil {
 			t.Fatal(err)
@@ -47,8 +49,12 @@ func TestSchemaRegistryCoexistence(t *testing.T) {
 		if err := schemas[tc.version].Validate(value); err != nil {
 			t.Fatal("correct registered version rejected", err)
 		}
-		if err := schemas[1-tc.version].Validate(value); err == nil {
-			t.Fatal("wrong registered version accepted")
+		for i, wrong := range schemas {
+			if i != tc.version {
+				if err := wrong.Validate(value); err == nil {
+					t.Fatal("wrong registered version accepted")
+				}
+			}
 		}
 	}
 }

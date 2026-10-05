@@ -11,7 +11,7 @@ import (
 	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
-func contractFixture(t *testing.T) (*Memory, *Memory, map[string]Reader) {
+func contractFixture(t *testing.T) (*Memory, *Memory, DependencyReaders) {
 	t.Helper()
 	provider := &Memory{Nodes: map[string]Node{"OVDB.md": {Kind: File, Content: []byte("---\novdb: 1\npublish: [./ovdb.yaml]\n---\n")}, "model/chinook.modelspec.json": {Kind: File, Content: []byte(`{"module":{"name":"chinook"},"entities":{"Album":{},"Artist":{}}}`)}, "model/chinook.modelspec.hcl": {Kind: File}, "model/chinook.meaning.yaml": {Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels: {chinook: chinook.modelspec.hcl}\n")}}}
 	dependency := &Memory{Nodes: map[string]Node{}}
@@ -39,7 +39,7 @@ func contractFixture(t *testing.T) (*Memory, *Memory, map[string]Reader) {
 	data, _ := json.Marshal(doc)
 	provider.Nodes["contract.json"] = Node{Kind: File, Content: data}
 	provider.Nodes["ovdb.yaml"] = Node{Kind: File, Content: []byte(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(ownManifest, "/chinook\n", "/geo\n"), "  - Album\n  - Artist\n", "  - Countries\n  - CustomerCountries\n"), "chinook.modelspec.hcl", "chinook.modelspec.hcl") + "representation_contract: {path: contract.json, sha256: " + representation.Hash(data) + "}\n")}
-	return provider, dependency, map[string]Reader{"https://github.com/example/source": dependency}
+	return provider, dependency, DependencyReaders{{Repository: "https://github.com/example/source", Revision: strings.Repeat("a", 40)}: dependency}
 }
 func TestRepresentationRepository(t *testing.T) {
 	p, _, o := contractFixture(t)
@@ -107,7 +107,7 @@ func (r *headFailsAfterFirst) Head() (string, error) {
 	return r.Memory.Head()
 }
 
-func checkFixtureRepresentation(r Reader, dependencies map[string]Reader) []manifest.Finding {
+func checkFixtureRepresentation(r Reader, dependencies DependencyReaders) []manifest.Finding {
 	data, _ := r.Blob("ovdb.yaml", MaxFileBytes)
 	m, _ := manifest.CheckManifest(data, "ovdb.yaml", manifest.Directory)
 	attachment, err := representation.ParseAttachment(data)
@@ -153,7 +153,7 @@ func TestNativeRepresentationRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &Memory{Nodes: map[string]Node{"contract.json": {Kind: File, Content: data}}}
-	deps := map[string]Reader{}
+	deps := DependencyReaders{}
 	for _, entry := range entries {
 		bytes, err := os.ReadFile(dir + entry.File)
 		if err != nil {
@@ -161,10 +161,11 @@ func TestNativeRepresentationRepository(t *testing.T) {
 		}
 		reader := provider
 		if entry.Reference.Repository != "" {
-			existing, ok := deps[entry.Reference.Repository]
+			key := DependencyKey{Repository: entry.Reference.Repository, Revision: entry.Reference.Revision}
+			existing, ok := deps[key]
 			if !ok {
 				existing = pinnedFixtureReader{Memory: &Memory{Nodes: map[string]Node{}}, revision: entry.Reference.Revision}
-				deps[entry.Reference.Repository] = existing
+				deps[key] = existing
 			}
 			reader = existing.(pinnedFixtureReader).Memory
 		}

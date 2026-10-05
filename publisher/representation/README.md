@@ -9,8 +9,9 @@ representation_contract:
   sha256: <SHA256 of those exact committed bytes>
 ```
 
-`schema.json` is the closed `ovdb-representation-contract/1` schema. `Parse`
-checks that schema and bounded strict JSON. `Check` additionally checks immutable
+`schema.json`, `schema2.json`, and `schema3.json` are separate closed schemas.
+`Parse` selects the exact declared format and checks bounded strict JSON.
+`Check` additionally checks immutable
 reference closure, source/target ModelSpec property datatypes, the target's actual
 MeaningGraph identifier binding and canonical meaning pin, physical bridge columns,
 exact raw-label uniqueness and native target-key membership. Every referenced file
@@ -24,8 +25,10 @@ supplies its immutable repository/commit. External references additionally requi
 itself, so no attachment embeds a self-commit or creates a circular hash. A source
 schema, canonical meaning and decision provenance are immutable external files.
 Target models/bindings/snapshots/key indexes/bridge exports are provider-local.
-The resolver must read regular committed files at the exact external pin. The proposed `repo.CheckRepresentation` helper accepts explicit offline dependency
-readers; their HEAD must equal the requested revision, and no fetch occurs.
+The resolver must read regular committed files at the exact external pin. The
+opt-in `repo.CheckRepresentation` helper accepts explicit offline dependency
+readers keyed by both repository and full revision; their HEAD must equal the
+requested revision, and no fetch occurs. It remains metadata-only.
 Default `ovdb publisher check` remains the exact closed legacy validator and
 rejects the proposed attachment until canonical companion support lands. No
 second manifest profile or permissive fallback is introduced.
@@ -91,6 +94,25 @@ and serving identity remain different fields.
 Production eligibility is blocked until the Directory validator/index, app reader,
 provider generation/native-data proof and independent review land at exact pins.
 No service deployment or runtime native-id support is supplied by this package.
+
+## Exact source data in contract format 3
+
+`schema3.json` has canonical schema ID
+`https://openvaultdb.com/schemas/representation-contract-3.json`. Format 3
+contains only `native-identifier` contracts and requires an external
+`source.data` reference with repository, 40-hex revision, path, and SHA256.
+Formats 1 and 2 retain their original schemas and reject this extra member.
+The typed descriptor is part of exact source identity; metadata `Check` verifies
+its syntax but never passes it to `Context.Resolve`.
+
+`repo.VerifySourceData` is a separate opt-in stage for a structurally checked
+format 3 document. It selects an explicitly supplied `(repository, revision)`
+reader, checks its pinned HEAD and tracked regular-file mode, and hashes at
+most 5 MiB of raw committed bytes per distinct reference. It reads references
+sequentially and caches proof only during one call. A successful byte proof
+does not validate JSON rows or grant semantic or production admission.
+Default publisher validation and CLI dependency provisioning remain closed
+until the Directory and current Chinook companions land.
 
 Validation includes wrong source property/revision/namespace, case/space changes, JSON field aliases,
 invalid Unicode scalar escapes and ignored trailing YAML documents,
