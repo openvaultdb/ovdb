@@ -24,16 +24,23 @@ var schemaJSON string
 //go:embed schema2.json
 var schema2JSON string
 
+//go:embed schema3.json
+var schema3JSON string
+
 // Schema returns the closed version-one interchange schema as an independent copy.
 func Schema() []byte { return []byte(schemaJSON) }
 
 const Format = "ovdb-representation-contract/1"
 const Format2 = "ovdb-representation-contract/2"
+const Format3 = "ovdb-representation-contract/3"
 const LabelBridge = "label-bridge"
 const NativeIdentifier = "native-identifier"
 
 // Schema2 returns the closed discriminated execution schema.
 func Schema2() []byte { return []byte(schema2JSON) }
+
+// Schema3 returns the closed native exact-artifact interchange schema.
+func Schema3() []byte { return []byte(schema3JSON) }
 
 const MaxDocumentBytes = 2 << 20
 const MaxArtifactBytes = 4 << 20
@@ -47,12 +54,13 @@ type Reference struct {
 	Revision   string `json:"revision,omitempty"`
 }
 type Source struct {
-	Schema    Reference `json:"schema"`
-	Module    string    `json:"module"`
-	Entity    string    `json:"entity"`
-	Property  string    `json:"property"`
-	Datatype  string    `json:"datatype"`
-	Namespace string    `json:"namespace"`
+	Schema    Reference  `json:"schema"`
+	Data      *Reference `json:"data,omitempty"`
+	Module    string     `json:"module"`
+	Entity    string     `json:"entity"`
+	Property  string     `json:"property"`
+	Datatype  string     `json:"datatype"`
+	Namespace string     `json:"namespace"`
 }
 type Meaning struct {
 	Document Reference `json:"document"`
@@ -142,8 +150,13 @@ func Parse(data []byte) (*Document, error) {
 		return nil, err
 	}
 	schemaData := schemaJSON
-	if object, ok := value.(map[string]any); ok && object["format"] == Format2 {
-		schemaData = schema2JSON
+	if object, ok := value.(map[string]any); ok {
+		switch object["format"] {
+		case Format2:
+			schemaData = schema2JSON
+		case Format3:
+			schemaData = schema3JSON
+		}
 	}
 	schema, err := compileSchema("schema.json", []byte(schemaData))
 	if err != nil {
@@ -153,6 +166,22 @@ func Parse(data []byte) (*Document, error) {
 		return nil, fmt.Errorf("representation schema: %w", err)
 	}
 	return decodeDocument(data)
+}
+
+// sameSource compares exact data coordinates as values, including a missing
+// descriptor. Pointer identity cannot grant source equivalence.
+func sameSource(a, b Source) bool {
+	ad, bd := a.Data, b.Data
+	a.Data, b.Data = nil, nil
+	if a != b || (ad == nil) != (bd == nil) {
+		return false
+	}
+	return ad == nil || *ad == *bd
+}
+
+// externalReference validates descriptor syntax without resolving data bytes.
+func externalReference(ref Reference, ctx Context) bool {
+	return path(ref.Path) && hex(ref.SHA256, 64) && repository(ref.Repository) && hex(ref.Revision, 40) && ref.Repository != ctx.Repository
 }
 
 // Check verifies reference closure, property/binding identity, bridge cardinality
@@ -165,13 +194,15 @@ func Check(data []byte, ctx Context) (*Document, error) {
 	if !repository(ctx.Repository) || !hex(ctx.Revision, 40) {
 		return nil, fmt.Errorf("outer provider repository/revision must be immutable")
 	}
-	seen := map[Source]bool{}
+	var seen []Source
 	for i, c := range doc.Contracts {
-		if seen[c.Source] {
-			return nil, fmt.Errorf("duplicate source scope is ineligible")
+		for _, prior := range seen {
+			if sameSource(prior, c.Source) {
+				return nil, fmt.Errorf("duplicate source scope is ineligible")
+			}
 		}
-		seen[c.Source] = true
-		if err := checkContract(c, ctx); err != nil {
+		seen = append(seen, c.Source)
+		if err := checkContract(c, doc.Format, ctx); err != nil {
 			return nil, fmt.Errorf("contracts[%d]: %w", i, err)
 		}
 	}
@@ -200,9 +231,14 @@ func read(ref Reference, ctx Context) ([]byte, error) {
 	return data, nil
 }
 
-func checkContract(c Contract, ctx Context) error {
+func checkContract(c Contract, format string, ctx Context) error {
 	if c.Source.Schema.Repository == "" {
 		return fmt.Errorf("source schema must name immutable external source repository/revision")
+	}
+	if format == Format3 {
+		if c.Execution != NativeIdentifier || c.Source.Data == nil || !externalReference(*c.Source.Data, ctx) {
+			return fmt.Errorf("exact-artifact native source.data must be an immutable external reference")
+		}
 	}
 	if c.Target.Keys.Repository != "" || c.Target.Model.Repository != "" || c.Target.Snapshot.Repository != "" || c.Bridge.Artifact.Repository != "" || c.Target.Binding.Document.Repository != "" {
 		return fmt.Errorf("target model/snapshot/binding/bridge must be provider-local")

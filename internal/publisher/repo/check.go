@@ -17,6 +17,9 @@ type Options struct {
 	// Repository, when set, is the repository the manifests must say they are in: each
 	// publisher.repository must equal it exactly, as the Chinook checker's --repository does.
 	Repository *string
+	// Dependencies are explicitly provisioned immutable readers for optional
+	// representation checks. Ordinary manifest checks never open them.
+	Dependencies DependencyReaders
 	// Profile says whose rules judge the documents; see package manifest.
 	Profile manifest.Profile
 }

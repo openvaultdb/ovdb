@@ -8,10 +8,17 @@ import (
 	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
-// CheckRepresentation is a proposed opt-in attachment check, deliberately not
-// called by Check until the closed canonical publisher and Directory companions
-// land. It checks immutable documents, not semantic acceptance or admission.
-func CheckRepresentation(r Reader, m manifest.Manifest, a representation.Reference, dependencies map[string]Reader) []manifest.Finding {
+// DependencyKey identifies a repository at one immutable revision.
+type DependencyKey struct{ Repository, Revision string }
+
+// DependencyReaders are explicitly provisioned by a trusted caller.
+type DependencyReaders map[DependencyKey]Reader
+
+// CheckRepresentation is a metadata-only opt-in attachment check, deliberately
+// not called by Check until canonical publisher and Directory companions land.
+// A successful result does not verify format3 source.data bytes, semantic
+// acceptance, or admission; callers needing byte proof use VerifySourceData.
+func CheckRepresentation(r Reader, m manifest.Manifest, a representation.Reference, dependencies DependencyReaders) []manifest.Finding {
 	j, _ := manifest.NewJudge(manifest.Publisher)
 	c := &checker{r: r, j: j, dirs: map[string]dirResult{}, seen: map[string]bool{}, files: map[string]fileRead{}}
 	document := "representation_contract"
@@ -40,7 +47,7 @@ func CheckRepresentation(r Reader, m manifest.Manifest, a representation.Referen
 	ctx.Resolve = func(ref representation.Reference) ([]byte, error) {
 		reader := c.r
 		if ref.Repository != "" {
-			reader = dependencies[ref.Repository]
+			reader = dependencies[DependencyKey{Repository: ref.Repository, Revision: ref.Revision}]
 			if reader == nil {
 				return nil, fmt.Errorf("explicit immutable dependency unavailable")
 			}

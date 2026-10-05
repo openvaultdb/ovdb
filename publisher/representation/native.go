@@ -90,7 +90,7 @@ func LookupNative(c Contract, source Source, ctx Context, raw string, query func
 	if c.Execution != NativeIdentifier || c.Native == nil {
 		return nil, fmt.Errorf("native execution required")
 	}
-	if c.Source != source {
+	if !sameSource(c.Source, source) {
 		return nil, fmt.Errorf("source scope/revision/namespace mismatch")
 	}
 	if !repository(ctx.Repository) || !hex(ctx.Revision, 40) {
