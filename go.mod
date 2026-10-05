@@ -15,6 +15,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
+	github.com/dal-go/dalgo v0.89.6
 	github.com/dal-go/record v0.1.4
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.4
 	github.com/meaninggraph/cli v0.2.0
@@ -49,7 +50,6 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/dal-go/dalgo v0.89.6 // indirect
 	github.com/dal-go/dalgo2firestore v0.10.3 // indirect
 	github.com/dal-go/dalgo2mysql v0.2.2 // indirect
 	github.com/dal-go/dalgo2postgres v0.4.1 // indirect
