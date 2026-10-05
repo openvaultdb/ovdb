@@ -166,7 +166,7 @@ export interface SkillTarget {
   dir: string
   detected: boolean
   installed: boolean
-  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb' | 'adoptable' | 'recovery_pending'
+  state: 'not_installed' | 'installed' | 'update_available' | 'changed' | 'not_ovdb' | 'adoptable' | 'recovery_pending' | 'record_unusable'
   /** skillsync's own words where they say more than the state: what is in another's folder, what is wrong with an interrupted install. */
   state_reason?: string
 }

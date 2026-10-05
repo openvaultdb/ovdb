@@ -3,6 +3,7 @@
 package skillstest
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,4 +51,67 @@ func PutUnrecoverableRecovery(t testing.TB, skillsDir, name string) {
 	if err := os.WriteFile(filepath.Join(skillsDir, ".cli-helpers-skills-recovery.json"), []byte(journal), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// PutCommittedRecovery leaves what a crash after skillsync's state write and
+// before the journal's cleanup leaves, for the skill name that is installed in
+// skillsDir: the state names the transaction (recovery_id), and the journal and
+// its directory are still there. A sync recovers it forward while the folder is
+// as it was installed; once the folder differs, skillsync refuses it ("committed
+// target ... differs").
+func PutCommittedRecovery(t testing.TB, skillsDir, name string) {
+	t.Helper()
+	const id = "done1"
+	statePath := filepath.Join(skillsDir, ".cli-helpers-skills-sync.json")
+	raw, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(raw, &state); err != nil {
+		t.Fatal(err)
+	}
+	digest := ""
+	plugins, _ := state["plugins"].(map[string]any)
+	for _, plugin := range plugins {
+		skills, _ := plugin.(map[string]any)["skills"].(map[string]any)
+		if d, ok := skills[name].(string); ok {
+			digest = d
+		}
+	}
+	if digest == "" {
+		t.Fatalf("%s is not installed in %s", name, skillsDir)
+	}
+	state["recovery_id"] = id
+	raw, _ = json.Marshal(state)
+	if err := os.WriteFile(statePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsDir, ".cli-helpers-skills-txn-"+id), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	journal := fmt.Sprintf(`{"schema":2,"id":%q,"transaction":%q,"changes":[{"name":%q,"new":%q,"existed":false,"phase":"published"}]}`,
+		id, ".cli-helpers-skills-txn-"+id, name, digest)
+	if err := os.WriteFile(filepath.Join(skillsDir, ".cli-helpers-skills-recovery.json"), []byte(journal), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// MoveOut moves the named files and folders (glob patterns) of skillsDir to a
+// directory of its own, as the advice tells a person to, and returns where.
+func MoveOut(t testing.TB, skillsDir string, names ...string) string {
+	t.Helper()
+	keep := t.TempDir()
+	for _, name := range names {
+		matches, _ := filepath.Glob(filepath.Join(skillsDir, name))
+		if len(matches) == 0 {
+			t.Fatalf("nothing to move out matches %s", name)
+		}
+		for _, m := range matches {
+			if err := os.Rename(m, filepath.Join(keep, filepath.Base(m))); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return keep
 }

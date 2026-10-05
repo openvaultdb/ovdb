@@ -159,7 +159,8 @@ func TestSkillsWithAnUnreadableRecordAreNotCalledInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := e.ok("skills", "list")
-	if strings.Contains(list.stdout, "interrupted") || !strings.Contains(list.stdout, "corrupt") {
+	if strings.Contains(list.stdout, "interrupted") || strings.Contains(list.stdout, "another skill with this name") ||
+		!strings.Contains(list.stdout, "its record can't be read") || !strings.Contains(list.stdout, "corrupt") {
 		t.Errorf("list:\n%s", list.stdout)
 	}
 	r := e.run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")

@@ -144,7 +144,7 @@ func (s *skillsScreen) openConsent(id string) {
 // selectable reports whether target can be chosen: a found agent whose
 // folder of this name, if any, OVDB installed or can take over.
 func selectable(target skills.Target) bool {
-	return target.Detected && target.State != skills.StateNotOVDB
+	return target.Detected && target.State != skills.StateNotOVDB && target.State != skills.StateRecordUnusable
 }
 
 // consentItems are the consent step's cursor stops: each found agent, then
@@ -332,8 +332,8 @@ func (m Model) viewConsent() string {
 	for _, target := range s.consent.Targets {
 		if !selectable(target) {
 			state := uicopy.T("skills.state.not_found", nil)
-			if target.State == skills.StateNotOVDB {
-				state = uicopy.T("skills.state.not_ovdb", nil)
+			if target.State == skills.StateNotOVDB || target.State == skills.StateRecordUnusable {
+				state = skills.StateText(target.State)
 				if target.StateReason != "" {
 					state += " (" + target.StateReason + ")"
 				}

@@ -69,7 +69,7 @@ function resultLine(target: SkillInstallDocument['targets'][number]): string {
 }
 
 function selectable(target: SkillTarget): boolean {
-  return target.detected && !!target.harness && target.state !== 'not_ovdb'
+  return target.detected && !!target.harness && target.state !== 'not_ovdb' && target.state !== 'record_unusable'
 }
 
 function offer(skill: Skill) {
@@ -199,8 +199,9 @@ const link = 'inline-flex min-h-11 items-center rounded-lg border border-line bg
               <p v-else class="flex items-start gap-3 text-muted" :data-harness="target.harness">
                 <span aria-hidden="true" class="mt-1 size-5 shrink-0"></span>
                 <span>
-                  {{ target.name }} — {{ target.state === 'not_ovdb' ? t('skills.state.not_ovdb') : t('skills.state.not_found') }}
-                  <template v-if="target.state === 'not_ovdb' && target.state_reason"> ({{ target.state_reason }})</template>
+                  {{ target.name }} —
+                  {{ target.state === 'not_ovdb' || target.state === 'record_unusable' ? stateText(target.state) : t('skills.state.not_found') }}
+                  <template v-if="(target.state === 'not_ovdb' || target.state === 'record_unusable') && target.state_reason"> ({{ target.state_reason }})</template>
                 </span>
               </p>
             </template>

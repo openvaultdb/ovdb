@@ -256,7 +256,7 @@ For scripts and API clients (`--json` is the body of the local API):
   (with `"state_reason"`), shown by `skills list`, the terminal UI and the web
   console as "interrupted install", never as "not installed", "another skill
   with this name" or "not adoptable". Installing finishes the recovery first
-  or, when the skills library cannot, says what to do. A dry run cannot plan
+  or, when the skills library cannot, says what to do (see the next items). A dry run cannot plan
   there and says so. A client that does not send `?recovery=1` is answered as
   before the state existed: the folder is `"state":"not_ovdb"` and no new field
   is sent; the listing is never replaced by an error because of one folder. If
@@ -271,11 +271,27 @@ For scripts and API clients (`--json` is the body of the local API):
   `.cli-helpers-skills-recovery.json` and the `.cli-helpers-skills-txn-*`
   folder out of the skills folder and install again.
 - A record the library cannot use (`.cli-helpers-skills-sync.json` that does not
-  parse, or written with a schema a newer tool uses) is not an interrupted
-  install and is not described as one. The state is `not_ovdb` with the
-  library's reason, and the install error says what the file is, that another
-  tool sharing the folder may have written it, and that moving it out makes the
-  skills it recorded show as not managed yet.
+  parse, or written with a schema a newer tool uses) and no journal is
+  `"state":"record_unusable"` (text: "its record can't be read", with
+  `"state_reason"` quoting the library), not "another skill with this name" and
+  not an interrupted install. The install error says what the file is, that
+  another tool sharing the folder may have written it, and that moving it out
+  makes the skills it recorded show as not managed yet. A client that does not
+  send `?recovery=1` is told `not_ovdb`.
+- What a person is told for a corrupt skills state is decided by what is on
+  disk, never by the library's words (it uses one error for about forty
+  conditions): with a recovery journal there (`.cli-helpers-skills-recovery.json`)
+  and a record that reads, an earlier install was interrupted and the library
+  cannot finish or undo it, and the advice is to move the journal and the
+  `.cli-helpers-skills-txn-*` folder out and install again (the folder then
+  shows as it is: "changed since install", "not managed yet"; your own copies
+  are untouched, and an adopted one is in `.cli-helpers-skills-adopted-backup`);
+  with a journal and an unreadable record, move all three out; with no journal
+  and an unreadable record, move the record out; with neither, the library
+  stopped a running install and the advice is to install again. Each of these
+  is exercised by really crashing a server mid-install and doing what the
+  advice says (`TestRealInterruptedInstalls`, opt-in), and by the same steps on
+  disk in `internal/setup/skills/advice_test.go`.
 - A folder that is a copy of the skill plus a stray file (a `.DS_Store`) is
   `"state":"not_ovdb"` with `"state_reason"` naming the file, and the lists
   show it.

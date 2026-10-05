@@ -81,7 +81,7 @@ func targetLine(target skills.Target, withState bool) string {
 	if withState {
 		state := uicopy.T("skills.state.not_installed", nil)
 		switch {
-		case target.Installed, target.State == skills.StateAdoptable, target.State == skills.StateNotOVDB, target.State == skills.StateRecoveryPending:
+		case target.Installed, target.State == skills.StateAdoptable, target.State == skills.StateNotOVDB, target.State == skills.StateRecoveryPending, target.State == skills.StateRecordUnusable:
 			// Another's folder and an interrupted install are said as what
 			// they are, never as "not installed".
 			state = skills.StateText(target.State)

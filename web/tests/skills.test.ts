@@ -277,6 +277,19 @@ describe('AI agent skills', () => {
     expect(wrapper.get('[data-harness="claude"]').text()).toContain('.DS_Store is not part of this skill')
   })
 
+  it("says OVDB's own skill whose record cannot be read is that, with the library's reason, and does not offer it", async () => {
+    window.history.replaceState({}, '', '/skills?skill=todo-demo')
+    const broken = document()
+    broken.skills[1].targets[0] = { ...broken.skills[1].targets[0], state: 'record_unusable', state_reason: 'skills sync state is corrupt: parse x: unexpected end of JSON input' }
+    installFetch({ ...defaultRoutes, 'GET /api/local/v1/skills?adoptable=1&recovery=1': () => json(200, broken) })
+    const wrapper = mount(SkillsScreen, { attachTo: window.document.body })
+    await flushPromises()
+    const claude = wrapper.get('[data-harness="claude"]')
+    expect(claude.text()).toContain("its record can't be read")
+    expect(claude.text()).toContain('unexpected end of JSON input')
+    expect(claude.find('input').exists()).toBe(false)
+  })
+
   it('shows a state this build has no text for as it came instead of blanking the screen', async () => {
     window.history.replaceState({}, '', '/skills')
     const newer = document(true)

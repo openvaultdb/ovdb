@@ -38,7 +38,7 @@ func (s *localServer) installedSkills() []skills.Installed {
 // A client that does not send ?adoptable=1 does not know the state
 // "adoptable" (clients built before adoption existed), and is told not_ovdb.
 // A client that does not send ?recovery=1 does not know the state
-// "recovery_pending" or the field "state_reason" either; it is told not_ovdb for
+// "recovery_pending", "record_unusable" or the field "state_reason" either; it is told not_ovdb for
 // a folder with an interrupted install, as before the state existed. The
 // listing is never replaced by an error because of one folder.
 func (s *localServer) getSkills(w http.ResponseWriter, r *http.Request) {

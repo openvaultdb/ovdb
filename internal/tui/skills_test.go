@@ -370,3 +370,25 @@ func TestAnUnrecoverableInstallShowsItsAdvice(t *testing.T) {
 		}
 	}
 }
+
+// OVDB's own skill whose record cannot be read is not "another skill with this
+// name": the consent step says what is wrong, with the library's reason, and it
+// cannot be chosen.
+func TestAnUnusableRecordIsShownAsSuch(t *testing.T) {
+	t.Parallel()
+	m := testModel(t, 120, 30)
+	dir := filepath.Join(userHomeOf(m), ".claude", "skills")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	putBundledCopy(t, filepath.Join(dir, "openvaultdb"))
+	if err := os.WriteFile(filepath.Join(dir, ".cli-helpers-skills-sync.json"), []byte(`{"schema":2,"plug`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.screen = ScreenSkills
+	m = drain(t, m, m.loadSkillsCmd(skills.Storage))
+	view := flat(m.View().Content)
+	if !strings.Contains(view, "Claude Code — its record can't be read (skills sync state is corrupt") || strings.Contains(view, "another skill with this name") || strings.Contains(view, "[x] Claude Code") {
+		t.Errorf("consent:\n%s", view)
+	}
+}

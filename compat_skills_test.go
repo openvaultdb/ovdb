@@ -107,10 +107,12 @@ func TestOlderClientsAgainstThisServer(t *testing.T) {
 // it. It runs only when OVDB_CRASH_BIN is that binary; CI skips it. The servers
 // are started by the test and stopped by it.
 //
-//   - "publish": the skill folder was replaced and the state is not written
-//     (strongo/cli-helpers#45: every later install is refused);
-//   - "state": the state is written and the journal is not cleaned up (the next
-//     install finishes it).
+// Each scenario crashes a server mid-install, edits what a person might have
+// edited since, and then does what the advice shown says, asserting that the
+// person ends up unstuck with their own copy intact:
+//   - "publish": the folder was replaced and the state is not written
+//     (strongo/cli-helpers#45);
+//   - "state": the state is written and the journal is not cleaned up.
 func TestRealInterruptedInstalls(t *testing.T) {
 	crashBin := os.Getenv("OVDB_CRASH_BIN")
 	if crashBin == "" {
@@ -120,22 +122,185 @@ func TestRealInterruptedInstalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, at := range []string{"publish", "state"} {
-		t.Run(at, func(t *testing.T) {
+	mine := string(bundled) + "\nMy own line.\n"
+	type scenario struct {
+		name  string
+		crash string
+		// adoptable puts the person's own copy in the folder before the install.
+		adoptable bool
+		// afterCrash is what the person does to the folder before installing again.
+		afterCrash func(t *testing.T, skills, folder string)
+		// message is what the library says (and ovdb quotes) when installing again.
+		message string
+		// record: the state file is made unreadable after the crash too.
+		record bool
+		// follow does what the advice says.
+		follow func(t *testing.T, skills string)
+		// ends checks the person is unstuck with their copy intact.
+		ends func(t *testing.T, run func(args ...string) (string, int), skills, folder string)
+	}
+	moveOut := func(t *testing.T, skills string, names ...string) {
+		t.Helper()
+		keep := t.TempDir()
+		for _, name := range names {
+			matches, _ := filepath.Glob(filepath.Join(skills, name))
+			if len(matches) == 0 {
+				t.Fatalf("nothing to move out: %s", name)
+			}
+			for _, m := range matches {
+				if err := os.Rename(m, filepath.Join(keep, filepath.Base(m))); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	journal := func(t *testing.T, skills string) {
+		moveOut(t, skills, ".cli-helpers-skills-recovery.json", ".cli-helpers-skills-txn-*")
+	}
+	edit := func(t *testing.T, skills, folder string) {
+		if err := os.WriteFile(filepath.Join(folder, "SKILL.md"), []byte(mine), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scenarios := []scenario{
+		{
+			name: "lacks prior ownership", crash: "publish", adoptable: true, message: "lacks prior ownership", follow: journal,
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				if out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code != 0 {
+					t.Errorf("still stuck after the advice (exit %d):\n%s", code, out)
+				}
+				backups, _ := filepath.Glob(filepath.Join(skills, ".cli-helpers-skills-adopted-backup", "*", "openvaultdb", "SKILL.md"))
+				found := false
+				for _, b := range backups {
+					if kept, _ := os.ReadFile(b); string(kept) == mine {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("the person's copy is in no backup %v", backups)
+				}
+			},
+		},
+		{
+			name: "committed target differs", crash: "state", afterCrash: edit, message: "committed target openvaultdb differs", follow: journal,
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				list, _ := run("skills", "list")
+				if !strings.Contains(list, "changed since install") {
+					t.Errorf("after the advice the list says:\n%s", list)
+				}
+				if kept, _ := os.ReadFile(filepath.Join(folder, "SKILL.md")); string(kept) != mine {
+					t.Errorf("the person's edit was lost: %q", kept)
+				}
+				out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+				if code != 1 || !strings.Contains(out, "was changed since OVDB installed it") {
+					t.Errorf("the ordinary changed-copy refusal is expected (exit %d):\n%s", code, out)
+				}
+			},
+		},
+		{
+			name: "added target is not transaction content", crash: "publish", afterCrash: edit, message: "openvaultdb", follow: journal,
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				if kept, _ := os.ReadFile(filepath.Join(folder, "SKILL.md")); string(kept) != mine {
+					t.Errorf("the person's edit was lost: %q", kept)
+				}
+				if out, code := run("skills", "list"); code != 0 || strings.Contains(out, "interrupted") {
+					t.Errorf("list (exit %d):\n%s", code, out)
+				}
+				if _, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code > 1 {
+					t.Errorf("install exit %d", code)
+				}
+			},
+		},
+		{
+			name: "backup changed after capture", crash: "state", adoptable: true, message: "backup openvaultdb changed after capture", follow: journal,
+			afterCrash: func(t *testing.T, skills, folder string) {
+				matches, _ := filepath.Glob(filepath.Join(skills, ".cli-helpers-skills-txn-*", "backup", "openvaultdb", "SKILL.md"))
+				if len(matches) != 1 {
+					t.Fatalf("no transaction backup to change: %v", matches)
+				}
+				if err := os.WriteFile(matches[0], []byte("changed"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				if _, code := run("skills", "list"); code != 0 {
+					t.Error("list fails after the advice")
+				}
+				if out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code != 0 {
+					t.Errorf("still stuck after the advice (exit %d):\n%s", code, out)
+				}
+			},
+		},
+		{
+			// What the advice says: all three, at once.
+			name: "journal and an unreadable record: all three out", crash: "state", afterCrash: edit, record: true, message: "parse",
+			follow: func(t *testing.T, skills string) {
+				moveOut(t, skills, ".cli-helpers-skills-sync.json", ".cli-helpers-skills-recovery.json", ".cli-helpers-skills-txn-*")
+			},
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				if out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code != 0 {
+					t.Errorf("still stuck after the advice (exit %d):\n%s", code, out)
+				}
+				backups, _ := filepath.Glob(filepath.Join(skills, ".cli-helpers-skills-adopted-backup", "*", "openvaultdb", "SKILL.md"))
+				if len(backups) != 1 {
+					t.Fatalf("backups = %v", backups)
+				}
+				if kept, _ := os.ReadFile(backups[0]); string(kept) != mine {
+					t.Errorf("the person's edit is not in the backup: %q", kept)
+				}
+			},
+		},
+		{
+			// Found by running it: moving only the record leaves the journal's own refusal.
+			name: "journal and an unreadable record: record first is not enough", crash: "state", afterCrash: edit, record: true, message: "parse",
+			follow: func(t *testing.T, skills string) { moveOut(t, skills, ".cli-helpers-skills-sync.json") },
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+				if code != 1 || !strings.Contains(out, "issues/45") {
+					t.Errorf("expected the journal's own advice next (exit %d):\n%s", code, out)
+				}
+				journal(t, skills)
+				if out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code != 0 {
+					t.Errorf("still stuck after both steps (exit %d):\n%s", code, out)
+				}
+			},
+		},
+		{
+			// ...and moving only the journal leaves the record's.
+			name: "journal and an unreadable record: journal first is not enough", crash: "state", afterCrash: edit, record: true, message: "parse", follow: journal,
+			ends: func(t *testing.T, run func(...string) (string, int), skills, folder string) {
+				out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+				if code != 1 || !strings.Contains(out, "can't be used") {
+					t.Errorf("expected the record's own advice next (exit %d):\n%s", code, out)
+				}
+				moveOut(t, skills, ".cli-helpers-skills-sync.json")
+				if out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code != 0 {
+					t.Errorf("still stuck after both steps (exit %d):\n%s", code, out)
+				}
+			},
+		},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
 			base := t.TempDir()
 			home := filepath.Join(base, "user")
-			folder := filepath.Join(home, ".claude", "skills", "openvaultdb")
-			if err := os.MkdirAll(folder, 0o755); err != nil {
+			skills := filepath.Join(home, ".claude", "skills")
+			folder := filepath.Join(skills, "openvaultdb")
+			if err := os.MkdirAll(skills, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			mine := string(bundled) + "\nMy own line.\n"
-			if err := os.WriteFile(filepath.Join(folder, "SKILL.md"), []byte(mine), 0o644); err != nil {
-				t.Fatal(err)
+			if sc.adoptable {
+				if err := os.MkdirAll(folder, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(folder, "SKILL.md"), []byte(mine), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			}
 			env := append(stubbedEnvironment(os.Environ()),
 				"HOME="+home, "USERPROFILE="+home, "OVDB_HOME="+filepath.Join(base, "home"), "OVDB_RUNTIME_DIR="+filepath.Join(base, "run"),
 				"OVDB_DATA_HOME="+filepath.Join(base, "data"), fmt.Sprintf("OVDB_PORT=%d", porttest.Lease(t)), "OVDB_NON_INTERACTIVE=1", "OVDB_PREVIEW=1")
-			run := func(extra []string, binary string, args ...string) (string, int) {
+			exe := func(extra []string, binary string, args ...string) (string, int) {
 				cmd := exec.Command(binary, args...)
 				cmd.Env = append(append([]string{}, env...), extra...)
 				out, err := cmd.CombinedOutput()
@@ -147,46 +312,58 @@ func TestRealInterruptedInstalls(t *testing.T) {
 				}
 				return string(out), code
 			}
-			t.Cleanup(func() { run(nil, ovdbBinPath, "server", "stop", "--json") })
-			if out, code := run([]string{"OVDB_CRASH_AT=" + at}, crashBin, "server", "start", "--json"); code != 0 {
+			run := func(args ...string) (string, int) { return exe(nil, ovdbBinPath, args...) }
+			t.Cleanup(func() { run("server", "stop", "--json") })
+			if out, code := exe([]string{"OVDB_CRASH_AT=" + sc.crash}, crashBin, "server", "start", "--json"); code != 0 {
 				t.Fatalf("server start: %d %s", code, out)
 			}
-			out, code := run(nil, ovdbBinPath, "skills", "install", "openvaultdb", "--harness", "claude", "--yes")
-			t.Logf("the install the server died in (exit %d):\n%s", code, out)
-			if code == 0 {
-				t.Fatal("the install of a server that exits mid-install succeeded")
+			if out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes"); code == 0 {
+				t.Fatalf("the install of a server that exits mid-install succeeded:\n%s", out)
 			}
-			if _, err := os.Stat(filepath.Join(home, ".claude", "skills", ".cli-helpers-skills-recovery.json")); err != nil {
+			if _, err := os.Stat(filepath.Join(skills, ".cli-helpers-skills-recovery.json")); err != nil {
 				t.Fatalf("no journal was left by the crash: %v", err)
 			}
-			if out, code := run(nil, ovdbBinPath, "server", "start", "--json"); code != 0 {
+			if out, code := run("server", "start", "--json"); code != 0 {
 				t.Fatalf("restart: %d %s", code, out)
 			}
-			list, _ := run(nil, ovdbBinPath, "skills", "list")
+			if sc.afterCrash != nil {
+				sc.afterCrash(t, skills, folder)
+			}
+			if sc.record {
+				if err := os.WriteFile(filepath.Join(skills, ".cli-helpers-skills-sync.json"), []byte(`{"schema":2,"plug`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			list, _ := run("skills", "list")
 			if !strings.Contains(list, "interrupted install") {
 				t.Errorf("list does not say the install was interrupted:\n%s", list)
 			}
-			dry, dryCode := run(nil, ovdbBinPath, "skills", "install", "openvaultdb", "--harness", "claude", "--dry-run")
-			if dryCode != 1 || !strings.Contains(dry, "was interrupted") {
-				t.Errorf("dry run (exit %d):\n%s", dryCode, dry)
+			out, code := run("skills", "install", "openvaultdb", "--harness", "claude", "--yes")
+			flat := strings.Join(strings.Fields(out), " ")
+			t.Logf("install after the crash (exit %d):\n%s", code, out)
+			if sc.crash == "state" && sc.afterCrash == nil && !sc.record {
+				if code != 0 {
+					t.Errorf("the install did not finish the interrupted one (exit %d):\n%s", code, out)
+				}
+				return
 			}
-			install, installCode := run(nil, ovdbBinPath, "skills", "install", "openvaultdb", "--harness", "claude", "--yes")
-			t.Logf("the install after the crash (exit %d):\n%s", installCode, install)
-			flat := strings.Join(strings.Fields(install), " ")
-			switch at {
-			case "publish":
-				backups, _ := filepath.Glob(filepath.Join(home, ".claude", "skills", ".cli-helpers-skills-adopted-backup", "*", "openvaultdb", "SKILL.md"))
-				if installCode != 1 || !strings.Contains(flat, "issues/45") || len(backups) != 1 || !strings.Contains(strings.ReplaceAll(flat, " ", ""), filepath.Dir(backups[0])) {
-					t.Errorf("stuck install (exit %d, backups %v):\n%s", installCode, backups, install)
+			if code != 1 || !strings.Contains(flat, sc.message) {
+				logs, _ := filepath.Glob(filepath.Join(base, "run", "*.log"))
+				for _, l := range logs {
+					data, _ := os.ReadFile(l)
+					t.Logf("server log %s:\n%s", filepath.Base(l), data)
 				}
-				if kept, _ := os.ReadFile(backups[0]); string(kept) != mine {
-					t.Errorf("the backup does not hold the person's copy: %q", kept)
-				}
-			case "state":
-				if installCode != 0 {
-					t.Errorf("the install did not finish the interrupted one (exit %d):\n%s", installCode, install)
-				}
+				t.Fatalf("expected exit 1 quoting %q (exit %d):\n%s", sc.message, code, out)
 			}
+			wantAdvice := "issues/45"
+			if sc.record {
+				wantAdvice = ".cli-helpers-skills-sync.json"
+			}
+			if !strings.Contains(flat, wantAdvice) {
+				t.Errorf("the advice shown lacks %q:\n%s", wantAdvice, out)
+			}
+			sc.follow(t, skills)
+			sc.ends(t, run, skills, folder)
 		})
 	}
 }

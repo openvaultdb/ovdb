@@ -129,3 +129,27 @@ func TestSkillsAPITellsAPendingRecoveryOnlyToAClientThatKnowsIt(t *testing.T) {
 		t.Errorf("after recovery: %d %s", code, body)
 	}
 }
+
+// A skills folder whose record cannot be read is its own state for a client that
+// asks and not_ovdb, with no new field, for one that does not; the listing stays.
+func TestSkillsAPITellsAnUnusableRecordOnlyToAClientThatKnowsIt(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	home, _ := skillsHome(t, f)
+	if err := os.WriteFile(filepath.Join(home, ".claude", "skills", ".cli-helpers-skills-sync.json"), []byte(`{"schema":2,"plug`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	get := func(query string) string {
+		rec := f.do(t, request{path: "/api/local/v1/skills" + query, bearer: testSecret})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %q = %d %s", query, rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+	if body := get("?adoptable=1&recovery=1"); !strings.Contains(body, `"state":"record_unusable"`) || !strings.Contains(body, `"state_reason":"skills sync state is corrupt`) {
+		t.Errorf("a client that asked: %s", body)
+	}
+	if body := get("?adoptable=1"); strings.Contains(body, "record_unusable") || strings.Contains(body, "state_reason") || !strings.Contains(body, `"state":"not_ovdb"`) {
+		t.Errorf("a client that did not: %s", body)
+	}
+}
