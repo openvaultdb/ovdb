@@ -47,15 +47,16 @@ const checkout = (name) => checkoutReference(name, { explicit: argValue(`--${nam
 
 const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');
+// Keep the prior frozen corpus inputs while executing the current companion checker.
+const fixtureRoot = checkout('fixtures');
 // The Chinook checker imports the `yaml` package, which its own checkout does not have installed (it would need the whole of its
 // site's dependencies): a checkout that we fetched gets a fresh link to the copy that the Directory's checkout installed from its lock
 // file, the same package (whatever node_modules it had is removed first: it is not part of the commit).
 if (argValue('--chinookdb')) {
-  if (!existsSync(join(chinookRoot, 'node_modules', 'yaml'))) throw new Error(`${chinookRoot} has no node_modules/yaml, which ovdb-manifest.mjs imports: install it there, or let the script fetch the checkout`);
+  if (!existsSync(join(chinookRoot, 'node_modules', 'yaml')) || !existsSync(join(chinookRoot, 'node_modules', 'ajv'))) throw new Error(`${chinookRoot} has no node_modules/yaml or node_modules/ajv, which ovdb-manifest.mjs imports: install it there, or let the script fetch the checkout`);
 } else {
   rmSync(join(chinookRoot, 'node_modules'), { recursive: true, force: true });
-  mkdirSync(join(chinookRoot, 'node_modules'), { recursive: true });
-  symlinkSync(join(directoryRoot, 'node_modules', 'yaml'), join(chinookRoot, 'node_modules', 'yaml'), 'dir');
+  symlinkSync(join(directoryRoot, 'node_modules'), join(chinookRoot, 'node_modules'), 'dir');
 }
 const directory = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/directory.mjs')).href);
 const gitlib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/git.mjs')).href);
@@ -76,7 +77,7 @@ for (const expression of [
   "else published.add(entry.slice(2));",
   'if (!published.has(data.manifest)) {',
   'try { manifest = parseYaml(manifestText); } catch (parseError) {',
-  'const missing = manifestProblems(manifest);',
+  'const missing = manifestProblems(manifest, { databaseManifest: data.database_manifest !== undefined });',
   // the record-stage refusals that need nothing but the two documents (see recordStageProblems below)
   "if (manifest.publisher.repository !== undefined && lowerKey(repositoryKey(manifest.publisher.repository) ?? '') !== lowerKey(repositoryKey(data.repository))) {",
   'if (new Set(listed).size !== listed.length) bad(',
@@ -311,50 +312,52 @@ const chinookAllowedKeys = (() => {
 })();
 const publisherRules = [
   // [id, who decides, Go rule, snippet, lines]
-  ['unknown keys at every level of a manifest', 'documents', 'manifest-keys', 'const unknown = Object.keys(object)', [251, 254, 255]],
-  ['id is a lower-case id of at most 80 characters', 'documents', 'manifest-id', 'idPattern.test(manifest.id)', [260]],
-  ['deployment.discovery is on the origin of url, at /.well-known/openvaultdb', 'documents', 'manifest-discovery', 'discovery.pathname !== discoveryPath', [289, 290]],
-  ['deployment.recordset_page is on the origin of deployment.url', 'documents', 'manifest-url', 'expanded.origin !== deployed.origin', [295]],
-  ['publisher.url is https://github.com/<owner>', 'documents', 'manifest-publisher', 'publisher.url must be https://github.com/<owner>', [302]],
-  ['publisher.repository is required, a github.com repository, owned by the owner of publisher.url', 'documents', 'manifest-publisher', 'publisher.repository must belong to the owner in publisher.url', [305, 306, 308]],
-  ['model.address names a repository of github.com and a module that starts with a letter', 'documents', 'manifest-model', 'model.address must be modelspec://github.com', [67, 319, 320]],
-  ['model.name is a module name that starts with a letter', 'documents', 'manifest-model', 'model.name, when given, must be a ModelSpec module name', [322, 323]],
-  ['model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file)', 'documents', 'manifest-model', 'but model.address names module', [486, 487]],
-  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [333, 334, 485, 499]],
-  ['own form: model.hcl is required, model.modelspec ends in .modelspec.json', 'documents', 'manifest-required, manifest-model', 'model.hcl is required with local model files', [378, 387, 388]],
-  ['own form: model.address is this repository (publisher.repository), without a pin', 'documents', 'manifest-model', 'model.address must be ${expected}', [426, 427, 428, 429]],
-  ['meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)', 'documents', 'manifest-meaning', 'meaning.graph.id must be a MeaningGraph registry id', [437, 507]],
-  ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [476, 477, 478]],
-  ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [510, 511]],
-  ['each licence is one of 18 SPDX ids', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [356, 360]],
-  ['recordsets are names that look like ModelSpec entities', 'documents', 'manifest-recordsets', 'recordsets names must look like ModelSpec entity names', [525, 526]],
-  ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [528, 529, 530, 531]],
-  ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [198, 199]],
-  ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [216, 217]],
-  ['the repository can be read at HEAD (it is a git repository with a commit)', 'files', '', 'files.problem?.()', [186, 187]],
-  ['OVDB.md is a tracked regular file', 'files', '', 'OVDB.md must be a tracked regular file', [188, 189]],
-  ['OVDB.md can be read (and is not over 16 MB)', 'files', '', "problems: [`OVDB.md: ${error.message}`]", [194]],
-  ['every manifest that OVDB.md lists is a tracked regular file', 'files', '', 'must be a tracked regular file, but it is', [221, 222, 223]],
-  ['every manifest that OVDB.md lists can be read (and is not over 16 MB)', 'files', '', 'is not valid YAML', [244, 246]],
-  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [226]],
-  ['every file a manifest names is a tracked regular file', 'files', '', 'which must be a tracked regular file', [391, 392]],
-  ['every file a manifest names can be read (and is not over 16 MB)', 'files', '', 'bad(error.message)', [345, 347]],
-  ['the model file is JSON with a module name and entities', 'files', '', 'is not a ModelSpec JSON file', [408, 410, 413, 415]],
-  ['own form: model.name is the module of the model file', 'files', '', 'model.name !== moduleName', [420]],
-  ['own form: the module of model.address is the model file\'s', 'files', '', 'this repository plus the module name in', [427, 429]],
-  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [448, 451, 453, 455]],
-  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [459, 461, 467, 468]],
-  ['own form: recordsets are exactly the model\'s entities', 'files', '', 'recordsets lacks ModelSpec entities', [535, 538, 539]],
-  ['publisher.repository is the repository the check is run in (the --repository option)', 'input', '', 'the repository this manifest is in', [309]],
+  ['unknown keys at every level of a manifest', 'documents', 'manifest-keys', 'const unknown = Object.keys(object)', [277, 280, 281]],
+  ['id is a lower-case id of at most 80 characters', 'documents', 'manifest-id', 'idPattern.test(manifest.id)', [286]],
+  ['deployment.discovery is on the origin of url, at /.well-known/openvaultdb', 'documents', 'manifest-discovery', 'discovery.pathname !== discoveryPath', [315, 316]],
+  ['deployment.recordset_page is on the origin of deployment.url', 'documents', 'manifest-url', 'expanded.origin !== deployed.origin', [321]],
+  ['publisher.url is https://github.com/<owner>', 'documents', 'manifest-publisher', 'publisher.url must be https://github.com/<owner>', [328]],
+  ['publisher.repository is required, a github.com repository, owned by the owner of publisher.url', 'documents', 'manifest-publisher', 'publisher.repository must belong to the owner in publisher.url', [331, 332, 334]],
+  ['model.address names a repository of github.com and a module that starts with a letter', 'documents', 'manifest-model', 'model.address must be modelspec://github.com', [82, 345, 346]],
+  ['model.name is a module name that starts with a letter', 'documents', 'manifest-model', 'model.name, when given, must be a ModelSpec module name', [348, 349]],
+  ['model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file)', 'documents', 'manifest-model', 'but model.address names module', [515, 516]],
+  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [359, 360, 514, 528]],
+  ['own form: model.hcl is required, model.modelspec ends in .modelspec.json', 'documents', 'manifest-required, manifest-model', 'model.hcl is required with local model files', [407, 416, 417]],
+  ['own form: model.address is this repository (publisher.repository), without a pin', 'documents', 'manifest-model', 'model.address must be ${expected}', [455, 456, 457, 458]],
+  ['meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)', 'documents', 'manifest-meaning', 'meaning.graph.id must be a MeaningGraph registry id', [466, 536]],
+  ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [505, 506, 507]],
+  ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [539, 540]],
+  ['licences are known SPDX atoms; data permits bounded conjunctions', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [385, 388]],
+  ['recordsets are names that look like ModelSpec entities', 'documents', 'manifest-recordsets', 'recordsets names must look like ModelSpec entity names', [554, 555]],
+  ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [557, 558, 559, 560]],
+  ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [223, 224]],
+  ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [241, 242]],
+  ['the repository can be read at HEAD (it is a git repository with a commit)', 'files', '', 'files.problem?.()', [211, 212]],
+  ['OVDB.md is a tracked regular file', 'files', '', 'OVDB.md must be a tracked regular file', [213, 214]],
+  ['OVDB.md can be read (and is not over 16 MB)', 'files', '', "problems: [`OVDB.md: ${error.message}`]", [219]],
+  ['every manifest that OVDB.md lists is a tracked regular file', 'files', '', 'must be a tracked regular file, but it is', [246, 247, 248]],
+  ['every manifest that OVDB.md lists can be read (and is not over 16 MB)', 'files', '', 'is not valid YAML', [269, 271]],
+  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [251]],
+  ['every file a manifest names is a tracked regular file', 'files', '', 'which must be a tracked regular file', [420, 421]],
+  ['every file a manifest names can be read (and is not over 16 MB)', 'files', '', 'bad(error.message)', [371, 373]],
+  ['the model file is JSON with a module name and entities', 'files', '', 'is not a ModelSpec JSON file', [437, 439, 442, 444]],
+  ['own form: model.name is the module of the model file', 'files', '', 'model.name !== moduleName', [449]],
+  ['own form: the module of model.address is the model file\'s', 'files', '', 'this repository plus the module name in', [456, 458]],
+  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [477, 480, 482, 484]],
+  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [488, 490, 496, 497]],
+  ['own form: recordsets are exactly the model\'s entities', 'files', '', 'recordsets lacks ModelSpec entities', [564, 567, 568]],
+  ['the optional attachment has a locally checked structural precheck; external closure remains partial', 'files', '', 'checked.problems.map', [573]],
+  ['a JSON database descriptor uses its separate pinned schema', 'files', '', 'invalid ${databaseFormat} descriptor', [587, 591, 597, 605, 607, 609]],
+  ['publisher.repository is the repository the check is run in (the --repository option)', 'input', '', 'the repository this manifest is in', [335]],
 ];
 // What the Publisher profile shares with the Directory's: every other refusal of the checker is one the Directory's rules make as well
 // (the checker's directory-rules.mjs are copies of the Directory's), so it is a rule of the Directory profile.
 const sharedWithDirectory = [
-  [[197, 200, 202, 208, 213], 'the shape of OVDB.md: front matter, ovdb: 1, a non-empty publish list of ./ paths'],
-  [[227], 'the problems of a listed manifest, passed on'],
-  [[248, 258, 259, 265, 269, 273, 282, 286], 'the manifest is a mapping with its format, required texts, URLs, homepage and engine'],
-  [[320, 330, 425, 482, 484, 494, 496, 498], 'the addresses: spelled as the Directory does, pinned in the shared form and not in the own'],
-  [[359, 370, 372, 377, 379, 384, 503, 504, 509, 514, 521, 524], 'required fields, paths, the forms that never mix, recordsets listed once'],
+  [[222, 225, 227, 233, 238], 'the shape of OVDB.md: front matter, ovdb: 1, a non-empty publish list of ./ paths'],
+  [[252], 'the problems of a listed manifest, passed on'],
+  [[273, 284, 285, 291, 295, 299, 308, 312], 'the manifest is a mapping with its format, required texts, URLs, homepage and engine'],
+  [[346, 356, 454, 511, 513, 523, 525, 527], 'the addresses: spelled as the Directory does, pinned in the shared form and not in the own'],
+  [[385, 399, 401, 406, 408, 413, 532, 533, 538, 543, 550, 553], 'required fields, paths, the forms that never mix, recordsets listed once'],
 ];
 for (const [id, , , snippet, cited] of publisherRules) {
   if (!cited.some((line) => chinookLines[line - 1]?.includes(snippet))) throw new Error(`ovdb-manifest.mjs at ${pins.chinookdb.commit}: none of lines ${cited.join(', ')} holds \`${snippet}\`, which is where the table of generate.mjs says the checker makes "${id}"`);
@@ -372,10 +375,10 @@ for (const [id, , , snippet, cited] of publisherRules) {
 
 const bases = {};
 const addBase = (name, text) => { bases[name] = text; return name; };
-const chinookYaml = addBase('chinook-yaml', read(chinookRoot, 'ovdb.yaml'));
-const chinookMd = addBase('chinook-md', read(chinookRoot, 'OVDB.md'));
-const hosterYaml = addBase('hoster-yaml', read(chinookRoot, 'examples/hoster/ovdb.yaml'));
-const hosterMd = addBase('hoster-md', read(chinookRoot, 'examples/hoster/OVDB.md'));
+const chinookYaml = addBase('chinook-yaml', read(fixtureRoot, 'ovdb.yaml'));
+const chinookMd = addBase('chinook-md', read(fixtureRoot, 'OVDB.md'));
+const hosterYaml = addBase('hoster-yaml', read(fixtureRoot, 'examples/hoster/ovdb.yaml'));
+const hosterMd = addBase('hoster-md', read(fixtureRoot, 'examples/hoster/OVDB.md'));
 const fixtureYaml = addBase('fixture-yaml', read(directoryRoot, 'scripts/fixtures/chinookdb/ovdb.yaml'));
 const fixtureMd = addBase('fixture-md', read(directoryRoot, 'scripts/fixtures/chinookdb/OVDB.md'));
 // The hoster example is the shared form; the Directory accepts it (it judges the shape only: the organisation
@@ -492,7 +495,7 @@ const literalsOf = (text) => {
   }
   return [...found];
 };
-const suites = [read(directoryRoot, 'scripts/test.mjs'), read(chinookRoot, 'scripts/test-model.mjs')];
+const suites = [read(directoryRoot, 'scripts/test.mjs'), read(fixtureRoot, 'scripts/test-model.mjs')];
 const minedUrls = [...new Set(suites.flatMap(literalsOf))].filter((url) => url.length < 400).sort();
 const samples = [...minedUrls.filter((_, at) => at % 12 === 0), 'https://example.com/', 'https://acme.io/ovdb/x/', 'https://acme.io/ovdb/{name}', 'https://xn--bcher-kva.de/ovdb/x', 'https://ovdb.xn--bcher-kva.de/x', 'https://a.1/ovdb', 'https://acme.io:443/ovdb/x', 'https://Acme.io/ovdb/x', 'https://acme.io./ovdb/x', 'https://acme.io/ovdb//x', 'https://acme.io/ovdb/./x',
   'https://acme.io/ovdb/%2e', 'https://acme.io/ovdb/é', 'https://acme.io/ovdb/x?a=1', 'https://acme.io/ovdb/x#a', 'https://user@acme.io/ovdb/x', 'http://acme.io/ovdb/x', 'https://ovdb.com/x', 'https://ovdb.co.uk/x', 'https://x.ovdb.acme.co.uk/x', 'https://localhost/ovdb', 'https://' + 'a'.repeat(64) + '.io/ovdb', `https://acme.io/ovdb/${'a'.repeat(2100)}`];
@@ -770,6 +773,11 @@ for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObjec
     for (const id of licenceIds) for (const value of baseName === ownJson ? caseVariants(id) : [id, id.toLowerCase()]) mutate('publisher: licence', (m) => { m.licences[field] = value; });
     for (const value of otherLicences) mutate('publisher: licence', (m) => { m.licences[field] = value; });
   }
+  // Exact data-only conjunctions, scalar type and legacy profile preservation.
+  const dataExpressions = ['CC0-1.0 AND CC-BY-4.0', 'CC-BY-4.0 AND CC0-1.0', 'MIT AND Apache-2.0', 'AGPL-3.0-only AND BSD-2-Clause AND BSD-3-Clause AND GPL-2.0-only', 'AGPL-3.0-only AND GPL-2.0-only AND GPL-3.0-only AND LGPL-3.0-only', 'MIT AND ISC AND 0BSD AND CC0-1.0 AND MPL-2.0', 'MIT AND MIT', 'MIT AND Unknown', 'mit AND ISC', 'MIT OR ISC', 'MIT WITH ISC', '(MIT AND ISC)', 'MIT AND GPL-2.0+', 'MIT AND LicenseRef-x', ' MIT AND ISC', 'MIT AND ISC ', 'MIT  AND ISC', 'MIT AND  ISC', 'MIT\tAND ISC', 'MIT AND\nISC', 'MIT\u00a0AND ISC', 'MIT AND ', ' AND ISC', 'GPL-2.0+', 'LicenseRef-x', 'CC-BY-SA-3.0', 'unknown-ID', ['MIT', 'ISC'], { id: 'MIT' }, 42, null];
+  for (const value of dataExpressions) mutate('data licence profile', (m) => { m.licences.data = value; });
+  for (const field of ['model', 'meaning']) mutate('data-only licence boundary', (m) => { m.licences[field] = 'MIT AND ISC'; });
+  for (const value of [null, 42, { path: 'contract.json' }, { path: '../contract.json', sha256: 'a'.repeat(64) }, { path: 'contract.json', sha256: 'bad' }, { path: 'contract.json', sha256: 'a'.repeat(64), accepted: true }]) mutate('attachment shape', (m) => { m.representation_contract = value; });
   // discovery and the recordset page
   const origin = new URL(object.url).origin; const cloud = new URL(object.deployment.url).origin;
   for (const path of ['/.well-known/openvaultdb', '/.well-known/openvaultdb/', '/.well-known/openvaultdb2', '/.well-known/OpenVaultDB', '/.well-known/other', '/', '/x', '/.well-known/', '/openvaultdb', '/ovdb/.well-known/openvaultdb', '/.well-known/openvaultdb/x']) mutate('publisher: discovery', (m) => { m.deployment.discovery = `${origin}${path}`; });
@@ -1175,7 +1183,7 @@ const verdictFile = {
 };
 // The real repository of the references: the checker accepts the real documents, read from the real git history.
 {
-  const real = chinook.checkOvdbManifest(chinook.gitRepoFiles(chinookRoot), { repository: 'https://github.com/datatug/chinookdb' });
+  const real = chinook.checkOvdbManifest(chinook.gitRepoFiles(fixtureRoot), { repository: 'https://github.com/datatug/chinookdb' });
   if (real.length > 0) throw new Error(`the Chinook checker refuses the Chinook repository at ${pins.chinookdb.commit}: ${real.join('; ')}`);
 }
 const publisherVerdicts = { manifest: publisherManifest.map(([verdict]) => verdict).join(''), md: publisherMd.map(([verdict]) => verdict).join('') };

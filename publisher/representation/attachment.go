@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// ParseAttachment reads the optional closed path/SHA256 link without changing
-// the existing manifest's acceptance rules. The default publisher remains closed
-// until the canonical companion validators explicitly support this attachment.
+// ParseAttachment reads the optional closed provider-local path/SHA256 link.
+// The default repository check additionally verifies structural closure and the
+// separate mandatory format3 source-data proofs.
 func ParseAttachment(data []byte) (*Reference, error) {
 	if len(data) > MaxDocumentBytes {
 		return nil, fmt.Errorf("manifest byte limit exceeded")

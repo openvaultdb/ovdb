@@ -116,10 +116,10 @@ func checkFixtureRepresentation(r Reader, dependencies DependencyReaders) []mani
 	}
 	return CheckRepresentation(r, m, *attachment, dependencies)
 }
-func TestDefaultPublisherRemainsClosed(t *testing.T) {
+func TestDefaultAttachedLabelRequiresMetadataReaders(t *testing.T) {
 	p, _, _ := contractFixture(t)
 	if Check(p, Options{Profile: manifest.Publisher}).OK() {
-		t.Fatal("legacy closed publisher unexpectedly admitted proposed attachment")
+		t.Fatal("default attached check accepted absent metadata readers")
 	}
 }
 func TestRepresentationAttachmentMustBeLocal(t *testing.T) {

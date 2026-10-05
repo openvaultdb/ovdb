@@ -350,6 +350,9 @@ func TestTheTextFormShowsTheWholeMessage(t *testing.T) {
 type scripted struct{ failOn string }
 
 func (s scripted) Run(args []string, limit int) ([]byte, error) {
+	if args[0] == "--no-replace-objects" {
+		args = args[1:]
+	}
 	if args[0] == "-c" { // the flags every call has
 		args = args[2:]
 	}

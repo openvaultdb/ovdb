@@ -27,8 +27,8 @@ type SourceDataProof struct {
 	Stage      SourceDataStage
 	References []representation.Reference
 	Findings   []manifest.Finding
-	// Unrunnable preserves Git unavailable/version/timeout causes so a future
-	// activated CLI can return its environment exit status instead of refusal.
+	// Unrunnable preserves Git unavailable/version/timeout causes so the
+	// CLI can return its environment exit status instead of refusal.
 	Unrunnable error
 }
 
@@ -36,6 +36,10 @@ type SourceDataProof struct {
 // by representation.Check. It never provisions a reader or fetches a commit.
 // Distinct exact references are read sequentially and cached for this call only.
 func VerifySourceData(doc *representation.Document, dependencies DependencyReaders) SourceDataProof {
+	return verifySourceData(doc, dependencies, map[representation.Reference]error{})
+}
+
+func verifySourceData(doc *representation.Document, dependencies DependencyReaders, cache map[representation.Reference]error) SourceDataProof {
 	proof := SourceDataProof{Stage: SourceDataOutsideScope}
 	if doc != nil && (doc.Format == representation.Format || doc.Format == representation.Format2) {
 		return proof
@@ -67,7 +71,12 @@ func VerifySourceData(doc *representation.Document, dependencies DependencyReade
 			continue
 		}
 		seen[ref] = true
-		if err := verifySourceDataReference(ref, dependencies); err != nil {
+		err, checked := cache[ref]
+		if !checked {
+			err = verifySourceDataReference(ref, dependencies)
+			cache[ref] = err
+		}
+		if err != nil {
 			if proof.Unrunnable == nil && (errors.Is(err, ErrCannotRun) || errors.Is(err, ErrOldGit)) {
 				proof.Unrunnable = err
 			}
@@ -87,6 +96,7 @@ func verifySourceDataReference(ref representation.Reference, dependencies Depend
 	if r == nil {
 		return fmt.Errorf("explicit immutable dependency unavailable")
 	}
+	r, _ = OriginalObjects(r)
 	head, err := r.Head()
 	if err != nil {
 		return fmt.Errorf("dependency HEAD unavailable: %w", err)

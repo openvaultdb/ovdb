@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
 	"github.com/openvaultdb/ovdb/internal/publisher/repo"
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
+	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
 // ErrRefused is what the command returns when the check ran and the repository is refused: exit code 1, and nothing more to print (the findings are the
@@ -71,6 +73,7 @@ type command struct{ Deps }
 
 func newCheckCmd(c command) *cobra.Command {
 	var repository string
+	var dependencies []string
 	var jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "check [path]",
@@ -87,11 +90,12 @@ func newCheckCmd(c command) *cobra.Command {
 			if len(args) == 1 {
 				dir = args[0]
 			}
-			return c.run(cmd, dir, repository, cmd.Flags().Changed("repository"), jsonOut)
+			return c.run(cmd, dir, repository, cmd.Flags().Changed("repository"), jsonOut, dependencies)
 		},
 	}
 	cmd.SetFlagErrorFunc(c.flagError)
 	cmd.Flags().StringVar(&repository, "repository", "", c.T("publisher.flag.repository", nil))
+	cmd.Flags().StringArrayVar(&dependencies, "dependency", nil, c.T("publisher.flag.dependency", nil))
 	cmd.Flags().BoolVar(&jsonOut, "json", false, c.T("publisher.flag.json", nil))
 	return cmd
 }
@@ -107,15 +111,19 @@ func (c command) flagError(cmd *cobra.Command, err error) error {
 	return c.Usage(cmd, safe(err.Error()))
 }
 
-// pinned remembers the commit that Head gave, and the first error that says git could not be run or is too old, from any call: such an error gives no
+// pinned records the selected reader's commit and the first error that says git could not be run or is too old, from any call: such an error gives no
 // verdict about the repository (git that is missing, that is older than the check needs, or that did not finish in time).
 type pinned struct {
 	repo.Reader
 	commit     string
 	unrunnable error
+	report     *pinned
 }
 
 func (p *pinned) note(err error) error {
+	if p.report != nil {
+		err = p.report.note(err)
+	}
 	if p.unrunnable == nil && (errors.Is(err, repo.ErrCannotRun) || errors.Is(err, repo.ErrOldGit)) {
 		p.unrunnable = err
 	}
@@ -124,10 +132,25 @@ func (p *pinned) note(err error) error {
 
 func (p *pinned) Head() (string, error) {
 	commit, err := p.Reader.Head()
-	if err == nil && p.commit == "" {
+	if err == nil {
 		p.commit = commit
 	}
+	if err == nil && p.report != nil {
+		p.report.commit = commit
+	}
 	return commit, p.note(err)
+}
+
+func (p *pinned) OriginalObjects() (repo.Reader, bool) {
+	reader, changed := repo.OriginalObjects(p.Reader)
+	if !changed {
+		return p, false
+	}
+	return &pinned{Reader: reader, report: p}, true
+}
+
+func (p *pinned) AtCommit(id string) repo.Reader {
+	return &pinned{Reader: repo.AtCommit(p.Reader, id), report: p}
 }
 
 func (p *pinned) Entries(dir string) ([]repo.Entry, error) {
@@ -154,7 +177,11 @@ func (e *errWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository, jsonOut bool) error {
+func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository, jsonOut bool, bindings []string) error {
+	dependencies, err := c.dependencies(cmd, bindings)
+	if err != nil {
+		return err
+	}
 	if dir == "" {
 		return c.Usage(cmd, c.T("publisher.usage.no_path", map[string]string{"path": `""`}))
 	}
@@ -165,7 +192,7 @@ func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository,
 	case !info.IsDir():
 		return c.Usage(cmd, c.T("publisher.usage.not_dir", map[string]string{"path": safe(dir)}))
 	}
-	opts := repo.Options{Profile: manifest.Publisher}
+	opts := repo.Options{Profile: manifest.Publisher, Dependencies: dependencies}
 	if haveRepository {
 		if _, ok := rules.RepositoryKey(repository); !ok {
 			return c.Usage(cmd, c.T("publisher.usage.bad_repository", map[string]string{"value": safe(repository)}))
@@ -176,11 +203,20 @@ func (c command) run(cmd *cobra.Command, dir, repository string, haveRepository,
 	result := repo.Check(reader, opts)
 	// Git that cannot be run, that is too old or that did not finish gives no verdict about the repository: the check could not run as asked, which is exit
 	// code 2.
-	if errors.Is(reader.unrunnable, repo.ErrTimeout) {
+	unrunnable := reader.unrunnable
+	if unrunnable == nil {
+		for _, dependency := range dependencies {
+			if cause := dependency.(*lazyDependency).unrunnable(); cause != nil {
+				unrunnable = cause
+				break
+			}
+		}
+	}
+	if errors.Is(unrunnable, repo.ErrTimeout) {
 		return c.Unrunnable(c.T("publisher.env.timeout", nil), c.T("publisher.env.timeout_reason", nil), c.T("publisher.env.timeout_next", nil))
 	}
-	if reader.unrunnable != nil {
-		return c.Unrunnable(c.T("publisher.env.failed", nil), safe(reader.unrunnable.Error()), c.T("publisher.env.next", nil))
+	if unrunnable != nil {
+		return c.Unrunnable(c.T("publisher.env.failed", nil), safe(unrunnable.Error()), c.T("publisher.env.next", nil))
 	}
 	doc := newDocument(reader.commit, result)
 	out := &errWriter{w: cmd.OutOrStdout()}
@@ -369,4 +405,61 @@ func safeN(s string, limit int) string {
 		b.WriteString("...")
 	}
 	return b.String()
+}
+
+// lazyDependency opens only dependencies referenced by the verified attachment.
+// Provisioning cannot fetch, switch branches, or execute provider code.
+type lazyDependency struct {
+	path   string
+	open   func(string) repo.Reader
+	reader *pinned
+}
+
+func (d *lazyDependency) get() *pinned {
+	if d.reader == nil {
+		reader, _ := repo.OriginalObjects(d.open(d.path))
+		d.reader = &pinned{Reader: reader}
+	}
+	return d.reader
+}
+func (d *lazyDependency) Head() (string, error)                     { return d.get().Head() }
+func (d *lazyDependency) Entries(path string) ([]repo.Entry, error) { return d.get().Entries(path) }
+func (d *lazyDependency) Blob(path string, limit int) ([]byte, error) {
+	return d.get().Blob(path, limit)
+}
+func (d *lazyDependency) Uncommitted(path string) bool { return d.get().Uncommitted(path) }
+func (d *lazyDependency) unrunnable() error {
+	if d.reader == nil {
+		return nil
+	}
+	return d.reader.unrunnable
+}
+
+func (c command) dependencies(cmd *cobra.Command, bindings []string) (repo.DependencyReaders, error) {
+	paths := map[repo.DependencyKey]string{}
+	readers := repo.DependencyReaders{}
+	for _, binding := range bindings {
+		left, path, hasEquals := strings.Cut(binding, "=")
+		repository, revision, hasAt := strings.Cut(left, "@")
+		if !hasEquals || !hasAt || !representation.IsRepositoryRevision(repository, revision) || !filepath.IsAbs(path) || strings.ContainsFunc(path, func(r rune) bool { return r < 0x20 || r >= 0x7f && r <= 0x9f }) {
+			return nil, c.Usage(cmd, c.T("publisher.usage.bad_dependency", map[string]string{"value": safe(binding)}))
+		}
+		key := repo.DependencyKey{Repository: repository, Revision: revision}
+		if previous, exists := paths[key]; exists {
+			if previous != path {
+				return nil, c.Usage(cmd, c.T("publisher.usage.conflicting_dependency", map[string]string{"value": safe(left)}))
+			}
+			continue
+		}
+		info, err := c.Stat(path)
+		if err != nil {
+			return nil, c.Usage(cmd, c.T("publisher.usage.no_path", map[string]string{"path": safe(path)}))
+		}
+		if !info.IsDir() {
+			return nil, c.Usage(cmd, c.T("publisher.usage.not_dir", map[string]string{"path": safe(path)}))
+		}
+		paths[key] = path
+		readers[key] = &lazyDependency{path: path, open: c.Open}
+	}
+	return readers, nil
 }

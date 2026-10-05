@@ -26,12 +26,56 @@ const maxSmall = 4096
 // when Head is called, by its id, never the working tree; every path it hands to git
 // is checked first, and follows a commit id, so git never reads one as an option.
 type Git struct {
-	run    Runner
-	commit string
+	run                Runner
+	commit             string
+	original           bool
+	selected           bool
+	selectionValidated bool
 }
 
 // NewGit returns a Git that runs git through run.
 func NewGit(run Runner) *Git { return &Git{run: run} }
+
+// OriginalObjects returns a pinned view that ignores replacement objects at
+// every Git read, including commits, trees and blobs. The legacy reader stays
+// unchanged. Commands address the selected commit directly, never its ancestry.
+func (g *Git) OriginalObjects() (Reader, bool) {
+	if g.original {
+		return g, false
+	}
+	view := *g
+	view.original = true
+	// Preserve the selected ID, but recheck its original type: legacy peeling
+	// may have used replacements. An unselected view resolves HEAD only once.
+	view.selectionValidated = false
+	return &view, true
+}
+
+// OriginalObjects selects an original-object view when a reader provides one.
+// Other Reader implementations remain trusted caller-supplied immutable seams.
+func OriginalObjects(r Reader) (Reader, bool) {
+	if view, ok := r.(interface{ OriginalObjects() (Reader, bool) }); ok {
+		return view.OriginalObjects()
+	}
+	return r, false
+}
+
+// AtCommit retains one selected ID across discovery and legacy validation while
+// preserving the reader's replacement policy. Other readers already promise an
+// immutable commit under the Reader contract.
+func AtCommit(r Reader, id string) Reader {
+	if view, ok := r.(interface{ AtCommit(string) Reader }); ok {
+		return view.AtCommit(id)
+	}
+	return r
+}
+
+// AtCommit returns a view that verifies and retains id rather than re-reading HEAD.
+func (g *Git) AtCommit(id string) Reader {
+	view := *g
+	view.commit, view.selected, view.selectionValidated = id, true, false
+	return &view
+}
 
 // gitFlags go before every git command: no command of the repository's own configuration (a file
 // system monitor, which `ls-files` runs when the untracked cache is on) is run. There is no
@@ -40,11 +84,22 @@ func NewGit(run Runner) *Git { return &Git{run: run} }
 var gitFlags = []string{"-c", "core.fsmonitor=false"}
 
 func (g *Git) git(limit int, args ...string) ([]byte, error) {
-	return g.run.Run(append(append([]string(nil), gitFlags...), args...), limit)
+	flags := append([]string(nil), gitFlags...)
+	if g.original {
+		flags = append([]string{"--no-replace-objects"}, flags...)
+	}
+	return g.run.Run(append(flags, args...), limit)
 }
 
-// Head finds the commit of HEAD, and refuses a git older than MinGit, a bare repository and a directory that is not the top of its repository.
+// Head verifies the selected commit (or selects HEAD), and refuses a git older than
+// MinGit, a bare repository and a directory that is not the top of its repository.
 func (g *Git) Head() (string, error) {
+	if g.selected && !isID(g.commit) {
+		return "", ErrMalformed
+	}
+	if (g.original || g.selected) && g.selectionValidated {
+		return g.commit, nil
+	}
 	version, err := g.git(maxSmall, "version")
 	if err != nil {
 		return "", err
@@ -65,11 +120,15 @@ func (g *Git) Head() (string, error) {
 	case strings.TrimSpace(prefix) != "":
 		return "", ErrSubdirectory
 	}
-	out, err := g.git(maxSmall, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	target := "HEAD"
+	if (g.original || g.selected) && g.commit != "" {
+		target = g.commit
+	}
+	out, err := g.git(maxSmall, "rev-parse", "--verify", "--quiet", target+"^{commit}")
 	var exit *ExitError
 	if errors.As(err, &exit) && exit.Code == 1 {
-		// Exit 1 says HEAD names no commit: an unborn branch, or an object that cannot be read as one.
-		if _, named := g.git(maxSmall, "rev-parse", "--verify", "--quiet", "HEAD"); named != nil {
+		// Exit 1 says the selected name has no commit: an unborn branch, or an object that cannot be read as one.
+		if _, named := g.git(maxSmall, "rev-parse", "--verify", "--quiet", target); named != nil {
 			return "", ErrNoCommit
 		}
 		return "", g.unreadable(err)
@@ -82,7 +141,11 @@ func (g *Git) Head() (string, error) {
 	if !isID(id) {
 		return "", ErrMalformed
 	}
+	if target != "HEAD" && id != target {
+		return "", ErrMalformed
+	}
 	g.commit = id
+	g.selectionValidated = g.original || g.selected
 	return id, nil
 }
 

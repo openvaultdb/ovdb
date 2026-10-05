@@ -42,6 +42,7 @@ const checkout = (name) => checkoutReference(name, { explicit: argValue(`--${nam
 
 const directoryRoot = checkout('directory');
 const chinookRoot = checkout('chinookdb');
+const fixtureRoot = checkout('fixtures');
 const load = (root, file) => import(pathToFileURL(join(root, file)).href);
 const directory = await load(directoryRoot, 'scripts/lib/directory.mjs');
 const urls = await load(directoryRoot, 'scripts/lib/urls.mjs');
@@ -270,7 +271,7 @@ const literalsOf = (file) => {
 };
 const suites = {
   directory: join(directoryRoot, 'scripts/test.mjs'),
-  chinookdb: join(chinookRoot, 'scripts/test-model.mjs'),
+  fixtures: join(fixtureRoot, 'scripts/test-model.mjs'),
 };
 const mined = Object.fromEntries(Object.entries(suites).map(([name, file]) => [name, literalsOf(file)]));
 
@@ -331,7 +332,7 @@ const structured = [
   rep(`https://e.${b}/`, '.', 1500), rep(`https://e.${b}/`, 'a', 300, '/{name}'), rep(`https://e.${b}/{name}/`, 'a', 3000),
 ];
 const urlFns = ['url', 'url-template', 'homepage'];
-const urlLike = [...new Set([...structured, ...mined.directory, ...mined.chinookdb])];
+const urlLike = [...new Set([...structured, ...mined.directory, ...mined.fixtures])];
 
 // RFC 3492 encoder, only to spell the labels whose decoded text has the shapes a rule is about (the verdicts are the
 // references', never this function's).
@@ -478,7 +479,7 @@ const golden = {
   format: 'ovdb-publisher-rules-reference/1',
   generatedBy: 'internal/publisher/rules/testdata/reference/generate.mjs',
   node: process.version,
-  references: Object.fromEntries(Object.entries(pins).map(([name, pin]) => [name, { ...pin, files: name === 'directory' ? ['scripts/lib/urls.mjs', 'scripts/lib/git.mjs', 'scripts/lib/directory.mjs'] : ['scripts/lib/directory-rules.mjs'], testSuite: name === 'directory' ? 'scripts/test.mjs' : 'scripts/test-model.mjs', literalsMined: mined[name].length }])),
+  references: Object.fromEntries(Object.entries(pins).map(([name, pin]) => [name, { ...pin, files: name === 'directory' ? ['scripts/lib/urls.mjs', 'scripts/lib/git.mjs', 'scripts/lib/directory.mjs'] : name === 'chinookdb' ? ['scripts/lib/directory-rules.mjs'] : ['scripts/test-model.mjs'], testSuite: name === 'directory' ? 'scripts/test.mjs' : name === 'fixtures' ? 'scripts/test-model.mjs' : null, literalsMined: mined[name]?.length ?? 0 }])),
   referenceCalls: { thrown },
   matrixSize: countCases(),
   sweepRanges,

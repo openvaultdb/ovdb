@@ -263,7 +263,27 @@ which is also what the Directory reads): `OVDB.md` and every manifest it lists (
 recordsets), the files an own-form manifest names (the ModelSpec JSON file, `model.hcl`, the MeaningGraph file) and that
 they agree with the manifest (model name and address, the recordsets against the entities of the model, the meaning
 file's id, licence and `models:` entry), and, with `--repository`, that every manifest says it is in that repository
-(`publisher.repository`). It checks one commit at a time and reads only those files.
+(`publisher.repository`). Manifests with `representation_contract` also require structural
+metadata associations and, for format 3, raw committed `source.data` byte proofs. Supply
+each external repository revision explicitly:
+
+```sh
+ovdb publisher check /absolute/provider \
+  --dependency 'https://github.com/owner/repo@0123456789abcdef0123456789abcdef01234567=/absolute/checkout'
+```
+
+Repeat `--dependency` for distinct immutable readers. The first `=` separates the
+repository/revision from an absolute checkout path; spaces, commas, `@` and further
+`=` characters in that path remain literal. Identical bindings coalesce; conflicting
+paths for the same repository/revision and malformed bindings are usage errors (2),
+even for legacy manifests. Only referenced checkouts are opened. A required missing
+reader, wrong pinned HEAD, missing/nonregular file, altered hash or source over 5 MiB
+is a refusal (1). Git unavailable, too old or timed out is an environment error (2).
+
+Metadata resolution never reads source data or a native dataset. The separate byte
+stage hashes exact bytes without interpreting records and deduplicates exact references
+only for this check. Legacy manifests keep their existing checks. These results do not
+grant canonical semantic admission or prove runtime execution.
 
 **What it does not check.** It does not look at the hosted repository (the Directory does, and may find what a local
 clone does not show: a force-pushed branch, a private or renamed repository), it does not fetch anything, and it does not

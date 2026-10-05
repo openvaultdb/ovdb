@@ -69,15 +69,15 @@ them (both in JavaScript, which is where a publisher's check meets them today):
 
 | Reference | Repository | Commit | Files |
 | --- | --- | --- | --- |
-| directory | `openvaultdb/directory` (CC0-1.0) | `e8db5488db31d3f63865e404acef487c33cf35df` | `scripts/lib/urls.mjs`, `git.mjs`, `directory.mjs` |
-| chinookdb | `datatug/chinookdb` (MIT) | `79e7bb0b1d6f0666dce465874990dec64348331f` | `scripts/lib/directory-rules.mjs` |
+| directory | `openvaultdb/directory` (CC0-1.0) | `087067483686865b13cb76511ff86f7364ea47ff` | `scripts/lib/urls.mjs`, `git.mjs`, `directory.mjs` |
+| chinookdb | `demo-db/chinook` (MIT) | `8b904298d0c3bba20c12dfbc29bb75bf5c37f683` | `scripts/lib/directory-rules.mjs` |
 
 `testdata/reference/generate.mjs` fetches those files at exactly those commits,
 imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
-v24.20.0 made the committed one). `go test` reads the golden and judges every
+v24.19.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **1497310** verdicts:
+network. The matrix is **1497564** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a
@@ -115,9 +115,9 @@ with the one limit named taken away, Go accepts the same input.
 | Kind | Cases | Why |
 | --- | --- | --- |
 | `url-length` | 5 | A URL over 2048 bytes. The references have no bound; a published URL is text that people and tools read, and an unbounded input is a way to make a check slow. |
-| `punycode-decoded-hyphens` | 504 | An `xn--` label that is valid punycode of Latin-1 letters but decodes to text that begins with `xn--` or has hyphens in its third and fourth positions. As UTS #46 reads it (15.1 on), such a label is invalid when hyphens are not checked, so a later Node may refuse it; Node v24.20.0 accepts it. One comparison makes the rule independent of the Node version. |
-| `punycode-other-text` | 4997 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says which letters a label may spell, that other scripts and letters are not accepted yet, and to use an ASCII host name; whether to accept more is a product decision. |
-| `punycode-malformed` | 1940 | An `xn--` label that is not punycode of any text (truncated, ASCII only, a number too large). Node's URL parser takes such labels as written; a hostile publisher could use one to name a host no client can resolve the same way. The message says it is not valid punycode and to write the host name in ASCII. |
+| `punycode-decoded-hyphens` | 376 | An `xn--` label that is valid punycode of Latin-1 letters but decodes to text that begins with `xn--` or has hyphens in its third and fourth positions. As UTS #46 reads it (15.1 on), such a label is invalid when hyphens are not checked, so a later Node may refuse it; Node v24.19.0 accepts it. One comparison makes the rule independent of the Node version. |
+| `punycode-other-text` | 3437 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says which letters a label may spell, that other scripts and letters are not accepted yet, and to use an ASCII host name; whether to accept more is a product decision. |
+| `punycode-malformed` | 50 | An `xn--` label that is not punycode of any text (truncated, ASCII only, a number too large). Node's URL parser takes such labels as written; a hostile publisher could use one to name a host no client can resolve the same way. The message says it is not valid punycode and to write the host name in ASCII. |
 | `repository-length` | 4 | A repository URL over 255 bytes. The references have no bound; GitHub names are far shorter. |
 | `path-length` | 3 | A path inside a repository over 1024 bytes. The references have no bound. |
 | `claim-incomparable` | 640 | `Compare` of an address that is not ASCII or is over 2048 bytes. JavaScript folds case by Unicode rules (U+212A KELVIN SIGN lowers to `k`), which this package does not copy; addresses that reach a comparison have already passed `PublicHTTPSURL`, so this never happens to a valid one, and `Incomparable.Conflicts()` is true. |
@@ -200,3 +200,5 @@ spells Latin-1 letters through `xn--` (what the matrix above shows `rules` accep
 more). The Unicode tables that UTS #46 needs change with every release and Go has no copy; until
 there is a reason to carry them, a publisher writes the ASCII host name. Accepting more is a
 product decision, and the kinds `punycode-other-text` and `punycode-malformed` are its record.
+
+Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.

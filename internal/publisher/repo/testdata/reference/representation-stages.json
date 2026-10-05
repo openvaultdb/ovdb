@@ -1,0 +1,194 @@
+{
+  "format": "ovdb-representation-stage-reference/1",
+  "references": {
+    "directory": {
+      "repository": "openvaultdb/directory",
+      "commit": "087067483686865b13cb76511ff86f7364ea47ff"
+    }
+  },
+  "strength": "structural-metadata-and-offline-raw-bytes-only",
+  "cases": [
+    {
+      "fixture": "real-ror",
+      "mutation": "none",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "missing-data-reader",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "wrong-data-head",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "wrong-data-hash",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "data-symlink",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "data-submodule",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "data-missing",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "metadata-symlink",
+      "size": 3,
+      "metadata": false,
+      "data": "outside_scope"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "raw-bom",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "raw-invalid-utf8",
+      "size": 1,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "four-mib-plus-one",
+      "size": 4194305,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "five-mib",
+      "size": 5242880,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror",
+      "mutation": "five-mib-plus-one",
+      "size": 5242881,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "none",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "missing-data-reader",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "wrong-data-head",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "wrong-data-hash",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "data-symlink",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "data-submodule",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "data-missing",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "metadata-symlink",
+      "size": 3,
+      "metadata": false,
+      "data": "outside_scope"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "raw-bom",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "raw-invalid-utf8",
+      "size": 1,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "four-mib-plus-one",
+      "size": 4194305,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "five-mib",
+      "size": 5242880,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames",
+      "mutation": "five-mib-plus-one",
+      "size": 5242881,
+      "metadata": true,
+      "data": "refused"
+    }
+  ]
+}
