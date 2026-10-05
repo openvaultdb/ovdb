@@ -173,9 +173,7 @@ func stopOnCleanup(t *testing.T, dirs paths.Dirs) {
 		// Nothing the test started is left running: a server that outlives its test would, under `go test`, hold the process list of the job (and on a
 		// machine that is not a CI runner, a port and a lease).
 		if record != nil {
-			if process, err := os.FindProcess(record.PID); err != nil {
-				t.Errorf("find the server of the test: %v", err)
-			} else if alive, err := processAlive(process); err != nil {
+			if alive, err := processAlive(record.PID); err != nil {
 				t.Errorf("check the server of the test: %v", err)
 			} else if alive {
 				_ = daemonlifecycle.TerminateIfSameProcess(record.PID, record.ProcessIdentity)
@@ -398,7 +396,7 @@ func TestStopNeverKillsReusedPID(t *testing.T) {
 	if err != nil || state.Running {
 		t.Errorf("Inspect = %+v, %v; want not running", state, err)
 	}
-	alive, err := processAlive(sleeper.Process)
+	alive, err := processAlive(sleeper.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +526,7 @@ func TestExitedUnreapedChildIsNotAlive(t *testing.T) {
 		case <-ticker.C:
 		}
 	}
-	alive, err := processAlive(child.Process)
+	alive, err := processAlive(child.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,12 +538,40 @@ func TestExitedUnreapedChildIsNotAlive(t *testing.T) {
 // Liveness uses the stop API's kernel identity predicate. In particular, an
 // exited Unix child awaiting Wait is gone even though signal 0 still succeeds.
 // Return query failures so callers cannot silently treat an unknown process as gone.
-func processAlive(process *os.Process) (bool, error) {
-	_, err := daemonlifecycle.ProcessIdentity(process.Pid)
+func processAlive(pid int) (bool, error) {
+	_, err := daemonlifecycle.ProcessIdentity(pid)
 	if errors.Is(err, daemonlifecycle.ErrProcessNotFound) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// A successfully reaped child has no process to open on Windows. Both the
+// direct liveness check and server cleanup must treat that PID as stopped.
+func TestReapedChildIsNotAliveDuringCleanup(t *testing.T) {
+	child := exec.Command(os.Args[0])
+	child.Env = append(os.Environ(), childEnv+"=exit")
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	pid := child.Process.Pid
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if alive, err := processAlive(pid); err != nil || alive {
+		t.Fatalf("reaped child: alive=%t, err=%v; want stopped", alive, err)
+	}
+	dirs := testDirs(t)
+	if _, err := runtime.PrepareDirs(dirs, "test"); err != nil {
+		t.Fatal(err)
+	}
+	record := fmt.Sprintf(`{"schema":1,"instance_id":"reaped","home":%q,"pid":%d,"process_identity":"exited-child","port":%d,"version":"x"}`,
+		dirs.Home, pid, freePort(t))
+	if err := paths.WriteFilePrivate(filepath.Join(dirs.Runtime, runtime.RecordFile), []byte(record)); err != nil {
+		t.Fatal(err)
+	}
+	stopOnCleanup(t, dirs)
 }
 
 func TestProcessAliveReportsRunningChildAndQueryErrors(t *testing.T) {
@@ -555,10 +581,10 @@ func TestProcessAliveReportsRunningChildAndQueryErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
-	if alive, err := processAlive(child.Process); err != nil || !alive {
+	if alive, err := processAlive(child.Process.Pid); err != nil || !alive {
 		t.Fatalf("running child: alive=%t, err=%v", alive, err)
 	}
-	if alive, err := processAlive(&os.Process{Pid: 0}); err == nil || alive {
+	if alive, err := processAlive(0); err == nil || alive {
 		t.Fatalf("invalid pid query: alive=%t, err=%v; want an error", alive, err)
 	}
 }
