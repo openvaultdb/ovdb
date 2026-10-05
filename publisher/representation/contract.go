@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"gopkg.in/yaml.v3"
 )
 
 // The embedded schema is private so callers cannot change validation rules.
@@ -238,7 +237,7 @@ func checkContract(c Contract, ctx Context) error {
 		return err
 	}
 	var bridge BridgeArtifact
-	if err = closedJSON(artifact, &bridge); err != nil {
+	if err = exactClosed(artifact, &bridge, []string{"table", "rows"}, true); err != nil {
 		return err
 	}
 	if bridge.Table != c.Bridge.Table || len(bridge.Rows) == 0 || len(bridge.Rows) > 10000 {
@@ -265,7 +264,7 @@ func checkContract(c Contract, ctx Context) error {
 		Namespace string   `json:"namespace"`
 		Keys      []string `json:"keys"`
 	}
-	if err = closedJSON(keyData, &index); err != nil {
+	if err = exactClosed(keyData, &index, []string{"namespace", "keys"}, false); err != nil {
 		return err
 	}
 	if index.Namespace != c.Target.Namespace || len(index.Keys) == 0 || len(index.Keys) > 10000 {
@@ -299,7 +298,7 @@ func property(data []byte, module, entity, key, datatype string) error {
 			} `json:"properties"`
 		} `json:"entities"`
 	}
-	if err := strictJSON(data, MaxArtifactBytes, &spec); err != nil {
+	if err := exactModel(data, &spec); err != nil {
 		return err
 	}
 	p, ok := spec.Entities[entity].Properties[key]
@@ -328,10 +327,10 @@ func checkBinding(binding, meaning []byte, t Target) error {
 			ID string `yaml:"id"`
 		} `yaml:"concepts"`
 	}
-	if err := yaml.Unmarshal(binding, &graph); err != nil {
+	if err := singleYAML(binding, &graph); err != nil {
 		return err
 	}
-	if err := yaml.Unmarshal(meaning, &core); err != nil {
+	if err := singleYAML(meaning, &core); err != nil {
 		return err
 	}
 	if graph.Format != "meaning/draft-1" || core.Format != "meaning/draft-1" {
@@ -367,6 +366,9 @@ func checkBinding(binding, meaning []byte, t Target) error {
 func strictJSON(data []byte, limit int, out any) error {
 	if len(data) > limit || !utf8.Valid(data) {
 		return fmt.Errorf("JSON byte limit/UTF8 violation")
+	}
+	if err := scalarEscapes(data); err != nil {
+		return err
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -438,15 +440,6 @@ func path(s string) bool {
 	return true
 }
 
-func closedJSON(data []byte, out any) error {
-	if err := strictJSON(data, MaxArtifactBytes, out); err != nil {
-		return err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(out)
-}
-
 // Lookup selects one exact scope and compares raw input without case folding or
 // trimming. nil means an unmatched exception, never a guessed target. Callers
 // must first verify/admit the immutable Document through canonical metadata.
@@ -478,7 +471,7 @@ func checkSnapshot(data []byte, c Contract) error {
 			SHA256 string `json:"sha256"`
 		} `json:"artifacts"`
 	}
-	if err := strictJSON(data, MaxArtifactBytes, &snapshot); err != nil {
+	if err := exactSnapshot(data, &snapshot); err != nil {
 		return err
 	}
 	if !repository(snapshot.Generator.Repository) || !hex(snapshot.Generator.Revision, 40) || len(snapshot.Artifacts) > 10000 {

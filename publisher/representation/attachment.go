@@ -3,8 +3,6 @@ package representation
 import (
 	"fmt"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ParseAttachment reads the optional closed path/SHA256 link without changing
@@ -15,7 +13,7 @@ func ParseAttachment(data []byte) (*Reference, error) {
 		return nil, fmt.Errorf("manifest byte limit exceeded")
 	}
 	var manifest map[string]any
-	if err := yaml.Unmarshal(data, &manifest); err != nil {
+	if err := singleYAML(data, &manifest); err != nil {
 		return nil, err
 	}
 	raw, present := manifest["representation_contract"]

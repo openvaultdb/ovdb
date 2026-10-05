@@ -14,7 +14,8 @@ checks that schema and bounded strict JSON. `Check` additionally checks immutabl
 reference closure, source/target ModelSpec property datatypes, the target's actual
 MeaningGraph identifier binding and canonical meaning pin, physical bridge columns,
 exact raw-label uniqueness and native target-key membership. Every referenced file
-has an exact SHA256. Unknown versions/policies, JSON duplicate keys, path escapes,
+has an exact SHA256. Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
+escapes, multiple YAML documents, path escapes,
 URLs masquerading as paths and mutable revisions are refused.
 
 An own-provider reference has only `path` and `sha256`; the outer Directory record
@@ -91,7 +92,8 @@ Production eligibility is blocked until the Directory validator/index, app reade
 provider generation/native-data proof and independent review land at exact pins.
 No service deployment or runtime native-id support is supplied by this package.
 
-Validation includes wrong source property/revision/namespace, case/space changes,
+Validation includes wrong source property/revision/namespace, case/space changes, JSON field aliases,
+invalid Unicode scalar escapes and ignored trailing YAML documents,
 mutable pins, altered hashes, missing keys, duplicate labels, path/URL escapes,
 unknown versions and unresolved dependencies. Legacy manifests remain compatible.
 

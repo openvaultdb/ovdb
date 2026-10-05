@@ -97,7 +97,7 @@ func TestAdditionalRejectedDocuments(t *testing.T) {
 		}
 	}
 	var b BridgeArtifact
-	if err := closedJSON([]byte("["), &b); err == nil {
+	if err := exactClosed([]byte("["), &b, []string{"table", "rows"}, true); err == nil {
 		t.Fatal("malformed bridge accepted")
 	}
 	if repository("https://elsewhere.example/a/b") || path("https://example.org/keys.json") {
