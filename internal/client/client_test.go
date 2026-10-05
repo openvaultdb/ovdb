@@ -207,6 +207,51 @@ func TestMapV1UndeclaredCollectionPointsToTheManifest(t *testing.T) {
 	}
 }
 
+// openvaultdb-go v0.11.8 and later refuse a structured query on a mount whose
+// engine is not cleared for queries (a PostgreSQL mount with the preview
+// switch off, every MySQL mount) with 501 query_unsupported. v0.9.0 answered
+// such a query, so `ovdb list` listed records there. The refusal is by design:
+// it is an unsupported operation, not a fault of the server, and key reads
+// still work.
+func TestMapV1QueryUnsupportedIsAnUnsupportedOperationNotAServerFault(t *testing.T) {
+	t.Parallel()
+	path, _ := datapath.Parse("/customers")
+	op := DataOp{Verb: "list", Database: "ledger", Path: path, Suffix: " --db ledger"}
+	postgres := []byte(`{"error":{"code":"query_unsupported","message":"the \"postgres\" storage engine is not yet supported for queries: structured queries (/query, /dtql) are refused on it; key reads and writes still work"}}`)
+	e := MapV1(http.StatusNotImplemented, postgres, op).Envelope
+	if e.Code != envelope.Unsupported || e.Code.HTTPStatus() != http.StatusNotImplemented {
+		t.Fatalf("code = %s, want %s: %+v", e.Code, envelope.Unsupported, e)
+	}
+	if len(e.Next) != 2 || e.Next[0].Command != "ovdb get /customers/<key> --db ledger" ||
+		!strings.Contains(e.Next[0].Label, "read a record by its key") ||
+		e.Next[1].Command != "" || !strings.Contains(e.Next[1].Label, "OVDB_PREVIEW_POSTGRES_QUERIES=1") {
+		t.Errorf("postgres next steps = %+v", e.Next)
+	}
+	for _, next := range e.Next {
+		if strings.Contains(next.Command, "server status") {
+			t.Errorf("a refusal by design must not send the person to the server's status: %+v", e.Next)
+		}
+	}
+	if !strings.Contains(e.Reason, "not yet supported for queries") {
+		t.Errorf("reason = %q, want the library's sentence", e.Reason)
+	}
+
+	// MySQL has no switch: only the key-read step is true.
+	mysql := []byte(`{"error":{"code":"query_unsupported","message":"the \"mysql\" storage engine is not yet supported for queries"}}`)
+	e = MapV1(http.StatusNotImplemented, mysql, op).Envelope
+	if e.Code != envelope.Unsupported || len(e.Next) != 1 || e.Next[0].Command != "ovdb get /customers/<key> --db ledger" {
+		t.Errorf("mysql = %+v", e)
+	}
+
+	// The adapter's own refusal (422) is also an unsupported operation, and
+	// has no switch to point at.
+	adapter := []byte(`{"error":{"code":"query_unsupported","message":"the storage engine cannot run this query"}}`)
+	e = MapV1(http.StatusUnprocessableEntity, adapter, op).Envelope
+	if e.Code != envelope.Unsupported || len(e.Next) != 1 {
+		t.Errorf("adapter refusal = %+v", e)
+	}
+}
+
 // Review F10: a path typed with a leading ~ (the TUI and web have no shell
 // to expand it) means the home folder.
 func TestConnectExpandsHome(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,7 @@ import (
 	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"github.com/openvaultdb/openvaultdb-go/pkg/schema"
+	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 )
 
 const shopManifest = `database:
@@ -66,6 +68,22 @@ schemas:
         name: {type: string}
 `
 
+const mysqlManifest = `database:
+  id: orders
+  schema_mode: strict
+
+storage:
+  engine: mysql
+  mysql:
+    dsn_env: OVDB_TEST_NEVER_SET_DSN
+
+schemas:
+  collections:
+    customers:
+      fields:
+        name: {type: string}
+`
+
 // serveRun runs `ovdb serve <args>` in this process. The command's own flags,
 // mounting and options all run; the seam replaces only the listener, and calls
 // use with the handler the command assembled while the databases are still
@@ -89,9 +107,18 @@ func serveRun(t *testing.T, deps serveDeps, args []string, use func(h http.Handl
 // call sends one request to the handler and returns the status and the body.
 func call(t *testing.T, h http.Handler, method, target, contentType, body string) (int, string) {
 	t.Helper()
+	return callWith(t, h, method, target, contentType, body, nil)
+}
+
+// callWith is call with extra request headers.
+func callWith(t *testing.T, h http.Handler, method, target, contentType, body string, headers map[string]string) (int, string) {
+	t.Helper()
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -273,16 +300,16 @@ func (c *countingDB) ExecuteQueryToRecordsetReader(context.Context, dal.Query, .
 	return nil, errors.New("the driver was reached")
 }
 
-// fakePostgresMount reads the manifest as the command does and opens it over a
-// driver that dials nothing, as mount.File opens a postgres manifest over a
-// connection. Any other engine goes to the real mount.
-func fakePostgresMount(driver *countingDB, mounted *int) func(string) (*core.Database, error) {
+// fakeServerMount reads the manifest as the command does and opens it over a
+// driver that dials nothing, as mount.File opens a postgres or mysql manifest
+// over a connection. Any other engine goes to the real mount.
+func fakeServerMount(driver *countingDB, mounted *int) func(string) (*core.Database, error) {
 	return func(path string) (*core.Database, error) {
 		m, err := manifest.Load(path)
 		if err != nil {
 			return nil, err
 		}
-		if m.Storage.Engine != "postgres" {
+		if m.Storage.Engine != "postgres" && m.Storage.Engine != "mysql" {
 			return mount.File(path)
 		}
 		*mounted++
@@ -298,7 +325,7 @@ func TestServePostgresQueriesAreOffByDefault(t *testing.T) {
 	driver := &countingDB{}
 	mounted := 0
 	deps := defaultServeDeps()
-	deps.mountFile = fakePostgresMount(driver, &mounted)
+	deps.mountFile = fakeServerMount(driver, &mounted)
 	dir := t.TempDir()
 	path := writeManifest(t, dir, "ledger.yaml", postgresManifest)
 
@@ -317,12 +344,16 @@ func TestServePostgresQueriesAreOffByDefault(t *testing.T) {
 		}
 		// Every structured route answers with the library's refusal.
 		const dtql = "from: {name: customers}\n"
-		for name, request := range map[string]struct{ method, target, contentType, body string }{
-			"per-database dtql": {http.MethodPost, "/v1/databases/ledger/dtql", "application/yaml", dtql},
-			"query":             {http.MethodPost, "/v1/databases/ledger/query", "application/json", `{"collection":"customers"}`},
-			"cross-database":    {http.MethodPost, "/v1/dtql", "application/yaml", "from: {database: ledger, name: customers}\n"},
+		for name, request := range map[string]struct {
+			method, target, contentType, body string
+			headers                           map[string]string
+		}{
+			"per-database dtql": {http.MethodPost, "/v1/databases/ledger/dtql", "application/yaml", dtql, nil},
+			"query":             {http.MethodPost, "/v1/databases/ledger/query", "application/json", `{"collection":"customers"}`, nil},
+			"cross-database":    {http.MethodPost, "/v1/dtql", "application/yaml", "from: {database: ledger, name: customers}\n", nil},
+			"paged dtql":        {http.MethodPost, "/v1/databases/ledger/dtql", "application/yaml", dtql, map[string]string{"OVDB-Page-Size": "10"}},
 		} {
-			status, body := call(t, handler, request.method, request.target, request.contentType, request.body)
+			status, body := callWith(t, handler, request.method, request.target, request.contentType, request.body, request.headers)
 			if status != http.StatusNotImplemented || !strings.Contains(body, `"query_unsupported"`) || !strings.Contains(body, "postgres") {
 				t.Errorf("%s = %d %s", name, status, body)
 			}
@@ -345,7 +376,7 @@ func TestServePostgresPreviewReachesTheDriverForOneCollectionOnly(t *testing.T) 
 	driver := &countingDB{}
 	mounted := 0
 	deps := defaultServeDeps()
-	deps.mountFile = fakePostgresMount(driver, &mounted)
+	deps.mountFile = fakeServerMount(driver, &mounted)
 	_, err := serveRun(t, deps, []string{"--manifest", writeManifest(t, t.TempDir(), "ledger.yaml", postgresManifest)}, func(handler http.Handler) {
 		status, body := call(t, handler, http.MethodPost, "/v1/databases/ledger/query", "application/json", `{"collection":"customers"}`)
 		if status == http.StatusNotImplemented || driver.queries != 1 {
@@ -358,6 +389,40 @@ func TestServePostgresPreviewReachesTheDriverForOneCollectionOnly(t *testing.T) 
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// openvaultdb-go v0.9.0 had no rule for the field names of a write, so a record
+// with a field named "due date" was stored on the default engine. v0.13.0
+// refuses a top-level field that is not a plain name with 400 bad_request on
+// every engine, before the adapter is called. Plain names, hyphens and dots
+// are still written.
+func TestServeRefusesAWriteWhoseFieldNameIsNotAPlainNameOnEveryEngine(t *testing.T) {
+	ingitdbDir := t.TempDir()
+	initGitRepo(t, ingitdbDir)
+	for name, c := range map[string]struct{ manifest, collection string }{
+		"sqlite":  {writeShop(t), "customers"},
+		"ingitdb": {writeManifest(t, ingitdbDir, "todo.yaml", ingitdbManifest), "lists"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", c.manifest}, func(handler http.Handler) {
+				db := map[string]string{"sqlite": "shop", "ingitdb": "todo"}[name]
+				target := "/v1/databases/" + db + "/records/" + c.collection + "/x"
+				for _, data := range []string{`{"due date":"2026-10-05"}`, `{"a;b":1}`, `{"name":"ok","due date":1}`} {
+					status, body := call(t, handler, http.MethodPut, target, "application/json", `{"data":`+data+`}`)
+					if status != http.StatusBadRequest || !strings.Contains(body, `"bad_request"`) {
+						t.Errorf("PUT %s = %d %s, want 400 bad_request", data, status, body)
+					}
+				}
+				status, body := call(t, handler, http.MethodPut, target, "application/json", `{"data":{"name":"ok"}}`)
+				if status != http.StatusNoContent {
+					t.Errorf("PUT of a plain name = %d %s, want 204", status, body)
+				}
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -385,9 +450,52 @@ func TestServeMountMistakesAreNamedByTheLibrary(t *testing.T) {
 	}
 }
 
+// A MySQL mount refuses every structured query whatever the preview switch
+// says: the library's allow-list does not clear the engine. Run through the
+// command, with the switch on, over a driver that counts calls.
+func TestServeMySQLQueriesAreRefusedWhateverTheSwitchSays(t *testing.T) {
+	t.Setenv(core.PreviewPostgresQueriesEnv, "1")
+	driver := &countingDB{}
+	mounted := 0
+	deps := defaultServeDeps()
+	deps.mountFile = fakeServerMount(driver, &mounted)
+	_, err := serveRun(t, deps, []string{"--manifest", writeManifest(t, t.TempDir(), "orders.yaml", mysqlManifest)}, func(handler http.Handler) {
+		if mounted != 1 {
+			t.Fatalf("the mysql manifest was mounted %d times", mounted)
+		}
+		const dtql = "from: {name: customers}\n"
+		for name, request := range map[string]struct {
+			target, contentType, body string
+			headers                   map[string]string
+		}{
+			"per-database dtql": {"/v1/databases/orders/dtql", "application/yaml", dtql, nil},
+			"query":             {"/v1/databases/orders/query", "application/json", `{"collection":"customers"}`, nil},
+			"cross-database":    {"/v1/dtql", "application/yaml", "from: {database: orders, name: customers}\n", nil},
+			"paged dtql":        {"/v1/databases/orders/dtql", "application/yaml", dtql, map[string]string{"OVDB-Page-Size": "10"}},
+		} {
+			status, body := callWith(t, handler, http.MethodPost, request.target, request.contentType, request.body, request.headers)
+			if status != http.StatusNotImplemented || !strings.Contains(body, `"query_unsupported"`) || !strings.Contains(body, "mysql") {
+				t.Errorf("%s = %d %s, want 501 query_unsupported naming mysql", name, status, body)
+			}
+		}
+		if driver.queries != 0 {
+			t.Errorf("the driver was reached %d times", driver.queries)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestServeHelpSaysWhatPostgresAndMySQLMountsDo(t *testing.T) {
 	for _, text := range []string{newServeCmd().Long, newInitCmd().Long} {
-		for _, want := range []string{"preview", "off by default", core.PreviewPostgresQueriesEnv + "=1", "MySQL mounts refuse structured queries"} {
+		for _, want := range []string{
+			"preview", "off by default", core.PreviewPostgresQueriesEnv + "=1", "MySQL mounts refuse structured queries",
+			// Both servers read the switch from their own environment.
+			"ovdb serve, or the local server that ovdb databases connect uses", "which neither server lists",
+			// What the preview does to the commands and routes an existing user has.
+			"ovdb list and the web console's browse", "every document on /v1/dtql is relational", "a document of one plain collection is answered as before",
+		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("help lacks %q:\n%s", want, text)
 			}
@@ -395,13 +503,60 @@ func TestServeHelpSaysWhatPostgresAndMySQLMountsDo(t *testing.T) {
 	}
 }
 
-func TestServeHelpNamesTheQueryLimits(t *testing.T) {
-	for _, text := range []string{newServeCmd().Long, newInitCmd().Long} {
-		for _, want := range []string{"/.well-known/openvaultdb", "query.limits", "8 sources", "limit 1000", "10 seconds"} {
+// Every number in the help is the one the server enforces: the per-request
+// limits are read from the discovery document of the real command, the
+// concurrency and snapshot limits from the library's defaults, which the
+// command does not change.
+func TestServeHelpNamesTheQueryLimitsTheServerEnforces(t *testing.T) {
+	var limits map[string]float64
+	_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", writeShop(t)}, func(handler http.Handler) {
+		status, body := call(t, handler, http.MethodGet, "/.well-known/openvaultdb", "", "")
+		var doc struct {
+			Query struct {
+				Limits map[string]float64 `json:"limits"`
+			} `json:"query"`
+		}
+		if status != http.StatusOK || json.Unmarshal([]byte(body), &doc) != nil {
+			t.Fatalf("discovery = %d %s", status, body)
+		}
+		limits = doc.Query.Limits
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limits) != 12 {
+		t.Fatalf("discovery lists %d limits, the help was written for 12: %v", len(limits), limits)
+	}
+	n := func(name string) int64 { return int64(limits[name]) }
+	queue, snapshot := server.DefaultQueryLimits(), server.DefaultSnapshotLimits()
+	for _, want := range []string{
+		fmt.Sprintf("reads at most %d sources", n("maxSources")),
+		fmt.Sprintf("with %d levels of subquery", n("maxSubqueryDepth")),
+		fmt.Sprintf("takes limit up to %s and offset up to %s", grouped(n("maxLimit")), grouped(n("maxOffset"))),
+		fmt.Sprintf("answers at most %s rows and %s.", grouped(n("maxResultRows")), mebibytes(n("maxResultBytes"))),
+		fmt.Sprintf("runs for at most %d seconds", n("timeoutMs")/1000),
+		fmt.Sprintf("reads at most %s rows and %s from its sources", grouped(n("maxSourceRows")), mebibytes(n("maxSourceBytes"))),
+		fmt.Sprintf("holds at most %s rows and %s, and a grouping %s groups", grouped(n("maxInMemoryJoinRows")), mebibytes(n("maxInMemoryJoinBytes")), grouped(n("maxGroups"))),
+		fmt.Sprintf("At most %d in-memory and %d database-side queries run at once", queue.InMemory, queue.Database),
+		fmt.Sprintf("a paged /dtql snapshot is at most %s and %s rows, %d at a time", mebibytes(snapshot.Bytes), grouped(int64(snapshot.Rows)), snapshot.Slots),
+		"GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there.",
+	} {
+		for _, text := range []string{newServeCmd().Long, newInitCmd().Long} {
 			if !strings.Contains(text, want) {
 				t.Errorf("help lacks %q:\n%s", want, text)
 			}
 		}
+	}
+}
+
+func TestGroupedAndMebibytes(t *testing.T) {
+	for n, want := range map[int64]string{0: "0", 8: "8", 100: "100", 1000: "1,000", 10000: "10,000", 100000: "100,000", 1000000: "1,000,000"} {
+		if got := grouped(n); got != want {
+			t.Errorf("grouped(%d) = %q, want %q", n, got, want)
+		}
+	}
+	if got := mebibytes(512 << 20); got != "512 MiB" {
+		t.Errorf("mebibytes = %q", got)
 	}
 }
 

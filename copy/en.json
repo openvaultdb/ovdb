@@ -346,6 +346,8 @@
   "data.failed.delete": "Couldn't delete {database}:{path}",
   "next.list_records": "See what's there",
   "next.replace_record": "Replace it instead",
+  "next.read_by_key": "This database does not answer queries; read a record by its key instead",
+  "next.postgres_preview": "PostgreSQL queries are a preview that is off by default: the server that mounts this database answers them only when its environment holds OVDB_PREVIEW_POSTGRES_QUERIES=1 when the mount opens",
   "next.describe_collection": "Describe the {collection} collection in the manifest of {database} (see `ovdb databases`), then reload it",
   "next.check_schema": "Check the record against the collection's schema in the database's manifest",
   "context.path_ignored": "Ignoring OVDB_PATH because OVDB_DATABASE isn't set.",

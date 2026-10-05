@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
 	"github.com/openvaultdb/openvaultdb-go/pkg/core"
+	"github.com/openvaultdb/openvaultdb-go/pkg/joinexec"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 )
@@ -24,17 +26,49 @@ import (
 // postgresPreviewHelp is the one statement of what a PostgreSQL or MySQL mount
 // does with a structured query. `ovdb serve --help`, `ovdb init --help` and the
 // README carry it word for word (a test holds them equal). The switch is read by
-// openvaultdb-go when a mount opens; ovdb never sets it.
-const postgresPreviewHelp = "PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /dtql) only when the environment of ovdb serve holds " +
-	core.PreviewPostgresQueriesEnv + "=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called. " +
-	"Key reads and writes are unaffected. Joins, grouping and aggregates also need postgres among the join engines, which ovdb serve does not list, so they answer 422 join_engine_unsupported on a PostgreSQL mount. MySQL mounts refuse structured queries whatever the switch says."
+// openvaultdb-go when a mount opens, in the environment of the server process
+// that mounts the database: ovdb serve, or the local server that
+// `ovdb databases connect` starts. ovdb never sets it.
+const postgresPreviewHelp = "PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /dtql) only when the environment of the server that mounts it (ovdb serve, or the local server that ovdb databases connect uses) holds " +
+	core.PreviewPostgresQueriesEnv + "=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called, and so do ovdb list and the web console's browse, which read records through those routes. " +
+	"Key reads and writes are unaffected. With the switch on, a relational document is still refused on a PostgreSQL mount with 422 join_engine_unsupported, because postgres is not among the join engines, which neither server lists: every document on /v1/dtql is relational, and on /v1/databases/{db}/dtql so is a join, grouping, aggregate, alias or subquery. " +
+	"On /v1/databases/{db}/dtql a document of one plain collection is answered as before. MySQL mounts refuse structured queries whatever the switch says."
 
-// queryLimitsHelp names the limits the server applies to a query. ovdb serve
-// runs openvaultdb-go with its defaults and has no flag for any of them.
-const queryLimitsHelp = "Query limits: a relational query (join, grouping, aggregate, subquery) reads at most 8 sources with 4 levels of subquery, and answers at most limit 1000 rows (offset 10000, 8 MiB). " +
-	"A request runs for at most 10 seconds and reads at most 100,000 rows and 64 MiB from its sources; a join read in memory holds at most 10,000 rows and 16 MiB, and a grouping 100,000 groups. " +
-	"At most 2 in-memory and 4 database-side queries run at once, and a paged /dtql snapshot is at most 512 MiB and 1,000,000 rows, 2 at a time. " +
-	"GET /.well-known/openvaultdb lists them as query.limits. ovdb serve runs with these defaults and has no flag to change them."
+// queryLimitsHelp names the limits the server applies to a query. Every number
+// in it is read from openvaultdb-go's own values, so a release of the library
+// that moves one moves the text (and the README, which a test holds equal).
+var queryLimitsHelp = queryLimitsText(server.DefaultQueryLimits(), server.DefaultSnapshotLimits(), core.RelationalBounds())
+
+// queryLimitsText states the limits a server built without limit options
+// applies. ovdb serve and the local server run openvaultdb-go with its
+// defaults, and ovdb has no flag for any of them.
+func queryLimitsText(q server.QueryLimits, snap server.SnapshotLimits, b core.ProfileBounds) string {
+	return fmt.Sprintf("Query limits: a relational query (join, grouping, aggregate, subquery) reads at most %d sources with %d levels of subquery, takes limit up to %s and offset up to %s, and answers at most %s rows and %s. "+
+		"A request runs for at most %d seconds and reads at most %s rows and %s from its sources; a join read in memory holds at most %s rows and %s, and a grouping %s groups. "+
+		"At most %d in-memory and %d database-side queries run at once, and a paged /dtql snapshot is at most %s and %s rows, %d at a time. "+
+		"GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there. "+
+		"ovdb serve and the local server run with these defaults and have no flag to change them.",
+		b.MaxSources, b.MaxSubqueryDepth, grouped(int64(b.MaxLimit)), grouped(int64(b.MaxOffset)), grouped(int64(joinexec.MaxResultRows)), mebibytes(joinexec.MaxResultBytes),
+		int(q.Timeout.Seconds()), grouped(int64(q.MaxSourceRows)), mebibytes(q.MaxSourceBytes), grouped(int64(joinexec.MaxInMemoryJoinRows)), mebibytes(joinexec.MaxInMemoryJoinBytes), grouped(int64(joinexec.MaxInMemoryGroups)),
+		q.InMemory, q.Database, mebibytes(snap.Bytes), grouped(int64(snap.Rows)), snap.Slots)
+}
+
+// grouped writes n with a comma between each group of three digits (1,000).
+func grouped(n int64) string {
+	digits := strconv.FormatInt(n, 10)
+	var out []byte
+	for i := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			out = append(out, ',')
+		}
+		out = append(out, digits[i])
+	}
+	return string(out)
+}
+
+// mebibytes writes a byte count as MiB, as the library's limits are all whole
+// numbers of them.
+func mebibytes(n int64) string { return grouped(n>>20) + " MiB" }
 
 // serveDeps are the two parts of `ovdb serve` that a test replaces: how one
 // manifest file becomes a mounted database, and what runs the assembled server.

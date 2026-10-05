@@ -226,15 +226,18 @@ type v1ErrorBody struct {
 
 // v1Codes is the /v1-to-envelope code table of configuration parity.
 var v1Codes = map[string]envelope.Code{
-	"bad_request":               envelope.InvalidArgument,
-	"invalid_dtql":              envelope.InvalidArgument,
-	"invalid_key":               envelope.InvalidArgument,
-	"invalid_grant":             envelope.Unauthorized,
-	"forbidden":                 envelope.Forbidden,
-	"access_denied":             envelope.Forbidden,
-	"not_found":                 envelope.NotFound,
-	"already_exists":            envelope.AlreadyExists,
-	"not_supported":             envelope.Unsupported,
+	"bad_request":    envelope.InvalidArgument,
+	"invalid_dtql":   envelope.InvalidArgument,
+	"invalid_key":    envelope.InvalidArgument,
+	"invalid_grant":  envelope.Unauthorized,
+	"forbidden":      envelope.Forbidden,
+	"access_denied":  envelope.Forbidden,
+	"not_found":      envelope.NotFound,
+	"already_exists": envelope.AlreadyExists,
+	"not_supported":  envelope.Unsupported,
+	// openvaultdb-go v0.11.8 and later: a structured query on an engine that
+	// is not cleared for queries (501), or one the adapter cannot run (422).
+	"query_unsupported":         envelope.Unsupported,
 	"authorization_unsupported": envelope.Unsupported,
 	"authorization_unavailable": envelope.StorageUnavailable,
 	"internal":                  envelope.Internal,
@@ -310,6 +313,15 @@ func MapV1(status int, body []byte, op DataOp) *V1Error {
 		e = e.WithNext(
 			envelope.Next{Label: uicopy.T("next.describe_collection", map[string]string{"collection": datapath.Printable(collection.Name()), "database": op.Database}), Command: "ovdb databases reload " + op.Database},
 			envelope.Next{Label: uicopy.T("next.see_databases", nil), Command: "ovdb databases"})
+	case v1Code == "query_unsupported":
+		// A refusal by design, not a fault of the server: the mount does not
+		// answer structured queries, and key reads and writes still work.
+		e = e.WithNext(envelope.Next{Label: uicopy.T("next.read_by_key", nil), Command: "ovdb get " + collection.Arg() + "/<key>" + op.Suffix})
+		if status == http.StatusNotImplemented && strings.Contains(v1Message, `"postgres"`) {
+			// The preview switch is read by the server that mounts the
+			// database; it is the one thing that changes the answer.
+			e = e.WithNext(envelope.Next{Label: uicopy.T("next.postgres_preview", nil)})
+		}
 	case v1Code == setup.GitIdentityMissingCode:
 		e = e.WithNext(setup.GitIdentityNext()...)
 	case code == envelope.ValidationFailed:
