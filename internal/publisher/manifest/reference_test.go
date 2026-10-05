@@ -310,19 +310,6 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 	return true
 }
 
-// d0Explained says whether a document that the Publisher profile accepts and the frozen Chinook checker refuses is explained by D0 (the Directory at its pin
-// is the reference for both profiles): the Directory accepts it too (the caller checks) and it names a recordset that is not a ModelSpec entity identifier,
-// the one rule of the checker that the profile no longer has.
-func d0Explained(doc []byte) bool {
-	m, _ := CheckManifest(doc, "ovdb.yaml", Publisher)
-	for _, name := range m.Recordsets.Value {
-		if !isModuleName(name) {
-			return true
-		}
-	}
-	return false
-}
-
 func manifestAccepted(doc []byte) (bool, Finding) { return acceptManifest(Directory, doc) }
 
 func mdAccepted(doc []byte, path string) (bool, Finding) { return acceptMd(Directory, doc, path) }
@@ -425,13 +412,13 @@ func runReference(t *testing.T, spec referenceSpec) {
 	if spec.profile == Directory {
 		allowed = driftCorpusLooser(t)
 	}
-	d0 := 0 // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains (see d0Explained)
+	d0 := 0 // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains: the Directory, the reference for both profiles, accepts each
 	for _, c := range manifests {
 		ok, first := acceptManifest(spec.profile, c.Document)
 		directoryAccepts := c.Verdict
 		c.Verdict = spec.verdict(c)
 		if !total.record(c, ok, first) && allowed == 0 {
-			if spec.profile == Publisher && directoryAccepts && d0Explained(c.Document) {
+			if spec.profile == Publisher && directoryAccepts {
 				d0++
 			} else {
 				t.Errorf("manifest accepted where the %s refuses (%s): %q", spec.refName, c.Family, c.Document)
@@ -581,9 +568,7 @@ var publisherSpec = referenceSpec{
 
 // driftKinds are the ways in which the Directory profile is stricter than the Directory only because a rule of the Directory has not been ported: each
 // is an entry of testdata/reference/drift.json and goes in the pull request of its slice. They are not bounds and not choices.
-var driftKinds = map[string]string{
-	"manifest-url": "NOT A BOUND: not yet ported. The Directory accepts a global database identity, a url that ends in a slash, since 574a7ad; Go still refuses it (slice A0c, listed in drift.json).",
-}
+var driftKinds = map[string]string{}
 
 // The kinds of the reader in sharedKinds are the rules of the places of the reader that have documents the references accept (and document-size, which is
 // checked before the reader): the list of kinds cannot drift from the table of places.

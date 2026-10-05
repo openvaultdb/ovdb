@@ -84,6 +84,8 @@ type options struct {
 	template bool
 	maxLen   int
 	puny     punycodeMode
+	// encoded allows canonical percent-encoded path segments, and example allows a host under .example: a global database identity (GlobalDatabaseID).
+	encoded, example bool
 }
 
 func defaults(template bool) options {
@@ -148,6 +150,22 @@ func ParsePublicHTTPSURLTemplate(s string) (URL, error) {
 func PublicHTTPSURLTemplate(s string) error {
 	_, err := ParsePublicHTTPSURLTemplate(s)
 	return err
+}
+
+// GlobalDatabaseID reports why s is not a global database identity, or nil: the canonical url of a database as the Directory takes it since it
+// published global identities (globalDatabaseIdProblem in urls.mjs, 574a7ad and d089fa8). It is a public https URL under every rule of [PublicHTTPSURL]
+// (a trailing slash is fine, a path of one segment or of several), with two differences. A path segment may hold percent escapes, when the segment is
+// the canonical encoding of its text (encodeURIComponent, and the five characters ! ' ( ) * encoded too, in upper case; see [EncodePathSegment]) and the
+// text, decoded again and again, never becomes ".", "..", a slash, a backslash or a control character. And a host under .example is allowed.
+func GlobalDatabaseID(s string) error {
+	_, err := ParseGlobalDatabaseID(s)
+	return err
+}
+
+// ParseGlobalDatabaseID is [GlobalDatabaseID] that returns the parts of an accepted identity.
+func ParseGlobalDatabaseID(s string) (URL, error) {
+	u, p := readURL(s, options{maxLen: MaxURLLength, encoded: true, example: true})
+	return u, asError(p)
 }
 
 // Homepage reports why s is not a manifest's homepage: a public https URL of at
@@ -296,7 +314,7 @@ func scanHost(rest string, o options) (int, *Problem) {
 	if numericLabel(lastLabel) {
 		return 0, problem(RuleHostNumeric, "host %s is an IP address, or could be read as one; a public mapping names a host", show(rest[:i]))
 	}
-	if reservedLabels[lastLabel] || prevLabel+"."+lastLabel == homeArpa {
+	if reservedLabels[lastLabel] && !(o.example && lastLabel == "example") || prevLabel+"."+lastLabel == homeArpa {
 		return 0, problem(RuleHostReserved, "host %s is a local, internal or reserved name, not a public host", show(rest[:i]))
 	}
 	return i, nil
@@ -354,12 +372,19 @@ func scanPath(rest string, start int, o options) (int, *Problem) {
 		dotsOnly     = true
 		placeholders = 0
 		offset       = -1
+		segStart     = start + 1
+		escaped      = false
 	)
-	endSegment := func() *Problem {
+	endSegment := func(end int) *Problem {
 		if segLen > 0 && dotsOnly && segLen <= 2 {
 			return problem(RulePathDotSegment, "must not have a . or .. segment")
 		}
-		segLen, dotsOnly = 0, true
+		if escaped {
+			if p := encodedSegmentProblem(rest[segStart:end]); p != nil {
+				return p
+			}
+		}
+		segLen, dotsOnly, escaped = 0, true, false
 		return nil
 	}
 	for i := start + 1; i < len(rest); i++ {
@@ -369,9 +394,14 @@ func scanPath(rest string, start int, o options) (int, *Problem) {
 			if segLen == 0 {
 				return 0, problem(RulePathEmptySeg, "has an empty path segment (//)")
 			}
-			if p := endSegment(); p != nil {
+			if p := endSegment(i); p != nil {
 				return 0, p
 			}
+			segStart = i + 1
+		case c == '%' && o.encoded:
+			segLen++
+			dotsOnly = false
+			escaped = true
 		case c == '.':
 			segLen++
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_', c == '~', c == '-':
@@ -390,7 +420,7 @@ func scanPath(rest string, start int, o options) (int, *Problem) {
 			return 0, badByte(c, "path", RulePathCharacter)
 		}
 	}
-	if p := endSegment(); p != nil {
+	if p := endSegment(len(rest)); p != nil {
 		return 0, p
 	}
 	if o.template && placeholders != 1 {

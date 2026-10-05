@@ -90,10 +90,21 @@ func checkRecordsetPage(template, name string, o options) *Problem {
 	if p := checkURL(before+"n"+after, o); p != nil {
 		return p
 	}
-	if name == "." || name == ".." || strings.ContainsAny(name, "/\\") || hasControl(name) {
+	return encodedSegmentProblem(encoded)
+}
+
+// encodedSegmentProblem judges one path segment that holds percent escapes: it must be the canonical encoding of its text (the encoder's own spelling,
+// upper-case hexadecimal, nothing encoded that needs no encoding), the text must not be "." or "..", have a slash, a backslash or a control character, and
+// must not become one of those when decoded again and again (a router that decodes a second time must not find a path separator or a dot segment).
+func encodedSegmentProblem(segment string) *Problem {
+	decoded, ok := decodeURIComponent(segment)
+	if !ok {
+		return problem(RulePercent, "has an invalid percent escape in the path")
+	}
+	if EncodePathSegment(decoded) != segment || decoded == "." || decoded == ".." || strings.ContainsAny(decoded, "/\\") || hasControl(decoded) {
 		return problem(RulePercent, "has a non-canonical or unsafe encoded path segment")
 	}
-	for nested := name; hasEscape(nested); {
+	for nested := decoded; hasEscape(nested); {
 		next, ok := decodeURIComponent(nested)
 		if !ok || next == nested {
 			break

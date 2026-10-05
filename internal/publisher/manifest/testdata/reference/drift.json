@@ -89,44 +89,6 @@
    ]
   },
   {
-   "kind": "global-identity-url",
-   "direction": "stricter",
-   "profile": "publisher",
-   "slice": "A0c",
-   "why": "a canonical url with a trailing slash or without the ovdb marker is refused; the Directory accepts global identities (574a7ad)",
-   "probes": [
-    "identity-trailing-slash",
-    "identity-no-ovdb-marker",
-    "identity-percent-segment",
-    "identity-two-segments"
-   ],
-   "real": [
-    {
-     "path": "ovdb.yaml",
-     "rule": "manifest-url"
-    }
-   ]
-  },
-  {
-   "kind": "global-identity-url",
-   "direction": "stricter",
-   "profile": "directory",
-   "slice": "A0c",
-   "why": "the same, under the Directory profile",
-   "probes": [
-    "identity-trailing-slash",
-    "identity-no-ovdb-marker",
-    "identity-percent-segment",
-    "identity-two-segments"
-   ],
-   "real": [
-    {
-     "path": "ovdb.yaml",
-     "rule": "manifest-url"
-    }
-   ]
-  },
-  {
    "kind": "representation-contract-key",
    "direction": "stricter",
    "profile": "publisher",

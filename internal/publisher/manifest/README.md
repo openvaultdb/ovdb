@@ -331,15 +331,15 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **7181 agree, 803 stricter, 0 accepted by Go where the
+On the corpus: **7186 agree, 798 stricter, 0 accepted by Go where the
 Directory refuses**.
 
-On the facts: 2193 manifests and 267 OVDB.md documents have their facts compared.
+On the facts: 2198 manifests and 267 OVDB.md documents have their facts compared.
 
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 5444 manifests, 3251 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 5444 manifests, 3246 of them refused.
 
 ## The proof, Publisher profile
 
@@ -388,16 +388,16 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7427 agree, 490 stricter, 67 accepted by Go where the Chinook
-checker refuses**: 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by D0 (the lead's default; the founder may
-overrule it): the Directory at its pin is the reference for both profiles, the Directory accepts each of them, and each names a recordset that is not a
-ModelSpec entity identifier, the one rule of the Chinook checker that the profile no longer has (the Directory takes recordsets as the database names them).
-`TestReferencePublisher` holds each of the 67 to that, and fails on one that is not. The facts: under the Publisher profile, 912 manifests and 104
+On the corpus: **7422 agree, 490 stricter, 72 accepted by Go where the Chinook
+checker refuses**: 72 of the 72 documents that the Publisher profile accepts and the Chinook checker refuses are explained by D0 (the lead's default; the founder may
+overrule it): the Directory at its pin is the reference for both profiles, and the Directory accepts each of them. `TestReferencePublisher` fails on a
+looser document that the Directory's verdict does not accept. They are documents the Chinook checker's own rules refused: a recordset not named like an
+entity, a canonical url that ends in a slash or has no `ovdb` marker. The facts: under the Publisher profile, 912 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 5133 manifests, 366 OVDB.md documents and 5904 pairs (of 8642) that the
+every one of the 5128 manifests, 366 OVDB.md documents and 5899 pairs (of 8642) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -597,7 +597,8 @@ for each, with the verdict of the reference at the pin.
 
 | Kind | Documents | Why |
 | --- | --- | --- |
-| `manifest-url` | 5 | NOT A BOUND: not yet ported. The Directory accepts a global database identity, a url that ends in a slash, since 574a7ad; Go still refuses it (slice A0c, listed in drift.json). |
+
+No kind at the moment: the corpus shows no document that Go refuses and the Directory accepts for a rule that is not a bound. (The corpus does not reach every rule; the probes do, and `drift.json` lists what they find.)
 
 ### Recorded differences: the Publisher profile's own
 

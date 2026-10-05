@@ -289,4 +289,8 @@ jobs:
       - name: entries.json is what the Directory registers at the pinned commit
         run: node internal/publisher/repo/testdata/directory/entries.mjs --check
       - name: The verdicts on the registered repositories are the recorded ones
-        run: OVDB_REAL_DIRECTORY=1 go test -count=1 -v -run TestRealDirectoryEntries ./internal/publisher/repo/
+        # The test passes when the pattern matches nothing and when it skips, so the log must show it passed: a rename or a missing variable fails the job.
+        run: |
+          set -o pipefail
+          OVDB_REAL_DIRECTORY=1 go test -count=1 -v -run TestRealDirectoryEntries ./internal/publisher/repo/ | tee "$RUNNER_TEMP/real-entries.log"
+          grep -q -- '^--- PASS: TestRealDirectoryEntries ' "$RUNNER_TEMP/real-entries.log"
