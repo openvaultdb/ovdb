@@ -87,7 +87,7 @@ func IsRepresentationPath(s string) bool {
 			return false
 		}
 		for j := 0; j < len(segment); j++ {
-			if c := segment[j]; !(isLetter(c) || c >= '0' && c <= '9' || c == '_' || c == '.' || c == '-') {
+			if c := segment[j]; !isLetter(c) && !isDigit(c) && c != '_' && c != '.' && c != '-' {
 				return false
 			}
 		}
