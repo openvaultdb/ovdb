@@ -151,7 +151,7 @@ const factsOf = (manifest) => {
   facts['meaning.address.ref'] = meaning?.ref ?? null;
   return facts;
 };
-const factFields = ['format', 'id', 'title', 'description', 'url', 'homepage', 'deployment.url', 'deployment.engine', 'deployment.discovery', 'deployment.recordset_page', 'model.modelspec', 'model.hcl', 'model.address', 'model.name', 'meaning.address', 'meaning.file', 'meaning.graph.id', 'meaning.graph.address', 'licences.model', 'licences.meaning', 'licences.data', 'publisher.name', 'publisher.url', 'publisher.repository', 'recordsets', 'recordsets_partial'];
+const factFields = ['format', 'id', 'title', 'description', 'url', 'homepage', 'deployment.url', 'deployment.engine', 'deployment.discovery', 'deployment.recordset_page', 'model.modelspec', 'model.hcl', 'model.address', 'model.name', 'meaning.address', 'meaning.file', 'meaning.graph.id', 'meaning.graph.address', 'licences.model', 'licences.meaning', 'licences.data', 'publisher.name', 'publisher.url', 'publisher.repository', 'recordsets', 'recordsets_partial', 'recordset_entities'];
 // Where directory.mjs at the pinned commit reads each field (the lines cited in the README table), found by
 // reading the file: a line reads a field when it names the whole path in one of the Directory's spellings: a chain
 // (`manifest.meaning?.graph?.address`), `need(manifest.meaning?.graph, 'address', ...)`, or a loop over field names
@@ -327,7 +327,7 @@ const publisherRules = [
   ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [505, 506, 507]],
   ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [539, 540]],
   ['licences are known SPDX atoms; data permits bounded conjunctions', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [385, 388]],
-  ['recordsets are names that look like ModelSpec entities', 'documents', 'manifest-recordsets', 'recordsets names must look like ModelSpec entity names', [554, 555]],
+  ['recordsets are names that look like ModelSpec entities', 'dropped', '', 'recordsets names must look like ModelSpec entity names', [554, 555]],
   ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [557, 558, 559, 560]],
   ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [223, 224]],
   ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [241, 242]],
@@ -1300,6 +1300,19 @@ const probeSpecs = [
   ['recordset-entities-unlisted-key', 'recordset_entities that names a recordset that is not listed', (m) => { m.recordset_entities = { NotListed: 'Album' }; return m; }],
   ['recordset-entities-not-one-to-one', 'recordset_entities that maps two recordsets to one entity', (m) => { m.recordsets = [...m.recordsets, 'dbo.One']; m.recordset_entities = { Album: 'Thing', 'dbo.One': 'Thing' }; return m; }],
   ['recordset-entities-bad-entity', 'recordset_entities whose value is not an identifier', (m) => { m.recordset_entities = { Album: 'not an entity' }; return m; }],
+  ['identity-percent-segment', 'a global identity with one percent-encoded segment (574a7ad, d089fa8)', (m) => { m.url = 'https://demodb.dev/order%20details/'; m.deployment.discovery = 'https://demodb.dev/.well-known/openvaultdb'; return m; }],
+  ['identity-two-segments', 'a global identity of two path segments (574a7ad)', (m) => { m.url = 'https://demodb.dev/a/b/'; m.deployment.discovery = 'https://demodb.dev/.well-known/openvaultdb'; return m; }],
+  ['recordset-backslash-name', 'a recordset name with a backslash (refused since 1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'dbo\\Log']; return m; }],
+  ['recordset-control-name', 'a recordset name with a tab (refused since 1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'a\tb']; return m; }],
+  ['recordset-del-name', 'a recordset name with DEL, U+007F (refused since 1c7e126)', (m) => { m.recordsets = [...m.recordsets, 'a\u007fb']; return m; }],
+  ['recordset-256-name', 'a recordset name of exactly 256 characters (accepted)', (m) => { m.recordsets = [...m.recordsets, 'r'.repeat(256)]; return m; }],
+  ['recordset-astral-258-name', 'a recordset name of 129 astral characters, 258 UTF-16 code units (refused: the length is JavaScript\'s)', (m) => { m.recordsets = [...m.recordsets, '\u{1f600}'.repeat(129)]; return m; }],
+  ['recordset-astral-256-name', 'a recordset name of 128 astral characters, 256 UTF-16 code units (accepted)', (m) => { m.recordsets = [...m.recordsets, '\u{1f600}'.repeat(128)]; return m; }],
+  ['recordset-entities-null', 'recordset_entities written as null', (m) => { m.recordset_entities = null; return m; }],
+  ['recordset-entities-empty', 'recordset_entities that is an empty mapping (accepted)', (m) => { m.recordset_entities = {}; return m; }],
+  ['recordset-entities-number-entity', 'recordset_entities whose value is a number', (m) => { m.recordset_entities = { Album: 7 }; return m; }],
+  ['recordset-entities-null-entity', 'recordset_entities whose value is null', (m) => { m.recordset_entities = { Album: null }; return m; }],
+  ['recordset-entities-bad-key', 'recordset_entities whose key is a recordset name with a slash', (m) => { m.recordsets = [...m.recordsets, 'a/b']; m.recordset_entities = { 'a/b': 'Thing' }; return m; }],
   ['licence-compound-data', 'licences.data written as MIT AND CC0-1.0 (ff4abd0)', (m) => { m.licences.data = 'MIT AND CC0-1.0'; return m; }],
   ['licence-compound-duplicate', 'licences.data with a repeated atom, MIT AND MIT (ff4abd0)', (m) => { m.licences.data = 'MIT AND MIT'; return m; }],
   ['licence-compound-model', 'licences.model written as a compound (the Directory refuses: single ids only)', (m) => { m.licences.model = 'MIT AND CC0-1.0'; return m; }],

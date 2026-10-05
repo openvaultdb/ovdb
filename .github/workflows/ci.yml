@@ -270,6 +270,9 @@ jobs:
   # internal/publisher/repo/testdata/directory/verdicts.json. The verdicts are explained, finding by finding, by internal/publisher/manifest/
   # testdata/reference/drift.json (a default test holds the two together). This job needs the network (the Directory and six repositories on github.com), which
   # is why it is not part of `go test`; it never reads a moving branch, only commits named in the files it checks.
+  # If it turns red because a pinned commit became unreachable (a force-push and garbage collection) or a repository was deleted or renamed, it also stops
+  # releases (release.yml requires this workflow to succeed): the remedy is a pin slice, which moves the entries and verdicts to the Directory's current
+  # commit, never a retry or a skipped job.
   publisher-real-entries:
     name: The Directory's registered databases, as registered (publisher check)
     runs-on: ubuntu-latest

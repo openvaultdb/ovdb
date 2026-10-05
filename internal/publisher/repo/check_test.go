@@ -681,6 +681,34 @@ func TestTheManifestMustAgreeWithTheModelFile(t *testing.T) {
 	only(t, Check(m, publisher()), RuleModelModule, modelPath, 0, "has no module.name")
 }
 
+// A native recordset name is the entity that recordset_entities says it is (the Directory's rule, 1c7e126): the entities are all there once, through their
+// own names or through the mapping, and a name that maps nowhere, or two that map to one entity, are what the Directory refuses.
+func TestRecordsetsAreTheEntitiesThroughTheMapping(t *testing.T) {
+	mapped := "  - Album\n  - dbo.Artist\nrecordset_entities:\n  dbo.Artist: Artist\n"
+	m, _ := withManifest("  - Album\n  - Artist\n", mapped)
+	if r := Check(m, publisher()); !r.OK() {
+		t.Errorf("a mapped native name: %v", r.Findings)
+	}
+	if r := Check(m, Options{Profile: manifest.Directory}); !r.OK() {
+		t.Errorf("a mapped native name, the Directory profile: %v", r.Findings)
+	}
+	m, _ = withManifest("  - Album\n  - Artist\n", "  - Album\n  - dbo.Artist\n")
+	if r := Check(m, publisher()); len(r.Findings) != 2 {
+		t.Errorf("a native name nothing maps: %v", r.Findings)
+	}
+	m, text := withManifest("  - Album\n  - Artist\n", "  - Album\n  - dbo.Artist\n  - Artist\nrecordset_entities:\n  dbo.Artist: Artist\n")
+	only(t, Check(m, publisher()), RuleRecordsets, "ovdb.yaml", lineOf(text, "- Album"), "recordset_entities maps more than one native recordset to the same ModelSpec entity")
+	m, _ = withManifest("  - Album\n  - Artist\n", "  - Album\n  - dbo.Artist\nrecordset_entities:\n  dbo.Artist: Nothing\n")
+	if r := Check(m, publisher()); len(r.Findings) != 2 || !strings.Contains(r.Findings[0].Message, `lacks the ModelSpec entities of "model/chinook.modelspec.json": "Artist"`) || !strings.Contains(r.Findings[1].Message, `are not ModelSpec entities of "model/chinook.modelspec.json": "dbo.Artist"`) {
+		t.Errorf("a name mapped to an entity that is not there: %v", r.Findings)
+	}
+	// A mapping that the manifest rules refuse maps nothing: the manifest's own finding is made, and the entity is as lacking as without it.
+	m, _ = withManifest("  - Album\n  - Artist\n", "  - Album\n  - dbo.Artist\nrecordset_entities:\n  - Artist\n")
+	if r := Check(m, publisher()); len(r.Findings) == 0 || r.Findings[0].Rule != "manifest-recordsets" {
+		t.Errorf("findings %v", r.Findings)
+	}
+}
+
 func TestRecordsetsAreTheEntitiesOfTheModelFile(t *testing.T) {
 	m, text := withManifest("  - Artist\n", "")
 	only(t, Check(m, publisher()), RuleRecordsets, "ovdb.yaml", lineOf(text, "- Album"), `recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Artist"`)
@@ -716,7 +744,7 @@ func TestRecordsetsAreTheEntitiesOfTheModelFile(t *testing.T) {
 	if r := Check(m, publisher()); len(r.Findings) != 2 || !strings.Contains(r.Findings[0].Message, "lacks") || !strings.Contains(r.Findings[1].Message, "names things") {
 		t.Errorf("findings %v", r.Findings)
 	}
-	m, _ = withManifest("  - Artist\n", "  - 1bad\n")
+	m, _ = withManifest("  - Artist\n", "  - a/b\n")
 	if r := Check(m, publisher()); len(r.Findings) != 1 || r.Findings[0].Rule != "manifest-recordsets" {
 		t.Errorf("findings %v", r.Findings)
 	}

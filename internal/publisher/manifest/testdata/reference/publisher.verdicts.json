@@ -270,8 +270,8 @@
   },
   {
    "id": "recordsets are names that look like ModelSpec entities",
-   "who": "documents",
-   "go": "manifest-recordsets",
+   "who": "dropped",
+   "go": "",
    "lines": [
     554,
     555

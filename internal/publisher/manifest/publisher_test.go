@@ -61,7 +61,9 @@ func TestPublisherRules(t *testing.T) {
 		{"graph id", edit(t, ownManifest, "    id: chinook\n", "    id: Chinook\n"), "manifest-meaning", 19, func(m Manifest) bool { return m.GraphID.Unusable() }},
 		{"licence", edit(t, ownManifest, "data: MIT", "data: GPL-3.0-or-later"), "manifest-licence", 26, func(m Manifest) bool { return m.LicenceData.Unusable() }},
 		{"licence case", edit(t, ownManifest, "  model: MIT\n", "  model: mit\n"), "manifest-licence", 27, func(m Manifest) bool { return m.LicenceModel.Unusable() }},
-		{"recordset name", edit(t, ownManifest, "  - Artist\n", "  - 1a\n"), "manifest-recordsets", 30, func(m Manifest) bool { return m.Recordsets.Unusable() }},
+		// The Chinook checker wanted a recordset to be named as a ModelSpec entity; the Directory takes any name, and so does this profile (D0).
+		{"native recordset name", edit(t, ownManifest, "  - Artist\n", "  - dbo.Artist 1a\n"), "", 0, nil},
+		{"recordset name with a slash", edit(t, ownManifest, "  - Artist\n", "  - dbo/Artist\n"), "manifest-recordsets", 31, func(m Manifest) bool { return m.Recordsets.Unusable() }},
 		{"recordset page", edit(t, ownManifest, "collections/{name}", "collections/"+strings.Repeat("x", 2040)+"/{name}"), "manifest-url", 11, nil},
 		{"shared name", edit(t, shared, "model:\n", "model:\n  name: other\n"), "manifest-model", 11, func(m Manifest) bool { return m.ModelName.Unusable() }},
 		{"shared own model address", edit(t, shared, "datatug/chinookdb/chinook?ref=", "acme/chinook-hosting/chinook?ref="), "manifest-model", 11, func(m Manifest) bool { return m.ModelAddress.Unusable() }},
@@ -191,8 +193,8 @@ func TestOwnerBoundary(t *testing.T) {
 // A recordset page is judged for every name of recordsets, so an expansion that is too long is refused at
 // the line of recordsets, and it makes recordsets not usable (the template alone is fine).
 func TestRecordsetPageExpansion(t *testing.T) {
-	long := "L" + strings.Repeat("x", 2100)
-	doc := edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - "+long+"\n")
+	long := "L" + strings.Repeat("x", 200)
+	doc := edit(t, edit(t, ownManifest, "  - Artist\n", "  - Artist\n  - "+long+"\n"), "collections/{name}", "collections/"+strings.Repeat("y", 1900)+"/{name}")
 	m, findings := CheckManifest([]byte(doc), "ovdb.yaml", Publisher)
 	if len(findings) != 1 || findings[0].Rule != "manifest-recordsets" || findings[0].Line != 30 || !strings.Contains(findings[0].Message, "the recordset page of") {
 		t.Fatalf("%v", findings)
@@ -223,6 +225,10 @@ func TestAllowListsAreTheCheckers(t *testing.T) {
 		where := strings.Join(set.path, ".")
 		seen[where] = true
 		want, ok := golden.AllowLists.Keys[where]
+		// The keys of the Directory that the checker did not know are allowed here too (D0): recordset_entities, since 1c7e126.
+		if where == "" {
+			want = slices.Sorted(slices.Values(append(slices.Clone(want), "recordset_entities")))
+		}
 		if got := slices.Sorted(slices.Values(set.keys)); !ok || !slices.Equal(got, want) {
 			t.Errorf("keys of %q: Go has %v, the checker %v", where, got, want)
 		}
