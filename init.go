@@ -86,5 +86,6 @@ schemas:
 	cmd.Flags().StringVar(&out, "out", "", "output manifest file (default <id>.yaml)")
 	_ = cmd.MarkFlagRequired("id")
 	cmd.Long += "\n\nEdit the file, then connect it to OVDB:\n  ovdb databases connect --manifest <absolute path>"
+	cmd.Long += "\n\n" + postgresPreviewHelp + "\n\n" + queryLimitsHelp
 	return cmd
 }

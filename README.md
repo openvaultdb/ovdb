@@ -103,6 +103,59 @@ ovdb self-update --dry-run
 ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
 ```
 
+### Queries
+
+`ovdb serve` answers DTQL documents on two routes: `/v1/databases/{db}/dtql` for
+the sources of one database, and `/v1/dtql` for one or several databases, where
+every source names its `database`. On the per-database route a document of one
+plain collection that names no other database is answered as before, with a key
+on every record; every document on `/v1/dtql` is relational, and so is any
+other document on the per-database route. A relational document has inner and
+left joins, `groupBy` and `having`, the aggregates `count`, `sum`, `avg`, `min`
+and `max`, column aliases, null tests and subqueries. Its answer is
+`{records, columns, execution}`; a row carries no record key, and
+`execution.route` says whether one database ran the whole document
+(`database`) or the server joined the sources itself (`in-memory`).
+
+`GET /.well-known/openvaultdb` states what the server runs: a `query` block
+(the endpoint, the document format, the features, the join engines and the
+limits) and, in the `capabilities` of each database, `joins` and `aggregation`.
+A database that advertises `joins: true` is not refused for being the database
+it is.
+
+What is refused:
+
+- `first` and `last` are not aggregates of the profile: a document that uses
+  either, in any position, is `400 invalid_dtql` before anything is read.
+- A relational document that names a database with access policies is
+  `422 authorization_unsupported`, with one fixed message, whichever
+  collections it names. A document of one plain collection is still read
+  through the policy.
+- On every engine, a write (`ovdb set`, `ovdb add`, a record `PUT`, `POST`
+  or batch operation) whose top-level field name is not a plain name is
+  `400 bad_request`: letters, digits, underscore and hyphen, in segments
+  separated by dots. Earlier releases accepted a field named `due date` on the
+  default engine; it is refused now. Queries hold the same rule for the
+  field names they use.
+- Only `inner` and `left` joins. A GitHub-backed inGitDB database never takes
+  part in a join. Field names in a relational document are plain names.
+- On a SQLite, PostgreSQL or MySQL mount, a key whose collection the manifest
+  does not declare is `404 not_found` (writes included), before the database is
+  asked. A SQLite collection written in the manifest as its SQL-quoted
+  identifier is read by its public name.
+
+**PostgreSQL and MySQL mounts.** PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /dtql) only when the environment of the server that mounts it (ovdb serve, or the local server that ovdb databases connect uses) holds OVDB_PREVIEW_POSTGRES_QUERIES=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called, and so do ovdb list and the web console's browse, which read records through those routes. Key reads and writes are unaffected. With the switch on, a relational document is still refused on a PostgreSQL mount with 422 join_engine_unsupported, because postgres is not among the join engines, which neither server lists: every document on /v1/dtql is relational, and on /v1/databases/{db}/dtql so is a join, grouping, aggregate, alias or subquery. On /v1/databases/{db}/dtql a document of one plain collection is answered as before. MySQL mounts refuse structured queries whatever the switch says. Earlier releases answered these queries on a PostgreSQL or MySQL mount.
+
+Query limits: a relational query (join, grouping, aggregate, subquery) reads at most 8 sources with 4 levels of subquery, takes limit up to 1,000 and offset up to 10,000, and answers at most 1,000 rows and 8 MiB. A request runs for at most 10 seconds and reads at most 100,000 rows and 64 MiB from its sources; a join read in memory holds at most 10,000 rows and 16 MiB, and a grouping 100,000 groups. At most 2 in-memory and 4 database-side queries run at once, and a paged /dtql snapshot is at most 512 MiB and 1,000,000 rows, 2 at a time. GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there. ovdb serve and the local server run with these defaults and have no flag to change them.
+
+**Manifests.** A manifest that cannot be read is reported with the line and the
+kind of each mistake and never with the text of the line. A manifest that
+declares two keys that are one table (a SQLite collection written both as
+`Items` and as its SQL-quoted form) with different fields does not mount
+(`conflicting collection names`). `dsn_env` and `token_env` must be the name of
+an environment variable. A SQLite mount waits up to 5 seconds for a lock that
+another connection holds before a write fails.
+
 ### Installing related CLIs
 
 `ovdb install` lists the other fleet CLIs relevant to OpenVaultDB (currently
