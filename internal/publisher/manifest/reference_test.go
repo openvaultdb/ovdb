@@ -205,8 +205,8 @@ func verdictOf(t testing.TB, b byte) bool {
 func TestGoldenDigests(t *testing.T) {
 	var want map[string]string
 	readGolden(t, "digests.json", &want)
-	if len(want) != 7 {
-		t.Fatalf("digests.json holds %d digests, want 6", len(want))
+	if len(want) != 8 {
+		t.Fatalf("digests.json holds %d digests, want 8", len(want))
 	}
 	for name, digest := range want {
 		raw, err := os.ReadFile("../" + name)
@@ -351,15 +351,17 @@ type referenceSpec struct {
 	golden  string // the verdict file
 	own     map[string]string
 	verdict func(referenceCase) bool
+	heading string // the heading of the README's table of `own`
 }
 
 const (
 	sharedHeading = "### Recorded differences: shared by both profiles"
 	ownHeading    = "### Recorded differences: the Publisher profile's own"
+	driftHeading  = "### Recorded differences: not yet ported (the Directory profile)"
 )
 
 var directorySpec = referenceSpec{
-	name: "Directory", profile: Directory, refName: "Directory", column: 0, golden: "directory.verdicts.json",
+	name: "Directory", profile: Directory, refName: "Directory", column: 0, golden: "directory.verdicts.json", own: driftKinds, heading: driftHeading,
 	verdict: func(c referenceCase) bool { return c.Verdict },
 }
 
@@ -426,6 +428,9 @@ func runReference(t *testing.T, spec referenceSpec) {
 	readGolden(t, spec.golden, &verdicts)
 	var total accounting
 	legacyRecordsets := 0
+	if spec.profile == Directory && driftCorpusLooser(t) != 4 {
+		t.Fatal("drift.json must account for exactly the four legacy recordset corpus cases")
+	}
 	for _, c := range manifests {
 		ok, first := acceptManifest(spec.profile, c.Document)
 		c.Verdict = spec.verdict(c)
@@ -448,6 +453,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 		_, findings := CheckOVDBMd(c.Document, spec.profile)
 		assertFindings(t, findings)
 	}
+
 	if total.looser != 0 {
 		t.Fatalf("%d documents are accepted by Go and refused by the %s", total.looser, spec.refName)
 	}
@@ -533,7 +539,7 @@ func runReference(t *testing.T, spec referenceSpec) {
 		}
 	}
 	if spec.own != nil {
-		own := readmeKinds(t, readme, ownHeading)
+		own := readmeKinds(t, readme, spec.heading)
 		for kind, row := range own {
 			n, _ := strconv.Atoi(row[0])
 			if want, ok := spec.own[kind]; !ok {
@@ -572,8 +578,12 @@ var publisherKinds = map[string]string{
 
 var publisherSpec = referenceSpec{
 	name: "Publisher", profile: Publisher, refName: "Chinook checker", column: 1, golden: "publisher.verdicts.json",
-	own: publisherKinds, verdict: func(c referenceCase) bool { return c.Publisher },
+	own: publisherKinds, heading: ownHeading, verdict: func(c referenceCase) bool { return c.Publisher },
 }
+
+// driftKinds are the ways in which the Directory profile is stricter than the Directory only because a rule of the Directory has not been ported: each
+// is an entry of testdata/reference/drift.json and goes in the pull request of its slice. They are not bounds and not choices.
+var driftKinds = map[string]string{}
 
 // The kinds of the reader in sharedKinds are the rules of the places of the reader that have documents the references accept (and document-size, which is
 // checked before the reader): the list of kinds cannot drift from the table of places.

@@ -584,6 +584,18 @@ of them with the same values, and 5 that differ only in the integer -0: the `yam
 are exact), which no rule can tell apart; the reader refuses 1164 documents that the yaml package reads (the kinds above), both refuse 811, and the reader
 reads 0 that the yaml package refuses.
 
+### Recorded differences: not yet ported (the Directory profile)
+
+The Directory's checker has moved since the first reference was pinned, and Go has not yet ported every rule it added. Where that makes Go
+refuse what the Directory accepts, the global-identity kind is recorded in the shared table above under both current profiles, until its slice lands; where it makes Go accept what the
+Directory refuses (the four documents counted above) it is recorded in `testdata/reference/drift.json` and by the test that holds the
+corpus to it. These are not bounds and not choices. `testdata/reference/drift.json` is the whole list, in two classes (Go looser first), with the slice
+that removes each entry; `TestDrift` fails when the list and what Go does disagree, in either direction, so an entry is removed in the pull request
+that ports its rule. The rules of the Directory that the corpus does not reach are covered by `testdata/reference/drift.probes.json`: one manifest
+for each, with the verdict of the reference at the pin.
+
+The five `legacy-identity-url` corpus differences are the global-identity gap (slice A0c in `drift.json`). The representation envelope and compound data licence probes now agree with the Directory: this implementation validates the optional envelope and accepts bounded compound data licences in both profiles. All probes remain committed, so `TestDrift` detects regressions.
+
 ### Recorded differences: the Publisher profile's own
 
 Two kinds are made by rules that the Publisher profile alone has, both about `meaning.graph.address` in the own form: the Directory's rule that the

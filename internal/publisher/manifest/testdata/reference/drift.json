@@ -1,0 +1,214 @@
+{
+ "format": "ovdb-drift/1",
+ "reference": {
+  "repository": "openvaultdb/directory",
+  "commit": "087067483686865b13cb76511ff86f7364ea47ff"
+ },
+ "about": "What Go does not yet do as the reference does, at the pinned Directory commit. Two classes, looser first: goLooser is where Go accepts and the reference refuses (it breaks 'Go never accepts what the reference refuses' until its slice lands, so those slices go first); goStricter is where Go refuses and the reference accepts. Each entry names the probes of manifest/testdata/reference/drift.probes.json, the findings of the registered repositories in repo/testdata/directory/verdicts.json, or the number of corpus documents, that it accounts for. TestDrift fails when this list and what Go does disagree, in either direction, so an entry is removed in the pull request of its slice.",
+ "goLooser": [
+  {
+   "kind": "recordset-name-form",
+   "direction": "looser",
+   "profile": "directory",
+   "slice": "A0d",
+   "why": "Go accepts a recordset name with a slash, a dot-segment name, or a name over 256 characters; the Directory refuses them (nativeRecordsetNameProblem, 1c7e126 and d089fa8)",
+   "probes": [
+    "recordset-slash-name",
+    "recordset-dot-segment-name",
+    "recordset-long-name"
+   ],
+   "corpus": 4
+  },
+  {
+   "kind": "recordset-name-form",
+   "direction": "looser",
+   "profile": "publisher",
+   "slice": "A0d",
+   "why": "the same, for a name over 256 characters (the Publisher profile refuses the others by its own identifier rule)",
+   "probes": [
+    "recordset-long-name"
+   ]
+  },
+  {
+   "kind": "recordset-entities-shape",
+   "direction": "looser",
+   "profile": "directory",
+   "slice": "A0d",
+   "why": "Go ignores recordset_entities; the Directory refuses one that is not a mapping, names a recordset that is not listed, maps two recordsets to one entity, or has a value that is not an identifier (1c7e126)",
+   "probes": [
+    "recordset-entities-not-a-mapping",
+    "recordset-entities-unlisted-key",
+    "recordset-entities-not-one-to-one",
+    "recordset-entities-bad-entity"
+   ]
+  }
+ ],
+ "goStricter": [
+  {
+   "kind": "descriptor-judged-as-manifest",
+   "direction": "stricter",
+   "profile": "publisher",
+   "slice": "A0b",
+   "why": "a publish entry that is a database descriptor (ovdb-database.json) is judged as a manifest; the Directory reads it as a descriptor (574a7ad)",
+   "real": [
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-format"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-id"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-keys"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-licence"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-meaning"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-model"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-recordsets"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-required"
+    }
+   ]
+  },
+  {
+   "kind": "descriptor-judged-as-manifest",
+   "direction": "stricter",
+   "profile": "directory",
+   "slice": "A0b",
+   "why": "the same, under the Directory profile",
+   "real": [
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-format"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-meaning"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-model"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-recordsets"
+    },
+    {
+     "path": "ovdb-database.json",
+     "rule": "manifest-required"
+    }
+   ]
+  },
+  {
+   "kind": "global-identity-url",
+   "direction": "stricter",
+   "profile": "publisher",
+   "slice": "A0c",
+   "why": "a canonical url with a trailing slash or without the ovdb marker is refused; the Directory accepts global identities (574a7ad)",
+   "probes": [
+    "identity-trailing-slash",
+    "identity-no-ovdb-marker"
+   ],
+   "real": [
+    {
+     "path": "ovdb.yaml",
+     "rule": "manifest-url"
+    }
+   ]
+  },
+  {
+   "kind": "global-identity-url",
+   "direction": "stricter",
+   "profile": "directory",
+   "slice": "A0c",
+   "why": "the same, under the Directory profile",
+   "probes": [
+    "identity-trailing-slash",
+    "identity-no-ovdb-marker"
+   ],
+   "real": [
+    {
+     "path": "ovdb.yaml",
+     "rule": "manifest-url"
+    }
+   ]
+  },
+  {
+   "kind": "native-recordset-names",
+   "direction": "stricter",
+   "profile": "publisher",
+   "slice": "A0d",
+   "why": "recordset names must look like ModelSpec entity names; the Directory takes native names such as dbo.DatabaseLog, mapped by recordset_entities (1c7e126, d089fa8)",
+   "probes": [
+    "recordset-dotted-name",
+    "recordset-spaced-name"
+   ],
+   "real": [
+    {
+     "path": "ovdb.yaml",
+     "rule": "manifest-recordsets"
+    }
+   ]
+  },
+  {
+   "kind": "native-recordset-names",
+   "direction": "stricter",
+   "profile": "directory",
+   "slice": "A0d",
+   "why": "the recordsets are compared with the model's entities by name only, so a native name is not an entity (package repo)",
+   "real": [
+    {
+     "path": "ovdb.yaml",
+     "rule": "repo-recordsets"
+    }
+   ]
+  },
+  {
+   "kind": "recordset-entities-key",
+   "direction": "stricter",
+   "profile": "publisher",
+   "slice": "A0d",
+   "why": "the closed key list of the Publisher profile refuses recordset_entities; the Directory has no closed list (D0)",
+   "probes": [
+    "recordset-entities-valid"
+   ],
+   "real": [
+    {
+     "path": "ovdb.yaml",
+     "rule": "manifest-keys"
+    }
+   ]
+  },
+  {
+   "kind": "licence-allow-list",
+   "direction": "stricter",
+   "profile": "publisher",
+   "slice": "A0e",
+   "why": "the Publisher profile's list of known licence ids is narrower than the Directory's SPDX shape (D0)",
+   "probes": [
+    "licence-cc-by-sa-3"
+   ],
+   "real": [
+    {
+     "path": "ovdb.yaml",
+     "rule": "manifest-licence"
+    }
+   ]
+  }
+ ]
+}

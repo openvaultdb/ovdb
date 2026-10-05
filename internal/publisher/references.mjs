@@ -110,3 +110,15 @@ export function checkoutReference(name, { explicit, parent, pin = references[nam
   if (name === 'directory') run(dir, 'npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund']);
   return dir;
 }
+
+// A generator composes some verdicts from expressions that the reference keeps inline (not exported), copied into the generator. When the reference
+// moves, those expressions may change; a generator that went on would write verdicts that are not the reference's. This names every anchor that the
+// pinned file does not hold, one per line, says what to do, and stops with exit status 1, with no stack: the message is the whole report.
+export function assertAnchors(source, file, commit, anchors, { err = console.error, exit = process.exit } = {}) {
+  const missing = anchors.filter((anchor) => !source.includes(anchor));
+  if (missing.length === 0) return;
+  err(`${file} at ${commit} no longer holds ${missing.length} of the ${anchors.length} expressions that this generator copies; the verdicts composed from them would not be the reference's:`);
+  for (const anchor of missing) err(`  missing anchor: ${anchor}`);
+  err('Read the reference at that commit, update the copied expression and the verdict composed from it together, then run the generator again.');
+  exit(1);
+}

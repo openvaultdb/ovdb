@@ -5,5 +5,6 @@
  "manifest/testdata/reference/publisher.verdicts.json": "611e6e7bc7a86159298853abf6a33b85c275419840dee375cda7cbefab260fb6",
  "manifest/testdata/reference/publisher.facts.json": "fb5e71ee5a7758a2cdb3eab15e3845c5d174e815313411ba52aa4dff59ac136e",
  "manifest/testdata/reference/values.json": "affb453879adc94f0799ce780e41222b808a7623f373ff801392ca48414e32ad",
+ "manifest/testdata/reference/drift.probes.json": "2461129852ddee022e57764c2a6075855ca20ddc4ded711e62f635e5a5122194",
  "rules/testdata/reference/matrix.golden.json": "7e5c0d9edfbc8fbb23ef43858419366238416c768e8401476e56c821abc44772"
 }

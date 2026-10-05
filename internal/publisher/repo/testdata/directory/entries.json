@@ -1,0 +1,51 @@
+{
+ "format": "ovdb-real-entries/1",
+ "registry": {
+  "repository": "openvaultdb/directory",
+  "commit": "087067483686865b13cb76511ff86f7364ea47ff"
+ },
+ "entries": [
+  {
+   "id": "adventureworks",
+   "repository": "https://github.com/demo-db/adventureworks",
+   "commit": "5028a27189b487d6fd8025fafc1307aada707fd2",
+   "manifest": "ovdb.yaml",
+   "url": "https://demodb.dev/adventureworks/"
+  },
+  {
+   "id": "chinook",
+   "repository": "https://github.com/demo-db/chinook",
+   "commit": "26e852cca00101f53a84ef8ee1f1ae389067f5cf",
+   "manifest": "ovdb.yaml",
+   "url": "https://demodb.dev/chinook/"
+  },
+  {
+   "id": "employees",
+   "repository": "https://github.com/demo-db/employees",
+   "commit": "2069e26e8fdb60bdb16507f75569a579cf3da7cf",
+   "manifest": "ovdb.yaml",
+   "url": "https://demodb.dev/employees/"
+  },
+  {
+   "id": "northwind",
+   "repository": "https://github.com/demo-db/northwind",
+   "commit": "e74726515c3833620b54b7a50d1d273276dd23c1",
+   "manifest": "ovdb.yaml",
+   "url": "https://demodb.dev/northwind/"
+  },
+  {
+   "id": "pubs",
+   "repository": "https://github.com/demo-db/pubs",
+   "commit": "6c06c5c7395b03ff1a02c2b1a21485add3e1b65b",
+   "manifest": "ovdb.yaml",
+   "url": "https://demodb.dev/pubs/"
+  },
+  {
+   "id": "sakila",
+   "repository": "https://github.com/demo-db/sakila",
+   "commit": "cb9a81a8cbedcd8831737f281f888d5d584fae85",
+   "manifest": "ovdb.yaml",
+   "url": "https://demodb.dev/sakila/"
+  }
+ ]
+}

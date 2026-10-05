@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { assertAsCommitted, checkoutReference } from './references.mjs';
+import { assertAnchors, assertAsCommitted, checkoutReference } from './references.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 let scratch; let remote; let pin;
@@ -181,4 +181,16 @@ test('with no parent the directory is new, private and not at a fixed name', () 
   assert.notEqual(parent, join(tmpdir(), 'ovdb-publisher-reference'));
   if (process.platform !== 'win32') assert.equal(statSync(parent).mode & 0o077, 0, 'readable or writable by others');
   assert.equal(readFileSync(join(dir, 'scripts', 'check.mjs'), 'utf8'), "export const licenceIds = ['MIT'];\n");
+});
+
+test('assertAnchors is silent when every anchor is held, and otherwise names each missing one and stops with status 1', () => {
+  const lines = [];
+  const codes = [];
+  const options = { err: (line) => lines.push(line), exit: (code) => codes.push(code) };
+  assertAnchors('one two three', 'f.mjs', 'c0ffee', ['one', 'three'], options);
+  assert.deepEqual([lines, codes], [[], []]);
+  assertAnchors('one two three', 'f.mjs', 'c0ffee', ['one', 'four', 'five'], options);
+  assert.deepEqual(codes, [1]);
+  assert.match(lines[0], /f\.mjs at c0ffee no longer holds 2 of the 3 expressions/);
+  assert.deepEqual(lines.filter((line) => line.startsWith('  missing anchor: ')), ['  missing anchor: four', '  missing anchor: five']);
 });
