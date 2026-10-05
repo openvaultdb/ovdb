@@ -127,6 +127,7 @@ form.
 | `publisher.repository` | directory.mjs 428, 429 | `PublisherRepository` |
 | `recordsets` | directory.mjs 264, 265, 275, 453 | `Recordsets` |
 | `recordsets_partial` | directory.mjs 239, 244, 460, 471, 472 | `RecordsetsPartial` |
+| `recordset_entities` | directory.mjs 269, 270, 433, 434 | `RecordsetEntities` |
 | `form` | directory.mjs 198, 204, 432 | `Form` |
 | `model.address.repository` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Repository` |
 | `model.address.module` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Module` |
@@ -224,7 +225,7 @@ its README; the ones that need the content of the model file or the meaning file
 | own form: meaning.graph.address is publisher.repository as an address, in any case | documents | `manifest-meaning` | ovdb-manifest.mjs 476, 477, 478 |
 | shared form: meaning.graph.address, when given, is meaning.address without its pin | documents | `manifest-meaning` | ovdb-manifest.mjs 510, 511 |
 | each licence is one of 18 SPDX ids | documents | `manifest-licence` | ovdb-manifest.mjs 356, 360 |
-| recordsets are names that look like ModelSpec entities | documents | `manifest-recordsets` | ovdb-manifest.mjs 525, 526 |
+| recordsets are names that look like ModelSpec entities | dropped | none (D0) | ovdb-manifest.mjs 525, 526 |
 | every recordset page the template makes is a public https URL | documents | `manifest-recordsets` | ovdb-manifest.mjs 528, 529, 530, 531 |
 | OVDB.md has no key but ovdb and publish | documents | `ovdbmd-keys` | ovdb-manifest.mjs 198, 199 |
 | publish lists each manifest once | documents | `ovdbmd-duplicate` | ovdb-manifest.mjs 216, 217 |
@@ -330,7 +331,7 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **7177 agree, 803 stricter, 4 accepted by Go where the
+On the corpus: **7181 agree, 803 stricter, 0 accepted by Go where the
 Directory refuses**.
 
 On the facts: 2193 manifests and 267 OVDB.md documents have their facts compared.
@@ -338,7 +339,7 @@ On the facts: 2193 manifests and 267 OVDB.md documents have their facts compared
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 5444 manifests, 3247 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 5444 manifests, 3251 of them refused.
 
 ## The proof, Publisher profile
 
@@ -387,13 +388,16 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7494 agree, 490 stricter, 0 accepted by Go where the Chinook
-checker refuses**. The facts: under the Publisher profile, 912 manifests and 104
+On the corpus: **7427 agree, 490 stricter, 67 accepted by Go where the Chinook
+checker refuses**: 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by D0 (the lead's default; the founder may
+overrule it): the Directory at its pin is the reference for both profiles, the Directory accepts each of them, and each names a recordset that is not a
+ModelSpec entity identifier, the one rule of the Chinook checker that the profile no longer has (the Directory takes recordsets as the database names them).
+`TestReferencePublisher` holds each of the 67 to that, and fails on one that is not. The facts: under the Publisher profile, 912 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 5129 manifests, 366 OVDB.md documents and 5900 pairs (of 8642) that the
+every one of the 5133 manifests, 366 OVDB.md documents and 5904 pairs (of 8642) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -425,7 +429,7 @@ it has none there: see the table of places.
 | `length-path` | 8 | 6 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
-| `url-length` | 5 | 9 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
+| `url-length` | 5 | 7 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
 | `yaml-character` | 25 | 12 | The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string. |
@@ -597,12 +601,13 @@ for each, with the verdict of the reference at the pin.
 
 ### Recorded differences: the Publisher profile's own
 
-Two kinds are made by rules that the Publisher profile alone has, both about `meaning.graph.address` in the own form: the Directory's rule that the
+Three kinds are made by rules that the Publisher profile alone has, both about `meaning.graph.address` in the own form: the Directory's rule that the
 address starts with the literal `meaning://` still applies (the Chinook checker accepts `MEANING://` and `Meaning://`: it compares the address in
 lower case), and the address is compared with `publisher.repository` in ASCII case only (see below).
 
 | Kind | Documents | Why |
 | --- | --- | --- |
+| `manifest-recordsets` | 2 | Not a bound: D0 (the lead's default; the Directory at its pin is the reference for both profiles). The Directory refuses a recordset name over 256 UTF-16 code units (nativeRecordsetNameProblem, 1c7e126); the Chinook checker, which read every name as an entity identifier, accepted it. |
 | `graph-address-case` | 2 | An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round. |
 | `graph-address-scheme` | 4 | An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://. |
 

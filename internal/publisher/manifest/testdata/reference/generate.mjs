@@ -150,7 +150,7 @@ const factsOf = (manifest) => {
   facts['meaning.address.ref'] = meaning?.ref ?? null;
   return facts;
 };
-const factFields = ['format', 'id', 'title', 'description', 'url', 'homepage', 'deployment.url', 'deployment.engine', 'deployment.discovery', 'deployment.recordset_page', 'model.modelspec', 'model.hcl', 'model.address', 'model.name', 'meaning.address', 'meaning.file', 'meaning.graph.id', 'meaning.graph.address', 'licences.model', 'licences.meaning', 'licences.data', 'publisher.name', 'publisher.url', 'publisher.repository', 'recordsets', 'recordsets_partial'];
+const factFields = ['format', 'id', 'title', 'description', 'url', 'homepage', 'deployment.url', 'deployment.engine', 'deployment.discovery', 'deployment.recordset_page', 'model.modelspec', 'model.hcl', 'model.address', 'model.name', 'meaning.address', 'meaning.file', 'meaning.graph.id', 'meaning.graph.address', 'licences.model', 'licences.meaning', 'licences.data', 'publisher.name', 'publisher.url', 'publisher.repository', 'recordsets', 'recordsets_partial', 'recordset_entities'];
 // Where directory.mjs at the pinned commit reads each field (the lines cited in the README table), found by
 // reading the file: a line reads a field when it names the whole path in one of the Directory's spellings: a chain
 // (`manifest.meaning?.graph?.address`), `need(manifest.meaning?.graph, 'address', ...)`, or a loop over field names
@@ -326,7 +326,8 @@ const publisherRules = [
   ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [476, 477, 478]],
   ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [510, 511]],
   ['each licence is one of 18 SPDX ids', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [356, 360]],
-  ['recordsets are names that look like ModelSpec entities', 'documents', 'manifest-recordsets', 'recordsets names must look like ModelSpec entity names', [525, 526]],
+  // Dropped under D0: the Directory takes a recordset as the database names it (native names, 1c7e126), so this profile no longer asks for an entity name.
+  ['recordsets are names that look like ModelSpec entities', 'dropped', '', 'recordsets names must look like ModelSpec entity names', [525, 526]],
   ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [528, 529, 530, 531]],
   ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [198, 199]],
   ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [216, 217]],

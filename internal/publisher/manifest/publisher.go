@@ -29,7 +29,7 @@ var allowedKeys = []struct {
 	path  []string
 	keys  []string
 }{
-	{"the manifest", nil, []string{"format", "id", "title", "description", "url", "deployment", "model", "meaning", "publisher", "licences", "recordsets", "recordsets_partial", "homepage"}},
+	{"the manifest", nil, []string{"format", "id", "title", "description", "url", "deployment", "model", "meaning", "publisher", "licences", "recordsets", "recordsets_partial", "recordset_entities", "homepage"}},
 	{"deployment", []string{"deployment"}, []string{"url", "engine", "discovery", "recordset_page"}},
 	{"model", []string{"model"}, []string{"modelspec", "hcl", "address", "name"}},
 	{"meaning", []string{"meaning"}, []string{"file", "graph", "address"}},
@@ -201,36 +201,20 @@ func (k *manifestChecker) ownForm(own string) {
 	}
 }
 
-// recordsetNames holds the recordset names to the names of ModelSpec entities, and
-// every page the template makes to the URL rules.
+// recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it.
 func (k *manifestChecker) recordsetNames() {
 	f := &k.out.Recordsets
-	if !f.Usable() {
+	if !f.Usable() || !k.out.RecordsetPage.Usable() {
 		return
 	}
 	for _, name := range f.Value {
-		if !isEntityName(name) {
-			k.c.add("manifest-recordsets", f.Line, "recordsets names must look like ModelSpec entity names (letters, digits, underscore), got %s", rules.Quote(name))
-			demote(f)
-			return
-		}
-	}
-	if !k.out.RecordsetPage.Usable() {
-		return
-	}
-	for _, name := range f.Value {
-		// The template has one {name}: the Directory's rule refuses a template with two, and the page is not usable then.
-		page := strings.ReplaceAll(k.out.RecordsetPage.Value, "{name}", name)
-		if _, err := rules.ParsePublicHTTPSURL(page); err != nil {
-			k.c.add("manifest-recordsets", f.Line, "the recordset page of %s, %s, %s", rules.Quote(name), rules.Quote(page), err.Error())
+		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
+			k.c.add("manifest-recordsets", f.Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
 			demote(f)
 			return
 		}
 	}
 }
-
-// isEntityName is a letter or _, then letters, digits and _.
-func isEntityName(s string) bool { return isModuleName(s) }
 
 // isRegistryID is lower-case letters and digits in groups separated by single hyphens.
 func isRegistryID(s string) bool {

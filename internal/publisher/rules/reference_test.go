@@ -142,11 +142,18 @@ var goFns = map[string]func(string) bool{
 	"engine":       IsEngine,
 	"licence":      IsLicenceID,
 	"text":         func(s string) bool { return !IsBlank(s) },
+	// The page of a recordset, from a template that is a plain public URL (see recordsetPageTemplate in the generator).
+	"recordset-name": func(s string) bool { return RecordsetName(s) == nil },
+	"recordset-page": func(s string) bool { return RecordsetPage(recordsetPageTemplate, s) == nil },
 }
+
+const recordsetPageTemplate = "https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}"
 
 // goErrs are the URL functions again, for the message of a refusal.
 var goErrs = map[string]func(string) error{
 	"url": PublicHTTPSURL, "url-template": PublicHTTPSURLTemplate, "homepage": Homepage,
+	"recordset-name": RecordsetName,
+	"recordset-page": func(s string) error { return RecordsetPage(recordsetPageTemplate, s) },
 }
 
 // A difference is lifted when the same input, with the one limit that the

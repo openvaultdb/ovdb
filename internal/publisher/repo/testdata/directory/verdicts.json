@@ -45,16 +45,6 @@
      },
      {
       "path": "ovdb.yaml",
-      "rule": "manifest-keys",
-      "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
       "rule": "manifest-url",
       "count": 1
      }
@@ -92,11 +82,6 @@
       "path": "ovdb.yaml",
       "rule": "manifest-url",
       "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "repo-recordsets",
-      "count": 2
      }
     ]
    }
@@ -233,11 +218,6 @@
      },
      {
       "path": "ovdb.yaml",
-      "rule": "manifest-keys",
-      "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
       "rule": "manifest-licence",
       "count": 3
      },
@@ -327,16 +307,6 @@
      },
      {
       "path": "ovdb.yaml",
-      "rule": "manifest-keys",
-      "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-recordsets",
-      "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
       "rule": "manifest-url",
       "count": 1
      }
@@ -374,11 +344,6 @@
       "path": "ovdb.yaml",
       "rule": "manifest-url",
       "count": 1
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "repo-recordsets",
-      "count": 2
      }
     ]
    }
@@ -423,11 +388,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-keys",
-      "count": 1
      },
      {
       "path": "ovdb.yaml",
@@ -512,11 +472,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-keys",
-      "count": 1
      },
      {
       "path": "ovdb.yaml",

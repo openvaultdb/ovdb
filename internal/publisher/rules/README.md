@@ -23,6 +23,9 @@ later changes and calls these functions.
 | `IsEngine` | `^[A-Za-z][A-Za-z0-9_.+-]{0,39}$`. |
 | `IsLicenceID` | The shape of an SPDX licence id, `^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$`; it does not know which ids SPDX has assigned. |
 | `IsBlank` | Whether a text is empty or only white space **as JavaScript's `trim()` sees it** (it strips U+FEFF and not U+0085; Go's `strings.TrimSpace` does the reverse). Every "is required" check must use it, never `strings.TrimSpace`. |
+| `RecordsetName` | A recordset name as the Directory takes it since it took native names: text that is not blank by JavaScript's `trim()`, at most 256 UTF-16 code units (an astral character counts for two), not `.` or `..`, with no `/`, `\` or control character (U+0000 to U+001F, U+007F). A space, a dot and any non-ASCII letter are allowed: `dbo.DatabaseLog`, `Order Details`. |
+| `EncodePathSegment` | JavaScript's `encodeURIComponent`, with `! ' ( ) *` encoded too: everything except `A-Z a-z 0-9 - _ . ~` as `%XX`, in upper case. |
+| `RecordsetPage` | The page of a recordset: the `deployment.recordset_page` template with `{name}` replaced by the encoded name. A name that needs no encoding makes an ordinary public https URL. One that does is accepted only as one whole path segment of the template's path (nothing else shares it), when nothing in the name, decoded again and again, can become `.`, `..`, a slash, a backslash or a control character, and the rest of the URL passes the ordinary rules. |
 | `Compare`, `ClaimedForm` | How one claimed address stands to another: `Same` when they are equal, `Under` when the first sits under the second at a path-segment boundary (`/dbs/chinook2` is not under `/dbs/chinook`), `Over` when the second sits under the first, `Apart` otherwise, all case-insensitively with trailing slashes set aside. A caller asks `Relation.Conflicts()` (true for everything but `Apart`, and for `Incomparable`, which is also the zero value), and never compares with `Same` or `Under` itself. |
 
 A refused URL comes back as a `*Problem` with a stable `Rule` (match on that,
@@ -77,7 +80,7 @@ imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
 v24.20.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **1497564** verdicts:
+network. The matrix is **2018343** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a

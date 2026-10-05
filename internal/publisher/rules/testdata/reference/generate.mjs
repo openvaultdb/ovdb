@@ -94,6 +94,7 @@ const claimRelation = (address, other) => {
 };
 
 // fns[name][reference] is the verdict function of a reference for a Go function.
+const recordsetPageTemplate = 'https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}';
 const fns = {
   url: {
     directory: (v) => urls.publicHttpsProblem(v) === null,
@@ -129,6 +130,17 @@ const fns = {
     chinookdb: (v) => chinook.enginePattern.test(v),
   },
   licence: { directory: (v) => manifestAccepts((m) => { m.licences.data = v; }, 'licences.data') },
+  // The Directory takes a recordset as the database names it (nativeRecordsetNameProblem, an inline rule of manifestProblems), and writes its page URL from
+  // the name as one encoded path segment (encodePathSegment, and publicHttpsProblem's encodedPathSegment, in analyseDatabase). Both are the Directory's own code.
+  'recordset-name': {
+    directory: (v) => !directory.manifestProblems({ ...baseManifest(), recordsets: [v] }).some((problem) => problem.startsWith('recordsets ')),
+  },
+  'recordset-page': {
+    directory: (v) => {
+      const encoded = urls.encodePathSegment(v);
+      return urls.publicHttpsProblem(recordsetPageTemplate.replace('{name}', encoded), { encodedPathSegment: encoded.includes('%') ? encoded : undefined }) === null;
+    },
+  },
 };
 const references = ['directory', 'chinookdb'];
 let thrown = 0;
@@ -156,7 +168,9 @@ const ranges = (codes) => {
 
 const wide = [[0, 0xffff]];
 const narrow = [[0, 0x24f], [0xd7ff, 0xe000], [0xff00, 0xffff]];
-const sweepRanges = { wide, narrow };
+// Without the surrogates: encodeURIComponent throws on a lone one, and no manifest can hold one (the reader refuses an unpaired \\ud800 escape).
+const scalar = [[0, 0xd7ff], [0xe000, 0xffff]];
+const sweepRanges = { wide, narrow, scalar };
 const codesOf = (spans) => spans.flatMap(([from, to]) => Array.from({ length: to - from + 1 }, (_, at) => from + at));
 const sweepSpecs = [];
 const urlSweep = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'wide', template });
@@ -183,6 +197,8 @@ const smallSweep = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'na
 const smallSweepWide = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'wide', template });
 for (const [name, template] of [['id-middle', 'a{C}b'], ['id-first', '{C}a'], ['id-last', 'a{C}'], ['id-alone', '{C}']]) smallSweep(name, 'id', template);
 for (const [name, template] of [['text-alone', '{C}'], ['text-lead', '{C}a'], ['text-trail', 'a{C}'], ['text-between', ' {C} ']]) smallSweepWide(name, 'text', template);
+for (const [name, template] of [['recordset-name-middle', 'a{C}b'], ['recordset-name-first', '{C}a'], ['recordset-name-last', 'a{C}'], ['recordset-name-alone', '{C}']]) smallSweepWide(name, 'recordset-name', template);
+for (const [name, template] of [['recordset-page-middle', 'a{C}b'], ['recordset-page-first', '{C}a'], ['recordset-page-alone', '{C}']]) sweepSpecs.push({ name, fn: 'recordset-page', span: 'scalar', template });
 const forty = 'a'.repeat(40);
 smallSweep('commit-first', 'commit', `{C}${forty.slice(1)}`);
 smallSweep('commit-last', 'commit', `${forty.slice(1)}{C}`);
@@ -223,6 +239,8 @@ const productSpecs = [
   { name: 'repository-segments', fn: 'repository', template: 'https://github.com/{S}', alphabet: 'a./-g', min: 1, max: 5 },
   { name: 'engine-shape', fn: 'engine', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
   { name: 'licence-shape', fn: 'licence', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
+  { name: 'recordset-name-shape', fn: 'recordset-name', template: '{S}', alphabet: 'a. /\\\t', min: 0, max: 4 },
+  { name: 'recordset-page-shape', fn: 'recordset-page', template: '{S}', alphabet: 'a.%2F5c ~', min: 0, max: 5 },
 ];
 function* strings(alphabet, min, max) {
   const letters = [...alphabet];
@@ -400,6 +418,18 @@ const textList = {
   ].map((input) => [input, verdicts(['text'], input)]),
 };
 
+const nameFns = ['recordset-name', 'recordset-page'];
+const astral = '\u{1f600}';
+const recordsetList = {
+  fns: nameFns,
+  cases: [
+    'Album', 'dbo.DatabaseLog', 'Order Details', 'a b', ' a', 'a ', '', ' ', '.', '..', '...', 'a.', '.a', 'a..b', 'a/b', '/a', 'a/', 'a\\b', 'a\tb', 'a\nb', 'a\u0000b', 'a\u001fb', 'a\u007fb', 'a\u0080b',
+    '\u00e9', 'caf\u00e9', '\u0430', '\u0085', '\ufeff', 'a\u00a0b', '\u00a0', 'a%b', 'a%2Fb', 'a%2fb', 'a%252Fb', 'a%252F', '%2e', '%2E%2E', '%252e', '%25252e', '%252e%252e', '%2', '%', '%zz', '%41', '%41%', '%C3', '%C3%A9', '%FF', '%c0%80',
+    '%ED%A0%80', '%252', '%25%', '%2525', '%2F', '%5C', '%00', '%0a', '%7F', "a'b", 'a(b)', 'a!b', 'a*b', 'a~b', 'a_b', 'a-b', 'a&b', 'a"b', 'a<b>', 'a?b', 'a#b', 'a:b', 'a@b', 'a{b}', '{name}', 'a{name}b',
+    '1a', 'a-b', 'A', 'a'.repeat(255), 'a'.repeat(256), 'a'.repeat(257), 'a'.repeat(1000), astral, astral.repeat(127), astral.repeat(128), astral.repeat(129), `${'a'.repeat(254)}${astral}`, `${'a'.repeat(255)}${astral}`,
+    'a\u2028b', 'a\u2029b', 'Dbo.Table 1', 'x'.repeat(200),
+  ].map((input) => [input, verdicts(nameFns, input)]),
+};
 const urlList = { fns: urlFns, cases: [...urlLike, ...punycodeInputs].map((input) => [input, verdicts(urlFns, expand(input))]) };
 // A string that no reference accepts as a URL still goes through the repository rule below.
 
@@ -467,7 +497,7 @@ const countCases = () => {
   let total = 0;
   for (const sweep of sweeps) total += codesOf(sweepRanges[sweep.span]).length;
   for (const product of products) total += product.size;
-  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList]) total += list.cases.length * list.fns.length;
+  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList]) total += list.cases.length * list.fns.length;
   total += claimAddresses.length * claimAddresses.length;
   return total;
 };
@@ -482,7 +512,7 @@ const golden = {
   sweepRanges,
   sweeps,
   products,
-  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList],
+  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList],
   claims: claimList,
 };
 
