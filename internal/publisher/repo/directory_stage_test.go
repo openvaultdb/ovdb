@@ -67,6 +67,12 @@ func readStageGolden(t testing.TB) stageGolden {
 // stageStricterKinds are the ways in which Go refuses a repository that the Directory's file stage accepts, each with the reason. Each is a choice of the
 // Publisher check that a slice may change (A0w makes model.hcl optional, as the Directory has it); none is a rule of the Directory.
 var stageStricterKinds = map[string]string{
+	"yaml-key":                 "the reader refuses a mapping key that YAML reads as a number, a boolean or null; the Directory's YAML library reads it as a key",
+	"yaml-anchor":              "the reader refuses anchors and aliases; the Directory's library expands them",
+	"yaml-tag":                 "the reader refuses tags (!, !!); the Directory's library resolves them",
+	"yaml-directive":           "the reader refuses a %YAML or %TAG directive; the Directory's library follows it",
+	"yaml-documents":           "the reader refuses a document end marker and a second document; the Directory's library reads the first document",
+	"yaml-unsupported":         "the reader refuses a quoted value written over more than one line; the Directory's library reads it",
 	"model-hcl-required":       "model.hcl is required by the manifest rules of the Publisher profile; the Directory reads it only when it is written, and takes the model file from the meaning file's models: entry (A0w)",
 	"module-name-underscore":   "module.name must start with a letter (the checker's pattern); the Directory's identifier pattern also allows _",
 	"meaning-license-required": "the meaning file's license must be text and equal to licences.meaning; the Directory compares it only when the file has a text license",

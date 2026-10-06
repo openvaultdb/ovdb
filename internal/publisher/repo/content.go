@@ -102,6 +102,12 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		c.add(file, RuleModelJSON, jsonLine(data, err), "is not a ModelSpec JSON file: %s", ascii(err.Error()))
 		return "", nil
 	}
+	// The Directory reports the version first (parseModelSpec), then the module, then the entities; the version is the first issue, if there is one.
+	for _, issue := range spec.issues {
+		if issue.rule == RuleModelVersion {
+			c.add(file, issue.rule, 0, "%s", issue.text)
+		}
+	}
 	if spec.module == "" {
 		c.add(file, RuleModelModule, 0, "has no module.name that is a ModelSpec module name (a letter, then letters, digits and _)")
 	}
@@ -109,7 +115,9 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		c.add(file, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)")
 	}
 	for _, issue := range spec.issues {
-		c.add(file, issue.rule, 0, "%s", issue.text)
+		if issue.rule != RuleModelVersion {
+			c.add(file, issue.rule, 0, "%s", issue.text)
+		}
 	}
 	if name := m.ModelName; name.Usable() && spec.module != "" && name.Value != spec.module {
 		c.add(path, RuleModelName, name.Line, "model.name is %s, but %s is module %s", rules.Quote(name.Value), rules.Quote(file), rules.Quote(spec.module))
