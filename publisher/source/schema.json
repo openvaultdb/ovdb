@@ -1,0 +1,372 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "provider",
+    "resources",
+    "recordsets",
+    "rights",
+    "readEvidence",
+    "admission"
+  ],
+  "properties": {
+    "format": {
+      "const": "ovdb-http-source/1"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "url"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2000
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "method",
+          "contentType",
+          "timeoutMs",
+          "maxBytes",
+          "mode",
+          "retention",
+          "cache",
+          "redirect",
+          "browserAccess"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "pattern": "^https://",
+            "maxLength": 2000
+          },
+          "method": {
+            "const": "GET"
+          },
+          "contentType": {
+            "enum": [
+              "text/xml",
+              "application/xml",
+              "application/json"
+            ]
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30000
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2097152
+          },
+          "mode": {
+            "const": "live"
+          },
+          "retention": {
+            "const": "none"
+          },
+          "cache": {
+            "const": "no-store"
+          },
+          "redirect": {
+            "const": "error"
+          },
+          "browserAccess": {
+            "const": "unverified"
+          }
+        }
+      }
+    },
+    "recordsets": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "providerSourceId",
+          "resource",
+          "decoder",
+          "entity",
+          "keyFields",
+          "fieldMapping",
+          "context"
+        ],
+        "properties": {
+          "providerSourceId": {
+            "type": "string",
+            "pattern": "^provider:[a-z][a-z0-9-]{0,63}/[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "resource": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "decoder": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}/[1-9][0-9]*$"
+          },
+          "entity": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          },
+          "keyFields": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+            }
+          },
+          "fieldMapping": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 64,
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+            }
+          },
+          "context": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 16,
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            }
+          }
+        }
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "declaration",
+        "terms",
+        "attribution",
+        "freeSource",
+        "transformations"
+      ],
+      "properties": {
+        "terms": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text",
+              "url"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "\\S"
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https://[^?#]+(#[A-Za-z0-9._~-]+)?$",
+                "maxLength": 2000,
+                "$comment": "The Go parser additionally requires the public host/path policy; no local/private/reserved targets, credentials or ports."
+              }
+            }
+          }
+        },
+        "attribution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text",
+            "url"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://[^?#]+(#[A-Za-z0-9._~-]+)?$",
+              "maxLength": 2000,
+              "$comment": "The Go parser additionally requires the public host/path policy; no local/private/reserved targets, credentials or ports."
+            }
+          }
+        },
+        "freeSource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text",
+            "url"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://[^?#]+(#[A-Za-z0-9._~-]+)?$",
+              "maxLength": 2000,
+              "$comment": "The Go parser additionally requires the public host/path policy; no local/private/reserved targets, credentials or ports."
+            }
+          }
+        },
+        "transformations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          }
+        },
+        "declaration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "url"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://[^?#]+(#[A-Za-z0-9._~-]+)?$",
+              "maxLength": 2000,
+              "$comment": "The Go parser additionally requires the public host/path policy; no local/private/reserved targets, credentials or ports."
+            }
+          }
+        }
+      }
+    },
+    "readEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "classification",
+        "inputVerification"
+      ],
+      "properties": {
+        "format": {
+          "const": "ovdb-provider-read/1"
+        },
+        "classification": {
+          "const": "executor-observed"
+        },
+        "inputVerification": {
+          "const": "dynamic-unpinned"
+        }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "executionEnabled",
+        "gates"
+      ],
+      "properties": {
+        "status": {
+          "const": "blocked"
+        },
+        "executionEnabled": {
+          "const": false
+        },
+        "gates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runtime",
+            "semantic",
+            "rights",
+            "paid"
+          ],
+          "properties": {
+            "runtime": {
+              "const": "blocked"
+            },
+            "semantic": {
+              "const": "blocked"
+            },
+            "rights": {
+              "const": "blocked"
+            },
+            "paid": {
+              "const": "blocked"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openvaultdb.com/schemas/http-source-1.json",
+  "description": "Preparatory immutable HTTP source definition only. Never enables execution or authorizes source-data copies."
+}

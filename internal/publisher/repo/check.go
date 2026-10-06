@@ -141,6 +141,7 @@ func Check(r Reader, o Options) manifest.Result {
 	c.res.Findings = append(c.res.Findings, j.Notice("OVDB.md")...)
 	if !c.res.OK() {
 		c.res.Manifest.SourceRights = nil
+		c.res.Manifest.SourceDefinitionEvidence = nil
 	}
 	return c.res
 }
@@ -193,7 +194,7 @@ func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, st
 			continue // a descriptor has no attachment, and is not judged as a manifest
 		}
 		attachment, err := manifest.RepresentationAttachment(data)
-		if attachment != nil || err != nil || manifest.HasDataRights(data) {
+		if attachment != nil || err != nil || manifest.HasDataRights(data) || manifest.HasSourceDefinition(data) {
 			return attachmentPresent, head, nil
 		}
 		// RepresentationAttachment deliberately leaves malformed syntax to the
@@ -315,13 +316,16 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		return
 	}
 	if c.original != nil {
-		if attachment, err := manifest.RepresentationAttachment(doc); attachment != nil || err != nil || manifest.HasDataRights(doc) {
+		if attachment, err := manifest.RepresentationAttachment(doc); attachment != nil || err != nil || manifest.HasDataRights(doc) || manifest.HasSourceDefinition(doc) {
 			c.restartOriginal = true
 			return
 		}
 	}
 	m, attachment, findings := c.j.ManifestWithAttachment(doc, path)
-	c.dataRights(&m, path, doc, o.Dependencies)
+	if !m.SourceDefinition.Present {
+		c.dataRights(&m, path, doc, o.Dependencies)
+	}
+	c.sourceDefinition(&m, path, doc)
 	if !c.judgedFirst {
 		c.res.Manifest, c.judgedFirst = m, true
 	}
@@ -543,6 +547,11 @@ func lookup(entries []Entry, name string) (Kind, string) {
 // attached completes structural closure and then the separate required data
 // stage. Neither establishes canonical semantic admission or runtime success.
 func (c *checker) attached(m manifest.Manifest, attachment manifest.Fact[*representation.Reference], dependencies DependencyReaders) {
+	// A conflicting dynamic definition is refused by the manifest judge; never
+	// read retained input proofs while judging that attempted mixed profile.
+	if m.SourceDefinition.Present {
+		return
+	}
 	if !attachment.Usable() {
 		return
 	}
