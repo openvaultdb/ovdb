@@ -951,3 +951,34 @@ func TestTheModelsEntryIsJudgedByItselfWithoutModelHCL(t *testing.T) {
 		}
 	}
 }
+
+// The Directory holds meaning.graph.address and the own-form model.address to the repository that publisher.repository names (through the record); the
+// Directory profile does it here, in the repository stage, and the Publisher profile in the manifest stage.
+func TestTheAddressesNameThePublishersRepositoryUnderTheDirectoryProfile(t *testing.T) {
+	directory := Options{Profile: manifest.Directory}
+	for name, c := range map[string]struct {
+		find, replace string
+		rule, text    string // of the one finding, or "" for none
+	}{
+		"as written":                      {find: "", replace: ""},
+		"a graph address in another case": {find: "meaning://github.com/datatug/chinookdb", replace: "meaning://GitHub.com/DataTug/ChinookDB"},
+		"another graph address":           {find: "meaning://github.com/datatug/chinookdb", replace: "meaning://github.com/datatug/other", rule: RuleAddress, text: "meaning.graph.address must be meaning://github.com/datatug/chinookdb"},
+		"another model address":           {find: "modelspec://github.com/datatug/chinookdb/chinook", replace: "modelspec://github.com/datatug/other/chinook", rule: RuleAddress, text: `model.address names "github.com/datatug/other", but publisher.repository is "github.com/datatug/chinookdb"`},
+	} {
+		m, _ := withManifest(c.find, c.replace)
+		got := Check(m, directory).Findings
+		switch {
+		case c.rule == "" && len(got) != 0, c.rule != "" && (len(got) != 1 || got[0].Rule != c.rule || !strings.Contains(got[0].Message, c.text)):
+			t.Errorf("%s: findings %v", name, got)
+		}
+	}
+	// Without publisher.repository there is no repository to compare with here, and with one that is not a repository the manifest rules speak.
+	for name, replace := range map[string]string{"none": "", "not a repository": "  repository: not-a-url\n"} {
+		m, _ := withManifest("  repository: https://github.com/datatug/chinookdb\n", replace)
+		for _, f := range Check(m, directory).Findings {
+			if f.Rule == RuleAddress {
+				t.Errorf("%s: %v", name, f)
+			}
+		}
+	}
+}

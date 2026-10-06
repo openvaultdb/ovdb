@@ -1378,7 +1378,8 @@
    ],
    "directory": "refuses",
    "problem": "ovdb.yaml: meaning.graph.address is meaning://github.com/demo-db/other, but the MeaningGraph registry registers chinook as meaning://github.com/demo-db/chinook",
-   "outcome": "looser:F7"
+   "outcome": "agree",
+   "go": "repo-address"
   },
   {
    "id": "has-recordset-page",
@@ -1534,7 +1535,8 @@
    ],
    "directory": "refuses",
    "problem": "ovdb.yaml: model.address names github.com/demo-db/other, but the model's files are in github.com/demo-db/chinook; a manifest with its own model files addresses its own repository. To use a model published in another repository, remove the l",
-   "outcome": "looser:F7"
+   "outcome": "agree",
+   "go": "repo-address"
   },
   {
    "id": "has-publisher-repository",

@@ -25,6 +25,7 @@ const (
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
 	RuleModelAddress  = "repo-model-address"  // the module of model.address is not the model file's
 	RuleRecordsets    = "repo-recordsets"     // recordsets are not the entities of the model
+	RuleAddress       = "repo-address"        // meaning.graph.address or model.address does not name the repository that publisher.repository names (the Directory profile)
 
 	RuleEntitiesLimit   = "repo-model-entities-limit" // the model file has more than MaxEntities entities
 	RuleRecordsetsLimit = "repo-recordsets-limit"     // the manifest lists more than MaxRecordsets recordsets
@@ -52,6 +53,9 @@ type ownFiles struct {
 // content holds what the model file and the meaning file say to what the manifest says (the checker's lines 408-468 and 535-539). It judges nothing of
 // a file that was not read: its finding is already made.
 func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
+	if c.res.Profile == manifest.Directory {
+		c.addresses(path, m)
+	}
 	module := ""
 	var facts *manifest.ModelFacts
 	if f.haveModel {
@@ -80,6 +84,23 @@ func (c *checker) entryFile(path string) string {
 		return "does not exist"
 	}
 	return "is " + kind.String()
+}
+
+// addresses holds meaning.graph.address and the own-form model.address to the repository that publisher.repository names, as the Directory does through the
+// record: the record's repository is the one the manifest names, the graph is registered for it at the address that is derived from it, and the manifest's address
+// is the registry's (directory.mjs 428, 495-500 and 546). Without publisher.repository there is no repository to compare with here. The Publisher profile holds the
+// same two facts in the manifest stage (manifest-meaning, manifest-model), with the Chinook checker's wording, so only the Directory profile needs it.
+func (c *checker) addresses(path string, m manifest.Manifest) {
+	if !m.PublisherRepository.Usable() {
+		return
+	}
+	own, _ := rules.CompareKey(m.PublisherRepository.Value) // a usable publisher.repository is a repository
+	if a := m.GraphAddress; a.Usable() && manifest.LowerASCII(a.Value) != "meaning://"+own {
+		c.add(path, RuleAddress, a.Line, "meaning.graph.address must be meaning://%s (in any case), the address of publisher.repository, got %s", own, rules.Quote(a.Value))
+	}
+	if a := m.ModelAddress; a.Usable() && a.Value.Repository != own {
+		c.add(path, RuleAddress, a.Line, "model.address names %s, but publisher.repository is %s: a manifest with its own model files addresses its own repository", rules.Quote(a.Value.Repository), rules.Quote(own))
+	}
 }
 
 // modelRead is the result of reading a model file. A repository lists up to MaxManifests manifests that may name one file, and the file is the same for

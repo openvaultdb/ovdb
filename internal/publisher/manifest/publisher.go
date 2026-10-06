@@ -128,6 +128,11 @@ func (k *manifestChecker) publisher() {
 // folds a non-ASCII letter onto an ASCII one (the Kelvin sign onto k) Go refuses,
 // which is a recorded kind.
 func lowerASCII(s string) string {
+	return LowerASCII(s)
+}
+
+// LowerASCII is lowerASCII, for the repository stage, which holds meaning.graph.address to the repository in the Directory profile (what the Directory holds through the record).
+func LowerASCII(s string) string {
 	b := []byte(s)
 	for i, c := range b {
 		if c >= 'A' && c <= 'Z' {

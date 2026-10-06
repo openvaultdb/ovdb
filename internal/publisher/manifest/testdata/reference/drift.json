@@ -5,19 +5,7 @@
   "commit": "087067483686865b13cb76511ff86f7364ea47ff"
  },
  "about": "What Go does not yet do as the reference does, at the pinned Directory commit. Two classes, looser first: goLooser is where Go accepts and the reference refuses (it breaks 'Go never accepts what the reference refuses' until its slice lands, so those slices go first); goStricter is where Go refuses and the reference accepts. Each entry names the probes (manifest stage), the cases of repo/testdata/reference/directory-stage.json (fileProbes: the Directory's file stage, analyseDatabase, own form), the probes of manifest/testdata/reference/drift.probes.json, the findings of the registered repositories in repo/testdata/directory/verdicts.json, or the number of corpus documents, that it accounts for. TestDrift (manifest stage) and TestDriftNamesEveryLooserCaseOfTheDirectoryStage (file stage) fail when this list and what Go does disagree, in either direction, so an entry is removed in the pull request of its slice. The corpus also carries stricter drift (the five `legacy-identity-url` documents, recorded in the manifest README and counted by the reference test); the corpus count in this file covers looser documents only. A probe is one case of a rule: a kind is not closed while any probe of it still differs, so the probes name the sibling cases of each kind (name forms: slash, backslash, control character, DEL, length in UTF-16 units; the shapes of recordset_entities; the shapes of a global identity).",
- "goLooser": [
-  {
-   "kind": "addresses-name-the-repository",
-   "direction": "looser",
-   "profile": "directory",
-   "slice": "F7",
-   "why": "the Directory refuses a manifest whose meaning.graph.address or own-form model.address is not the address of the repository (directory.mjs 495-500 through the record, 544-546): the record's repository must be publisher.repository, the graph's address is derived from its repository, and the model address names the same repository. A repository alone knows publisher.repository (and --repository); the Publisher profile compares meaning.graph.address with it, the Directory profile does not, and no profile compares model.address with it",
-   "fileProbes": [
-    "has-graph-address",
-    "has-model-address-other-repository"
-   ]
-  }
- ],
+ "goLooser": [],
  "goStricter": [
   {
    "kind": "licence-allow-list",

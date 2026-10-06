@@ -140,8 +140,7 @@ its name states. `directory_stage_test.go` replays each case in memory with both
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 93 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
-| outcome: looser:F7 | 2 | the same, for the addresses: `meaning.graph.address` (the Publisher profile compares it with `publisher.repository`, the Directory profile does not) and an own-form `model.address` that names another repository (no profile compares it) |
+| outcome: agree | 95 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
 | outcome: out-of-reach:registry | 5 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
 | outcome: stricter:module-name-underscore | 1 | Go refuses a `module.name` that starts with `_` (the checker's pattern); the Directory's identifier pattern allows it |
@@ -170,7 +169,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 424-426 | `manifest.url`, `manifest.id` against the record | needs the record | `record-url`, `record-id` |
 | 427 | `meaning.graph.id` against the record's `meaning_graph` | needs the record (Go compares it with the meaning file's `id`) | `record-graph-id` |
 | 428 | `publisher.repository` against the record's repository | has, with `--repository` | `has-publisher-repository` |
-| 490-505 | the graph is registered, for this repository, with this address, and lists `meaning.file` | needs the registry; the address is derived from the repository, so offline once `publisher.repository` is written: **F7** | `registry-*`, `has-graph-address` |
+| 490-505 | the graph is registered, for this repository, with this address, and lists `meaning.file` | needs the registry; the address is derived from the repository, so offline once `publisher.repository` is written: has, in the Directory profile (F7: `repo-address`; the Publisher profile has it in the manifest stage) | `registry-*`, `has-graph-address` |
 | 485-487 | the meaning file is not valid YAML, not a mapping, has no concepts list | has (#63) | `meaning-not-yaml`, `meaning-a-list`, `concept-no-concepts`, `meaning-concepts-null` |
 | 510-513 | the model file or the meaning file is not a regular file at the commit | has | `model-file-missing`, `meaning-file-missing` |
 | 514-515 | `parseModelSpec` (modelspec.mjs 92-118): not JSON, `module.name`, no entities | has | `modelspec-not-json`, `modelspec-module-name`, `modelspec-no-entities` (through the recordsets rule) |
@@ -183,7 +182,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 526-535 | the `models:` entry: a safe relative path, ending in `.modelspec.hcl`, an existing regular file | has (F6: judged by itself, with or without `model.hcl`: `meaning-models`, `meaning-model-file`) | `has-models-entry-*`, `nohcl-*` |
 | 536 | `model.hcl` is that entry | has | `has-models-entry-hcl` |
 | 537-545 | own-form `model.address`: host, lower case, module, no `?ref=` | has | `has-model-address-lower`, `-ref`, `-module`, `-host` |
-| 546 | own-form `model.address` names the record's repository | **F7** (no profile compares it with `publisher.repository`) | `has-model-address-other-repository` |
+| 546 | own-form `model.address` names the record's repository | has, in the Directory profile (F7: `repo-address`; the Publisher profile through `manifest-model`) | `has-model-address-other-repository` |
 | 549-572 | the model as the ModelSpec registry registers it | needs the registry | none |
 | 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | has (F3: `meaning-concept`, `meaning-concept-duplicate`) | `concept-*` (27) |
 | 728-754 | bindings | has (F4: `meaning-binding`) | `binding-*` (10) |
