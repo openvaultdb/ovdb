@@ -118,6 +118,8 @@ and a path below a file or symlink do not):
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
 | `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
 
+The order of these findings is not the Directory's: it reports the version, the module, the entities, then each entity and property in file order (integer-like names first), and this check reports the version first and then entities and properties by name; at most 1000 of them are kept for a file, because a check shows 101 findings at most and what is kept of a model file is held for every manifest that names it. The verdict is the same either way. `--json` consumers should not read `findings[0]` as the Directory's first problem.
+
 Every other manifest OVDB.md lists is judged with the Publisher profile through
 `manifest.Judge` (the checker's line 226).
 
