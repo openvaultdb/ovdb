@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/openvaultdb/ovdb/internal/publisher/datarights"
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 )
 
@@ -94,7 +95,8 @@ func jsonFormat(doc []byte) (format string, ok bool) {
 // A descriptor's judged facts, as written.
 type Descriptor struct {
 	// Read is true when the document was read as a JSON object.
-	Read bool
+	Read       bool
+	DataRights *datarights.Profile
 
 	ID, LocalID, ServerID, ServerDBBaseURL, APIURL, Discovery Fact[string]
 }
@@ -214,6 +216,13 @@ func (j *Judge) Descriptor(doc []byte, path string, paired Manifest, pairedPath 
 		mc := newCollector(pairedPath, j.b)
 		mc.add("manifest-id", paired.ID.Line, "id is %s, but the descriptor localId is %s: write the same id in both", rules.Quote(paired.ID.Value), describeJSON(localValue))
 		c.findings = append(c.findings, mc.findings...)
+	}
+	j.descriptorRights(object, paired, &out, c)
+	if _, present := object["data_rights"]; present {
+		var strict map[string]any
+		if err := datarights.Decode(doc, &strict); err != nil {
+			c.add("descriptor-data-rights", 1, "rights descriptor JSON: %s", plain(err.Error()))
+		}
 	}
 	return out, c.findings
 }

@@ -851,14 +851,15 @@ func TestFactsAgreeWithTheReference(t *testing.T) {
 	if len(rows) != len(facts.Fields) {
 		t.Errorf("README lists %d fields, the generator %d", len(rows), len(facts.Fields))
 	}
-	// Every exported field of the facts structs is carried by a row of the table.
+	// Legacy fields are carried by reference rows. The opt-in data rights extension
+	// has independent validation tests and is absent from this frozen legacy reference.
 	carried := map[string]bool{}
 	for _, name := range rows {
 		carried[strings.SplitN(name, ".", 2)[0]] = true
 	}
 	for _, typ := range []reflect.Type{reflect.TypeOf(Manifest{})} {
 		for i := 0; i < typ.NumField(); i++ {
-			if name := typ.Field(i).Name; name != "Read" && !carried[name] {
+			if name := typ.Field(i).Name; name != "Read" && name != "DataDeclaration" && name != "DataRights" && name != "SourceRights" && !carried[name] {
 				t.Errorf("Manifest.%s is in no row of the README table", name)
 			}
 		}

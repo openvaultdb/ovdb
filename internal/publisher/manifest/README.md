@@ -756,3 +756,23 @@ Current canonical checker references: Directory `087067483686865b13cb76511ff86f7
 The current Publisher validator is `demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Upstream native-recordset validation closes all four legacy Directory corpus differences. The Directory comparator permits no looser cases. Publisher cases accepted under the upstream D0 rule must also be accepted by Directory, and every problem reported by the pinned Chinook checker must be classified as D (the dropped entity-name restriction) or K (the added recordset_entities key); every other unrecorded acceptance fails. The generated reference refusals remain intact.
 
 All 67 of the 67 documents that the Publisher profile accepts and the Chinook checker refuses are explained by the upstream D0 rule and also accepted by Directory. The generated chinookClasses records every problem per manifest: D is the entity-name restriction and K is recordset_entities as an unknown key. Any other problem (O) prevents a D0 explanation; a native name alone never excuses another refusal.
+
+## Optional source-data rights profile
+
+The separately versioned `data_rights.format: ovdb-data-rights/1` contract is
+validated by `internal/publisher/datarights`; the frozen legacy JS reference and
+its digests are unchanged. `DataDeclaration` carries closed scalar/object
+`licences.data` validation. `DataRights` carries the raw database declaration,
+pinned server author artifact, native recordset overrides and pinned provenance.
+`SourceRights` is populated only by immutable repository verification, after
+size/hash checks and effective whole-declaration equality. The legacy scalar
+`LicenceData` fact stays unchanged for legacy SPDX documents; structured
+terms are read through `DataDeclaration`, never through the scalar compatibility
+fact. Model and meaning licences retain the existing scalar policy.
+
+New-profile descriptors must carry the identical raw authorship block, required
+materialized database terms and each native recordset's effective terms. This
+validator is not the provider's JSON-schema checker; provider tooling must add
+new schema IDs and select those only for opted-in providers. Directory and JS
+reference adoption are follow-up changes. No custom public provider is activated
+by accepting this profile in Publisher.

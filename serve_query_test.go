@@ -524,8 +524,8 @@ func TestServeHelpNamesTheQueryLimitsTheServerEnforces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(limits) != 12 {
-		t.Fatalf("discovery lists %d limits, the help was written for 12: %v", len(limits), limits)
+	if len(limits) != 13 {
+		t.Fatalf("discovery lists %d limits, the help was written for 13: %v", len(limits), limits)
 	}
 	n := func(name string) int64 { return int64(limits[name]) }
 	queue, snapshot := server.DefaultQueryLimits(), server.DefaultSnapshotLimits()

@@ -218,7 +218,7 @@ jobs:
       - name: go test with coverage (publisher check packages)
         run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./publisher/representation ./internal/covergate/... ./cmd/covergate/...
       - name: Every statement of exactly those packages is covered
-        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/publisher/checkcmd ./publisher/representation ./internal/covergate ./cmd/covergate
+        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/datarights ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/publisher/checkcmd ./publisher/representation ./internal/covergate ./cmd/covergate
 
   # The goldens that the parity tests of the publisher check read (testdata/reference of
   # internal/publisher/rules, manifest and repo) are made by three generators

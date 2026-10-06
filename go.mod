@@ -15,11 +15,11 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
-	github.com/dal-go/dalgo v0.89.6
+	github.com/dal-go/dalgo v0.90.2
 	github.com/dal-go/record v0.1.4
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.4
 	github.com/meaninggraph/cli v0.2.0
-	github.com/openvaultdb/openvaultdb-go v0.13.0
+	github.com/openvaultdb/openvaultdb-go v0.15.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.3.2
@@ -52,8 +52,8 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dal-go/dalgo2firestore v0.10.3 // indirect
 	github.com/dal-go/dalgo2mysql v0.2.2 // indirect
-	github.com/dal-go/dalgo2postgres v0.4.1 // indirect
-	github.com/dal-go/dalgo2sql v0.26.6 // indirect
+	github.com/dal-go/dalgo2postgres v0.6.3 // indirect
+	github.com/dal-go/dalgo2sql v0.27.0 // indirect
 	github.com/dal-go/dalgo2sqlite v0.2.3 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
