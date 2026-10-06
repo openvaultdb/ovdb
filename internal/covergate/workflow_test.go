@@ -134,7 +134,7 @@ func TestWorkflowRunsTheTestsOfTheSamePackages(t *testing.T) {
 	if testStep == nil {
 		t.Fatal("ci.yml has no go test step that writes the publisher cover profile")
 	}
-	if got, want := testStep[1], "./internal/publisher/... ./publisher/representation ./publisher/source ./internal/covergate/... ./cmd/covergate/..."; got != want {
+	if got, want := testStep[1], "./internal/publisher/... ./publisher/representation ./publisher/source/... ./internal/covergate/... ./cmd/covergate/..."; got != want {
 		t.Errorf("the test step runs %q, want %q", got, want)
 	}
 	if !strings.Contains(text, `./cmd/covergate "$RUNNER_TEMP/publisher-cover.out"`) {
