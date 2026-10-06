@@ -460,6 +460,10 @@ const withEntry = (entry) => [['edit', meaningPath, `  chinook: ${entryPath}\n`,
 for (const [name, ops] of Object.entries({
   'empty': asMeaning(''), 'only comments': asMeaning('# nothing\n'), 'only white space': asMeaning('\n \n'), 'not YAML': asMeaning('a: [\n'), 'a list': asMeaning('- a\n- b\n'),
   'a string': asMeaning('just text\n'), 'a number': asMeaning('5\n'), 'null': asMeaning('null\n'), 'a mapping with nothing in it': asMeaning('{}\n'),
+  // The Directory (directory.mjs parseMeaningFile, 487) wants a concepts list; the Chinook checker never reads the concepts.
+  'concepts missing': [['edit', meaningPath, '\nconcepts:\n', '\nconceptz:\n']], 'concepts null': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: ~\nlist:\n']],
+  'concepts a mapping': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: {}\nlist:\n']], 'concepts a string': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: none\nlist:\n']],
+  'concepts an empty list': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: []\nlist:\n']],
   'id of another graph': [['edit', meaningPath, '\nid: chinook\n', '\nid: other\n']], 'id missing': [['edit', meaningPath, '\nid: chinook\n', '\n']],
   'id a number': [['edit', meaningPath, '\nid: chinook\n', '\nid: 5\n']], 'id null': [['edit', meaningPath, '\nid: chinook\n', '\nid:\n']],
   'id quoted': [['edit', meaningPath, '\nid: chinook\n', '\nid: "chinook"\n']],

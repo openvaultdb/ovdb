@@ -13,7 +13,7 @@ import (
 
 func contractFixture(t *testing.T) (*Memory, *Memory, DependencyReaders) {
 	t.Helper()
-	provider := &Memory{Nodes: map[string]Node{"OVDB.md": {Kind: File, Content: []byte("---\novdb: 1\npublish: [./ovdb.yaml]\n---\n")}, "model/chinook.modelspec.json": {Kind: File, Content: []byte(`{"module":{"name":"chinook"},"entities":{"Album":{},"Artist":{}}}`)}, "model/chinook.modelspec.hcl": {Kind: File}, "model/chinook.meaning.yaml": {Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels: {chinook: chinook.modelspec.hcl}\n")}}}
+	provider := &Memory{Nodes: map[string]Node{"OVDB.md": {Kind: File, Content: []byte("---\novdb: 1\npublish: [./ovdb.yaml]\n---\n")}, "model/chinook.modelspec.json": {Kind: File, Content: []byte(`{"module":{"name":"chinook"},"entities":{"Album":{},"Artist":{}}}`)}, "model/chinook.modelspec.hcl": {Kind: File}, "model/chinook.meaning.yaml": {Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels: {chinook: chinook.modelspec.hcl}\nconcepts: []\n")}}}
 	dependency := &Memory{Nodes: map[string]Node{}}
 	for _, name := range []string{"contract.json", "source.modelspec.json", "target.modelspec.json", "core.meaning.json", "target.meaning.json", "snapshot.json", "keys.json", "bridge.json", "decision.md"} {
 		data, err := os.ReadFile("../../../publisher/representation/testdata/" + name)
