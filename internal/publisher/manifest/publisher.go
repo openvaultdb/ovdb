@@ -29,7 +29,7 @@ var allowedKeys = []struct {
 	path  []string
 	keys  []string
 }{
-	{"the manifest", nil, []string{"format", "id", "title", "description", "url", "deployment", "model", "meaning", "publisher", "licences", "recordsets", "recordsets_partial", "recordset_entities", "homepage", "representation_contract", "data_rights"}},
+	{"the manifest", nil, []string{"format", "id", "title", "description", "url", "deployment", "model", "meaning", "publisher", "licences", "recordsets", "recordsets_partial", "recordset_entities", "homepage", "representation_contract", "data_rights", "source_definition"}},
 	{"deployment", []string{"deployment"}, []string{"url", "engine", "discovery", "recordset_page"}},
 	{"model", []string{"model"}, []string{"modelspec", "hcl", "address", "name"}},
 	{"meaning", []string{"meaning"}, []string{"file", "graph", "address"}},

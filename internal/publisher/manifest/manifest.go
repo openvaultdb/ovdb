@@ -8,6 +8,7 @@ import (
 	"github.com/openvaultdb/ovdb/internal/publisher/datarights"
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 	"github.com/openvaultdb/ovdb/publisher/representation"
+	"github.com/openvaultdb/ovdb/publisher/source"
 )
 
 // ManifestFormat is the format a manifest declares.
@@ -58,6 +59,9 @@ type Manifest struct {
 	DataRights                                Fact[*datarights.Profile]
 	// SourceRights is populated only after immutable repository verification.
 	SourceRights []license.SourceRight
+	// HTTP definitions certify authored metadata only; live input is unpinned.
+	SourceDefinition         Fact[*source.Definition]
+	SourceDefinitionEvidence *source.Evidence
 
 	PublisherName, PublisherURL, PublisherRepository Fact[string]
 
@@ -324,6 +328,7 @@ func (k *manifestChecker) check() {
 	k.recordsetEntities()
 	k.recordsetNames()
 	k.dataRights()
+	k.sourceDefinition()
 }
 
 // recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it. Every name

@@ -764,6 +764,10 @@ validated by `internal/publisher/datarights`; the frozen legacy JS reference and
 its digests are unchanged. `DataDeclaration` carries closed scalar/object
 `licences.data` validation. `DataRights` carries the raw database declaration,
 pinned server author artifact, native recordset overrides and pinned provenance.
+`SourceDefinition` carries the separate closed, blocked `ovdb-http-source/1`
+contract; `SourceDefinitionEvidence` verifies authored manifest bytes only, with
+dynamic input unpinned. These extension fields are outside the frozen legacy
+Directory fact table. See [HTTP source definitions](../../../publisher/source/README.md).
 `SourceRights` is populated only by immutable repository verification, after
 size/hash checks and effective whole-declaration equality. The legacy scalar
 `LicenceData` fact stays unchanged for legacy SPDX documents; structured
