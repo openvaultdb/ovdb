@@ -24,7 +24,8 @@ const maxDescriptorDepth = 64
 // The Directory knows the descriptor by the field of the registry's record that names it (database_manifest); a repository has no record, so the
 // format, which the descriptor must carry in any case, is what tells it apart.
 func IsDescriptor(doc []byte) bool {
-	if len(doc) > MaxDocumentBytes {
+	// Cheap first: a document that does not hold the words cannot say it is a descriptor, and a manifest is parsed in full later (this runs on every entry).
+	if len(doc) > MaxDocumentBytes || !bytes.Contains(doc, []byte(descriptorFormatPrefix)) {
 		return false
 	}
 	root, err := parseYAML(doc)
