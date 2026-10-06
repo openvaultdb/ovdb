@@ -112,12 +112,23 @@ and a path below a file or symlink do not):
 | `repo-model-name` | `model.name`, when written, is that module | 420 |
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
 | `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
-| `meaning-id`, `meaning-license` | its `id` is `meaning.graph.id` and its `license` is `licences.meaning`, as strings | 453-457 |
+| `meaning-id`, `meaning-license` | its `id` is `meaning.graph.id` and its `license` is `licences.meaning`, as strings (the Directory compares the licence only when the file has a text one, and does not read the id here: Go is stricter than it, as the checker is) | 453-457 |
+| `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
 | `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
 
 Every other manifest OVDB.md lists is judged with the Publisher profile through
 `manifest.Judge` (the checker's line 226).
+
+## What this golden is, and is not, a reference for
+
+This golden compares Go's file stage with **the Chinook checker** only (`ovdb-manifest.mjs`). It does not compare it with the Directory's
+file stage (`analyseDatabase` in directory.mjs, about lines 345-838, which reads OVDB.md, the manifest, the model, the meaning file and
+the concepts at the pinned commit). The manifest-stage probes of package manifest (`TestDrift`) do carry the Directory's verdicts; this
+stage did not, so "the looser class of drift.json is empty" has meant empty for the manifest stage, and for the page loop since #58. A rule
+that only the Directory has was therefore invisible here: the missing `concepts:` list was one, and closed by the case group `meaning: concepts ...` above.
+Rules of the Directory's file stage that Go still lacks are listed in the next slice's probe set, which takes its verdicts from
+`analyseDatabase` itself.
 
 ## Nothing is left
 
@@ -166,10 +177,10 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-335 cases: 117 accepted by the checker, 108 accepted with `--repository`; 292 agree with Go, 43
-are stricter in Go, in 24 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
+340 cases: 122 accepted by the checker, 113 accepted with `--repository`; 293 agree with Go, 47
+are stricter in Go, in 25 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
 (5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 37 model files, 45 JSON
-differences, 57 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+differences, 62 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
 states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
 
@@ -195,6 +206,7 @@ at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entitie
 ### Recorded differences: where Go is stricter
 
 | `document-size` | 3 | OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB. |
+| `meaning-concepts` | 4 | The meaning file has no concepts list (the key is missing, or is null, a mapping or text): the Directory refuses it (directory.mjs, parseMeaningFile) and the Chinook checker never reads the concepts. |
 | `repo-case-collision` | 7 | Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts. |
 | `repo-file-size` | 1 | A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB. |
 | `repo-manifests-limit` | 1 | OVDB.md lists more than 32 manifests; the checker judges every one. |

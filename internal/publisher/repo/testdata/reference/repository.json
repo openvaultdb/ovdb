@@ -11,9 +11,9 @@
   "hoster.yaml": "# EXAMPLE: the OpenVaultDB publisher manifest of someone who hosts their own copy of the Chinook sample\n# database. Copy this file and OVDB.md to the root of your own repository and replace every value marked\n# PLACEHOLDER; the rest is what makes the database a Chinook database and stays as it is. It must not be\n# listed in the Directory as it stands: the organisation `example_org` has an underscore, which no GitHub\n# account can have, and every host is on example.com, so the placeholders cannot be someone's real ones.\n#\n# This is the \"shared\" form of the manifest: there are no model files and no meaning file in your repository.\n# The model and the meaning graph are published in github.com/datatug/chinookdb, and are named by address,\n# each pinned with ?ref=<40 hex> to the commit that is read. Every hoster of Chinook points at the same two\n# addresses, so every one of them is a database of the same model.\n#\n# Offline check:   node scripts/check-ovdb-manifest.mjs --repository https://github.com/example_org/chinook-hosting <directory>\n# (it checks the shape only; the Directory checks the addresses against the ModelSpec and MeaningGraph registries.)\nformat: ovdb-manifest/draft-1\n\n# PLACEHOLDER: your id. Lower-case letters, digits and single hyphens; it names your Directory record.\nid: chinook-example\n# PLACEHOLDER: what the Directory shows.\ntitle: Chinook at Example Co\ndescription: >-\n  The Chinook sample database, hosted by Example Co.\n\n# PLACEHOLDER: optional. Your own page for the database, published in the Directory's index. An https URL of at most 200 characters, lower-case host, plain path (A-Z a-z 0-9 . _ ~ / -), no port.\nhomepage: https://example.com/chinook/\n\n# PLACEHOLDER: the canonical identity of your database, a public https URL with `ovdb` as a path segment or\n# as a subdomain. It stays the same if the deployment moves.\nurl: https://ovdb.example.com/dbs/chinook\n\ndeployment:\n  # PLACEHOLDER: where your database is live.\n  url: https://cloud.example.com/ovdb/dbs/chinook\n  # PLACEHOLDER: the engine your deployment runs.\n  engine: postgres\n  # PLACEHOLDER: the discovery document on the origin of the canonical url above, always at this path.\n  discovery: https://ovdb.example.com/.well-known/openvaultdb\n  # PLACEHOLDER: where a recordset's page is; {name} stands for the recordset's name.\n  recordset_page: https://cloud.example.com/ovdb/dbs/chinook/collections/{name}\n\n# The shared model, pinned. 8c9e62e is the commit of datatug/chinookdb that the ModelSpec registry, the\n# MeaningGraph registry and the Directory all pin today. No local model files, so no model.modelspec or\n# model.hcl; the registry says where the model's files are.\nmodel:\n  address: modelspec://github.com/datatug/chinookdb/chinook?ref=8c9e62ed6641c0a00faa3867167d928af4c44b06\n\nmeaning:\n  # The shared meaning graph, pinned the same way.\n  address: meaning://github.com/datatug/chinookdb?ref=8c9e62ed6641c0a00faa3867167d928af4c44b06\n  # A path in the graph's repository (datatug/chinookdb), not in yours: the meaning file that binds the model.\n  file: model/chinook.meaning.yaml\n  graph:\n    # The MeaningGraph registry's id for that graph.\n    id: chinook\n\n# PLACEHOLDER: you, the publisher. The repository is the one that carries this file, on github.com. (An\n# organisation name with an underscore is not a name GitHub can issue: replace it with yours.)\npublisher:\n  name: Example Co\n  url: https://github.com/example_org\n  repository: https://github.com/example_org/chinook-hosting\n\n# licences.data is the licence of the data you serve, and the one the Directory shows for your database. The\n# upstream Chinook data (Copyright (c) 2008-2024 Luis Rocha) is MIT; change it only if your copy is different.\n# licences.model and licences.meaning are left out: the registries say what the model and the meaning are\n# licensed under (if you write them, they must agree).\nlicences:\n  data: MIT\n\n# Exactly the entities of the Chinook model, which are also the collection names your deployment serves.\n# To serve a subset, list it and add `recordsets_partial: true` (a subset must also list every entity that a\n# listed entity references).\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
  },
  "counts": {
-  "cases": 335,
-  "accepted": 117,
-  "acceptedWithRepository": 108
+  "cases": 340,
+  "accepted": 122,
+  "acceptedWithRepository": 113
  },
  "cases": [
   {
@@ -3388,6 +3388,76 @@
    ],
    "repository": "https://github.com/datatug/chinookdb",
    "verdict": "00"
+  },
+  {
+   "group": "meaning",
+   "name": "concepts missing",
+   "ops": [
+    [
+     "edit",
+     "model/chinook.meaning.yaml",
+     "\nconcepts:\n",
+     "\nconceptz:\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "meaning",
+   "name": "concepts null",
+   "ops": [
+    [
+     "edit",
+     "model/chinook.meaning.yaml",
+     "\nconcepts:\n",
+     "\nconcepts: ~\nlist:\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "meaning",
+   "name": "concepts a mapping",
+   "ops": [
+    [
+     "edit",
+     "model/chinook.meaning.yaml",
+     "\nconcepts:\n",
+     "\nconcepts: {}\nlist:\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "meaning",
+   "name": "concepts a string",
+   "ops": [
+    [
+     "edit",
+     "model/chinook.meaning.yaml",
+     "\nconcepts:\n",
+     "\nconcepts: none\nlist:\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "meaning",
+   "name": "concepts an empty list",
+   "ops": [
+    [
+     "edit",
+     "model/chinook.meaning.yaml",
+     "\nconcepts:\n",
+     "\nconcepts: []\nlist:\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
   },
   {
    "group": "meaning",

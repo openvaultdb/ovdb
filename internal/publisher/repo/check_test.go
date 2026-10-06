@@ -83,7 +83,7 @@ const (
 
 const (
 	goodModel   = `{"module": {"name": "chinook"}, "entities": {"Album": {}, "Artist": {}}}`
-	goodMeaning = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\n"
+	goodMeaning = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts: []\n"
 )
 
 // goodRepository is a repository that holds everything the own manifest names.
@@ -759,17 +759,17 @@ const manifest400 = 400
 
 func TestTheMeaningFileMustAgreeWithTheManifest(t *testing.T) {
 	m := goodRepository()
-	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: other\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\n")}
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: other\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts: []\n")}
 	only(t, Check(m, publisher()), "meaning-id", meaningPth, 1, `meaning.graph.id is "chinook" in the manifest, but the id of this file is "other"`)
 	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("- a\n")}
 	only(t, Check(m, publisher()), "meaning-shape", meaningPth, 1, "is not a MeaningGraph file")
 	m.Nodes[meaningPth] = Node{Kind: File}
 	only(t, Check(m, publisher()), "meaning-shape", meaningPth, 1, "is not a MeaningGraph file")
-	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: other.modelspec.hcl\n")}
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: other.modelspec.hcl\nconcepts: []\n")}
 	only(t, Check(m, publisher()), "meaning-hcl", meaningPth, 4, `model.hcl is "model/chinook.modelspec.hcl", but the models: entry for "chinook" is "model/other.modelspec.hcl"`)
 	// The models: entry is judged when the module is known and model.hcl is a file: with no readable model there is no module, and with
 	// no model.hcl the manifest rules and the kind finding speak.
-	noModules := "id: chinook\nlicense: CC0-1.0\n"
+	noModules := "id: chinook\nlicense: CC0-1.0\nconcepts: []\n"
 	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(noModules)}
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte("{")}
 	only(t, Check(m, publisher()), RuleModelJSON, modelPath, 1, "is not a ModelSpec JSON file")
@@ -780,7 +780,7 @@ func TestTheMeaningFileMustAgreeWithTheManifest(t *testing.T) {
 	// The model file is not read when it cannot be, and the meaning file still is.
 	m = goodRepository()
 	m.BrokenBlobs = map[string]error{modelPath: ErrObjectMissing}
-	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: nope\nlicense: CC0-1.0\n")}
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: nope\nlicense: CC0-1.0\nconcepts: []\n")}
 	r := Check(m, publisher())
 	if !slices.Equal(rulesOf(r), []string{RuleObjectGone, "meaning-id"}) {
 		t.Errorf("findings %v", r.Findings)

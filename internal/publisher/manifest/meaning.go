@@ -17,7 +17,7 @@ type MeaningWants struct {
 	Module, ModelHCL string
 }
 
-// Meaning judges the meaning file of an own-form manifest: it is YAML that the reader reads, a mapping, whose id and license are the
+// Meaning judges the meaning file of an own-form manifest: it is YAML that the reader reads, a mapping with a concepts list, whose id and license are the
 // manifest's meaning.graph.id and licences.meaning, and whose models: entry for the module is the path of model.hcl, relative to the
 // meaning file. A fact that the manifest rules refuse is not compared: its own finding says what is wrong. Its findings share the
 // budget of the Judge and are about the meaning file, with the lines of the reader.
@@ -33,6 +33,11 @@ func (j *Judge) Meaning(doc []byte, w MeaningWants) []Finding {
 	if root.Kind != kindMap {
 		c.add("meaning-shape", root.Line, "is not a MeaningGraph file: it must be a mapping of keys and values (id, license, models, ...), got %s", describe(root))
 		return c.findings
+	}
+	// The Directory reads the concepts of the meaning file and refuses a file with no concepts list (a mapping, text, null or nothing there
+	// all fail its Array.isArray); the Chinook checker never looks at them.
+	if concepts := root.Field("concepts"); concepts == nil || concepts.Kind != kindSeq {
+		c.add("meaning-concepts", fieldLine(root, "concepts"), "has no concepts list: a MeaningGraph file lists its concepts under concepts:, got %s", describe(concepts))
 	}
 	for _, same := range []struct {
 		key, label string
