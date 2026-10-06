@@ -98,7 +98,8 @@ func walk(d *json.Decoder, depth int) error {
 	if !ok {
 		return nil
 	}
-	if delimiter == '{' {
+	switch delimiter {
+	case '{':
 		seen := map[string]bool{}
 		for d.More() {
 			key, err := d.Token()
@@ -114,7 +115,7 @@ func walk(d *json.Decoder, depth int) error {
 				return err
 			}
 		}
-	} else { // Decoder only yields opening delimiters at a value boundary.
+	default: // Decoder only yields opening delimiters at a value boundary.
 		for d.More() {
 			if err := walk(d, depth+1); err != nil {
 				return err
