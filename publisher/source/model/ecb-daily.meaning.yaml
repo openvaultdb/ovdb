@@ -22,7 +22,7 @@ sources:
 concepts:
   - id: ecb-fx-reference-quote
     kind: entity
-    extends: meaning://github.com/meaninggraph/core/fx-reference-quote?ref=5c1f78ca26f702171b8a6ef6a00146b5fb11dc32
+    extends: meaning://github.com/meaninggraph/core/fx-reference-quote?ref=1de4de09a449b9978a6155f226669e02986cb7d9
     labels:
       en: ECB daily reference quote
     description: >-
@@ -39,7 +39,7 @@ concepts:
   - id: ecb-reference-date
     kind: attribute
     of: ecb-fx-reference-quote
-    extends: meaning://github.com/meaninggraph/core/fx-reference-date?ref=5c1f78ca26f702171b8a6ef6a00146b5fb11dc32
+    extends: meaning://github.com/meaninggraph/core/fx-reference-date?ref=1de4de09a449b9978a6155f226669e02986cb7d9
     labels:
       en: ECB reference date
     description: >-
@@ -53,7 +53,7 @@ concepts:
   - id: ecb-base-currency
     kind: attribute
     of: ecb-fx-reference-quote
-    extends: meaning://github.com/meaninggraph/core/fx-base-currency?ref=5c1f78ca26f702171b8a6ef6a00146b5fb11dc32
+    extends: meaning://github.com/meaninggraph/core/fx-base-currency?ref=1de4de09a449b9978a6155f226669e02986cb7d9
     labels:
       en: ECB base currency
     description: >-
@@ -62,7 +62,7 @@ concepts:
   - id: ecb-quote-currency
     kind: attribute
     of: ecb-fx-reference-quote
-    extends: meaning://github.com/meaninggraph/core/fx-quote-currency?ref=5c1f78ca26f702171b8a6ef6a00146b5fb11dc32
+    extends: meaning://github.com/meaninggraph/core/fx-quote-currency?ref=1de4de09a449b9978a6155f226669e02986cb7d9
     labels:
       en: ECB quote currency
     description: >-
@@ -78,7 +78,7 @@ concepts:
   - id: ecb-indicative-reference-rate
     kind: attribute
     of: ecb-fx-reference-quote
-    extends: meaning://github.com/meaninggraph/core/indicative-fx-reference-rate?ref=5c1f78ca26f702171b8a6ef6a00146b5fb11dc32
+    extends: meaning://github.com/meaninggraph/core/indicative-fx-reference-rate?ref=1de4de09a449b9978a6155f226669e02986cb7d9
     labels:
       en: ECB indicative reference rate
     description: >-
