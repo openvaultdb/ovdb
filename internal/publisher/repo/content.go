@@ -66,6 +66,9 @@ func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
 	}
 }
 
+// maxModelKept is the most that the readings of model files may hold together while a check runs.
+const maxModelKept = 16 << 20
+
 // modelRead is the result of reading a model file. A repository lists up to MaxManifests manifests that may name one file, and the file is the same for
 // all of them, so it is read once.
 type modelRead struct {
@@ -85,7 +88,12 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 	if !ok {
 		spec, err := readModel(data)
 		read = modelRead{spec, err}
-		c.models[file] = read
+		// What a reading holds is bounded by the file (4 MiB of properties is some 17 MB of names), so what is held for the manifests that name the file
+		// together is bounded too: a reading that does not fit is made again for the next manifest, one at a time.
+		if c.modelKept+spec.size <= maxModelKept {
+			c.modelKept += spec.size
+			c.models[file] = read
+		}
 	}
 	spec, err := read.spec, read.err
 	switch {

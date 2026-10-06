@@ -931,14 +931,21 @@ func TestAsciiLeavesQuotesRaw(t *testing.T) {
 // file; before it was bounded it was about 68 MB a file (a measured 833 MB at 12 files, some 2.2 GB at 32), though a check shows 101 findings at most. The
 // peak heap above its start is held to modelCheckPeak (measured: 195 MiB, and 1553 MiB with the issues of a file not bounded), and the time to hostileModelsTime.
 func TestManyDistinctHostileModelFilesCostABoundedAmount(t *testing.T) {
+	t.Run("properties that are refused", func(t *testing.T) { distinctModels(t, `0`, true) })
+	t.Run("properties that are good", func(t *testing.T) { distinctModels(t, `{"type":"int"}`, false) })
+}
+
+// distinctModels runs the check of MaxManifests manifests, each naming its own model file of MaxFileBytes whose Artist has as many properties as fit, each
+// written with the value (a number, which is no property, or a good one).
+func distinctModels(t *testing.T, value string, refused bool) {
 	const files = MaxManifests
 	m := goodRepository()
 	var paths []string
 	for i := range files {
 		var b strings.Builder
-		fmt.Fprintf(&b, `{"modelspec":"1.0-draft","module":{"name":"chinook"},"entities":{"Album":{"properties":{"Id":{"type":"int"}}},"Artist":{"properties":{"f%d":0`, i)
+		fmt.Fprintf(&b, `{"modelspec":"1.0-draft","module":{"name":"chinook"},"entities":{"Album":{"properties":{"Id":{"type":"int"}}},"Artist":{"properties":{"f%d":`+value, i)
 		for p := 0; b.Len() < MaxFileBytes-64; p++ {
-			b.WriteString(`,"p` + strconv.Itoa(p) + `":0`)
+			b.WriteString(`,"p` + strconv.Itoa(p) + `":` + value)
 		}
 		b.WriteString("}}}}")
 		model := fmt.Sprintf("model/%02d.modelspec.json", i)
@@ -975,15 +982,18 @@ func TestManyDistinctHostileModelFilesCostABoundedAmount(t *testing.T) {
 	close(stop)
 	<-done
 
-	if r.OK() || len(r.Findings) == 0 || r.Findings[0].Rule != RuleModelProperty {
+	if refused && (r.OK() || len(r.Findings) == 0 || r.Findings[0].Rule != RuleModelProperty) {
 		t.Fatalf("a hostile model file must be refused: %v", rulesOf(r))
+	}
+	if !refused && !r.OK() {
+		t.Fatalf("a model file with many good properties is good: %v", rulesOf(r))
 	}
 	assertBounded(t, r.Findings)
 	if took > hostileModelsTime {
 		t.Errorf("%d manifests naming %d distinct model files of %d bytes took %v, want under %v", files, files, MaxFileBytes, took, hostileModelsTime)
 	}
 	grew := int64(peak.Load()) - int64(before.HeapAlloc)
-	t.Logf("%d distinct hostile model files: %v, the heap grew by %d MiB at its peak", files, took, grew>>20)
+	t.Logf("%d distinct model files, refused: %v: %v, the heap grew by %d MiB at its peak", files, refused, took, grew>>20)
 	if grew > modelCheckPeak {
 		t.Errorf("the heap grew by %d MiB while %d distinct hostile model files were read, want at most %d MiB", grew>>20, files, modelCheckPeak>>20)
 	}

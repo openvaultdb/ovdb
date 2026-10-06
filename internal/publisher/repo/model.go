@@ -32,6 +32,7 @@ type modelSpec struct {
 	entities    []string // its keys, sorted
 	set         map[string]struct{}
 	issues      []modelIssue                   // what parseModelSpec refuses beyond the module and the entities object, in the order of entity and property names
+	size        int                            // about what this reading holds, in bytes: the names of the entities and of the properties, and the issues
 	properties  map[string]map[string]struct{} // for each entity, the names of its properties as the Directory reads them (the bindings of a concept name them)
 }
 
@@ -141,9 +142,16 @@ func readModel(data []byte) (modelSpec, error) {
 		spec.judgeEntities(keys)
 		spec.properties = make(map[string]map[string]struct{}, len(keys))
 		for name, info := range keys {
+			spec.size += len(name) + 64
 			if info != nil {
 				spec.properties[name] = info.names
+				for prop := range info.names {
+					spec.size += len(prop) + 48
+				}
 			}
+		}
+		for _, issue := range spec.issues {
+			spec.size += len(issue.text) + 32
 		}
 	}
 	return spec, nil
