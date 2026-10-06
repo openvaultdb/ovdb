@@ -44,6 +44,8 @@ type Result struct {
 	Findings []Finding
 	OVDBMd   OVDBMd
 	Manifest Manifest
+	// Descriptors is how many of the entries of OVDBMd are database descriptors, which are not manifests (a repository check says; Check judges one manifest).
+	Descriptors int
 }
 
 // OK reports whether nothing is wrong.

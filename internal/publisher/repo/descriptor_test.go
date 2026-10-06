@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -35,7 +36,7 @@ func TestADescriptorIsJudgedBesideItsManifest(t *testing.T) {
 	for _, md := range []string{mdManifestFirst, mdDescriptorFirst} {
 		for _, p := range []manifest.Profile{manifest.Publisher, manifest.Directory} {
 			r := Check(withDescriptor(goodDescriptor, md), Options{Profile: p})
-			if !r.OK() || !r.Manifest.Read || r.Manifest.ID.Value != "chinook" || len(r.OVDBMd.Entries) != 2 {
+			if !r.OK() || !r.Manifest.Read || r.Manifest.ID.Value != "chinook" || len(r.OVDBMd.Entries) != 2 || r.Descriptors != 1 {
 				t.Errorf("%v: %+v", p, r)
 			}
 		}
@@ -135,4 +136,82 @@ func TestDiscoveringAnAttachmentSkipsTheDescriptor(t *testing.T) {
 	if state != attachmentAbsent || len(findings) != 0 {
 		t.Errorf("state %v, findings %v", state, findings)
 	}
+}
+
+// A descriptor is JSON, and is recognised and judged as JSON whatever the strict YAML reader would say of its text: tabs, a repeated key, a number over 2^53, a
+// U+2028 in a string, a slash written \/, and a nesting that the YAML reader would refuse as too deep.
+func TestADescriptorIsReadAsJSONNotAsYAML(t *testing.T) {
+	tabs := strings.ReplaceAll(goodDescriptor, "  ", "\t")
+	for name, text := range map[string]string{
+		"tabs":          tabs,
+		"a repeat":      strings.Replace(goodDescriptor, `"localId"`, `"localId": "x", "localId"`, 1),
+		"a big number":  strings.Replace(goodDescriptor, `"apiUrl"`, `"big": 12345678901234567890123, "apiUrl"`, 1),
+		"a U+2028":      strings.Replace(goodDescriptor, `"apiUrl"`, "\"s\": \"a\u2028b\", \"apiUrl\"", 1),
+		"an escaped /":  strings.Replace(goodDescriptor, `"ovdb-database/draft-1"`, `"ovdb-database\/draft-1"`, 1),
+		"an escaped o":  strings.Replace(goodDescriptor, `"ovdb-database/draft-1"`, `"\u006fvdb-database/draft-1"`, 1),
+		"1e999":         strings.Replace(goodDescriptor, `"apiUrl"`, `"n": 1e999, "apiUrl"`, 1),
+		"a lone escape": strings.Replace(goodDescriptor, `"apiUrl"`, `"s": "\ud800", "apiUrl"`, 1),
+	} {
+		if r := Check(withDescriptor(text, mdManifestFirst), publisher()); !r.OK() {
+			t.Errorf("%s: %v", name, r.Findings)
+		}
+	}
+	// Nested 70 deep: recognised as a descriptor, and refused by the bound of this check, which is recorded (the Directory reads any depth).
+	deep := strings.Replace(goodDescriptor, `"apiUrl"`, `"d": `+strings.Repeat("[", 70)+strings.Repeat("]", 70)+`, "apiUrl"`, 1)
+	r := Check(withDescriptor(deep, mdManifestFirst), publisher())
+	only(t, r, "descriptor-json", "ovdb-database.json", 1, "nested more than 64 levels deep")
+	deep = strings.Replace(goodDescriptor, `"apiUrl"`, `"d": `+strings.Repeat("[", 9000)+strings.Repeat("]", 9000)+`, "apiUrl"`, 1)
+	only(t, Check(withDescriptor(deep, mdManifestFirst), publisher()), "descriptor-json", "ovdb-database.json", 1, "nested more than 64 levels deep")
+	// Past 10000 levels Go's JSON decoder gives up, and the document is read as YAML, whose own bound refuses it as a manifest (recorded in the README).
+	deep = strings.Replace(goodDescriptor, `"apiUrl"`, `"d": `+strings.Repeat("[", 10500)+strings.Repeat("]", 10500)+`, "apiUrl"`, 1)
+	only(t, Check(withDescriptor(deep, mdManifestFirst), publisher()), "yaml-limit", "ovdb-database.json", 7, "nested more than 64 levels deep")
+}
+
+// attachedWithDescriptor is the repository of a valid representation contract (the captured real-ror fixture and its raw-data proof) with a database descriptor
+// beside the manifest, whose server and discovery are on another host than the identity (so that the waiver is needed).
+func attachedWithDescriptor(t *testing.T) (*Memory, DependencyReaders) {
+	t.Helper()
+	p, deps, _ := defaultNativeFixture(t, "real-ror", []byte("raw exact bytes"))
+	data, _ := p.Blob("ovdb.yaml", MaxFileBytes)
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	deployment := m["deployment"].(map[string]any)
+	deployment["discovery"] = "https://cloud.example.net/.well-known/openvaultdb"
+	m["deployment"] = deployment
+	data, _ = json.Marshal(m)
+	p.Nodes["ovdb.yaml"] = Node{Kind: File, Content: data}
+	descriptor, _ := json.Marshal(map[string]any{
+		"format": "ovdb-database/draft-1", "id": m["url"], "localId": m["id"], "serverId": "https://cloud.example.net/ovdb",
+		"serverDbBaseUrl": "https://cloud.example.net/ovdb/db/x", "apiUrl": "https://cloud.example.net/ovdb/api",
+		"deployment": map[string]any{"discovery": "https://cloud.example.net/.well-known/openvaultdb"},
+	})
+	p.Nodes["ovdb-database.json"] = Node{Kind: File, Content: descriptor}
+	p.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte(mdManifestFirst)}
+	return p, deps
+}
+
+func TestAValidAttachmentWithADescriptor(t *testing.T) {
+	p, deps := attachedWithDescriptor(t)
+	if r := Check(p, Options{Profile: manifest.Publisher, Dependencies: deps}); !r.OK() || r.Descriptors != 1 {
+		t.Fatalf("%v", r.Findings)
+	}
+	delete(p.Nodes, "ovdb-database.json")
+	p.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte(goodMD)}
+	if r := Check(p, Options{Profile: manifest.Publisher, Dependencies: deps}); r.OK() {
+		t.Error("without the descriptor the discovery is on another origin than the url")
+	}
+}
+
+// The same through git, whose reader runs the pass that looks for an attachment first.
+func TestRealGitAValidAttachmentWithADescriptor(t *testing.T) {
+	realGit(t)
+	p, deps := attachedWithDescriptor(t)
+	dir := buildReal(t, &model{tracked: p.Nodes, location: "normal"})
+	r := Check(NewGit(ExecRunner{Dir: dir}), Options{Profile: manifest.Publisher, Dependencies: deps})
+	if !r.OK() || r.Descriptors != 1 {
+		t.Fatalf("%v", r.Findings)
+	}
+	finished(t)
 }

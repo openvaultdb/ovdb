@@ -221,6 +221,7 @@ func (c *checker) run(o Options) {
 	c.res.OVDBMd = md
 	c.res.Findings = append(c.res.Findings, findings...)
 	descriptors := c.descriptors(md)
+	c.res.Descriptors = len(descriptors)
 	c.j.DescriptorPaired(c.pairedIndex >= 0)
 	for i, path := range md.Entries {
 		if i == MaxManifests {

@@ -717,6 +717,7 @@
   "publisher.env.failed": "Couldn't run the check",
   "publisher.env.next": "Install git 2.45 or newer and put it on your PATH, then run the check again",
   "publisher.check.ok_one": "OK: commit {commit}, {manifests} manifest listed in OVDB.md, no problems.",
+  "publisher.check.ok_descriptor": "OK: commit {commit}, {manifests} manifest and {descriptors} database descriptor listed in OVDB.md, no problems.",
   "publisher.check.ok_many": "OK: commit {commit}, {manifests} manifests listed in OVDB.md, no problems.",
   "publisher.check.ok_note": "This applies the OVDB Directory's rules for OVDB.md and the manifests, and the stricter rules a publisher's own check uses. The Directory also reads your hosted repository, so a pass here is not its acceptance.",
   "publisher.check.refused_one": "Refused: 1 problem at commit {commit}. Fix it, commit, and run the check again.",

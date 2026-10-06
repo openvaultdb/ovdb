@@ -23,6 +23,8 @@ type descriptorCase struct {
 	Reference  int    `json:"reference"`
 	// Recorded names the recorded kind that Go is expected to refuse the pair by though the Directory accepts it.
 	Recorded string `json:"recorded"`
+	// Recognised is whether JSON.parse reads the descriptor as an object whose last format is text beginning ovdb-database/; null when it is not one JSON object.
+	Recognised *bool `json:"recognised"`
 }
 
 type descriptorFile struct {
@@ -57,6 +59,9 @@ func TestDescriptorDirectoryProfileAgreesWithTheDirectory(t *testing.T) {
 	g := readDescriptorGolden(t)
 	accepted, refused := 0, 0
 	for _, c := range g.Cases {
+		if c.Recognised != nil && IsDescriptor([]byte(c.Descriptor)) != *c.Recognised {
+			t.Errorf("%s: IsDescriptor is %v, JSON.parse says %v", c.Note, !*c.Recognised, *c.Recognised)
+		}
 		findings := judgePair(Directory, c)
 		if c.Recorded != "" {
 			if len(findings) == 0 || c.Reference != 1 || descriptorKinds[c.Recorded] == "" || !strings.Contains(findings[0].Message, descriptorKinds[c.Recorded]) {
@@ -172,3 +177,32 @@ const goodDescriptorForFacts = `{"format": "ovdb-database/draft-1", "id": "https
 var descriptorManifestForLines = strings.NewReplacer(
 	"url: https://chinookdb.com/ovdb/dbs/chinook\n", "url: https://demodb.dev/chinook/\n",
 	"discovery: https://chinookdb.com/.well-known/openvaultdb", "discovery: https://demodb.dev/.well-known/openvaultdb").Replace(ownManifest)
+
+// jsonFormat is not ok for anything that is not one complete JSON object, wherever the text ends or goes wrong, and reads the last format.
+func TestJSONFormat(t *testing.T) {
+	for doc, want := range map[string]struct {
+		format string
+		ok     bool
+	}{
+		`{"format": "a", "format": "b"}`:        {"b", true},
+		`{"format": "a", "format": 7}`:          {"", true},
+		`{"x": [1, {"y": [2]}], "format": "f"}`: {"f", true},
+		`{"format": "f"} `:                      {"f", true},
+		`{"a": [1,`:                             {"", false},
+		`{"a": [1, ]}`:                          {"", false},
+		`{"a" 1}`:                               {"", false},
+		`{"a": 1,`:                              {"", false},
+		`{"a": 1,}`:                             {"", false},
+		`{"a": 1`:                               {"", false},
+		`{"a": 1 x`:                             {"", false},
+		`{"format": "f"} x`:                     {"", false},
+		`[]`:                                    {"", false},
+		``:                                      {"", false},
+		`{"a": [1, 2}`:                          {"", false},
+		`{"a": 1e999, "format": "f"}`:           {"f", true},
+	} {
+		if format, ok := jsonFormat([]byte(doc)); format != want.format || ok != want.ok {
+			t.Errorf("jsonFormat(%q) = %q, %v; want %q, %v", doc, format, ok, want.format, want.ok)
+		}
+	}
+}

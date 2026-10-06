@@ -19,13 +19,22 @@ const descriptorFormatPrefix = "ovdb-database/"
 // maxDescriptorDepth is how deep the JSON of a descriptor may nest. The Directory's JSON.parse reads any depth until the stack of its runtime ends.
 const maxDescriptorDepth = 64
 
-// IsDescriptor reports whether a publish entry is a database descriptor and not a manifest: a document that the strict reader reads as a mapping whose
-// format is text beginning ovdb-database/. A document that is not read, or has no such format, is a manifest, and its own findings say what is wrong.
-// The Directory knows the descriptor by the field of the registry's record that names it (database_manifest); a repository has no record, so the
-// format, which the descriptor must carry in any case, is what tells it apart.
+// IsDescriptor reports whether a publish entry is a database descriptor and not a manifest: a JSON object whose format is text beginning ovdb-database/.
+// The Directory knows the descriptor by the field of the registry's record that names it (database_manifest) and reads it with JSON.parse and nothing
+// else; a repository has no record, so the format, which the descriptor must carry in any case, is what tells it apart, and it is read as JSON.parse reads
+// it: the last of a repeated key counts, an escape in the text is the character it spells (ovdb-database\/draft-1), and no rule of YAML applies (a tab,
+// a long number or a U+2028 in a string is JSON). A document that is not JSON is read as YAML, and a YAML mapping with such a format is a descriptor too,
+// so that Descriptor says it is not valid JSON; any other document is a manifest, and its own findings say what is wrong.
 func IsDescriptor(doc []byte) bool {
-	// Cheap first: a document that does not hold the words cannot say it is a descriptor, and a manifest is parsed in full later (this runs on every entry).
-	if len(doc) > MaxDocumentBytes || !bytes.Contains(doc, []byte(descriptorFormatPrefix)) {
+	if len(doc) > MaxDocumentBytes {
+		return false
+	}
+	if format, ok := jsonFormat(doc); ok {
+		return strings.HasPrefix(format, descriptorFormatPrefix)
+	}
+	// Not JSON. Reading a manifest as YAML here would parse it twice (it is parsed in full when it is judged), so only a document that holds the words is
+	// read: a YAML descriptor that spells them with an escape is judged as a manifest, and is refused as one, as a YAML descriptor is refused in any case.
+	if !bytes.Contains(doc, []byte("ovdb-database")) {
 		return false
 	}
 	root, err := parseYAML(doc)
@@ -34,6 +43,52 @@ func IsDescriptor(doc []byte) bool {
 	}
 	f := root.Field("format")
 	return f != nil && f.Kind == kindString && strings.HasPrefix(f.Text, descriptorFormatPrefix)
+}
+
+// jsonFormat reads a JSON document that is an object, as JSON.parse reads it, and returns the top-level format when it is text ("" when it is not text or
+// is missing). ok is false when the document is not one JSON object (invalid JSON, or another JSON value, or text after the value). It reads
+// token by token, so it has no limit of depth: a descriptor nested deeper than Descriptor reads is still recognised, and Descriptor then refuses it.
+func jsonFormat(doc []byte) (format string, ok bool) {
+	d := json.NewDecoder(bytes.NewReader(doc))
+	d.UseNumber() // 1e999 is a number to JSON.parse
+	if t, err := d.Token(); err != nil || t != json.Delim('{') {
+		return "", false
+	}
+	for d.More() {
+		key, err := d.Token()
+		if err != nil {
+			return "", false
+		}
+		value, err := d.Token()
+		if err != nil {
+			return "", false
+		}
+		if delim, nested := value.(json.Delim); nested {
+			// Skip a nested value by its brackets: no limit of depth, which a decoded value would have.
+			for depth := 1; depth > 0 && (delim == '[' || delim == '{'); {
+				t, err := d.Token()
+				if err != nil {
+					return "", false
+				}
+				if inner, ok := t.(json.Delim); ok {
+					if inner == '[' || inner == '{' {
+						depth++
+					} else {
+						depth--
+					}
+				}
+			}
+		}
+		if key == "format" { // the last of a repeated key counts; a value that is not text is no format
+			text, _ := value.(string)
+			format = text
+		}
+	}
+	// The closing bracket, and only white space after it, as JSON.parse has it (space, tab, line feed, carriage return).
+	if t, err := d.Token(); err != nil || t != json.Delim('}') || len(bytes.Trim(doc[d.InputOffset():], " \t\n\r")) != 0 {
+		return "", false
+	}
+	return format, true
 }
 
 // A descriptor's judged facts, as written.

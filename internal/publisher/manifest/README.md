@@ -607,6 +607,20 @@ the Directory's `databaseDescriptorProblems` and its check of the manifest's `id
 | `serverDbBaseUrl`, `apiUrl` and `deployment.discovery` are on the host of `serverId`; `deployment.discovery` is a public https URL and the manifest's own text (these are asked only when `serverId` and `localId` are good, as the Directory asks them) | `descriptor-origin`, `descriptor-discovery` |
 | the manifest's `id` is the descriptor's `localId` (the registry's record key stands in for a `localId` that is not written, which a repository has not) | `manifest-id` |
 
+**What a pass assumes.** The Directory waives the discovery-origin rule when the registry's *record* names a descriptor (`database_manifest`), valid or not; this check
+waives it when OVDB.md lists exactly one descriptor beside one manifest. So a repository with a good descriptor that its record does not name passes here and is
+refused by the Directory, which then applies the origin rule. An offline check cannot know the record: this is one of the things it cannot know, and the comparison
+with the record is slice A4.
+
+**How the JSON is read.** A descriptor is recognised and judged as JSON (`encoding/json`), as `JSON.parse` reads it, and not through the strict YAML reader: tabs, a
+repeated key (the last counts), numbers of any size (kept as text: only their kind matters), U+2028 and U+0085 in strings, and an escaped `\/` or `\u` in `format` are
+JSON. Where Go's reading is not `JSON.parse`'s: (1) a lone surrogate escape (`\ud800`) becomes U+FFFD in Go and stays a lone surrogate in JavaScript, which no
+verdict sees (the text is compared only with the manifest's, which the YAML reader keeps free of both, and the descriptor is refused where either shows in a field);
+(2) a descriptor nested more than 64 levels is refused (`descriptor-depth`, recorded, with a case in `descriptor.json` and a repository test); (3) Go's JSON decoder stops at 10000 levels, so a document nested deeper than that is not recognised as JSON, is read as YAML,
+and is refused as a manifest by the reader's own depth bound (`yaml-limit`); between 65 and 10000 levels the descriptor is recognised and refused by (2) (a case of
+`repo/descriptor_test.go` holds each); (4) an invalid UTF-8 byte inside a string is U+FFFD in both.
+A document that is not JSON but is a YAML mapping with such a `format` is still recognised, so that the finding says it is not valid JSON.
+
 With a descriptor beside it a manifest is not held to having `deployment.discovery` on the origin of its `url` (the Directory's `databaseManifest` option); the
 descriptor's rules tie the discovery to the server instead. The descriptor is read only after its manifest has no findings, as the Directory stops at the manifest's
 problems first. What belongs to the registry alone (the claims, the server-id exceptions, the record key) is not judged here (slice A1).

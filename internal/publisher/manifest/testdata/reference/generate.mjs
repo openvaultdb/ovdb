@@ -1498,12 +1498,20 @@ const descriptorBase = () => {
   return [m, d];
 };
 const descriptorCases = [];
+// Whether the descriptor is recognised as one in a repository, which has no record to say so: JSON.parse reads it as an object whose (last) format is text that
+// begins ovdb-database/. null when it is not one JSON object (the Go reader then falls back to YAML, which the Directory has no word for).
+const recognisedAsDescriptor = (text) => {
+  let value;
+  try { value = JSON.parse(text); } catch { return null; }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  return typeof value.format === 'string' && value.format.startsWith('ovdb-database/');
+};
 const descriptorCase = (note, edit, recorded) => {
   const [m, d] = descriptorBase();
   const out = edit(m, d);
   const manifestText = jsonOf(m);
   const descriptorText = typeof out === 'string' ? out : `${JSON.stringify(d, null, 2)}\n`;
-  descriptorCases.push({ note, manifest: manifestText, descriptor: descriptorText, reference: descriptorVerdict(manifestText, descriptorText), ...(recorded ? { recorded } : {}) });
+  descriptorCases.push({ note, manifest: manifestText, descriptor: descriptorText, reference: descriptorVerdict(manifestText, descriptorText), recognised: recognisedAsDescriptor(descriptorText), ...(recorded ? { recorded } : {}) });
 };
 descriptorCase('the base pair (accepted)', () => {});
 const wrongValues = [['missing', undefined], ['null', null], ['a number', 7], ['true', true], ['a list', ['x']], ['a mapping', { a: 1 }], ['empty', ''], ['blank', '   '], ['a very long text', 'x'.repeat(5000)]];
@@ -1543,6 +1551,21 @@ for (const url of discoveries) {
   descriptorCase(`both discoveries ${url}`, (m, d) => { m.deployment.discovery = url; d.deployment.discovery = url; });
 }
 // documents that are not a descriptor, or not JSON
+// The way a descriptor is written is JSON's, not YAML's: what the strict YAML reader refuses is no reason to refuse a JSON descriptor.
+descriptorCase('a descriptor indented with tabs', (m, d) => `${JSON.stringify(d, null, '\t')}\n`);
+descriptorCase('a descriptor on one line', (m, d) => `${JSON.stringify(d)}`);
+descriptorCase('a descriptor that repeats format, the last good', (m, d) => `${JSON.stringify(d, null, 2).replace('"format":', '"format": "ovdb-database/draft-0", "format":')}\n`);
+descriptorCase('a descriptor that repeats format, the last bad', (m, d) => `${JSON.stringify(d, null, 2).replace('"format":', '"format": 7, "x": 1, "format": "ovdb-manifest/draft-1", "z":')}\n`);
+descriptorCase('a descriptor that repeats format, the last not text', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"format": 7, "apiUrl":')}\n`);
+descriptorCase('a descriptor with a number over 2^53 in an unknown key', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"big": 12345678901234567890123, "apiUrl":')}\n`);
+descriptorCase('a descriptor with a number over 2^53 as the id', (m, d) => `${JSON.stringify(d, null, 2).replace('"id": "https://demodb.dev/chinook/"', '"id": 12345678901234567890123')}\n`);
+descriptorCase('a descriptor with U+2028 and U+0085 inside strings', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"s": "a\u2028b\u0085c", "apiUrl":')}\n`);
+descriptorCase('a descriptor with a lone surrogate escape in format', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"ovdb-database/draft-1\\ud800"')}\n`);
+descriptorCase('a descriptor whose format spells its slash as \\/', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"ovdb-database\\/draft-1"')}\n`);
+descriptorCase('a descriptor whose format has a unicode escape for a hyphen', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"ovdb\\u002ddatabase/draft-1"')}\n`);
+descriptorCase('a descriptor whose format has a unicode escape for its first letter', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"\\u006fvdb-database/draft-1"')}\n`);
+descriptorCase('a descriptor with CRLF line ends and a BOM-free start', (m, d) => `${JSON.stringify(d, null, 2).replace(/\n/g, '\r\n')}`);
+descriptorCase('a descriptor with a key written twice at the top and in deployment', (m, d) => `${JSON.stringify(d, null, 2).replace('"deployment": {', '"deployment": {"discovery": "https://other.dev/x",')}\n`);
 descriptorCase('a good descriptor followed by text', (m, d) => `${JSON.stringify(d, null, 2)}\nx`);
 descriptorCase('a good descriptor followed by a second object', (m, d) => `${JSON.stringify(d)} {}`);
 descriptorCase('a good descriptor followed by white space of every kind', (m, d) => `${JSON.stringify(d)} \t\r\n \n`);

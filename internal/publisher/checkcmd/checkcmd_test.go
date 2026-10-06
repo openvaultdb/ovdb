@@ -583,10 +583,11 @@ func TestEverySummaryLine(t *testing.T) {
 		doc  Document
 		want string
 	}{
-		"ok one":       {Document{OK: true, Commit: "abcdef0123456789", Manifests: 1}, "OK: commit abcdef012345, 1 manifest listed in OVDB.md, no problems.\n"},
-		"ok many":      {Document{OK: true, Commit: "abc", Manifests: 2}, "OK: commit abc, 2 manifests listed in OVDB.md, no problems.\n"},
-		"refused one":  {Document{Commit: "abc", Summary: Summary{Errors: 1}}, "Refused: 1 problem at commit abc. Fix it, commit, and run the check again.\n"},
-		"refused many": {Document{Commit: "abc", Summary: Summary{Errors: 3}}, "Refused: 3 problems at commit abc. Fix them, commit, and run the check again.\n"},
+		"ok one":        {Document{OK: true, Commit: "abcdef0123456789", Manifests: 1}, "OK: commit abcdef012345, 1 manifest listed in OVDB.md, no problems.\n"},
+		"ok descriptor": {Document{OK: true, Commit: "abc", Manifests: 1, Descriptors: 1}, "OK: commit abc, 1 manifest and 1 database descriptor listed in OVDB.md, no problems.\n"},
+		"ok many":       {Document{OK: true, Commit: "abc", Manifests: 2}, "OK: commit abc, 2 manifests listed in OVDB.md, no problems.\n"},
+		"refused one":   {Document{Commit: "abc", Summary: Summary{Errors: 1}}, "Refused: 1 problem at commit abc. Fix it, commit, and run the check again.\n"},
+		"refused many":  {Document{Commit: "abc", Summary: Summary{Errors: 3}}, "Refused: 3 problems at commit abc. Fix them, commit, and run the check again.\n"},
 	} {
 		var out bytes.Buffer
 		command{deps(nil)}.writeHuman(&out, c.doc)
