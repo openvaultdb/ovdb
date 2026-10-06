@@ -58,8 +58,11 @@ canonical receipt digests and observation/usage validation remain runtime work.
 `ecb-daily.example.json` contains declarations only, without rate data. It
 describes the exact daily XML resource separately from ECB historical XML.
 The candidate identity `provider:ecb/FxReferenceQuote` awaits namespace-owner
-acceptance and final model mapping review. Native `time`, `currency` and `rate`
-are strings; `time` maps to reference date, not publication instant. `rate`
+acceptance and final model mapping review. The authored preparatory model is
+[`model/ecb-daily.modelspec.hcl`](model/ecb-daily.modelspec.hcl), module `ecb`,
+entity `FxReferenceQuote`, with [meanings](model/ecb-daily.meaning.yaml).
+Native `time`, `currency` and `rate` are strings and map to identically named
+model properties; the meaning of `time` is reference date, not publication instant. `rate`
 preserves the positive lexical decimal in quote units per 1 EUR. EUR base and
 indicative-reference context add no fabricated EUR row or derived cross-rates.
 Runtime validation must reject malformed dates/decimals, duplicate date/currency

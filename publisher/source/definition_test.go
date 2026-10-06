@@ -108,7 +108,7 @@ func TestBlockedDailyDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Resources["daily"].Retention != "none" || d.Recordsets["FxReferenceQuote"].FieldMapping["time"] != "referenceDate" {
+	if d.Resources["daily"].Retention != "none" || d.Recordsets["FxReferenceQuote"].FieldMapping["time"] != "time" {
 		t.Fatal("daily boundary lost")
 	}
 	if err := d.Matches([]string{"FxReferenceQuote"}, nil); err != nil {
