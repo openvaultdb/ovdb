@@ -18,7 +18,8 @@
 // each looser one. An outcome is:
 //   agree                  Go and the Directory give the same verdict
 //   looser:<slice>         Go (the Directory profile) accepts what the Directory refuses; the slice (F2 to F6) ports the rule
-//   out-of-reach:record    the Directory refuses by what the database's registry record says; no check of a repository alone can
+//   out-of-reach:record    the Directory refuses by what the database's registry record says; no check of a repository alone can. MECHANICAL: the case carries
+//                          a `fix` (a record, a key, a registry or a URL map), and the generator runs the same files again under it and requires the Directory to accept
 //   out-of-reach:registry  the Directory refuses by what the ModelSpec or MeaningGraph registry says, or by another repository (the Publisher profile
 //                          stands in for the graph's address with publisher.repository, and so refuses what the Directory profile cannot)
 //   stricter:<kind>        Go refuses what the Directory accepts, as a recorded kind (stricterKinds in directory_stage_test.go)
@@ -124,7 +125,7 @@ const recordUrl = 'https://chinookdb.com/ovdb/dbs/chinook';
 const registryOf = (graphs) => indexMeaningRegistry({ format: 'meaning-registry/draft-1', checksum: `sha256:${sha(JSON.stringify(graphs))}`, graphs }, 'the test registry');
 
 // The Directory's verdict on one repository: the problems of analyseDatabase.
-const directoryVerdict = async (files, { editRegistry, record: editRecord } = {}) => {
+const directoryVerdict = async (files, { editRegistry, record: editRecord, key = 'chinook', urls: extraUrls = [] } = {}) => {
   const publisher = origin(files, 'publisher');
   const graphs = [
     { id: 'chinook', title: 'Chinook', kind: 'dataset', status: 'draft', address: 'meaning://github.com/demo-db/chinook', repository: chinookUrl, commit: publisher.commit, meaning_files: [meaningPath], maintainers: ['x'] },
@@ -134,9 +135,9 @@ const directoryVerdict = async (files, { editRegistry, record: editRecord } = {}
   const data = { format: 'ovdb-directory/draft-1', title: 'Chinook music store', description: 'The Chinook sample database.', status: 'draft', url: recordUrl, repository: chinookUrl, commit: publisher.commit, manifest: manifestPath, meaning_graph: 'chinook', maintainers: ['x'] };
   editRecord?.(data);
   const cache = mkdtempSync(join(tmpdir(), 'ovdb-stage-cache-'));
-  const urls = new Map([[chinookUrl, `file://${publisher.dir}`], [coreUrl, `file://${core.dir}`]]);
+  const urls = new Map([[chinookUrl, `file://${publisher.dir}`], [coreUrl, `file://${core.dir}`], ...extraUrls.map((url) => [url, `file://${core.dir}`])]);
   try {
-    const result = await analyseDatabase({ key: 'chinook', file: 'chinook.yaml', data }, {
+    const result = await analyseDatabase({ key, file: 'chinook.yaml', data }, {
       urlFor: (url) => urls.get(url) ?? url, cacheDir: cache, historyDir: join(cache, 'history'), fetched: new Set(), branches: new Map(),
       meaningRegistry: registryOf(graphs), modelRegistry: async () => ({ source: 'the test registry', byAddress: new Map() }),
     });
@@ -229,8 +230,10 @@ add('chain-long', 'chain', 'an extends chain of 52 concepts (the limit is 50)', 
 add('chain-50', 'control', 'an extends chain of 50 concepts', { [meaningPath]: concepts(chain(50)) }, null, 'agree');
 add('chain-values-of-unresolved', 'chain', 'values-of names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    values-of: nothing\n') }, /values-of: nothing names concept nothing, which chinook does not have/, 'looser:F5');
 add('chain-values-of-cycle', 'chain', 'values-of names a concept whose chain loops', { [meaningPath]: concepts('  - id: artist\n    values-of: album\n  - id: album\n    extends: genre\n  - id: genre\n    extends: album\n') }, /values-of album: extends returns to album/, 'looser:F5');
-add('chain-address-unregistered', 'chain', 'extends names a graph by an address that no registry lists', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/nobody/nothing/thing?ref=cb97dbcd9e951b00e7d46cb2e0c4e120c24c8db7\n') }, /is not registered in the MeaningGraph registry/, 'out-of-reach:registry');
-add('chain-core-unregistered', 'chain', 'the Directory\'s fixture, with the core graph missing from the registry', {}, /is not registered in the MeaningGraph registry/, 'out-of-reach:registry', { registry: (graphs) => graphs.splice(1, 1) });
+add('chain-address-unregistered', 'chain', 'extends names a graph by an address that no registry lists', { [meaningPath]: (text) => concepts(`  - id: artist\n    extends: meaning://github.com/nobody/nothing/date?ref=${core.commit}\n`)(text) }, /is not registered in the MeaningGraph registry/, 'out-of-reach:registry', {
+  fix: { urls: ['https://github.com/nobody/nothing'], registry: (graphs) => graphs.push({ id: 'nothing', title: 'Nothing', kind: 'universal', status: 'draft', address: 'meaning://github.com/nobody/nothing', repository: 'https://github.com/nobody/nothing', commit: core.commit, meaning_files: ['*.meaning.yaml'], maintainers: ['x'] }), because: 'the registry registers that address at the commit of the core graph' },
+});
+add('chain-core-unregistered', 'chain', 'the Directory\'s fixture, with the core graph missing from the registry', {}, /is not registered in the MeaningGraph registry/, 'out-of-reach:registry', { registry: (graphs) => graphs.splice(1, 1), fix: { because: 'the registry registers the core graph, as the fixture\'s own registry does' } });
 
 // the rules that Go has: held as controls, so that "agree" is shown and not assumed
 add('has-licence-differs', 'has', 'licences.meaning differs from the meaning file\'s license', { [manifestPath]: edit('  meaning: CC0-1.0', '  meaning: MIT') }, /licences\.meaning is MIT, but model\/chinook\.meaning\.yaml declares CC0-1\.0/, 'agree');
@@ -239,7 +242,7 @@ add('has-recordsets-lack', 'has', 'a recordset fewer than the entities', { [mani
 add('has-recordsets-extra', 'has', 'a recordset that is not an entity', { [manifestPath]: edit('  - Genre\n', '  - Genre\n  - Nope\n') }, /recordsets names things that do not map to ModelSpec entities: Nope/, 'agree');
 add('has-recordsets-twice', 'has', 'a recordset listed twice', { [manifestPath]: edit('  - Genre\n', '  - Genre\n  - Genre\n') }, /recordsets lists a name twice/, 'agree');
 add('has-models-entry-spelling', 'has', 'the models: entry has a leading slash', { [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: /chinook.modelspec.hcl') }, /models must name the ModelSpec module chinook with a relative path that stays inside the repository/, 'agree');
-add('has-models-entry-hcl', 'has', 'model.hcl is not the models: entry', { [manifestPath]: edit('  hcl: model/chinook.modelspec.hcl', '  hcl: model/other.modelspec.hcl') }, /says model\.hcl is model\/other\.modelspec\.hcl/, 'agree');
+add('has-models-entry-hcl', 'has', 'model.hcl is not the models: entry (model.hcl names a file that is there)', { [manifestPath]: edit('  hcl: model/chinook.modelspec.hcl', '  hcl: model/other.modelspec.hcl'), 'model/other.modelspec.hcl': () => 'x\n' }, /says model\.hcl is model\/other\.modelspec\.hcl/, 'agree');
 add('has-models-entry-suffix', 'has', 'the models: entry and model.hcl name a file that is not .modelspec.hcl', {
   [manifestPath]: edit('  hcl: model/chinook.modelspec.hcl', '  hcl: model/chinook.model.txt'), [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: chinook.model.txt'), 'model/chinook.model.txt': () => 'x\n',
 }, /ending in \.modelspec\.hcl/, 'agree');
@@ -256,16 +259,36 @@ add('stricter-meaning-id', 'stricter', 'the meaning file\'s id is not meaning.gr
 add('has-model-address-lower', 'has', 'model.address is not in lower case', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://github.com/Demo-DB/chinook/chinook\n  modelspec: model/chinook.modelspec.json\n') }, /must be written in lower case/, 'agree');
 add('has-model-address-ref', 'has', 'model.address carries ?ref=', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', `  address: modelspec://github.com/demo-db/chinook/chinook?ref=${'0'.repeat(40)}\n  modelspec: model/chinook.modelspec.json\n`) }, /must not carry \?ref=/, 'agree');
 add('has-model-address-module', 'has', 'model.address names another module', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://github.com/demo-db/chinook/other\n  modelspec: model/chinook.modelspec.json\n') }, /model\.address names module other/, 'agree');
-add('has-graph-address', 'has', 'meaning.graph.address is another repository\'s', { [manifestPath]: edit('    address: meaning://github.com/demo-db/chinook', '    address: meaning://github.com/demo-db/other') }, /meaning\.graph\.address is meaning:\/\/github\.com\/demo-db\/other, but the MeaningGraph registry registers chinook as/, 'out-of-reach:registry');
-add('has-recordset-page', 'has', 'the page of a recordset is not a public https URL once its name is in it', { [manifestPath]: edit('  recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}', '  recordset_page: https://cloud.openvaultdb.com/{name}') }, null, 'agree');
+add('has-graph-address', 'has', 'meaning.graph.address is another repository\'s', { [manifestPath]: edit('    address: meaning://github.com/demo-db/chinook', '    address: meaning://github.com/demo-db/other') }, /meaning\.graph\.address is meaning:\/\/github\.com\/demo-db\/other, but the MeaningGraph registry registers chinook as/, 'looser:F7');
+add('has-recordset-page', 'has', 'the page of a recordset whose name is a percent escape that a router could decode again (lines 775-781)', { [manifestPath]: (text) => `${text.replace('  - Genre\n', '  - a%2Fb\n')}\nrecordset_entities:\n  "a%2Fb": Genre\n` }, /the recordset page of a%2Fb, .*, has a nested percent escape/, 'agree');
 add('has-ovdbmd-missing', 'has', 'OVDB.md is missing', { 'OVDB.md': null }, /OVDB\.md: OVDB\.md does not exist at commit/, 'agree');
 
+// the meaning file and the model file as files (lines 485-487, 510-513), and the checks of a repository that the manifest stage cannot see
+add('meaning-not-yaml', 'has', 'the meaning file is not valid YAML', { [meaningPath]: () => 'a: [\n' }, /is not valid YAML/, 'agree');
+add('meaning-a-list', 'has', 'the meaning file is a list', { [meaningPath]: () => '- a\n' }, /has no concepts list/, 'agree');
+add('meaning-concepts-null', 'has', 'concepts is null', { [meaningPath]: edit('\nconcepts:\n', '\nconcepts: ~\nlist:\n') }, /has no concepts list/, 'agree');
+add('model-file-missing', 'has', 'the model file is not in the repository', { [modelPath]: null }, /model\.modelspec model\/chinook\.modelspec\.json does not exist at commit/, 'agree');
+add('meaning-file-missing', 'has', 'the meaning file is not in the repository', { [meaningPath]: null }, /meaning\.file model\/chinook\.meaning\.yaml does not exist at commit/, 'agree');
+add('has-recordsets-mapping-twice', 'has', 'two recordsets are mapped to the same entity (line 470): the manifest stage cannot see it', { [manifestPath]: (text) => `${text.replace('  - Genre\n', '  - Genre\n  - Category\n')}\nrecordset_entities:\n  Category: Genre\n` }, /recordset_entities maps more than one native recordset to the same ModelSpec entity/, 'agree');
+add('has-model-address-host', 'has', 'model.address names a host that is not a repository host (line 544)', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://example.com/demo-db/chinook/chinook\n  modelspec: model/chinook.modelspec.json\n') }, /must name a repository on github\.com/, 'agree');
+add('has-model-address-other-repository', 'has', 'model.address names another repository (line 546)', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://github.com/demo-db/other/chinook\n  modelspec: model/chinook.modelspec.json\n') }, /model\.address names github\.com\/demo-db\/other, but the model's files are in/, 'looser:F7');
+add('has-publisher-repository', 'has', 'publisher.repository is not the record\'s repository (line 428; Go compares it with --repository)', { [manifestPath]: edit('  repository: https://github.com/demo-db/chinook', '  repository: https://github.com/demo-db/other') }, /publisher\.repository is https:\/\/github\.com\/demo-db\/other, but the record's repository is/, 'agree');
+add('record-graph-id', 'record', 'meaning.graph.id is not the record\'s meaning_graph (line 427; the meaning file follows it)', { [manifestPath]: edit('    id: chinook\n    address: meaning://', '    id: other\n    address: meaning://'), [meaningPath]: edit('\nid: chinook\n', '\nid: other\n') }, /meaning\.graph\.id is other, but the record's meaning_graph is chinook/, 'out-of-reach:record', { fix: { record: (data) => { data.meaning_graph = 'other'; }, registry: (graphs) => { graphs[0].id = 'other'; }, because: 'the record\'s meaning_graph is other, and the registry registers the graph under that id' } });
+
+// siblings of the families, so that the slices that port them have the edges
+add('concept-label-gt', 'concept', 'a label with > in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a>b"\n') }, /the en label must be a plain string/, 'looser:F3');
+add('concept-label-del', 'concept', 'a label with DEL in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a\\x7fb"\n') }, /the en label must be a plain string/, 'looser:F3');
+add('concept-binding-null', 'concept', 'a binding that is null', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - null\n') }, /every binding must be a mapping/, 'looser:F3');
+add('binding-module-underscore', 'binding', 'a reference whose module starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///_chinook.Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'looser:F4');
+add('binding-entity-underscore', 'binding', 'a reference whose entity starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook._Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'looser:F4');
+add('chain-51', 'chain', 'an extends chain of 51 concepts', { [meaningPath]: concepts(chain(51)) }, null, 'agree');
+
 // what a repository alone cannot say
-add('record-id', 'record', 'manifest.id is not the record\'s id', { [manifestPath]: edit('id: chinook\ntitle', 'id: other\ntitle') }, /id is other, but the record id is chinook/, 'out-of-reach:record');
-add('record-url', 'record', 'manifest.url is not the record\'s url', { [manifestPath]: edit('url: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment', 'url: https://chinookdb.com/ovdb/dbs/other\n\ndeployment') }, /url is https:\/\/chinookdb\.com\/ovdb\/dbs\/other, but the record's url is/, 'out-of-reach:record');
-add('registry-graph-unregistered', 'registry', 'the graph is not in the MeaningGraph registry', {}, /meaning_graph chinook is not registered in the MeaningGraph registry/, 'out-of-reach:registry', { registry: (graphs) => graphs.splice(0, 1) });
-add('registry-graph-repository', 'registry', 'the graph is registered for another repository', {}, /is registered for https:\/\/github\.com\/demo-db\/other, not for/, 'out-of-reach:registry', { registry: (graphs) => { graphs[0].repository = 'https://github.com/demo-db/other'; graphs[0].address = 'meaning://github.com/demo-db/other'; } });
-add('registry-file-not-listed', 'registry', 'meaning.file is not one of the files the registry lists for the graph', {}, /is not one of the meaning files the MeaningGraph registry lists/, 'out-of-reach:registry', { registry: (graphs) => { graphs[0].meaning_files = ['elsewhere.meaning.yaml']; } });
+add('record-id', 'record', 'manifest.id is not the record\'s id', { [manifestPath]: edit('id: chinook\ntitle', 'id: other\ntitle') }, /id is other, but the record id is chinook/, 'out-of-reach:record', { fix: { key: 'other', because: 'the record is called other' } });
+add('record-url', 'record', 'manifest.url is not the record\'s url', { [manifestPath]: edit('url: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment', 'url: https://chinookdb.com/ovdb/dbs/other\n\ndeployment') }, /url is https:\/\/chinookdb\.com\/ovdb\/dbs\/other, but the record's url is/, 'out-of-reach:record', { fix: { record: (data) => { data.url = 'https://chinookdb.com/ovdb/dbs/other'; }, because: 'the record\'s url is that one' } });
+add('registry-graph-unregistered', 'registry', 'the graph is not in the MeaningGraph registry', {}, /meaning_graph chinook is not registered in the MeaningGraph registry/, 'out-of-reach:registry', { registry: (graphs) => graphs.splice(0, 1), fix: { because: 'the registry registers the graph' } });
+add('registry-graph-repository', 'registry', 'the graph is registered for another repository', {}, /is registered for https:\/\/github\.com\/demo-db\/other, not for/, 'out-of-reach:registry', { registry: (graphs) => { graphs[0].repository = 'https://github.com/demo-db/other'; graphs[0].address = 'meaning://github.com/demo-db/other'; }, fix: { because: 'the registry registers the graph for this repository' } });
+add('registry-file-not-listed', 'registry', 'meaning.file is not one of the files the registry lists for the graph', {}, /is not one of the meaning files the MeaningGraph registry lists/, 'out-of-reach:registry', { registry: (graphs) => { graphs[0].meaning_files = ['elsewhere.meaning.yaml']; }, fix: { because: 'the registry lists the meaning file' } });
 
 // ---- run ----
 
@@ -277,8 +300,16 @@ for (const c of cases) {
     else files.set(path, change(files.get(path) ?? ''));
   }
   const problems = await directoryVerdict(files, { editRegistry: c.registry, record: c.record });
+  // An out-of-reach case is mechanical: the same files, under the record or registry in `fix`, are accepted by the Directory.
+  let acceptedWhen;
+  if (c.outcome.startsWith('out-of-reach:')) {
+    if (!c.fix) throw new Error(`${c.id}: an out-of-reach case needs a fix`);
+    const again = await directoryVerdict(files, { editRegistry: c.fix.registry, record: c.fix.record, key: c.fix.key, urls: c.fix.urls });
+    if (again.length > 0) { console.error(`${c.id}: the Directory should accept these files under the fix (${c.fix.because}), and says: ${again.join(' | ').slice(0, 300)}`); process.exit(1); }
+    acceptedWhen = c.fix.because;
+  } else if (c.fix) throw new Error(`${c.id}: only an out-of-reach case has a fix`);
   const ops = Object.entries(c.changes).map(([path]) => (files.has(path) ? ['file', path, files.get(path)] : ['remove', path]));
-  observed.push({ c, problems, ops });
+  observed.push({ c, problems, ops, acceptedWhen });
 }
 
 // Every case is held to the reason that it states: the verdict is the Directory's, and the problem is the one that the note names.
@@ -290,13 +321,48 @@ for (const { c, problems } of observed) {
 }
 if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s) whose verdict does not come from the reason they state:\n${reasonProblems.join('\n')}`); process.exit(1); }
 
+// The rule of Go that refuses each case that both refuse: an `agree` that holds because of an unrelated rule would hide a missing one. The Go test holds the
+// first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
+// empty entities object always leaves recordsets that name things that are not entities.)
+const goRules = {
+  'modelspec-not-json': 'repo-model-json',
+  'modelspec-module-name': 'repo-model-module',
+  'modelspec-no-entities': 'repo-recordsets',
+  'concept-no-concepts': 'meaning-concepts',
+  'has-licence-differs': 'meaning-license',
+  'has-model-name': 'repo-model-name',
+  'has-recordsets-lack': 'repo-recordsets',
+  'has-recordsets-extra': 'repo-recordsets',
+  'has-recordsets-twice': 'manifest-recordsets',
+  'has-models-entry-spelling': 'meaning-models',
+  'has-models-entry-hcl': 'meaning-hcl',
+  'has-models-entry-suffix': 'manifest-model',
+  'has-models-entry-missing': 'repo-file',
+  'has-model-address-lower': 'manifest-model',
+  'has-model-address-ref': 'manifest-model',
+  'has-model-address-module': 'repo-model-address',
+  'has-recordset-page': 'manifest-recordsets',
+  'has-ovdbmd-missing': 'repo-ovdbmd',
+  'meaning-not-yaml': 'yaml',
+  'meaning-a-list': 'meaning-shape',
+  'meaning-concepts-null': 'meaning-concepts',
+  'model-file-missing': 'repo-file',
+  'meaning-file-missing': 'repo-file',
+  'has-recordsets-mapping-twice': 'repo-recordsets',
+  'has-model-address-host': 'manifest-model',
+  'has-publisher-repository': 'repo-repository',
+};
+for (const { c, problems } of observed) {
+  if (problems.length > 0 && c.outcome === 'agree' && !(c.id in goRules)) reasonProblems.push(`${c.id}: a refusing agree case needs the rule of Go that refuses it`);
+}
+if (reasonProblems.length > 0 && !process.argv.includes('--discover')) { console.error(reasonProblems.join('\n')); process.exit(1); }
 const golden = `${JSON.stringify({
   format: 'ovdb-directory-stage/1',
   reference: `${pins.directory.repository}@${pins.directory.commit}`,
   about: 'The verdict of the Directory\'s own file stage (analyseDatabase, own form) on repositories made from the Directory\'s own fixtures; outcome is what Go is expected to do against it. See directory-stage.mjs.',
   repository: chinookUrl,
   base: Object.fromEntries(base),
-  cases: observed.map(({ c, problems, ops }) => ({ id: c.id, group: c.group, note: c.note, ops, directory: problems.length === 0 ? 'accepts' : 'refuses', problem: problems[0]?.slice(0, 240), outcome: c.outcome })),
+  cases: observed.map(({ c, problems, ops, acceptedWhen }) => ({ id: c.id, group: c.group, note: c.note, ops, directory: problems.length === 0 ? 'accepts' : 'refuses', problem: problems[0]?.slice(0, 240), outcome: c.outcome, go: goRules[c.id], acceptedWhen })),
 }, null, 1)}\n`;
 const digest = `${JSON.stringify({ 'repo/testdata/reference/directory-stage.json': sha(golden) }, null, 1)}\n`;
 if (process.argv.includes('--check')) {

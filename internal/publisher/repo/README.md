@@ -129,23 +129,29 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 91 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 107 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
 its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 27 | Go and the Directory give the same verdict (the controls, and the rules Go has) |
+| outcome: agree | 36 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: looser:F2 | 10 | Go accepts what the Directory refuses; the ModelSpec file's own rules, `parseModelSpec` |
-| outcome: looser:F3 | 24 | the same, for the shape of a concept and a concept declared twice |
-| outcome: looser:F4 | 8 | the same, for the bindings of a concept |
+| outcome: looser:F3 | 27 | the same, for the shape of a concept and a concept declared twice |
+| outcome: looser:F4 | 10 | the same, for the bindings of a concept |
 | outcome: looser:F5 | 7 | the same, for the `extends` and `values-of` chains inside the repository's own graph |
 | outcome: looser:F6 | 3 | the same, for the meaning file's `models:` entry when the manifest does not write `model.hcl` |
-| outcome: out-of-reach:record | 2 | the Directory refuses by what the database's registry record says (its id, its url); a repository alone cannot |
-| outcome: out-of-reach:registry | 6 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered); the Publisher profile stands in for the graph's address with `publisher.repository` |
+| outcome: looser:F7 | 2 | the same, for the addresses: `meaning.graph.address` (the Publisher profile compares it with `publisher.repository`, the Directory profile does not) and an own-form `model.address` that names another repository (no profile compares it) |
+| outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
+| outcome: out-of-reach:registry | 5 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
 | outcome: stricter:model-hcl-required | 1 | Go refuses a manifest that does not write `model.hcl`; the Directory accepts it |
 | outcome: stricter:meaning-license-required | 2 | Go refuses a meaning file with no text `license`; the Directory compares it only when it is text |
 | outcome: stricter:meaning-id-compared | 1 | Go refuses a meaning file whose `id` is not `meaning.graph.id`; the Directory does not read it in this stage |
+
+An `out-of-reach` label is mechanical, not a judgement: the case carries the record, key, registry or URL map (`fix`) under which the Directory accepts **the same
+files**, the generator runs `analyseDatabase` again under it and stops unless the Directory accepts, and the golden says which (`acceptedWhen`). A refusal that no
+record or registry could lift is not out of reach: `meaning.graph.address` must be the address of the record's repository, which must be `publisher.repository`, so the
+check is offline once `publisher.repository` is written, and that is F7.
 
 The looser cases are listed in `drift.json` (`goLooser`, `fileProbes`) with their slice, and a test holds the list to the golden both ways, as `TestDrift` does for
 the manifest stage: a slice removes its entries in its own pull request. None of them is ported yet (this change ports no rule).
@@ -160,24 +166,30 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 357-368 | a commit that is not on the default branch of the hosted repository; the commit cannot be opened | needs the network and the record | none |
 | 372-391 | OVDB.md or the manifest missing, not regular, front matter, `ovdb: 1`, `publish`, the manifest not listed | has | `has-ovdbmd-missing` |
 | 396-411 | the descriptor listed and valid; its rules | has (#62); which file is the descriptor needs the record | none |
-| 424-428 | `manifest.url`, `manifest.id`, `meaning.graph.id`, `publisher.repository` against the record | `publisher.repository` has (`--repository`); the others need the record | `record-id`, `record-url` |
-| 490-505 | the graph is registered, for this repository, with this address, and lists `meaning.file` | needs the registry (`meaning.graph.address` against `publisher.repository` is a stand-in) | `registry-graph-unregistered`, `registry-graph-repository`, `registry-file-not-listed`, `has-graph-address` |
-| 510-513 | the model file or the meaning file is not a regular file at the commit | has | the repository golden |
-| 514-515 | `parseModelSpec` (modelspec.mjs 92-118): not JSON, `module.name`, no entities | has | `modelspec-not-json`, `modelspec-module-name`, `modelspec-no-entities` |
+| 424-426 | `manifest.url`, `manifest.id` against the record | needs the record | `record-url`, `record-id` |
+| 427 | `meaning.graph.id` against the record's `meaning_graph` | needs the record (Go compares it with the meaning file's `id`) | `record-graph-id` |
+| 428 | `publisher.repository` against the record's repository | has, with `--repository` | `has-publisher-repository` |
+| 490-505 | the graph is registered, for this repository, with this address, and lists `meaning.file` | needs the registry; the address is derived from the repository, so offline once `publisher.repository` is written: **F7** | `registry-*`, `has-graph-address` |
+| 485-487 | the meaning file is not valid YAML, not a mapping, has no concepts list | has (#63) | `meaning-not-yaml`, `meaning-a-list`, `concept-no-concepts`, `meaning-concepts-null` |
+| 510-513 | the model file or the meaning file is not a regular file at the commit | has | `model-file-missing`, `meaning-file-missing` |
+| 514-515 | `parseModelSpec` (modelspec.mjs 92-118): not JSON, `module.name`, no entities | has | `modelspec-not-json`, `modelspec-module-name`, `modelspec-no-entities` (through the recordsets rule) |
 | 514-515 | `parseModelSpec`: the `"modelspec"` version, entity and property names, properties, types, references | **F2** | `modelspec-*` (10) |
 | 517, 453-471 | the recordsets are the entities (own form; `recordsets_partial` is for a shared model) | has | `has-recordsets-*` |
+| 470 | two recordsets mapped to one entity (the manifest stage cannot see it) | has | `has-recordsets-mapping-twice` |
 | 521 | the meaning file has no concepts list | has (#63) | `concept-no-concepts` |
 | 522 | `licences.meaning` against the file's `license` | has, and stricter (requires text) | `has-licence-differs`, `stricter-meaning-license-*` |
 | 523 | `model.name` is the module | has | `has-model-name` |
 | 526-535 | the `models:` entry: a safe relative path, ending in `.modelspec.hcl`, an existing regular file | has through `model.hcl`; **F6** for a manifest without it | `has-models-entry-*`, `nohcl-*` |
 | 536 | `model.hcl` is that entry | has | `has-models-entry-hcl` |
-| 537-548 | own-form `model.address`: host, lower case, module, no `?ref=`; repository is the record's | has (the repository through `--repository`) | `has-model-address-*` |
+| 537-545 | own-form `model.address`: host, lower case, module, no `?ref=` | has | `has-model-address-lower`, `-ref`, `-module`, `-host` |
+| 546 | own-form `model.address` names the record's repository | **F7** (no profile compares it with `publisher.repository`) | `has-model-address-other-repository` |
 | 549-572 | the model as the ModelSpec registry registers it | needs the registry | none |
-| 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | **F3** | `concept-*` (24) |
-| 728-754 | bindings | **F4** | `binding-*` (8) |
+| 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | **F3** | `concept-*` (27) |
+| 728-754 | bindings | **F4** | `binding-*` (10) |
 | 767-770 | chains (meaning.mjs 195-226) inside the own graph | **F5**; by address to another graph needs the registry | `chain-*` (7), `chain-address-unregistered`, `chain-core-unregistered` |
-| 775-781 | the page of every recordset | has | `has-recordset-page` |
+| 775-781 | the page of every recordset, with the real names | has (the page loop of #58, code `manifest-recordsets`) | `has-recordset-page` |
 | 784-800 | `representation_contract`: envelope, attachment, source data | has (#54; the attachment content checks are not audited, ovdb#61); the canonical meaning needs the registry | none |
+| 890 | `claimProblems`: the claims of one record against the others | needs the other records (A1 and A4) | none |
 
 ## Nothing is left
 
