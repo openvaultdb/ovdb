@@ -30,8 +30,8 @@
         "currency"
       ],
       "fieldMapping": {
-        "time": "referenceDate",
-        "currency": "quoteCurrency",
+        "time": "time",
+        "currency": "currency",
         "rate": "rate"
       },
       "context": {
