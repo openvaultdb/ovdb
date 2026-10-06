@@ -36,7 +36,10 @@
     "concept-binding-scalar",
     "concept-binding-role",
     "concept-binding-no-role",
-    "concept-duplicate"
+    "concept-duplicate",
+    "concept-label-gt",
+    "concept-label-del",
+    "concept-binding-null"
    ]
   },
   {
@@ -53,7 +56,9 @@
     "binding-entity",
     "binding-role-needs-property",
     "binding-property",
-    "binding-property-number"
+    "binding-property-number",
+    "binding-module-underscore",
+    "binding-entity-underscore"
    ]
   },
   {
@@ -82,6 +87,17 @@
     "nohcl-entry-suffix",
     "nohcl-entry-missing",
     "nohcl-entry-spelling"
+   ]
+  },
+  {
+   "kind": "addresses-name-the-repository",
+   "direction": "looser",
+   "profile": "directory",
+   "slice": "F7",
+   "why": "the Directory refuses a manifest whose meaning.graph.address or own-form model.address is not the address of the repository (directory.mjs 495-500 through the record, 544-546): the record's repository must be publisher.repository, the graph's address is derived from its repository, and the model address names the same repository. A repository alone knows publisher.repository (and --repository); the Publisher profile compares meaning.graph.address with it, the Directory profile does not, and no profile compares model.address with it",
+   "fileProbes": [
+    "has-graph-address",
+    "has-model-address-other-repository"
    ]
   }
  ],

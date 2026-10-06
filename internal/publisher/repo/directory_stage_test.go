@@ -24,6 +24,9 @@ type stageCase struct {
 	Directory string
 	Problem   string
 	Outcome   string
+	// Go is the rule of Go that refuses a case that both refuse, and AcceptedWhen is the record or registry under which the Directory accepts the same files.
+	Go           string
+	AcceptedWhen string
 }
 
 type stageGolden struct {
@@ -78,6 +81,14 @@ func stageVerdict(t testing.TB, g stageGolden, c stageCase, profile manifest.Pro
 	return Check(m.memory(), Options{Profile: profile, Repository: &repository})
 }
 
+// firstRule is the rule of the first finding of a result, or "".
+func firstRule(r manifest.Result) string {
+	if len(r.Findings) == 0 {
+		return ""
+	}
+	return r.Findings[0].Rule
+}
+
 func TestEveryCaseOfTheDirectoryStageIsInTheRelationItsOutcomeSays(t *testing.T) {
 	g := readStageGolden(t)
 	counts := map[string]int{}
@@ -110,6 +121,16 @@ func TestEveryCaseOfTheDirectoryStageIsInTheRelationItsOutcomeSays(t *testing.T)
 			if _, known := stageStricterKinds[kind]; !ok || !known {
 				t.Errorf("%s: Go refuses what the Directory accepts, and the golden says %q", c.ID, c.Outcome)
 			}
+		}
+		if first := firstRule(directory); c.Directory == "refuses" && c.Outcome == "agree" {
+			if c.Go == "" || c.Go != first {
+				t.Errorf("%s: Go refuses it as %q (%s profile), and the golden says it should be %q: a case agrees only through the rule that is meant", c.ID, first, "Directory", c.Go)
+			}
+		} else if c.Go != "" {
+			t.Errorf("%s: the golden names the rule %q of Go for a case that is not a refusal both make", c.ID, c.Go)
+		}
+		if strings.HasPrefix(c.Outcome, "out-of-reach:") && c.AcceptedWhen == "" {
+			t.Errorf("%s: an out-of-reach case says under which record or registry the Directory accepts the same files", c.ID)
 		}
 		counts[c.Outcome]++
 	}
