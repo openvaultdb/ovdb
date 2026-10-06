@@ -473,6 +473,9 @@ for (const [name, ops] of Object.entries({
   // The Directory's rules for the bindings of a concept against the model (directory.mjs 728-754); the checker never reads the concepts.
   'a binding that names an entity the model lacks': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    bindings:\n      - model: modelspec:///chinook.Nope\n        role: entity\n']],
   'a binding that names a property the entity lacks': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    bindings:\n      - model: modelspec:///chinook.Album\n        property: Nope\n        role: identifier\n']],
+  // The Directory's rules for the chains of a concept inside its own graph (meaning.mjs 195-226); the checker never reads the concepts.
+  'two concepts that extend each other': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    extends: c-d\n  - id: c-d\n    extends: a-b\n']],
+  'a concept that extends one the graph lacks': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    extends: nothing\n']],
   'id of another graph': [['edit', meaningPath, '\nid: chinook\n', '\nid: other\n']], 'id missing': [['edit', meaningPath, '\nid: chinook\n', '\n']],
   'id a number': [['edit', meaningPath, '\nid: chinook\n', '\nid: 5\n']], 'id null': [['edit', meaningPath, '\nid: chinook\n', '\nid:\n']],
   'id quoted': [['edit', meaningPath, '\nid: chinook\n', '\nid: "chinook"\n']],

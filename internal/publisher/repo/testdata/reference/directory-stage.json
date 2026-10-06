@@ -890,7 +890,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: extends returns to artist",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-self",
@@ -905,7 +906,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: extends returns to artist",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-unresolved",
@@ -920,7 +922,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: extends: nothing names concept nothing, which chinook does not have at 8c07676d0050a4c038e85b9a45fa8266e4b3badc",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-not-a-reference",
@@ -935,7 +938,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: extends: \"Not A Ref\" is not a concept reference",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-long",
@@ -950,7 +954,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept c1: extends chain is longer than 50 concepts",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-50",
@@ -979,7 +984,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: values-of: nothing names concept nothing, which chinook does not have at 3c0fa7dcfe4cc7b7b33a2acb10ea1436c49efbda",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-values-of-cycle",
@@ -994,7 +1000,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: values-of album: extends returns to album",
-   "outcome": "looser:F5"
+   "outcome": "agree",
+   "go": "meaning-chain"
   },
   {
    "id": "chain-address-unregistered",

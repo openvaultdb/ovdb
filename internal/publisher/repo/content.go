@@ -58,7 +58,7 @@ func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
 		module, facts = c.model(path, m, f.model)
 	}
 	if f.haveMeaning {
-		wants := manifest.MeaningWants{File: m.MeaningFile.Value, GraphID: m.GraphID, Licence: m.LicenceMeaning, Module: module, Model: facts}
+		wants := manifest.MeaningWants{File: m.MeaningFile.Value, GraphID: m.GraphID, Licence: m.LicenceMeaning, Module: module, Model: facts, GraphAddress: m.GraphAddress}
 		if f.haveHCL {
 			wants.ModelHCL = m.ModelHCL.Value
 		}

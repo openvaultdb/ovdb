@@ -225,14 +225,14 @@ add('binding-property-number', 'binding', 'a property that is a number', { [mean
 const chain = (n) => Array.from({ length: n }, (_, i) => `  - id: c${i + 1}\n${i + 1 < n ? `    extends: c${i + 2}\n` : ''}`).join('');
 add('chain-own', 'control', 'a concept that extends another of the same graph by its bare id', { [meaningPath]: concepts('  - id: artist\n    extends: album\n  - id: album\n') }, null, 'agree');
 add('chain-own-address', 'control', 'a concept that extends another of the same graph by its address', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album\n  - id: album\n') }, null, 'agree');
-add('chain-cycle', 'chain', 'two concepts that extend each other', { [meaningPath]: concepts('  - id: artist\n    extends: album\n  - id: album\n    extends: artist\n') }, /extends returns to artist/, 'looser:F5');
-add('chain-self', 'chain', 'a concept that extends itself', { [meaningPath]: concepts('  - id: artist\n    extends: artist\n') }, /extends returns to artist/, 'looser:F5');
-add('chain-unresolved', 'chain', 'extends names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    extends: nothing\n') }, /extends: nothing names concept nothing, which chinook does not have/, 'looser:F5');
-add('chain-not-a-reference', 'chain', 'extends is not a concept reference', { [meaningPath]: concepts('  - id: artist\n    extends: Not A Ref\n') }, /extends: "Not A Ref" is not a concept reference/, 'looser:F5');
-add('chain-long', 'chain', 'an extends chain of 52 concepts (the limit is 50)', { [meaningPath]: concepts(chain(52)) }, /extends chain is longer than 50 concepts/, 'looser:F5');
+add('chain-cycle', 'chain', 'two concepts that extend each other', { [meaningPath]: concepts('  - id: artist\n    extends: album\n  - id: album\n    extends: artist\n') }, /extends returns to artist/, 'agree');
+add('chain-self', 'chain', 'a concept that extends itself', { [meaningPath]: concepts('  - id: artist\n    extends: artist\n') }, /extends returns to artist/, 'agree');
+add('chain-unresolved', 'chain', 'extends names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    extends: nothing\n') }, /extends: nothing names concept nothing, which chinook does not have/, 'agree');
+add('chain-not-a-reference', 'chain', 'extends is not a concept reference', { [meaningPath]: concepts('  - id: artist\n    extends: Not A Ref\n') }, /extends: "Not A Ref" is not a concept reference/, 'agree');
+add('chain-long', 'chain', 'an extends chain of 52 concepts (the limit is 50)', { [meaningPath]: concepts(chain(52)) }, /extends chain is longer than 50 concepts/, 'agree');
 add('chain-50', 'control', 'an extends chain of 50 concepts', { [meaningPath]: concepts(chain(50)) }, null, 'agree');
-add('chain-values-of-unresolved', 'chain', 'values-of names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    values-of: nothing\n') }, /values-of: nothing names concept nothing, which chinook does not have/, 'looser:F5');
-add('chain-values-of-cycle', 'chain', 'values-of names a concept whose chain loops', { [meaningPath]: concepts('  - id: artist\n    values-of: album\n  - id: album\n    extends: genre\n  - id: genre\n    extends: album\n') }, /values-of album: extends returns to album/, 'looser:F5');
+add('chain-values-of-unresolved', 'chain', 'values-of names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    values-of: nothing\n') }, /values-of: nothing names concept nothing, which chinook does not have/, 'agree');
+add('chain-values-of-cycle', 'chain', 'values-of names a concept whose chain loops', { [meaningPath]: concepts('  - id: artist\n    values-of: album\n  - id: album\n    extends: genre\n  - id: genre\n    extends: album\n') }, /values-of album: extends returns to album/, 'agree');
 add('chain-address-unregistered', 'chain', 'extends names a graph by an address that no registry lists', { [meaningPath]: (text) => concepts(`  - id: artist\n    extends: meaning://github.com/nobody/nothing/date?ref=${core.commit}\n`)(text) }, /is not registered in the MeaningGraph registry/, 'out-of-reach:registry', {
   fix: { urls: ['https://github.com/nobody/nothing'], registry: (graphs) => graphs.push({ id: 'nothing', title: 'Nothing', kind: 'universal', status: 'draft', address: 'meaning://github.com/nobody/nothing', repository: 'https://github.com/nobody/nothing', commit: core.commit, meaning_files: ['*.meaning.yaml'], maintainers: ['x'] }), because: 'the registry registers that address at the commit of the core graph' },
 });
@@ -328,6 +328,13 @@ if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s)
 // first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
 // empty entities object always leaves recordsets that name things that are not entities.)
 const goRules = {
+  'chain-cycle': 'meaning-chain',
+  'chain-self': 'meaning-chain',
+  'chain-unresolved': 'meaning-chain',
+  'chain-not-a-reference': 'meaning-chain',
+  'chain-long': 'meaning-chain',
+  'chain-values-of-unresolved': 'meaning-chain',
+  'chain-values-of-cycle': 'meaning-chain',
   'binding-no-model': 'meaning-binding',
   'binding-model-form': 'meaning-binding',
   'binding-other-model': 'meaning-binding',
