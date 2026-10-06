@@ -65,11 +65,27 @@ func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
 	}
 }
 
+// modelRead is the result of reading a model file. A repository lists up to MaxManifests manifests that may name one file, and the file is the same for
+// all of them, so it is read once.
+type modelRead struct {
+	spec modelSpec
+	err  error
+}
+
 // model reads the model file and holds the manifest to it: model.name and the module of model.address are its module, and the recordsets are its
 // entities. It returns the module, or "" when the file declares none that can be read.
 func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	file := m.ModelSpec.Value
-	spec, err := readModel(data)
+	if c.models == nil {
+		c.models = map[string]modelRead{}
+	}
+	read, ok := c.models[file]
+	if !ok {
+		spec, err := readModel(data)
+		read = modelRead{spec, err}
+		c.models[file] = read
+	}
+	spec, err := read.spec, read.err
 	switch {
 	case errors.Is(err, errDepth):
 		c.add(file, RuleModelDepth, 0, "is nested more than %d levels deep, which is more than this check reads", maxJSONDepth)
