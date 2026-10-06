@@ -140,8 +140,7 @@ its name states. `directory_stage_test.go` replays each case in memory with both
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 90 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
-| outcome: looser:F6 | 3 | the same, for the meaning file's `models:` entry when the manifest does not write `model.hcl` |
+| outcome: agree | 93 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: looser:F7 | 2 | the same, for the addresses: `meaning.graph.address` (the Publisher profile compares it with `publisher.repository`, the Directory profile does not) and an own-form `model.address` that names another repository (no profile compares it) |
 | outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
 | outcome: out-of-reach:registry | 5 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
@@ -181,7 +180,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 521 | the meaning file has no concepts list | has (#63) | `concept-no-concepts` |
 | 522 | `licences.meaning` against the file's `license` | has, and stricter (requires text) | `has-licence-differs`, `stricter-meaning-license-*` |
 | 523 | `model.name` is the module | has | `has-model-name` |
-| 526-535 | the `models:` entry: a safe relative path, ending in `.modelspec.hcl`, an existing regular file | has through `model.hcl`; **F6** for a manifest without it | `has-models-entry-*`, `nohcl-*` |
+| 526-535 | the `models:` entry: a safe relative path, ending in `.modelspec.hcl`, an existing regular file | has (F6: judged by itself, with or without `model.hcl`: `meaning-models`, `meaning-model-file`) | `has-models-entry-*`, `nohcl-*` |
 | 536 | `model.hcl` is that entry | has | `has-models-entry-hcl` |
 | 537-545 | own-form `model.address`: host, lower case, module, no `?ref=` | has | `has-model-address-lower`, `-ref`, `-module`, `-host` |
 | 546 | own-form `model.address` names the record's repository | **F7** (no profile compares it with `publisher.repository`) | `has-model-address-other-repository` |

@@ -1230,7 +1230,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: the chinook model model/chinook.model.txt must be a .modelspec.hcl file (the model's source)",
-   "outcome": "looser:F6"
+   "outcome": "agree",
+   "go": "meaning-models"
   },
   {
    "id": "nohcl-entry-missing",
@@ -1250,7 +1251,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: the chinook model model/nowhere.modelspec.hcl does not exist at commit 89977bc800d12d41451e41349a776f617f35641b",
-   "outcome": "looser:F6"
+   "outcome": "agree",
+   "go": "meaning-model-file"
   },
   {
    "id": "nohcl-entry-spelling",
@@ -1270,7 +1272,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: models must name the ModelSpec module chinook with a relative path that stays inside the repository (no leading /, no empty segment, no glob, no escaping with ..), got \"chinook modelspec.hcl\"",
-   "outcome": "looser:F6"
+   "outcome": "agree",
+   "go": "meaning-models"
   },
   {
    "id": "stricter-meaning-license-missing",
