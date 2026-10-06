@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,12 +10,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"charm.land/fang/v2"
 	"github.com/dal-go/dalgo/dal"
 	"github.com/dal-go/dalgo2http"
 	"github.com/dal-go/record"
@@ -23,6 +27,7 @@ import (
 	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"github.com/openvaultdb/openvaultdb-go/pkg/schema"
+	"github.com/openvaultdb/openvaultdb-go/pkg/server"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +61,138 @@ func serveHTTPRequest(h http.Handler, method, path, body string, headers http.He
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	return w
+}
+
+// The child executes the same Fang/cleanup/telemetry/exit boundary as main.
+// Parent-controlled release happens only after the drain failure is reported,
+// so an immediate os.Exit would leave an observable synthetic snapshot spool.
+func TestServeShutdownProcessBoundary(t *testing.T) {
+	if os.Getenv("OVDB_SERVE_PROCESS_TEST") == "1" {
+		serveShutdownProcessChild(t)
+		return
+	}
+	dir := isolatedServeTemp(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestServeShutdownProcessBoundary$")
+	child.Env = append(os.Environ(), "OVDB_SERVE_PROCESS_TEST=1", "OVDB_SERVE_PROCESS_DIR="+dir, "OVDB_SERVE_PROCESS_MANIFEST="+writeShop(t))
+	var output bytes.Buffer
+	child.Stdout, child.Stderr = &output, &output
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- child.Wait() }()
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "timeout-reported")); err == nil {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("child exited before owning cleanup: %v\n%s", err, output.String())
+		case <-ctx.Done():
+			t.Fatal("child never reported bounded-drain failure")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if len(snapshotFiles(t, dir)) != 1 {
+		t.Fatal("child does not own its active synthetic spool")
+	}
+	// POSIX repeated shutdown signals must not kill the cleanup owner. Windows
+	// cannot send os.Interrupt via os.Process.Signal; its lifetime/exit case
+	// still runs here in the cross-platform lifecycle CI matrix.
+	if runtime.GOOS != "windows" {
+		if err := child.Process.Signal(os.Interrupt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("child exited with an active spool: %v\n%s", err, output.String())
+	case <-time.After(100 * time.Millisecond):
+	}
+	for _, name := range []string{"db-closed", "telemetry-flushed"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s occurred beneath an active handler", name)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release-reader"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			t.Fatalf("timeout lost failure exit status: %v\n%s", err, output.String())
+		}
+	case <-ctx.Done():
+		t.Fatal("child retained cleanup ownership after handler settled")
+	}
+	if !strings.Contains(output.String(), errServeHandlersActive.Error()) || len(snapshotFiles(t, dir)) != 0 {
+		t.Fatalf("missing timeout or orphaned spool after process exit: %s", output.String())
+	}
+	for _, name := range []string{"db-closed", "telemetry-flushed"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("child did not complete %s: %v", name, err)
+		}
+	}
+}
+
+func serveShutdownProcessChild(t *testing.T) {
+	t.Helper()
+	dir := os.Getenv("OVDB_SERVE_PROCESS_DIR")
+	reader := &blockedServeReader{entered: make(chan struct{}), release: make(chan struct{})}
+	deps := defaultServeDeps()
+	deps.drainTimeout = 20 * time.Millisecond
+	if runtime.GOOS == "windows" {
+		useSyntheticSnapshotHandler(t, &deps, dir, reader)
+	}
+	deps.mountFile = func(path string) (*core.Database, error) {
+		m, err := manifest.Load(path)
+		if err != nil {
+			return nil, err
+		}
+		db, err := core.Open(m, &blockedServeDB{reader: reader}, []schema.Mode{schema.ModeStrict}, "")
+		if err == nil {
+			db.OnClose(func() error {
+				if !reader.closed.Load() {
+					return errors.New("database closed before reader")
+				}
+				return os.WriteFile(filepath.Join(dir, "db-closed"), nil, 0600)
+			})
+		}
+		return db, err
+	}
+	deps.run = func(_ *cobra.Command, srv *http.Server) error {
+		go serveHTTPRequest(srv.Handler, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
+		<-reader.entered
+		return context.DeadlineExceeded
+	}
+	go func() {
+		for {
+			if _, err := os.Stat(filepath.Join(dir, "release-reader")); err == nil {
+				close(reader.release)
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	cmd := newServeCmdWith(deps)
+	cmd.SetArgs([]string{"--manifest", os.Getenv("OVDB_SERVE_PROCESS_MANIFEST")})
+	code := executeRoot(cmd, func(context.Context) {
+		if err := os.WriteFile(filepath.Join(dir, "telemetry-flushed"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}, fang.WithErrorHandler(func(w io.Writer, _ fang.Styles, err error) {
+		_, _ = fmt.Fprintln(w, err)
+		if !errors.Is(err, errServeHandlersActive) {
+			t.Fatalf("unexpected child failure: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "timeout-reported"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	os.Exit(code)
 }
 
 func snapshotFiles(t *testing.T, temp string) []os.DirEntry {
@@ -237,6 +374,14 @@ func TestServeShutdownRemovesAuthorizedSyntheticSnapshot(t *testing.T) {
 	temp := isolatedServeTemp(t)
 	_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", writeShop(t)}, func(h http.Handler) {
 		w := serveHTTPRequest(h, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
+		if runtime.GOOS == "windows" {
+			// v0.18.0's POSIX-mode snapshot privacy guard refuses Windows
+			// rather than admitting storage with unverified ACL privacy.
+			if w.Code != 500 || !strings.Contains(w.Body.String(), "query snapshot storage is unavailable") || len(snapshotFiles(t, temp)) != 0 {
+				t.Fatalf("Windows snapshot did not fail closed without a spool: %d %s", w.Code, w.Body.String())
+			}
+			return
+		}
 		if w.Code != 200 || len(snapshotFiles(t, temp)) != 1 {
 			t.Fatalf("synthetic snapshot not created: %d %s", w.Code, w.Body)
 		}
@@ -275,6 +420,36 @@ type blockedServeDB struct {
 	reader *blockedServeReader
 }
 
+// Producer v0.18.0 cannot admit permitted snapshots on Windows because its
+// privacy guard uses POSIX permission bits. Windows still tests real HTTP
+// no-retention and fail-closed snapshot refusal. This explicit seam exercises
+// the CLI's handler/process lifetime with a fabricated spool, without changing
+// or bypassing the producer's privacy guard. Unix uses the actual producer
+// snapshot capture in these same lifecycle cases.
+func useSyntheticSnapshotHandler(t *testing.T, deps *serveDeps, temp string, reader *blockedServeReader) {
+	t.Helper()
+	deps.handler = func(*server.Server) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			dir := filepath.Join(temp, fmt.Sprintf("ovdb-query-snapshots-%d", os.Getuid()))
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			file, err := os.CreateTemp(dir, "synthetic-lifecycle-")
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			_ = file.Close()
+			defer func() { _ = os.Remove(file.Name()) }()
+			reader.ctx = r.Context()
+			defer func() { _ = reader.Close() }()
+			_, _ = reader.Next()
+			w.WriteHeader(http.StatusOK)
+		})
+	}
+}
+
 func (d *blockedServeDB) ExecuteQueryToRecordsReader(ctx context.Context, _ dal.Query) (dal.RecordsReader, error) {
 	d.reader.ctx = ctx
 	return d.reader, nil
@@ -284,7 +459,7 @@ func (d *blockedServeDB) ExecuteQueryToRecordsReader(ctx context.Context, _ dal.
 // synthetic spool when Next blocks. Failed graceful shutdown must cancel it,
 // force-close connections, and defer resource closure until the reader exits.
 func TestServeShutdownOwnsActiveSnapshotUntilHandlerSettles(t *testing.T) {
-	for _, mode := range []string{"graceful", "cancelled", "stubborn"} {
+	for _, mode := range []string{"graceful", "cancelled", "stubborn", "synthetic-stubborn"} {
 		t.Run(mode, func(t *testing.T) {
 			temp := isolatedServeTemp(t)
 			reader := &blockedServeReader{entered: make(chan struct{}), release: make(chan struct{}), cooperative: mode == "cancelled"}
@@ -292,6 +467,9 @@ func TestServeShutdownOwnsActiveSnapshotUntilHandlerSettles(t *testing.T) {
 			closedEarly := atomic.Bool{}
 			deps := defaultServeDeps()
 			deps.drainTimeout = 20 * time.Millisecond
+			if runtime.GOOS == "windows" || mode == "synthetic-stubborn" {
+				useSyntheticSnapshotHandler(t, &deps, temp, reader)
+			}
 			deps.mountFile = func(path string) (*core.Database, error) {
 				m, err := manifest.Load(path)
 				if err != nil {
@@ -346,7 +524,7 @@ func TestServeShutdownOwnsActiveSnapshotUntilHandlerSettles(t *testing.T) {
 			} else if !errors.Is(err, context.DeadlineExceeded) || !forced {
 				t.Fatalf("failed shutdown lost error or force-close: %v forced=%v", err, forced)
 			}
-			if mode == "stubborn" {
+			if strings.HasSuffix(mode, "stubborn") {
 				if !errors.Is(err, errServeHandlersActive) {
 					t.Fatalf("active handler falsely reported settled: %v", err)
 				}
