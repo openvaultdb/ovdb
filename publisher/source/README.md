@@ -49,6 +49,26 @@ after caller mutation. This version has no active/admitted state. A future
 version requires actual runtime/providerReads/consumer acceptance, fresh
 semantic review, source-rights integration review and product-specific paid
 applicability clearance. No pass state can be obtained by editing a flag.
+
+The publisher's `repo.PrepareDynamicSourceRight` helper rechecks original Git
+objects, requires a clean complete repository verdict, then verifies the same
+manifest revision, byte count and SHA-256 again before returning a detached
+source-data terms inventory. Its explicit native recordset and trusted executor
+identity bind the publisher definition to a local runtime collection. It carries
+the linked declaration, attribution, original free-source link, restructuring
+disclosure and one `provider` pin of the manifest metadata. It does not fetch a
+resource, produce immutable input pins or populate the preparatory manifest's
+`SourceRights`; `RequireExecution` continues to refuse. Exact native-to-local
+binding, semantics, rights, no-retention and paid/free-only approval remain
+independent gates before any operator uses the prepared record.
+
+The paired server capability is the optional
+`openvaultdb-go/server.ProviderReadProfile.sourceRight` field: it verifies exact
+mounted terms/identity and the full rights digest before supplying those notices
+to discovery and query responses. Library deployment comes first. The OVDB CLI
+must adopt the independently reviewed, CI-published `openvaultdb-go` tag before
+its existing `--provider-read-profiles` loader accepts that field; no development
+replacement or manual tag is part of this metadata preparation change.
 `readEvidence` advertises the required `ovdb-provider-read/1` boundary and
 executor-observed classification; it does not create a read receipt or claim
 that runtime/consumer support exists. Executor-scoped legacy rights IDs and
