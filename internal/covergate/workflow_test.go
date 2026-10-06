@@ -222,6 +222,7 @@ func goldensSteps(node string) []any {
 		run("node internal/publisher/rules/testdata/reference/generate.mjs --check"),
 		run("node internal/publisher/manifest/testdata/reference/generate.mjs --check"),
 		run("node internal/publisher/repo/testdata/reference/generate.mjs --check"),
+		run("node internal/publisher/repo/testdata/reference/directory-stage.mjs --check"),
 		map[string]any{"uses": "actions/setup-go@v7", "with": map[string]any{"go-version": "1.27.0", "cache": true}},
 		run("OVDB_REAL_GIT=1 go test -count=1 -v -run RealGit ./internal/publisher/repo/"),
 		run("OVDB_REAL_GIT=1 go test -count=1 -v -run PublisherCheckEndToEnd ."),
@@ -371,7 +372,7 @@ func TestWorkflowChecksTheGoldens(t *testing.T) {
 		"a working directory on a step": stepKey(5, "working-directory", "/tmp"),
 		"a command with || true":        stepKey(3, "run", "node internal/publisher/rules/testdata/reference/generate.mjs --check || true"),
 		"a command changed":             stepKey(2, "run", "node --test internal/publisher/references.test.mjs --test-name-pattern=none"),
-		"the real-git test without -v":  stepKey(7, "run", "OVDB_REAL_GIT=1 go test -count=1 -run RealGit ./internal/publisher/repo/"),
+		"the real-git test without -v":  stepKey(8, "run", "OVDB_REAL_GIT=1 go test -count=1 -run RealGit ./internal/publisher/repo/"),
 		"another Node": func(_ map[string]any, job map[string]any) {
 			step(job, 1, func(s map[string]any) { s["with"] = map[string]any{"node-version": "22.0.0"} })
 		},
