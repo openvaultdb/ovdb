@@ -159,6 +159,8 @@ jobs:
       # are on every OS (increment 5).
       - name: go test (connect existing storage)
         run: go test -count=1 -timeout 10m -run 'TestConnect' ./internal/setup/ && go test -count=1 -timeout 10m -run 'TestWriteWithoutGitIdentity' ./internal/localserver/
+      - name: go test (serve HTTP and shutdown)
+        run: go test -count=1 -timeout 2m -run 'TestServeHTTP|TestServeTerms|TestServeShutdown|TestServeUntil|TestServeMountFailure' .
       # auth.json is made owner-only by the server itself (increment 6):
       # openvaultdb-go's 0600 means nothing on Windows, where the file would
       # otherwise inherit whatever the OVDB home's ACL allows.

@@ -1,12 +1,33 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
+
+	"charm.land/fang/v2"
+	"github.com/spf13/cobra"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/exitcode"
 )
+
+func TestExecuteRootOrdinaryOutcomesHaveNoCleanupWait(t *testing.T) {
+	for _, commandErr := range []error{nil, errors.New("ordinary failure"), processExitError(23)} {
+		flushed := false
+		root := &cobra.Command{Use: "synthetic", RunE: func(*cobra.Command, []string) error { return commandErr }}
+		root.SetArgs(nil)
+		got := executeRoot(root, func(context.Context) { flushed = true }, fang.WithErrorHandler(func(io.Writer, fang.Styles, error) {}))
+		want := 0
+		if commandErr != nil {
+			want = commandExitCode(commandErr)
+		}
+		if got != want || !flushed {
+			t.Fatalf("ordinary outcome %v: code=%d flush=%v", commandErr, got, flushed)
+		}
+	}
+}
 
 type processExitError int
 

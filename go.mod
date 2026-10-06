@@ -16,10 +16,11 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/dal-go/dalgo v0.90.2
+	github.com/dal-go/dalgo2http v0.3.0
 	github.com/dal-go/record v0.1.4
 	github.com/ingitdb/ingitdb-go/ingitdb v0.7.4
 	github.com/meaninggraph/cli v0.2.0
-	github.com/openvaultdb/openvaultdb-go v0.15.0
+	github.com/openvaultdb/openvaultdb-go v0.18.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.3.2
