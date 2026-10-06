@@ -185,28 +185,28 @@ add('modelspec-list-type', 'control', 'a list type (datetime[]) is a type name',
 
 // the concepts of the meaning file: validateConcept (meaning.mjs 58-80) and the duplicate rule
 add('concept-no-concepts', 'concept', 'the meaning file has no concepts list (closed by #63)', { [meaningPath]: edit('\nconcepts:\n', '\nconceptz:\n') }, /has no concepts list/, 'agree');
-add('concept-not-mapping', 'concept', 'concepts are a number, text and null', { [meaningPath]: concepts('  - 1\n  - x\n  - null\n') }, /concept #1 has no id/, 'looser:F3');
-add('concept-flow-scalars', 'concept', 'concepts: [1, "x", null]', { [meaningPath]: conceptsRaw('concepts: [1, "x", null]') }, /concept #1 has no id/, 'looser:F3');
-add('concept-no-id', 'concept', 'a concept with no id', { [meaningPath]: concepts('  - labels: {en: A}\n') }, /concept #1 has no id/, 'looser:F3');
-add('concept-id-number', 'concept', 'a concept whose id is a number', { [meaningPath]: concepts('  - id: 5\n') }, /concept #1 has no id/, 'looser:F3');
+add('concept-not-mapping', 'concept', 'concepts are a number, text and null', { [meaningPath]: concepts('  - 1\n  - x\n  - null\n') }, /concept #1 has no id/, 'agree');
+add('concept-flow-scalars', 'concept', 'concepts: [1, "x", null]', { [meaningPath]: conceptsRaw('concepts: [1, "x", null]') }, /concept #1 has no id/, 'agree');
+add('concept-no-id', 'concept', 'a concept with no id', { [meaningPath]: concepts('  - labels: {en: A}\n') }, /concept #1 has no id/, 'agree');
+add('concept-id-number', 'concept', 'a concept whose id is a number', { [meaningPath]: concepts('  - id: 5\n') }, /concept #1 has no id/, 'agree');
 for (const [name, id] of [['upper-case', 'Artist'], ['underscore', 'art_ist'], ['leading-hyphen', '-artist'], ['trailing-hyphen', 'artist-'], ['double-hyphen', 'art--ist'], ['leading-digit', '1artist']]) {
-  add(`concept-id-${name}`, 'concept', `a concept id with ${name.replace('-', ' ')}`, { [meaningPath]: concepts(`  - id: ${id}\n`) }, /must be lower-case words joined by single hyphens/, 'looser:F3');
+  add(`concept-id-${name}`, 'concept', `a concept id with ${name.replace('-', ' ')}`, { [meaningPath]: concepts(`  - id: ${id}\n`) }, /must be lower-case words joined by single hyphens/, 'agree');
 }
-add('concept-labels-list', 'concept', 'labels is a list', { [meaningPath]: concepts('  - id: artist\n    labels: [Artist]\n') }, /labels must map language codes to labels/, 'looser:F3');
-add('concept-labels-null', 'concept', 'labels is null', { [meaningPath]: concepts('  - id: artist\n    labels:\n') }, /labels must map language codes to labels/, 'looser:F3');
-add('concept-label-empty', 'concept', 'a label that is empty', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: " "\n') }, /the en label must be a plain string/, 'looser:F3');
-add('concept-label-number', 'concept', 'a label that is a number', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: 5\n') }, /the en label must be a plain string/, 'looser:F3');
-add('concept-label-long', 'concept', 'a label of 201 characters', { [meaningPath]: concepts(`  - id: artist\n    labels:\n      en: ${'a'.repeat(201)}\n`) }, /the en label must be a plain string/, 'looser:F3');
+add('concept-labels-list', 'concept', 'labels is a list', { [meaningPath]: concepts('  - id: artist\n    labels: [Artist]\n') }, /labels must map language codes to labels/, 'agree');
+add('concept-labels-null', 'concept', 'labels is null', { [meaningPath]: concepts('  - id: artist\n    labels:\n') }, /labels must map language codes to labels/, 'agree');
+add('concept-label-empty', 'concept', 'a label that is empty', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: " "\n') }, /the en label must be a plain string/, 'agree');
+add('concept-label-number', 'concept', 'a label that is a number', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: 5\n') }, /the en label must be a plain string/, 'agree');
+add('concept-label-long', 'concept', 'a label of 201 characters', { [meaningPath]: concepts(`  - id: artist\n    labels:\n      en: ${'a'.repeat(201)}\n`) }, /the en label must be a plain string/, 'agree');
 add('concept-label-200', 'control', 'a label of 200 characters', { [meaningPath]: concepts(`  - id: artist\n    labels:\n      en: ${'a'.repeat(200)}\n`) }, null, 'agree');
-add('concept-label-angle', 'concept', 'a label with < in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a<b"\n') }, /the en label must be a plain string/, 'looser:F3');
-add('concept-label-control', 'concept', 'a label with a tab in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a\\tb"\n') }, /the en label must be a plain string/, 'looser:F3');
-add('concept-extends-number', 'concept', 'extends is a number', { [meaningPath]: concepts('  - id: artist\n    extends: 5\n') }, /extends must be a concept reference \(a string\)/, 'looser:F3');
-add('concept-values-of-list', 'concept', 'values-of is a list', { [meaningPath]: concepts('  - id: artist\n    values-of: [a]\n') }, /values-of must be a concept reference \(a string\)/, 'looser:F3');
-add('concept-bindings-text', 'concept', 'bindings is text', { [meaningPath]: concepts('  - id: artist\n    bindings: x\n') }, /bindings must be a list/, 'looser:F3');
-add('concept-binding-scalar', 'concept', 'a binding that is text', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - x\n') }, /every binding must be a mapping/, 'looser:F3');
-add('concept-binding-role', 'concept', 'a binding whose role is not one of the roles', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook.Artist\n        role: nope\n') }, /binding role "nope" must be one of/, 'looser:F3');
-add('concept-binding-no-role', 'concept', 'a binding with no role', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook.Artist\n') }, /binding role undefined must be one of/, 'looser:F3');
-add('concept-duplicate', 'concept', 'a concept declared twice', { [meaningPath]: concepts('  - id: artist\n  - id: artist\n') }, /concept artist is declared twice/, 'looser:F3');
+add('concept-label-angle', 'concept', 'a label with < in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a<b"\n') }, /the en label must be a plain string/, 'agree');
+add('concept-label-control', 'concept', 'a label with a tab in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a\\tb"\n') }, /the en label must be a plain string/, 'agree');
+add('concept-extends-number', 'concept', 'extends is a number', { [meaningPath]: concepts('  - id: artist\n    extends: 5\n') }, /extends must be a concept reference \(a string\)/, 'agree');
+add('concept-values-of-list', 'concept', 'values-of is a list', { [meaningPath]: concepts('  - id: artist\n    values-of: [a]\n') }, /values-of must be a concept reference \(a string\)/, 'agree');
+add('concept-bindings-text', 'concept', 'bindings is text', { [meaningPath]: concepts('  - id: artist\n    bindings: x\n') }, /bindings must be a list/, 'agree');
+add('concept-binding-scalar', 'concept', 'a binding that is text', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - x\n') }, /every binding must be a mapping/, 'agree');
+add('concept-binding-role', 'concept', 'a binding whose role is not one of the roles', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook.Artist\n        role: nope\n') }, /binding role "nope" must be one of/, 'agree');
+add('concept-binding-no-role', 'concept', 'a binding with no role', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook.Artist\n') }, /binding role undefined must be one of/, 'agree');
+add('concept-duplicate', 'concept', 'a concept declared twice', { [meaningPath]: concepts('  - id: artist\n  - id: artist\n') }, /concept artist is declared twice/, 'agree');
 
 // the bindings (directory.mjs 728-754)
 const bound = (binding) => concepts(`  - id: artist\n    bindings:\n${binding}`);

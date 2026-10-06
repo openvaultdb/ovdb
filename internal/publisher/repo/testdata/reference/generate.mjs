@@ -467,6 +467,9 @@ for (const [name, ops] of Object.entries({
   'concepts missing': [['edit', meaningPath, '\nconcepts:\n', '\nconceptz:\n']], 'concepts null': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: ~\nlist:\n']],
   'concepts a mapping': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: {}\nlist:\n']], 'concepts a string': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: none\nlist:\n']],
   'concepts an empty list': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts: []\nlist:\n']],
+  // The Directory's validateConcept (meaning.mjs 58-80) and its rule that a concept is declared once; the checker never reads the concepts.
+  'a concept with no id': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - labels: {en: A}\n']], 'a concept id that is not lower case': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: Artist\n']],
+  'a concept declared twice': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: artist\n  - id: artist\n']], 'a label with an angle bracket': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    labels: {en: "a<b"}\n']],
   'id of another graph': [['edit', meaningPath, '\nid: chinook\n', '\nid: other\n']], 'id missing': [['edit', meaningPath, '\nid: chinook\n', '\n']],
   'id a number': [['edit', meaningPath, '\nid: chinook\n', '\nid: 5\n']], 'id null': [['edit', meaningPath, '\nid: chinook\n', '\nid:\n']],
   'id quoted': [['edit', meaningPath, '\nid: chinook\n', '\nid: "chinook"\n']],

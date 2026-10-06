@@ -308,7 +308,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept #1 has no id",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-flow-scalars",
@@ -323,7 +323,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept #1 has no id",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-no-id",
@@ -338,7 +338,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept #1 has no id",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-number",
@@ -353,7 +353,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept #1 has no id",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-upper-case",
@@ -368,7 +368,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept id \"Artist\" must be lower-case words joined by single hyphens",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-underscore",
@@ -383,7 +383,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept id \"art_ist\" must be lower-case words joined by single hyphens",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-leading-hyphen",
@@ -398,7 +398,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept id \"-artist\" must be lower-case words joined by single hyphens",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-trailing-hyphen",
@@ -413,7 +413,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept id \"artist-\" must be lower-case words joined by single hyphens",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-double-hyphen",
@@ -428,7 +428,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept id \"art--ist\" must be lower-case words joined by single hyphens",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-id-leading-digit",
@@ -443,7 +443,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept id \"1artist\" must be lower-case words joined by single hyphens",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-labels-list",
@@ -458,7 +458,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: labels must map language codes to labels",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-labels-null",
@@ -473,7 +473,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: labels must map language codes to labels",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-label-empty",
@@ -488,7 +488,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: the en label must be a plain string of at most 200 characters (no control characters, < or >)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-label-number",
@@ -503,7 +503,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: the en label must be a plain string of at most 200 characters (no control characters, < or >)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-label-long",
@@ -518,7 +518,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: the en label must be a plain string of at most 200 characters (no control characters, < or >)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-label-200",
@@ -547,7 +547,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: the en label must be a plain string of at most 200 characters (no control characters, < or >)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-label-control",
@@ -562,7 +562,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: the en label must be a plain string of at most 200 characters (no control characters, < or >)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-extends-number",
@@ -577,7 +577,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: extends must be a concept reference (a string)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-values-of-list",
@@ -592,7 +592,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: values-of must be a concept reference (a string)",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-bindings-text",
@@ -607,7 +607,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: bindings must be a list",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-binding-scalar",
@@ -622,7 +622,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: every binding must be a mapping with model, role and property",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-binding-role",
@@ -637,7 +637,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding role \"nope\" must be one of entity, identifier, display-name, foreign-key, value",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-binding-no-role",
@@ -652,7 +652,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding role undefined must be one of entity, identifier, display-name, foreign-key, value",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "concept-duplicate",
@@ -667,7 +667,7 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist is declared twice",
-   "outcome": "looser:F3"
+   "outcome": "agree"
   },
   {
    "id": "binding-valid",

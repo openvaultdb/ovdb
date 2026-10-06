@@ -38,6 +38,8 @@ func (j *Judge) Meaning(doc []byte, w MeaningWants) []Finding {
 	// all fail its Array.isArray); the Chinook checker never looks at them.
 	if concepts := root.Field("concepts"); concepts == nil || concepts.Kind != kindSeq {
 		c.add("meaning-concepts", fieldLine(root, "concepts"), "has no concepts list: a MeaningGraph file lists its concepts under concepts:, got %s", describe(concepts))
+	} else {
+		c.concepts(concepts)
 	}
 	for _, same := range []struct {
 		key, label string
