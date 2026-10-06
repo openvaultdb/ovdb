@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openvaultdb/openvaultdb-go/pkg/license"
+	"github.com/openvaultdb/ovdb/internal/publisher/datarights"
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 	"github.com/openvaultdb/ovdb/publisher/representation"
 )
@@ -52,6 +54,10 @@ type Manifest struct {
 	GraphID, GraphAddress        Fact[string]
 
 	LicenceModel, LicenceMeaning, LicenceData Fact[string]
+	DataDeclaration                           Fact[license.Declaration]
+	DataRights                                Fact[*datarights.Profile]
+	// SourceRights is populated only after immutable repository verification.
+	SourceRights []license.SourceRight
 
 	PublisherName, PublisherURL, PublisherRepository Fact[string]
 
@@ -312,12 +318,12 @@ func (k *manifestChecker) check() {
 	}
 	out.PublisherRepository = k.text(repository)
 
-	licences := m.Field("licences")
-	out.LicenceData = k.text(field{parent: licences, key: "data", label: "licences.data", required: true, rule: "manifest-licence", hint: "write an SPDX licence id such as MIT or CC0-1.0", problem: dataLicenceProblem})
+	k.dataDeclaration()
 
 	k.recordsets()
 	k.recordsetEntities()
 	k.recordsetNames()
+	k.dataRights()
 }
 
 // recordsetNames holds every page the template makes to the URL rules, the name written as one encoded path segment as the Directory writes it. Every name
