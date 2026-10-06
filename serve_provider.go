@@ -39,5 +39,13 @@ func loadProviderReadProfiles(path string) (map[string]server.ProviderReadProfil
 	if len(profiles) == 0 || len(profiles) > providerreads.MaxItems {
 		return nil, fmt.Errorf("provider-read profiles require 1..%d database entries", providerreads.MaxItems)
 	}
+	// This CLI's explicit admission boundary requires reviewed source notices.
+	// The library retains optional SourceRight compatibility; NewChecked checks
+	// the supplied inventory against mounted terms, identity and retention.
+	for _, profile := range profiles {
+		if profile.SourceRight == nil {
+			return nil, fmt.Errorf("provider-read profiles require an operator-supplied sourceRight notice inventory")
+		}
+	}
 	return profiles, nil
 }

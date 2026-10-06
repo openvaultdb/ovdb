@@ -278,7 +278,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 	}
 	cmd.Flags().StringVar(&addr, "addr", DefaultAddr, "listen address")
 	cmd.Flags().StringVar(&serverID, "server-id", "", "stable operator-supplied server identity for source-rights evidence (required when manifests declare terms)")
-	cmd.Flags().StringVar(&providerProfilesPath, "provider-read-profiles", "", "opt in mounted HTTP instances using an externally admitted JSON map of database id to collection and binding; requires aware consumers and --server-id, does not verify artifacts or authorize activation")
+	cmd.Flags().StringVar(&providerProfilesPath, "provider-read-profiles", "", "opt in mounted HTTP instances using an externally admitted JSON map of database id to collection, binding and sourceRight notices; requires aware consumers and --server-id, does not verify artifacts or authorize activation")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "externally reachable HTTP(S) origin for database connection URLs (set behind a reverse proxy)")
 	cmd.Flags().StringVar(&dir, "dir", "", "directory with database manifest *.yaml files")
 	cmd.Flags().StringArrayVar(&manifests, "manifest", nil, "database manifest file (repeatable)")
