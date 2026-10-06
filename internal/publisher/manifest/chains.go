@@ -38,7 +38,7 @@ func resolve(ref string, byID map[string]*Node, own string) resolved {
 	default:
 		return resolved{err: rules.Quote(ref) + " is not a concept reference"}
 	}
-	if repo != "" && !(pin == "" && strings.EqualFold(repo, own)) {
+	if repo != "" && (pin != "" || !strings.EqualFold(repo, own)) {
 		return resolved{outside: true}
 	}
 	concept := byID[id]
