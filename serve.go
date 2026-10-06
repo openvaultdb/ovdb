@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -85,7 +87,7 @@ func defaultServeDeps() serveDeps {
 func newServeCmd() *cobra.Command { return newServeCmdWith(defaultServeDeps()) }
 
 func newServeCmdWith(deps serveDeps) *cobra.Command {
-	var addr, dir, dataDir, publicURL string
+	var addr, dir, dataDir, publicURL, serverID string
 	var manifests []string
 	var authEnabled, readOnly bool
 	var ownerToken, authStorePath string
@@ -103,6 +105,11 @@ created databases persist as manifests in the data-dir and are remounted on rest
 
 ` + queryLimitsHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("server-id") {
+				if strings.TrimSpace(serverID) == "" || len(serverID) > 256 || !utf8.ValidString(serverID) || strings.ContainsFunc(serverID, unicode.IsControl) {
+					return fmt.Errorf("--server-id must be a nonblank identity of at most 256 UTF-8 bytes without control characters")
+				}
+			}
 			if publicURL != "" {
 				parsed, err := url.Parse(publicURL)
 				if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -111,6 +118,11 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				publicURL = strings.TrimRight(publicURL, "/")
 			}
 			dbs := map[string]*core.Database{}
+			defer func() {
+				for _, db := range dbs {
+					_ = db.Close()
+				}
+			}()
 			if dir != "" {
 				mounted, err := mount.Dir(dir)
 				if err != nil {
@@ -124,6 +136,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 					return err
 				}
 				if _, dup := dbs[db.ID()]; dup {
+					_ = db.Close()
 					return fmt.Errorf("%s: duplicate database id %q", path, db.ID())
 				}
 				dbs[db.ID()] = db
@@ -138,21 +151,21 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				if err != nil {
 					return err
 				}
-				for id, db := range created {
+				for id := range created {
 					if _, dup := dbs[id]; dup {
+						for _, db := range created {
+							_ = db.Close()
+						}
 						return fmt.Errorf("%s: duplicate database id %q (also in --data-dir)", dataDir, id)
 					}
+				}
+				for id, db := range created {
 					dbs[id] = db
 				}
 			}
 			if len(dbs) == 0 && dataDir == "" {
 				return fmt.Errorf("no databases mounted: provide --manifest files, a --dir with *.yaml manifests, or a --data-dir for runtime-created databases")
 			}
-			defer func() {
-				for _, db := range dbs {
-					_ = db.Close()
-				}
-			}()
 
 			for _, db := range dbs {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "mounted %q (engine=%s, schema_mode=%s)\n",
@@ -160,6 +173,9 @@ created databases persist as manifests in the data-dir and are remounted on rest
 			}
 
 			var opts []server.Option
+			if serverID != "" {
+				opts = append(opts, server.WithSourceRights(serverID, nil))
+			}
 			if publicURL != "" {
 				opts = append(opts, server.WithPublicOrigin(publicURL))
 			}
@@ -202,15 +218,21 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				}
 			}
 
+			dataServer, err := server.NewChecked(appVersion, dbs, opts...)
+			if err != nil {
+				return err
+			}
+			defer dataServer.CloseSnapshots()
 			srv := &http.Server{
 				Addr:              addr,
-				Handler:           server.New(appVersion, dbs, opts...).Handler(),
+				Handler:           dataServer.Handler(),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 			return deps.run(cmd, srv)
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", DefaultAddr, "listen address")
+	cmd.Flags().StringVar(&serverID, "server-id", "", "stable operator-supplied server identity for source-rights evidence (required when manifests declare terms)")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "externally reachable HTTP(S) origin for database connection URLs (set behind a reverse proxy)")
 	cmd.Flags().StringVar(&dir, "dir", "", "directory with database manifest *.yaml files")
 	cmd.Flags().StringArrayVar(&manifests, "manifest", nil, "database manifest file (repeatable)")
@@ -232,6 +254,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 func serveUntilSignal(cmd *cobra.Command, srv *http.Server) error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(stop)
 	return serveUntil(cmd.OutOrStdout(), srv.Addr, srv, stop)
 }
 
