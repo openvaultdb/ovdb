@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,5 +173,52 @@ func TestRightsExternalDependenciesRequireExactCommit(t *testing.T) {
 		if !found {
 			t.Fatal("external declaration pin missing")
 		}
+	}
+}
+
+func TestRightsRepositoryFailuresRemainClosed(t *testing.T) {
+	// Direct checker seam: a provider commit becoming unreadable cannot produce
+	// publisher-verified evidence from a previously parsed manifest.
+	m := rightsRepository(t)
+	raw := m.Nodes["ovdb.yaml"].Content
+	parsed, _ := manifest.CheckManifest(raw, "ovdb.yaml", manifest.Publisher)
+	j, _ := manifest.NewJudge(manifest.Publisher)
+	c := &checker{r: &Memory{Err: errors.New("commit missing")}, j: j, res: manifest.Result{Profile: manifest.Publisher}}
+	c.dataRights(&parsed, "ovdb.yaml", raw, nil)
+	if len(c.res.Findings) == 0 {
+		t.Fatal("unreadable provider accepted")
+	}
+	// Database-only declarations need a paired serving identity.
+	var doc map[string]any
+	_ = json.Unmarshal(raw, &doc)
+	p := doc["data_rights"].(map[string]any)
+	delete(p, "server")
+	p["database"] = doc["licences"].(map[string]any)["data"]
+	m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: rightsEncoded(doc)}
+	m.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte(goodMD)}
+	if r := Check(m, publisher()); r.OK() {
+		t.Fatal("missing serving identity accepted")
+	}
+	// An external provenance read cannot silently use provider-local bytes.
+	m = rightsRepository(t)
+	_ = json.Unmarshal(m.Nodes["ovdb.yaml"].Content, &doc)
+	p = doc["data_rights"].(map[string]any)
+	prov := p["provenance"].(map[string]any)
+	prov["repository"] = "https://github.com/owner/provenance"
+	prov["revision"] = strings.Repeat("b", 40)
+	m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: rightsEncoded(doc)}
+	if r := Check(m, publisher()); r.OK() {
+		t.Fatal("missing explicit provenance dependency accepted")
+	}
+	// A tree read error is distinguishable from a missing regular file.
+	m = rightsRepository(t)
+	m.BrokenDirs = map[string]error{"metadata": errors.New("tree unavailable")}
+	if r := Check(m, publisher()); r.OK() {
+		t.Fatal("unreadable reference tree accepted")
+	}
+	// Directory's wider atom profile also returns the same normalized evidence.
+	m = rightsRepository(t)
+	if r := Check(m, Options{Profile: manifest.Directory}); !r.OK() || len(r.Manifest.SourceRights) != 3 {
+		t.Fatal(r.Findings)
 	}
 }

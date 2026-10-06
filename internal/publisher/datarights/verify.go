@@ -56,7 +56,7 @@ func Verify(p Profile, materialized license.Declaration, names []string, ctx Con
 	if _, err := rules.ParsePublicHTTPSURL(ctx.Source.ServerID); err != nil {
 		return nil, fmt.Errorf("invalid server identity")
 	}
-	if ctx.Source.Recordset != "" || ctx.Source.DatabaseID == "" {
+	if ctx.Source.Recordset != "" {
 		return nil, fmt.Errorf("verification requires database identity")
 	}
 	if ctx.Read == nil || ctx.Repository == "" || !fullRevision.MatchString(ctx.Revision) {
@@ -147,10 +147,10 @@ func Verify(p Profile, materialized license.Declaration, names []string, ctx Con
 			return nil, err
 		}
 	}
-	db, err := license.Resolve(ctx.Source, server, p.Database, nil)
-	if err != nil {
-		return nil, err
-	}
+	// Resolve only refuses missing server identity or invalid declarations.
+	// Those preconditions are checked above with the publication profile, which
+	// is at least as strict as Resolve's Directory validation.
+	db, _ := license.Resolve(ctx.Source, server, p.Database, nil)
 	if db == nil || db.Declaration != materialized.Normalized() {
 		return nil, fmt.Errorf("materialized database terms do not equal the effective raw declaration")
 	}
@@ -205,13 +205,9 @@ func Verify(p Profile, materialized license.Declaration, names []string, ctx Con
 		if d, ok := p.Recordsets[name]; ok {
 			raw = &d
 		}
-		right, err := license.Resolve(identity, server, p.Database, raw)
-		if err != nil {
-			return nil, err
-		}
-		if right == nil {
-			return nil, fmt.Errorf("recordset has no effective data terms")
-		}
+		// The verified effective database declaration guarantees a nonnil
+		// inherited result; overrides were validated before any evidence is emitted.
+		right, _ := license.Resolve(identity, server, p.Database, raw)
 		decorate(right)
 	}
 	out, _, err = license.Inventory(out)

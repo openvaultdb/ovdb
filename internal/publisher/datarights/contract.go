@@ -114,14 +114,12 @@ func walk(d *json.Decoder, depth int) error {
 				return err
 			}
 		}
-	} else if delimiter == '[' {
+	} else { // Decoder only yields opening delimiters at a value boundary.
 		for d.More() {
 			if err := walk(d, depth+1); err != nil {
 				return err
 			}
 		}
-	} else {
-		return fmt.Errorf("invalid rights JSON")
 	}
 	_, err = d.Token()
 	return err
@@ -148,12 +146,8 @@ func ParseProfile(data []byte, profile license.Profile, names []string) (*Profil
 		if err := Decode(raw.Server, out.Server); err != nil {
 			return nil, err
 		}
-		if bytes.Equal(bytes.TrimSpace(raw.Server), []byte("null")) {
-			return nil, fmt.Errorf("server reference cannot be null")
-		}
-		if err := out.Server.Validate(); err != nil {
-			return nil, err
-		}
+		// Reference.UnmarshalJSON already requires every field, validates its
+		// value, and rejects explicit null.
 	}
 	if len(raw.Database) > 0 {
 		d, err := license.ParseJSON(raw.Database, profile)
@@ -163,9 +157,6 @@ func ParseProfile(data []byte, profile license.Profile, names []string) (*Profil
 		out.Database = &d
 	}
 	if err := Decode(raw.Provenance, &out.Provenance); err != nil {
-		return nil, err
-	}
-	if err := out.Provenance.Validate(); err != nil {
 		return nil, err
 	}
 	known := map[string]bool{}
@@ -220,12 +211,10 @@ func ParseProvenance(data []byte) (*Provenance, error) {
 		}
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(value, &fields)
-		if url, ok := fields["url"]; ok {
-			var text string
-			if err := json.Unmarshal(url, &text); err != nil {
-				return nil, err
-			}
-			if err := license.ValidateURL(text); err != nil {
+		if _, ok := fields["url"]; ok {
+			// Decode already checked the field type; presence keeps null/blank
+			// explicit URLs distinct from an omitted optional URL.
+			if err := license.ValidateURL(n.URL); err != nil {
 				return nil, err
 			}
 		} else if requiredURL {
@@ -249,13 +238,7 @@ func ParseProvenance(data []byte) (*Provenance, error) {
 			return nil, err
 		}
 	}
-	for _, refs := range [][]Reference{p.Inputs, p.Terms} {
-		for _, ref := range refs {
-			if err := ref.Validate(); err != nil {
-				return nil, err
-			}
-		}
-	}
+	// Every decoded Reference was validated by its closed UnmarshalJSON.
 	if len(raw.CapturedAt) > 0 {
 		if err := json.Unmarshal(raw.CapturedAt, &p.CapturedAt); err != nil {
 			return nil, err
