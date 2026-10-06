@@ -245,14 +245,16 @@ const (
 
 // Document is the --json document, schema version 1 (envelope.Schema, as every ovdb document).
 type Document struct {
-	Schema    int       `json:"schema"`
-	Command   string    `json:"command"`
-	Commit    string    `json:"commit"`
-	Profile   string    `json:"profile"`
-	OK        bool      `json:"ok"`
-	Manifests int       `json:"manifests"`
-	Findings  []Finding `json:"findings"`
-	Summary   Summary   `json:"summary"`
+	Schema    int    `json:"schema"`
+	Command   string `json:"command"`
+	Commit    string `json:"commit"`
+	Profile   string `json:"profile"`
+	OK        bool   `json:"ok"`
+	Manifests int    `json:"manifests"`
+	// Descriptors is how many database descriptors OVDB.md lists beside the manifests; it is left out when there is none.
+	Descriptors int       `json:"descriptors,omitempty"`
+	Findings    []Finding `json:"findings"`
+	Summary     Summary   `json:"summary"`
 }
 
 // Finding is one finding: Path is the file the finding is about, "repository" when it is about the repository as a whole.
@@ -277,7 +279,7 @@ type Summary struct {
 var omittedCount = regexp.MustCompile(`^([0-9]+) more findings are not shown`)
 
 func newDocument(commit string, r manifest.Result) Document {
-	doc := Document{Schema: 1, Command: "publisher check", Commit: commit, Profile: "publisher", OK: r.OK(), Manifests: len(r.OVDBMd.Entries), Findings: []Finding{}}
+	doc := Document{Schema: 1, Command: "publisher check", Commit: commit, Profile: "publisher", OK: r.OK(), Manifests: len(r.OVDBMd.Entries) - r.Descriptors, Descriptors: r.Descriptors, Findings: []Finding{}}
 	for _, f := range r.Findings {
 		doc.Findings = append(doc.Findings, Finding{Rule: f.Rule, Severity: string(f.Severity), Path: f.Document, Line: f.Line, Message: f.Message})
 		switch {
@@ -312,7 +314,7 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 		say(w, "  "+message)
 		say(w, "")
 	}
-	params := map[string]string{"commit": shortCommit(doc.Commit), "count": strconv.Itoa(doc.Summary.Errors), "manifests": strconv.Itoa(doc.Manifests),
+	params := map[string]string{"commit": shortCommit(doc.Commit), "count": strconv.Itoa(doc.Summary.Errors), "manifests": strconv.Itoa(doc.Manifests), "descriptors": strconv.Itoa(doc.Descriptors),
 		"omitted": strconv.Itoa(doc.Summary.Omitted), "max": strconv.Itoa(manifest.MaxFindings)}
 	switch {
 	case !doc.OK && unreadableObjects(doc):
@@ -326,6 +328,9 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 		say(w, c.T("publisher.check.refused_one", params))
 	case !doc.OK:
 		say(w, c.T("publisher.check.refused_many", params))
+	case doc.Descriptors > 0: // a pass has one manifest and one descriptor: OVDB.md lists nothing else beside a descriptor
+		say(w, c.T("publisher.check.ok_descriptor", params))
+		say(w, c.T("publisher.check.ok_note", nil))
 	case doc.Manifests == 1:
 		say(w, c.T("publisher.check.ok_one", params))
 		say(w, c.T("publisher.check.ok_note", nil))

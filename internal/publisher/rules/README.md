@@ -20,6 +20,7 @@ later changes and calls these functions.
 | `RepositoryKey`, `CompareKey` | `https://github.com/{org}/{repo}`: an allow-listed host (today only `github.com`) with exactly its number of path segments (2), each of `A-Z a-z 0-9 . _ -`, none of them `.` or `..`, the last not ending in `.git` in any case, no trailing slash. The key is `host/org/repo` as written; `CompareKey` is its lower case, the key to compare two repositories by. |
 | `IsRepositoryPath` | A path to a file in a repository: relative, only `A-Z a-z 0-9 . _ / -` (so no backslash, glob or space), no `//`, no `.` or `..` segment, no trailing `/`. |
 | `IsPublishEntry` | An entry of an OVDB.md `publish` list: the explicit form `./` followed by an `IsRepositoryPath`. |
+| `IsLocalID` | The `localId` of a database descriptor, `^[a-z][a-z0-9-]{0,39}$` (the Directory's `localIdPattern`): unlike `IsID` it allows a hyphen at the end and two in a row. |
 | `IsEngine` | `^[A-Za-z][A-Za-z0-9_.+-]{0,39}$`. |
 | `IsLicenceID` | The shape of an SPDX licence id, `^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$`; it does not know which ids SPDX has assigned. |
 | `IsBlank` | Whether a text is empty or only white space **as JavaScript's `trim()` sees it** (it strips U+FEFF and not U+0085; Go's `strings.TrimSpace` does the reverse). Every "is required" check must use it, never `strings.TrimSpace`. |
@@ -81,7 +82,7 @@ imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
 v24.19.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **2584083** verdicts:
+network. The matrix is **2599599** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a

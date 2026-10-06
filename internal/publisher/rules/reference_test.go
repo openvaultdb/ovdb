@@ -136,6 +136,7 @@ var goFns = map[string]func(string) bool{
 	"homepage":     func(s string) bool { return Homepage(s) == nil },
 	"id":           IsID,
 	"commit":       IsCommit,
+	"local-id":     IsLocalID,
 	"repository":   func(s string) bool { _, ok := RepositoryKey(s); return ok },
 	"path":         IsRepositoryPath,
 	"publish":      IsPublishEntry,

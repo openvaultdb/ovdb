@@ -57,6 +57,7 @@ const directorySource = readFileSync(join(directoryRoot, 'scripts/lib/directory.
 assertAnchors(directorySource, 'scripts/lib/directory.mjs', pins.directory.commit, [
   "const isText = (value) => typeof value === 'string' && value.trim() !== '';",
   "if (!isText(entry) || !entry.startsWith('./') || !isRepositoryPath(entry.slice(2)))",
+  "const localIdPattern = /^[a-z][a-z0-9-]{0,39}$/;",
 ]);
 
 // ---- the verdicts: true accepts, false refuses, undefined: the reference has no such rule ----
@@ -116,6 +117,8 @@ const fns = {
     chinookdb: (v) => chinook.idPattern.test(v) && v.length <= chinook.maxIdLength,
   },
   commit: { directory: (v) => gitlib.commitPattern.test(v) },
+  // The local id of a database descriptor: localIdPattern is a constant of directory.mjs that is not exported, copied here (and anchored above).
+  'local-id': { directory: (v) => /^[a-z][a-z0-9-]{0,39}$/.test(v) },
   repository: { directory: (v) => gitlib.repositoryKey(v) !== null },
   path: {
     directory: (v) => gitlib.isRepositoryPath(v),
@@ -223,6 +226,7 @@ smallSweep('repository-end', 'repository', 'https://github.com/org/repo{C}');
 smallSweep('repository-before', 'repository', '{C}https://github.com/org/repo');
 for (const [name, template] of [['path-middle', 'a{C}b/c.yaml'], ['path-first', '{C}a'], ['path-last', 'a{C}'], ['path-segment', 'a/{C}']]) smallSweep(name, 'path', template);
 for (const [name, template] of [['publish-middle', './a{C}b'], ['publish-dot', '.{C}/a'], ['publish-first', './{C}']]) smallSweep(name, 'publish', template);
+for (const [name, template] of [['local-id-middle', 'a{C}b'], ['local-id-first', '{C}a'], ['local-id-last', 'a{C}'], ['local-id-alone', '{C}']]) smallSweep(name, 'local-id', template);
 for (const [name, template] of [['engine-middle', 'a{C}b'], ['engine-first', '{C}a'], ['engine-last', 'a{C}']]) smallSweep(name, 'engine', template);
 for (const [name, template] of [['licence-middle', 'a{C}b'], ['licence-first', '{C}a'], ['licence-last', 'a{C}']]) smallSweep(name, 'licence', template);
 
@@ -250,6 +254,7 @@ const productSpecs = [
   { name: 'path-segments', fn: 'path', template: '{S}', alphabet: 'a./-~', min: 1, max: 5 },
   { name: 'publish-segments', fn: 'publish', template: './{S}', alphabet: 'a./-', min: 0, max: 5 },
   { name: 'repository-segments', fn: 'repository', template: 'https://github.com/{S}', alphabet: 'a./-g', min: 1, max: 5 },
+  { name: 'local-id-shape', fn: 'local-id', template: '{S}', alphabet: 'a0-A_', min: 0, max: 5 },
   { name: 'engine-shape', fn: 'engine', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
   { name: 'licence-shape', fn: 'licence', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
   { name: 'gid-path-shape', fn: 'global-id', template: 'https://e.example/{S}', alphabet: 'a%2eC3/', min: 0, max: 5 },
@@ -481,6 +486,11 @@ const commitList = {
     'a'.repeat(40), '0123456789abcdef0123456789abcdef01234567', 'A'.repeat(40), '0123456789ABCDEF0123456789abcdef01234567', 'a'.repeat(39), 'a'.repeat(41), 'a'.repeat(64), '', 'g'.repeat(40), `${'a'.repeat(39)}g`, `${'a'.repeat(39)}\n`, `${'a'.repeat(40)}\n`, ` ${'a'.repeat(39)}`, 'main', 'HEAD', `${'a'.repeat(39)}\u00e9`,
   ].map((input) => [input, verdicts(['commit'], input)]),
 };
+const localIdFns = ['local-id'];
+const localIdList = {
+  fns: localIdFns,
+  cases: ['chinook', 'a', 'a-', 'a--b', '-a', '1a', 'A', 'a_b', 'a.b', 'a b', '\u00e9', 'a\n', '\na', '', rep('a', 'b', 39), rep('a', 'b', 40), rep('a', '-', 39), rep('', 'a', 41)].map((input) => [input, verdicts(localIdFns, expand(input))]),
+};
 const pathFns = ['path', 'publish'];
 const pathList = {
   fns: pathFns,
@@ -520,7 +530,7 @@ const countCases = () => {
   let total = 0;
   for (const sweep of sweeps) total += codesOf(sweepRanges[sweep.span]).length;
   for (const product of products) total += product.size;
-  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList]) total += list.cases.length * list.fns.length;
+  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList, localIdList]) total += list.cases.length * list.fns.length;
   total += claimAddresses.length * claimAddresses.length;
   return total;
 };
@@ -535,7 +545,7 @@ const golden = {
   sweepRanges,
   sweeps,
   products,
-  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList],
+  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList, localIdList],
   claims: claimList,
 };
 

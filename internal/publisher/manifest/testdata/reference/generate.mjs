@@ -38,6 +38,7 @@ const publisherFactsPath = join(here, 'publisher.facts.json');
 const valuesPath = join(here, 'values.json');
 const probesPath = join(here, 'drift.probes.json');
 const digestsPath = join(here, 'digests.json');
+const descriptorPath = join(here, 'descriptor.json');
 
 const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
 
@@ -77,6 +78,12 @@ assertAnchors(directorySource, 'scripts/lib/directory.mjs', pins.directory.commi
   "const isText = (value) => typeof value === 'string' && value.trim() !== '';",
   "const recordsetUrl = (name) => (manifest.deployment.recordset_page ? manifest.deployment.recordset_page.replace('{name}', encodePathSegment(name)) : undefined);",
   "const problem = url === undefined ? null : publicHttpsProblem(url, { encodedPathSegment: encodedName.includes('%') ? encodedName : undefined });",
+  // the database descriptor: its function is not exported, so its source is taken from the pinned file (between these two lines) and run as it is
+  "const localIdPattern = /^[a-z][a-z0-9-]{0,39}$/;",
+  'function databaseDescriptorProblems(descriptor, { url, manifest }) {',
+  "  return problems;\n}\n\n// ---- one database ----",
+  "const expectedManifestId = descriptor?.localId ?? key;",
+  'if (manifest.id !== expectedManifestId) bad(',
   'if (frontmatter.ovdb !== 1) bad(',
   "if (!Array.isArray(frontmatter.publish) || frontmatter.publish.length === 0) { bad('OVDB.md: publish must list at least one manifest path'); return stop(); }",
   "if (!isText(entry) || !entry.startsWith('./') || !isRepositoryPath(entry.slice(2))) bad(",
@@ -1452,6 +1459,134 @@ const valuesText = `${JSON.stringify({
   manifest: manifestBuffers.map((buffer) => valueDigest(decoded(buffer))).join(''),
   md: mdBuffers.map((buffer) => valueDigest(frontMatterOf(decoded(buffer)))).join(''),
 }, null, 1)}\n`;
+// ---- the database descriptor: the pairs of a manifest and a descriptor, and the verdict of the Directory on each ----
+// The Directory reads a descriptor beside a manifest, by the record's database_manifest field: manifestProblems(manifest, { databaseManifest: true }) first
+// (which waives the origin rule of deployment.discovery), then databaseDescriptorProblems(descriptor, { url, manifest }) (a function that directory.mjs does
+// not export, so its source is cut from the pinned file and run as it is), and the manifest's id must be the descriptor's localId (a record key stands in
+// for a localId that is not written, and a repository has none). The record's url is the manifest's.
+const descriptorSource = (() => {
+  const start = directorySource.indexOf('function databaseDescriptorProblems(descriptor, { url, manifest }) {');
+  const end = directorySource.indexOf('\n}\n\n// ---- one database ----', start);
+  if (start < 0 || end < 0) throw new Error('directory.mjs no longer holds databaseDescriptorProblems between its signature and the heading of the next section');
+  return directorySource.slice(start, end + 3);
+})();
+const localIdPattern = /^[a-z][a-z0-9-]{0,39}$/;
+const databaseDescriptorProblems = new Function('localIdPattern', 'globalDatabaseIdProblem', 'publicHttpsProblem', `${descriptorSource}\nreturn databaseDescriptorProblems;`)(localIdPattern, urlsLib.globalDatabaseIdProblem, urlsLib.publicHttpsProblem);
+const descriptorVerdict = (manifestText, descriptorText) => {
+  let manifest;
+  try { manifest = parseYaml(manifestText); } catch { return 0; }
+  let descriptor;
+  try { descriptor = JSON.parse(descriptorText); } catch { return 0; }
+  try {
+    if (directory.manifestProblems(manifest, { databaseManifest: true }).length > 0 || recordStageProblems(manifest).length > 0) return 0;
+    if (databaseDescriptorProblems(descriptor, { url: manifest.url, manifest }).length > 0) return 0;
+    const expected = descriptor?.localId; // `?? key`: a record key, which a repository does not have
+    if (expected !== undefined && expected !== null && manifest.id !== expected) return 0;
+    return 1;
+  } catch { thrown += 1; return 0; }
+};
+const descriptorBase = () => {
+  const m = clone(ownObject);
+  m.id = 'chinook'; m.url = 'https://demodb.dev/chinook/';
+  m.deployment.discovery = 'https://demodb.dev/.well-known/openvaultdb';
+  m.publisher.repository = ownObject.publisher.repository;
+  const d = {
+    format: 'ovdb-database/draft-1', id: m.url, localId: 'chinook',
+    serverId: 'https://demodb.dev/ovdb', serverDbBaseUrl: 'https://demodb.dev/ovdb/db/chinook', apiUrl: 'https://demodb.dev/ovdb/api',
+    deployment: { discovery: m.deployment.discovery },
+  };
+  return [m, d];
+};
+const descriptorCases = [];
+// Whether the descriptor is recognised as one in a repository, which has no record to say so: JSON.parse reads it as an object whose (last) format is text that
+// begins ovdb-database/. null when it is not one JSON object (the Go reader then falls back to YAML, which the Directory has no word for).
+const recognisedAsDescriptor = (text) => {
+  let value;
+  try { value = JSON.parse(text); } catch { return null; }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  return typeof value.format === 'string' && value.format.startsWith('ovdb-database/');
+};
+const descriptorCase = (note, edit, recorded) => {
+  const [m, d] = descriptorBase();
+  const out = edit(m, d);
+  const manifestText = jsonOf(m);
+  const descriptorText = typeof out === 'string' ? out : `${JSON.stringify(d, null, 2)}\n`;
+  descriptorCases.push({ note, manifest: manifestText, descriptor: descriptorText, reference: descriptorVerdict(manifestText, descriptorText), recognised: recognisedAsDescriptor(descriptorText), ...(recorded ? { recorded } : {}) });
+};
+descriptorCase('the base pair (accepted)', () => {});
+const wrongValues = [['missing', undefined], ['null', null], ['a number', 7], ['true', true], ['a list', ['x']], ['a mapping', { a: 1 }], ['empty', ''], ['blank', '   '], ['a very long text', 'x'.repeat(5000)]];
+for (const key of ['format', 'id', 'localId', 'serverId', 'serverDbBaseUrl', 'apiUrl']) {
+  for (const [what, value] of wrongValues) descriptorCase(`${key}: ${what}`, (m, d) => { if (value === undefined) delete d[key]; else d[key] = value; });
+}
+for (const [what, value] of wrongValues) descriptorCase(`deployment: ${what}`, (m, d) => { if (value === undefined) delete d.deployment; else d.deployment = value; });
+for (const [what, value] of wrongValues) descriptorCase(`deployment.discovery: ${what}`, (m, d) => { if (value === undefined) delete d.deployment.discovery; else d.deployment.discovery = value; });
+for (const format of ['ovdb-database/draft-2', 'OVDB-DATABASE/DRAFT-1', 'ovdb-manifest/draft-1', ' ovdb-database/draft-1', 'ovdb-database/draft-1 ', 'ovdb-database/']) descriptorCase(`format ${JSON.stringify(format)}`, (m, d) => { d.format = format; });
+// the identity: the descriptor's id is the manifest's url, and a global database identity
+const identities = ['https://demodb.dev/chinook/', 'https://demodb.dev/chinook', 'https://demodb.dev/a/b/', 'https://demodb.dev/', 'https://demodb.dev', 'https://demodb.dev/order%20details/', 'https://demodb.dev/a%e2%82%ac/', 'https://demodb.dev/a%2Fb/', 'https://demodb.dev/%2e%2e/', 'https://demodb.dev/%252e/', 'https://x.example/db/', 'https://demodb.dev/chinook/?x', 'https://demodb.dev/ovdb/dbs/chinook', 'http://demodb.dev/chinook/', 'https://DEMODB.dev/chinook/', 'https://demodb.dev:443/chinook/', 'https://localhost/chinook/', 'https://demodb.dev/chinook//'];
+for (const id of identities) {
+  descriptorCase(`manifest url and descriptor id both ${id}`, (m, d) => { m.url = id; d.id = id; if (!id.startsWith('https://demodb.dev')) { m.deployment.discovery = `${new URL(id.replace(/^http:/, 'https:').replace(/%(?![0-9A-Fa-f]{2})/g, '')).origin}/.well-known/openvaultdb`; d.deployment.discovery = m.deployment.discovery; } });
+  descriptorCase(`descriptor id ${id}, manifest url the base`, (m, d) => { d.id = id; });
+  descriptorCase(`manifest url ${id}, descriptor id the base`, (m, d) => { m.url = id; });
+}
+// the local id, and the manifest id that must be it
+const localIds = ['chinook', 'a', 'a-', 'a--b', '-a', '1a', 'A', 'Chinook', 'a_b', 'a.b', 'a b', 'é', `a${'b'.repeat(39)}`, `a${'b'.repeat(40)}`, 'a\n', ' a'];
+for (const id of localIds) {
+  descriptorCase(`manifest id and descriptor localId both ${JSON.stringify(id)}`, (m, d) => { m.id = id; d.localId = id; });
+  descriptorCase(`descriptor localId ${JSON.stringify(id)}, manifest id the base`, (m, d) => { d.localId = id; });
+}
+descriptorCase('manifest id missing, descriptor localId written', (m) => { delete m.id; });
+descriptorCase('descriptor localId null, manifest id any', (m, d) => { d.localId = null; m.id = 'other'; });
+// the server, and what must share its origin
+const urls = ['https://demodb.dev/ovdb', 'https://demodb.dev/', 'https://demodb.dev', 'https://cloud.demodb.dev/ovdb', 'https://other.dev/ovdb', 'http://demodb.dev/ovdb', 'https://demodb.dev:8443/ovdb', 'https://DEMODB.dev/ovdb', 'https://demodb.dev/ovdb?x=1', 'https://demodb.dev/ovdb#x', 'https://demodb.dev/{name}', 'https://localhost/ovdb', 'https://127.0.0.1/ovdb', 'https://demodb.dev/a%20b', 'https://demodb.dev/a b', 'ftp://demodb.dev/ovdb', 'demodb.dev/ovdb', 'https://xn--bcher-kva.de/ovdb', 'https://x.example/ovdb'];
+for (const key of ['serverId', 'serverDbBaseUrl', 'apiUrl']) for (const url of urls) descriptorCase(`${key} ${url}`, (m, d) => { d[key] = url; });
+descriptorCase('every server field on another host, the discovery with it', (m, d) => { d.serverId = d.serverDbBaseUrl = d.apiUrl = 'https://cloud.openvaultdb.com/ovdb'; d.deployment.discovery = 'https://cloud.openvaultdb.com/.well-known/openvaultdb'; m.deployment.discovery = d.deployment.discovery; });
+descriptorCase('server on another host than the identity, the manifest discovery on the server host (the origin rule of the manifest is waived)', (m, d) => { d.serverId = d.serverDbBaseUrl = d.apiUrl = 'https://cloud.openvaultdb.com/ovdb'; d.deployment.discovery = 'https://cloud.openvaultdb.com/.well-known/openvaultdb'; m.deployment.discovery = d.deployment.discovery; m.deployment.url = 'https://cloud.openvaultdb.com/ovdb/dbs/chinook'; });
+descriptorCase('an invalid localId and a server field on another host (the origin rules are not asked)', (m, d) => { d.localId = 'A'; m.id = 'A'; d.serverDbBaseUrl = 'https://other.dev/x'; d.apiUrl = 'https://other.dev/y'; });
+descriptorCase('an invalid serverId and a discovery on another host (the origin rules are not asked)', (m, d) => { d.serverId = 'http://demodb.dev/ovdb'; d.deployment.discovery = 'https://other.dev/.well-known/openvaultdb'; m.deployment.discovery = d.deployment.discovery; });
+// the discovery
+const discoveries = ['https://demodb.dev/.well-known/openvaultdb', 'https://demodb.dev/.well-known/other', 'https://demodb.dev/', 'https://other.dev/.well-known/openvaultdb', 'http://demodb.dev/.well-known/openvaultdb', 'https://demodb.dev/.well-known/openvaultdb?x', 'https://demodb.dev:8443/.well-known/openvaultdb', 'https://localhost/.well-known/openvaultdb', 'demodb.dev', 'https://demodb.dev/.well-known/openvaultdb/'];
+for (const url of discoveries) {
+  descriptorCase(`descriptor discovery ${url}, manifest discovery the base`, (m, d) => { d.deployment.discovery = url; });
+  descriptorCase(`manifest discovery ${url}, descriptor discovery the base`, (m) => { m.deployment.discovery = url; });
+  descriptorCase(`both discoveries ${url}`, (m, d) => { m.deployment.discovery = url; d.deployment.discovery = url; });
+}
+// documents that are not a descriptor, or not JSON
+// The way a descriptor is written is JSON's, not YAML's: what the strict YAML reader refuses is no reason to refuse a JSON descriptor.
+descriptorCase('a descriptor indented with tabs', (m, d) => `${JSON.stringify(d, null, '\t')}\n`);
+descriptorCase('a descriptor on one line', (m, d) => `${JSON.stringify(d)}`);
+descriptorCase('a descriptor that repeats format, the last good', (m, d) => `${JSON.stringify(d, null, 2).replace('"format":', '"format": "ovdb-database/draft-0", "format":')}\n`);
+descriptorCase('a descriptor that repeats format, the last bad', (m, d) => `${JSON.stringify(d, null, 2).replace('"format":', '"format": 7, "x": 1, "format": "ovdb-manifest/draft-1", "z":')}\n`);
+descriptorCase('a descriptor that repeats format, the last not text', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"format": 7, "apiUrl":')}\n`);
+descriptorCase('a descriptor with a number over 2^53 in an unknown key', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"big": 12345678901234567890123, "apiUrl":')}\n`);
+descriptorCase('a descriptor with a number over 2^53 as the id', (m, d) => `${JSON.stringify(d, null, 2).replace('"id": "https://demodb.dev/chinook/"', '"id": 12345678901234567890123')}\n`);
+descriptorCase('a descriptor with U+2028 and U+0085 inside strings', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"s": "a\u2028b\u0085c", "apiUrl":')}\n`);
+descriptorCase('a descriptor with a lone surrogate escape in format', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"ovdb-database/draft-1\\ud800"')}\n`);
+descriptorCase('a descriptor whose format spells its slash as \\/', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"ovdb-database\\/draft-1"')}\n`);
+descriptorCase('a descriptor whose format has a unicode escape for a hyphen', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"ovdb\\u002ddatabase/draft-1"')}\n`);
+descriptorCase('a descriptor whose format has a unicode escape for its first letter', (m, d) => `${JSON.stringify(d, null, 2).replace('"ovdb-database/draft-1"', '"\\u006fvdb-database/draft-1"')}\n`);
+descriptorCase('a descriptor with CRLF line ends and a BOM-free start', (m, d) => `${JSON.stringify(d, null, 2).replace(/\n/g, '\r\n')}`);
+descriptorCase('a descriptor with a key written twice at the top and in deployment', (m, d) => `${JSON.stringify(d, null, 2).replace('"deployment": {', '"deployment": {"discovery": "https://other.dev/x",')}\n`);
+descriptorCase('a good descriptor followed by text', (m, d) => `${JSON.stringify(d, null, 2)}\nx`);
+descriptorCase('a good descriptor followed by a second object', (m, d) => `${JSON.stringify(d)} {}`);
+descriptorCase('a good descriptor followed by white space of every kind', (m, d) => `${JSON.stringify(d)} \t\r\n \n`);
+descriptorCase('a good descriptor followed by a vertical tab', (m, d) => `${JSON.stringify(d)}\v`);
+const texts = ['[]', 'null', '7', '"x"', 'true', '{', '', '   ', '{} x', '﻿{}', '{"a":1,}', "{'a':1}", '{"format":"ovdb-database/draft-1"}', '{}\n\n', '[{"format":"ovdb-database/draft-1"}]'];
+for (const text of texts) descriptorCase(`the descriptor text ${JSON.stringify(text)}`, () => text);
+descriptorCase('a descriptor with unknown keys (accepted: the schema is the provider\'s)', (m, d) => { d.extra = { nested: [1, 2, { a: null }] }; d.title = 'x'; });
+descriptorCase('a descriptor that repeats id (the last is read)', (m, d) => `${JSON.stringify(d, null, 2).replace('"id":', '"id": "https://other.dev/x/", "id":')}\n`);
+descriptorCase('a descriptor with an unknown key that is a huge number', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"big": 1e999, "apiUrl":')}\n`);
+descriptorCase('a descriptor with a lone surrogate in an unknown key', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', '"s": "\\ud800", "apiUrl":')}\n`);
+descriptorCase('a descriptor with an escaped id that spells the same text', (m, d) => `${JSON.stringify(d, null, 2).replace('"id": "https://demodb.dev/chinook/"', '"id": "https:\\/\\/demodb.dev\\/chinook\\/"')}\n`);
+descriptorCase('a descriptor nested 70 levels deep in an unknown key (the Directory reads any depth; recorded kind descriptor-depth)', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', `"deep": ${'['.repeat(70)}${']'.repeat(70)}, "apiUrl":`)}\n`, 'descriptor-depth');
+descriptorCase('a descriptor nested 60 levels deep in an unknown key', (m, d) => `${JSON.stringify(d, null, 2).replace('"apiUrl":', `"deep": ${'['.repeat(60)}${']'.repeat(60)}, "apiUrl":`)}\n`);
+// the manifest that goes with it: its own refusals come first
+descriptorCase('a manifest without a title', (m) => { delete m.title; });
+descriptorCase('a manifest without deployment.url', (m) => { delete m.deployment.url; });
+descriptorCase('a manifest without deployment.discovery', (m) => { delete m.deployment.discovery; });
+descriptorCase('a manifest with a bad format', (m) => { m.format = 'ovdb-manifest/draft-2'; });
+const descriptorText = `${JSON.stringify({ format: 'ovdb-publisher-descriptor-reference/1', generatedBy: meta.generatedBy, node: meta.node, references: meta.references, cases: descriptorCases }, null, 1)}\n`;
+if (descriptorCases[0].reference !== 1) throw new Error('the base descriptor pair must be accepted by the reference');
+
 // A digest of every committed golden of both slices, so that a hand edit of any of them fails `go test` until the
 // generator is run again (the digests of the rules golden are read from the committed file, which its own
 // generator writes: run that one first when the rules change).
@@ -1464,11 +1599,12 @@ const digestText = `${JSON.stringify({
   'manifest/testdata/reference/publisher.facts.json': sha(publisherFactsText),
   'manifest/testdata/reference/values.json': sha(valuesText),
   'manifest/testdata/reference/drift.probes.json': sha(probesText),
+  'manifest/testdata/reference/descriptor.json': sha(descriptorText),
   'rules/testdata/reference/matrix.golden.json': sha(readFileSync(rulesGolden)),
 }, null, 1)}\n`;
 
 if (thrown > 0) console.error(`note: the reference threw on ${thrown} document(s); they are recorded as refused`);
-const targets = [[probesPath, probesText], [corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [valuesPath, valuesText], [digestsPath, digestText]];
+const targets = [[probesPath, probesText], [corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [valuesPath, valuesText], [descriptorPath, descriptorText], [digestsPath, digestText]];
 if (process.argv.includes('--check')) {
   if (targets.some(([path, text]) => readFileSync(path, 'utf8') !== text)) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
   console.log(`the goldens are up to date (${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents)`);

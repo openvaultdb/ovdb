@@ -402,11 +402,22 @@ stage hashes exact bytes without interpreting records and deduplicates exact ref
 only for this check. Legacy manifests keep their existing checks. These results do not
 grant canonical semantic admission or prove runtime execution.
 
+**A database descriptor.** If you publish the JSON database descriptor (`ovdb-database/draft-1`, the file that says where your server and its API are), list it in
+`OVDB.md` `publish` beside the manifest: **one descriptor with one manifest**, since a repository has no registry record to say which manifest a descriptor
+belongs to (`repo-descriptor` when it lists a descriptor and no manifest, several manifests or several descriptors). It is judged by the Directory's rules for a
+descriptor, not as a manifest: `descriptor-json` (not valid JSON, as `JSON.parse` reads it, or not an object), `descriptor-format`, `descriptor-required`,
+`descriptor-id` (the `id` is the manifest's `url`, and a global database identity), `descriptor-local-id`, `descriptor-url`, `descriptor-origin` (the server fields
+are on the host of `serverId`) and `descriptor-discovery` (`deployment.discovery` is the manifest's own text), and the manifest's `id` is the descriptor's `localId`
+(`manifest-id`). With a descriptor beside it a manifest does not have to serve its discovery document from the host of its `url`. The JSON schema of the
+descriptor is not checked here.
+
 **What it does not check.** It does not look at the hosted repository (the Directory does, and may find what a local
 clone does not show: a force-pushed branch, a private or renamed repository), it does not fetch anything, and it does not
 check anything the Directory or the registries (ModelSpec, MeaningGraph) check beyond these rules: that a name is
 registered, that a URL answers, that the data is what the manifest says. A pass here is **not** the Directory's
-acceptance.
+acceptance. In particular, a pass **assumes that the registry record names the descriptor you list**: the Directory waives the discovery-origin rule of the
+manifest when the record names a descriptor, and this check waives it when `OVDB.md` lists one descriptor beside one manifest. A repository with a good
+descriptor that its record does not name passes here and is refused by the Directory; comparing with the record is for the registry's check, not this one.
 
 **It never uses the network.** It runs `git` (version 2.45 or newer: the first that can be told never to fetch a missing
 object, which the check relies on), sends nothing, and starts no server. A partial clone that lacks an object the commit
@@ -489,7 +500,7 @@ and for one with nothing wrong:
 ```
 
 `commit` is the commit that was judged, `""` when none could be read. `profile` is `publisher`. `manifests` is the number of
-manifests `OVDB.md` lists. Each finding has a stable `rule` (match on that, never on the message), a `severity` (`error`
+manifests `OVDB.md` lists, and `descriptors` (present only when it is not zero, so a document without one is as it was) is the number of database descriptors it lists beside them, which are not counted in `manifests`: a repository with one manifest and its descriptor is `"manifests":1,"descriptors":1` and the text says "1 manifest and 1 database descriptor listed". Before the descriptor was judged as such, a descriptor was counted among the manifests. Each finding has a stable `rule` (match on that, never on the message), a `severity` (`error`
 is the only one), the `path` of the file it is about (`"repository"` when it is about the repository as a whole, `"OVDB.md"` for
 `OVDB.md`), the `line` (0 when there is none) and the `message`. `ok` is true when there are no findings. `summary.errors`
 counts the findings; `summary.capped` is true when the check left findings out, `summary.omitted` says how many, and the last

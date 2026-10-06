@@ -208,8 +208,8 @@ func verdictOf(t testing.TB, b byte) bool {
 func TestGoldenDigests(t *testing.T) {
 	var want map[string]string
 	readGolden(t, "digests.json", &want)
-	if len(want) != 8 {
-		t.Fatalf("digests.json holds %d digests, want 8", len(want))
+	if len(want) != 9 {
+		t.Fatalf("digests.json holds %d digests, want 9", len(want))
 	}
 	for name, digest := range want {
 		raw, err := os.ReadFile("../" + name)
@@ -261,7 +261,9 @@ var readerKinds = map[string]bool{
 	"yaml-tab": true, "yaml-tag": true, "yaml-unsupported": true,
 }
 
-// kindOf names the kind of a refusal that the reference does not make.
+// kindOf names the kind of a refusal that the reference does not make. It is called only for a document or a probe that the reference accepts and Go
+// refuses, so a recognition by the words of a finding (the hash of an attachment, a length) cannot take a refusal that the reference also makes for the kind:
+// a number or null written as the hash is refused by the Directory too and never reaches here.
 func kindOf(f Finding) string {
 	switch {
 	case f.Rule == "representation-attachment" && strings.Contains(f.Message, "requires lower-case SHA256"):
@@ -997,7 +999,7 @@ func TestPublisherRefusesWhatTheDirectoryRefuses(t *testing.T) {
 // package): the README's table has the same cell in the column of the rule of Go. Every rule of the table is made.
 var madeByRepo = map[string]string{
 	"the optional attachment has a locally checked structural precheck; external closure remains partial": "package repo: structural metadata associations and required format3 raw data proofs; no canonical admission",
-	"a JSON database descriptor uses its separate pinned schema":                                          "outside the legacy Go manifest profile (`manifest-format`)",
+	"a JSON database descriptor uses its separate pinned schema":                                          "package manifest, `Judge.Descriptor`: the Directory's structural rules (`descriptor-*`); the pinned JSON schema that the Chinook companion runs with ajv is not run (see the descriptor section)",
 	"the repository can be read at HEAD (it is a git repository with a commit)":                           "package repo: `repo-unreadable`, `repo-no-commit`, `repo-bare`, `repo-subdirectory`, `repo-git-version`",
 	"OVDB.md is a tracked regular file":                                                                   "package repo: `repo-ovdbmd`",
 	"OVDB.md can be read (and is not over 16 MB)":                                                         "package repo: `document-size`, `repo-object-missing`, `repo-object-corrupt`, `repo-partial-clone`, `repo-alternates`",

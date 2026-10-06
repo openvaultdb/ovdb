@@ -78,6 +78,9 @@ type manifestChecker struct {
 	m       *Node
 	out     Manifest
 	profile Profile
+	// descriptorPaired is true when a database descriptor goes with this manifest: the Directory then does not ask that deployment.discovery be on the
+	// origin of url (the descriptor says where the server is, and its own rules tie the discovery to the server).
+	descriptorPaired bool
 	// The URLs that the checks of a profile compare, as parsed (the zero URL when the field is not usable).
 	canonical, deployed, discovery, page rules.URL
 }
@@ -88,16 +91,16 @@ func CheckManifest(doc []byte, path string, profile Profile) (Manifest, []Findin
 		return Manifest{}, unknownProfile(profile)
 	}
 	b := newBudget()
-	m, findings := checkManifest(doc, path, b, profile)
+	m, findings := checkManifest(doc, path, b, profile, false)
 	return m, append(findings, b.notice(path)...)
 }
 
-func checkManifest(doc []byte, path string, b *budget, profile Profile) (Manifest, []Finding) {
-	m, _, findings := checkManifestWithAttachment(doc, path, b, profile)
+func checkManifest(doc []byte, path string, b *budget, profile Profile, paired bool) (Manifest, []Finding) {
+	m, _, findings := checkManifestWithAttachment(doc, path, b, profile, paired)
 	return m, findings
 }
 
-func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Profile) (Manifest, Fact[*representation.Reference], []Finding) {
+func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Profile, paired bool) (Manifest, Fact[*representation.Reference], []Finding) {
 	c := newCollector(path, b)
 	var attachment Fact[*representation.Reference]
 	if tooBig(c, doc) {
@@ -111,7 +114,7 @@ func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Pro
 		c.add("manifest-shape", root.Line, "is not a mapping: write the manifest as keys and values (format, id, title, ...)")
 		return Manifest{}, attachment, c.findings
 	}
-	k := &manifestChecker{c: c, m: root, profile: profile}
+	k := &manifestChecker{c: c, m: root, profile: profile, descriptorPaired: paired}
 	k.out.Read = true
 	k.check()
 	if n := root.Field("representation_contract"); n != nil {
@@ -293,7 +296,7 @@ func (k *manifestChecker) check() {
 	out.Engine = k.text(field{parent: deployment, key: "engine", label: "deployment.engine", required: true, rule: "manifest-engine", hint: "write the engine your deployment runs, such as postgres", problem: engineProblem})
 	discovery, discoveryFact := k.urlField(deployment, "discovery", "deployment.discovery", true, publicURL)
 	out.Discovery, k.discovery = discoveryFact, discovery
-	if urlFact.Valid && discoveryFact.Valid && discovery.Host != canonical.Host {
+	if urlFact.Valid && discoveryFact.Valid && discovery.Host != canonical.Host && !k.descriptorPaired {
 		c.add("manifest-discovery", where(deployment, "discovery"), "deployment.discovery must be on the same origin as url (https://%s), not https://%s: serve the discovery document from the canonical host", canonical.Host, discovery.Host)
 	}
 	k.page, out.RecordsetPage = k.urlField(deployment, "recordset_page", "deployment.recordset_page", false, templateURL)
