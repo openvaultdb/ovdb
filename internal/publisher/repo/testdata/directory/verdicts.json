@@ -42,11 +42,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    },
@@ -77,11 +72,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    }
@@ -126,11 +116,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    },
@@ -161,11 +146,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    }
@@ -220,11 +200,6 @@
       "path": "ovdb.yaml",
       "rule": "manifest-licence",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    },
@@ -255,11 +230,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    }
@@ -304,11 +274,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    },
@@ -339,11 +304,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    }
@@ -388,11 +348,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    },
@@ -423,11 +378,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    }
@@ -472,11 +422,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    },
@@ -507,11 +452,6 @@
       "path": "ovdb-database.json",
       "rule": "manifest-required",
       "count": 3
-     },
-     {
-      "path": "ovdb.yaml",
-      "rule": "manifest-url",
-      "count": 1
      }
     ]
    }

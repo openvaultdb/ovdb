@@ -230,28 +230,27 @@ func TestGoldenDigests(t *testing.T) {
 // each profile, and cannot be recorded for one and forgotten for the other. Only kinds of rules that one profile alone has are
 // listed apart (publisherKinds). A refusal of a document that a reference accepts is classified by kindOf, or the test fails.
 var sharedKinds = map[string]string{
-	"document-size":       "A document over 262144 bytes (MaxDocumentBytes) is refused before it is read; the references read files of any size.",
-	"length-address":      "An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound.",
-	"length-entry":        "A publish entry whose path after ./ is over 1024 bytes; the references have no bound.",
-	"length-path":         "A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound.",
-	"length-repository":   "A publisher.repository over 255 bytes; the references have no bound.",
-	"punycode":            "A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label.",
-	"legacy-identity-url": "Released Go retains its canonical identity URL predicate: no trailing slash and an ovdb path marker; newer JavaScript accepts general identity paths.",
-	"url-length":          "A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound.",
-	"yaml":                "The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or \" at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them.",
-	"yaml-anchor":         "The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one.",
-	"yaml-character":      "The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string.",
-	"yaml-directive":      "The reader refuses a %YAML or %TAG directive; the reference follows it.",
-	"yaml-documents":      "The reader refuses a document end marker (`...`) and a second document; the reference reads the first document and ignores what follows.",
-	"yaml-encoding":       "The reader refuses a file that is not UTF-8 text (a Latin-1 byte, a NUL character); the reference, which reads a file as UTF-8, replaces the bytes it cannot decode and goes on.",
-	"yaml-escape":         "The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\\ud83c); the reference accepts it.",
-	"yaml-key":            "The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the reference accepts it as a key.",
-	"yaml-line-ending":    "The reader refuses a carriage return that is not part of CRLF; the reference reads it as a line break.",
-	"yaml-number":         "The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers.",
-	"yaml-tab":            "The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation).",
-	"yaml-tag":            "The reader refuses tags (!, !!), which the reference resolves; it reads plain values only.",
-	"yaml-limit":          "The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth.",
-	"yaml-unsupported":    "The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both.",
+	"document-size":     "A document over 262144 bytes (MaxDocumentBytes) is refused before it is read; the references read files of any size.",
+	"length-address":    "An address over 2048 bytes, or one that names a repository over 247 bytes; the references' address expressions have no bound.",
+	"length-entry":      "A publish entry whose path after ./ is over 1024 bytes; the references have no bound.",
+	"length-path":       "A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound.",
+	"length-repository": "A publisher.repository over 255 bytes; the references have no bound.",
+	"punycode":          "A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label.",
+	"url-length":        "A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound.",
+	"yaml":              "The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or \" at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them.",
+	"yaml-anchor":       "The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one.",
+	"yaml-character":    "The reader refuses characters that YAML 1.2 does not allow in text, among them the C1 controls such as U+0085; the reference reads them into a string.",
+	"yaml-directive":    "The reader refuses a %YAML or %TAG directive; the reference follows it.",
+	"yaml-documents":    "The reader refuses a document end marker (`...`) and a second document; the reference reads the first document and ignores what follows.",
+	"yaml-encoding":     "The reader refuses a file that is not UTF-8 text (a Latin-1 byte, a NUL character); the reference, which reads a file as UTF-8, replaces the bytes it cannot decode and goes on.",
+	"yaml-escape":       "The reader refuses a double-quoted escape that is not a character, such as half of a surrogate pair (\\ud83c); the reference accepts it.",
+	"yaml-key":          "The reader refuses a key that YAML reads as a number, a boolean or null (2024, true, null) and wants it in quotes; the reference accepts it as a key.",
+	"yaml-line-ending":  "The reader refuses a carriage return that is not part of CRLF; the reference reads it as a line break.",
+	"yaml-number":       "The reader refuses numbers it cannot hold exactly or that are not finite: hexadecimal and octal numbers, .inf, .nan, and integers beyond 2^53; the reference reads them as numbers.",
+	"yaml-tab":          "The reader refuses a tab where YAML allows it but whose reading differs between parsers (after a colon, in indentation).",
+	"yaml-tag":          "The reader refuses tags (!, !!), which the reference resolves; it reads plain values only.",
+	"yaml-limit":        "The reader refuses collections nested more than 64 levels deep (63 is read); the reference reads any depth.",
+	"yaml-unsupported":  "The reader refuses constructs outside its subset: explicit keys (`? key`), and a quoted value written over more than one line, which a YAML tool writes back for any long string (the message asks for a block scalar, `>-` or `|-`; meaninggraph/cli#7); the reference reads both.",
 }
 
 // readerKinds are the kinds of sharedKinds that the reader (or the bound checked before it) makes: the rules of its refusals, and
@@ -265,8 +264,6 @@ var readerKinds = map[string]bool{
 // kindOf names the kind of a refusal that the reference does not make.
 func kindOf(f Finding) string {
 	switch {
-	case f.Rule == "manifest-url" && (strings.Contains(f.Message, "must not have a trailing slash") || strings.Contains(f.Message, "must have ovdb as a complete path segment")):
-		return "legacy-identity-url"
 	case f.Rule == "representation-attachment" && strings.Contains(f.Message, "requires lower-case SHA256"):
 		return "representation-hash-list"
 	case strings.Contains(f.Message, "is longer than 2048 characters"):
@@ -319,7 +316,7 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 }
 
 // d0Classes are the problems of the frozen Chinook checker that D0 explains Go not having: D, the rule that a recordset name looks like a ModelSpec entity
-// name, which the Directory at its pin no longer has (it takes native names), and K, recordset_entities as an unknown key, which the Directory reads.
+// name, which the Directory at its pin no longer has (it takes native names) and K, recordset_entities as an unknown key, which the Directory reads.
 const d0Classes = "DK"
 
 // d0Explained says whether a document that the Publisher profile accepts and the frozen Chinook checker refuses is explained by D0 (the Directory at its pin

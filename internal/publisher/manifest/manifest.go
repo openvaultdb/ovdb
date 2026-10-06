@@ -256,21 +256,9 @@ func (k *manifestChecker) urlField(parent *Node, key, label string, required boo
 func publicURL(s string) (rules.URL, error)   { return rules.ParsePublicHTTPSURL(s) }
 func templateURL(s string) (rules.URL, error) { return rules.ParsePublicHTTPSURLTemplate(s) }
 
-// canonicalURL is a public https URL without a trailing slash, with ovdb as a
-// complete path segment or as a subdomain.
-func canonicalURL(s string) (rules.URL, error) {
-	u, err := rules.ParsePublicHTTPSURL(s)
-	if err != nil {
-		return u, err
-	}
-	if strings.HasSuffix(u.Path, "/") {
-		return u, &rules.Problem{Rule: "canonical-url", Detail: "must not have a trailing slash: remove the last /"}
-	}
-	if !hasOvdbMarker(u) {
-		return u, &rules.Problem{Rule: "canonical-url", Detail: "must have ovdb as a complete path segment or as a subdomain (https://acme.com/ovdb/sales or https://ovdb.acme.com/sales)"}
-	}
-	return u, nil
-}
+// canonicalURL is a global database identity (rules.GlobalDatabaseID): a public https URL, which may end in a slash, may have percent-encoded segments
+// and may be under .example. The Directory asks nothing more of it, so neither the trailing slash nor the ovdb marker is judged.
+func canonicalURL(s string) (rules.URL, error) { return rules.ParseGlobalDatabaseID(s) }
 
 func (k *manifestChecker) check() {
 	m, out, c := k.m, &k.out, k.c

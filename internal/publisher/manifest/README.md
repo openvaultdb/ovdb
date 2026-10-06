@@ -185,7 +185,7 @@ rule of `Directory` first and adds what the Chinook checker adds; a fact that a 
 | `OVDB.md` | YAML front matter with `ovdb: 1` and a non-empty `publish` list of `./` paths, which must list the manifest; unknown keys and a repeated entry are accepted | And no key but `ovdb` and `publish`, and no entry twice (`Repeated` is a finding) |
 | Manifest keys | Unknown keys are accepted | Only the keys of the manifest, `deployment`, `model`, `meaning`, `meaning.graph`, `publisher` and `licences` that the checker allows |
 | `id` | Text | Lower-case letters, digits and single hyphens, at most 80 characters |
-| URLs | Public https, no trailing slash, an `ovdb` marker in the canonical `url`; discovery on the host of `url` | And discovery is exactly `/.well-known/openvaultdb`, `deployment.recordset_page` is on the origin of `deployment.url`, `publisher.url` is `https://github.com/<owner>`, and every page the template makes is a public https URL |
+| URLs | Public https; the canonical `url` is a global database identity (a trailing slash, several segments, canonical percent-encoded segments and a `.example` host are fine; no `ovdb` marker is asked); discovery on the host of `url` | And discovery is exactly `/.well-known/openvaultdb`, `deployment.recordset_page` is on the origin of `deployment.url`, `publisher.url` is `https://github.com/<owner>`, and every page the template makes is a public https URL |
 | `publisher.repository` | Optional; when written, a github.com repository | Required, and owned by the owner of `publisher.url` |
 | Addresses and names | A repository of github.com in lower case; own form without `?ref=`, shared form pinned | And a module name starts with a letter; `model.name` is the module of `model.address`; the own form's `model.address` is this repository, and the shared form's addresses are not |
 | Own form | `model.modelspec` and `meaning.file` required | And `model.hcl` required, `model.modelspec` ends in `.modelspec.json`, `meaning.graph.address` is `publisher.repository` as an address |
@@ -333,15 +333,15 @@ holds every golden of both slices to its SHA-256 in `digests.json`, so a hand ed
 a golden fails until `generate.mjs` is run again. `go test -v -run
 'TestReferenceDirectory|TestFacts' ./internal/publisher/manifest` prints the numbers.
 
-On the corpus: **7256 agree, 803 stricter, 0 unrecorded Go acceptances where the
+On the corpus: **7261 agree, 798 stricter, 0 unrecorded Go acceptances where the
 Directory refuses**.
 
-On the facts: 2207 manifests and 267 OVDB.md documents have their facts compared.
+On the facts: 2212 manifests and 267 OVDB.md documents have their facts compared.
 
 For every manifest the Go reader reads, accepted or refused, the presence of every field
 is compared with the reference's parsed manifest (`TestPresenceAgreesWithTheReference`): the
 facts that are `Present` are the fields the reference has, so a written value that is
-refused can never become an absent fact. The presence of every field is compared on 5519 manifests, 3312 of them refused.
+refused can never become an absent fact. The presence of every field is compared on 5519 manifests, 3307 of them refused.
 
 ## The proof, Publisher profile
 
@@ -390,13 +390,13 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7502 agree, 490 stricter, 0 unrecorded Go acceptances where the Chinook
-checker refuses**. The facts: under the Publisher profile, 925 manifests and 104
+On the corpus: **7507 agree, 485 stricter, 0 unrecorded Go acceptances where the Chinook
+checker refuses**. The facts: under the Publisher profile, 930 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
 **Cross-profile.** Over the whole corpus of both goldens, the Publisher profile refuses
-every one of the 5194 manifests, 366 OVDB.md documents and 5965 pairs (of 8717) that the
+every one of the 5189 manifests, 366 OVDB.md documents and 5960 pairs (of 8717) that the
 Directory profile refuses (`TestPublisherRefusesWhatTheDirectoryRefuses`: each manifest
 and each OVDB.md alone, and in pairs with the real Chinook documents, under every path
 the corpus names).
@@ -428,7 +428,6 @@ it has none there: see the table of places.
 | `length-path` | 8 | 6 | A file path over 1024 bytes in model.modelspec, model.hcl or meaning.file; the references have no bound. |
 | `length-repository` | 4 | 2 | A publisher.repository over 255 bytes; the references have no bound. |
 | `punycode` | 4 | 4 | A homepage host with an xn-- label that does not spell Latin-1 letters (see the README of package rules); Node accepts the label. |
-| `legacy-identity-url` | 5 | 5 | Released Go retains its canonical identity URL predicate: no trailing slash and an ovdb path marker; newer JavaScript accepts general identity paths. |
 | `url-length` | 5 | 2 | A URL longer than rules.MaxURLLength (2048 bytes) is refused; the reference has no bound. |
 | `yaml` | 86 | 33 | The reader accepts a subset of YAML and refuses a structure it cannot place: a plain value that continues on the next line with a character such as * or " at its start, a flow collection used as a key, an explicit key or an entry with no value in a flow collection, and the other places of the table below; the references read them. |
 | `yaml-anchor` | 68 | 56 | The reader refuses anchors and aliases (& and *): it reads a document once, as written, and expanding references is how a small file becomes a large one. |
@@ -602,14 +601,14 @@ when Go refuses such a probe for another reason, or agrees with the reference.
 ### Recorded differences: not yet ported (the Directory profile)
 
 The Directory's checker has moved since the first reference was pinned, and Go has not yet ported every rule it added. Where that makes Go
-refuse what the Directory accepts, the global-identity kind is recorded in the shared table above under both current profiles, until its slice lands; where it makes Go accept what the
+refuse what the Directory accepts, no kind is recorded at the moment; where it makes Go accept what the
 Directory refuses (no remaining looser corpus documents) it is recorded in `testdata/reference/drift.json` and by the test that holds the
 corpus to it. These are not bounds and not choices. `testdata/reference/drift.json` is the whole list, in two classes (Go looser first), with the slice
 that removes each entry; `TestDrift` fails when the list and what Go does disagree, in either direction, so an entry is removed in the pull request
 that ports its rule. The rules of the Directory that the corpus does not reach are covered by `testdata/reference/drift.probes.json`: one manifest
 for each, with the verdict of the reference at the pin.
 
-The five `legacy-identity-url` corpus differences are the global-identity gap (slice A0c in `drift.json`). The representation envelope and compound data licence probes now agree with the Directory: this implementation validates the optional envelope and accepts bounded compound data licences in both profiles. All probes remain committed, so `TestDrift` detects regressions.
+The representation envelope and compound data licence probes now agree with the Directory: this implementation validates the optional envelope and accepts bounded compound data licences in both profiles. All probes remain committed, so `TestDrift` detects regressions.
 
 ### Recorded differences: the Publisher profile's own
 

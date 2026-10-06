@@ -262,8 +262,9 @@ func TestManifestRefusals(t *testing.T) {
 		{"url empty", edit(t, ownManifest, "url: "+url+"\n", "url: \"\"\n"), "manifest-required"},
 		{"url number", edit(t, ownManifest, "url: "+url+"\n", "url: 7\n"), "manifest-url"},
 		{"url http", edit(t, ownManifest, "url: https://chinookdb.com/ovdb", "url: http://chinookdb.com/ovdb"), "manifest-url"},
-		{"url trailing slash", edit(t, ownManifest, "dbs/chinook\ndeployment", "dbs/chinook/\ndeployment"), "manifest-url"},
-		{"url without marker", edit(t, ownManifest, "url: https://chinookdb.com/ovdb/dbs/chinook", "url: https://chinookdb.com/dbs/chinook"), "manifest-url"},
+		{"url with a query", edit(t, ownManifest, "dbs/chinook\ndeployment", "dbs/chinook/?x=1\ndeployment"), "manifest-url"},
+		{"url with an escaped slash", edit(t, ownManifest, "dbs/chinook\ndeployment", "dbs%2Fchinook/\ndeployment"), "manifest-url"},
+		{"url that is a host only", edit(t, ownManifest, "url: https://chinookdb.com/ovdb/dbs/chinook", "url: https://chinookdb.com"), "manifest-url"},
 		{"homepage http", edit(t, ownManifest, "https://chinookdb.com/\n", "http://chinookdb.com/\n"), "manifest-homepage"},
 		{"homepage null", edit(t, ownManifest, "homepage: https://chinookdb.com/\n", "homepage:\n"), "manifest-homepage"},
 		{"homepage list", edit(t, ownManifest, "homepage: https://chinookdb.com/\n", "homepage: [a]\n"), "manifest-homepage"},
@@ -500,21 +501,6 @@ func TestAddresses(t *testing.T) {
 	}
 }
 
-func TestOvdbMarker(t *testing.T) {
-	for _, c := range []struct {
-		host, path string
-		want       bool
-	}{
-		{"acme.com", "/ovdb/sales", true}, {"acme.com", "/data/ovdb/sales", true}, {"ovdb.acme.com", "/sales", true}, {"x.ovdb.acme.co.uk", "/sales", true}, {"ovdb.acme.co.uk", "/sales", true},
-		{"acme.com", "/ovdbx/sales", false}, {"acme.com", "/xovdb/sales", false}, {"ovdb.com", "/sales", false}, {"ovdb.co.uk", "/sales", false}, {"ovdb.com.au", "/sales", false},
-		{"acme.ovdb", "/sales", false}, {"notovdb.acme.com", "/sales", false}, {"ovdb.github.io", "/x", true}, {"co.uk", "/x", false}, {"a.b.c.d", "/ovdb", true}, {"x", "/x", false},
-	} {
-		if got := hasOvdbMarker(rules.URL{Host: c.host, Path: c.path}); got != c.want {
-			t.Errorf("hasOvdbMarker(%s%s) = %v", c.host, c.path, got)
-		}
-	}
-}
-
 func TestUnreadableReaderOutput(t *testing.T) {
 	c := newCollector("d", newBudget())
 	readDocument(c, []byte("a: &x 1\n"), 4)
@@ -540,7 +526,7 @@ func TestFindingLines(t *testing.T) {
 		{"id blank", edit(t, ownManifest, "id: chinook\n", "id: \" \"\n"), "manifest-required", 2},
 		{"title missing", edit(t, ownManifest, "title: Chinook music store\n", ""), "manifest-required", 1},
 		{"homepage", edit(t, ownManifest, "https://chinookdb.com/\n", "http://chinookdb.com/\n"), "manifest-homepage", 5},
-		{"url trailing slash", edit(t, ownManifest, "dbs/chinook\ndeployment", "dbs/chinook/\ndeployment"), "manifest-url", 6},
+		{"url with a query", edit(t, ownManifest, "dbs/chinook\ndeployment", "dbs/chinook/?x=1\ndeployment"), "manifest-url", 6},
 		{"deployment url", edit(t, ownManifest, "https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine", "https://cloud.openvaultdb.com:8443/ovdb/dbs/chinook\n  engine"), "manifest-url", 8},
 		{"engine", edit(t, ownManifest, "engine: sqlite", "engine: 9db"), "manifest-engine", 9},
 		{"discovery origin", edit(t, ownManifest, "discovery: https://chinookdb.com/", "discovery: https://cloud.openvaultdb.com/"), "manifest-discovery", 10},

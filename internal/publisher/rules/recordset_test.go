@@ -122,3 +122,39 @@ func TestQuoteNeverCutsInsideACharacter(t *testing.T) {
 		t.Errorf("Quote of a long ASCII text: %s", got)
 	}
 }
+
+func TestGlobalDatabaseID(t *testing.T) {
+	for in, want := range map[string]bool{
+		"https://demodb.dev/sakila/":                 true,
+		"https://demodb.dev/":                        true,
+		"https://demodb.dev/a/b/":                    true,
+		"https://demodb.dev/ovdb/dbs/sakila":         true,
+		"https://demodb.dev/order%20details/":        true,
+		"https://demodb.dev/%E2%82%AC/x%20y/":        true,
+		"https://demodb.dev/50%25/":                  true,
+		"https://x.example/db/":                      true,
+		"https://example/db/":                        false,
+		"https://x.test/db/":                         false,
+		"https://demodb.dev":                         false,
+		"https://demodb.dev/a%7a/":                   false,
+		"https://demodb.dev/a%e2%82%ac/":             false,
+		"https://demodb.dev/a%2Fb/":                  false,
+		"https://demodb.dev/%2e%2e/":                 false,
+		"https://demodb.dev/%252e%252e/":             false,
+		"https://demodb.dev/%FF/":                    false,
+		"https://demodb.dev/%/":                      false,
+		"https://demodb.dev/a%00/":                   false,
+		"https://demodb.dev/a?x/":                    false,
+		"https://demodb.dev/a//b/":                   false,
+		"https://demodb.dev/./":                      false,
+		"http://demodb.dev/a/":                       false,
+		"https://" + strings.Repeat("a", 2050) + "/": false,
+	} {
+		if got := GlobalDatabaseID(in) == nil; got != want {
+			t.Errorf("GlobalDatabaseID(%q) = %v, want %v", in, got, want)
+		}
+	}
+	if u, err := ParseGlobalDatabaseID("https://demodb.dev/a/b/"); err != nil || u.Host != "demodb.dev" || u.Path != "/a/b/" {
+		t.Errorf("ParseGlobalDatabaseID: %+v, %v", u, err)
+	}
+}

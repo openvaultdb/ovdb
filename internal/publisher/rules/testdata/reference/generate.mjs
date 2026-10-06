@@ -133,6 +133,8 @@ const fns = {
     chinookdb: (v) => chinook.enginePattern.test(v),
   },
   licence: { directory: (v) => manifestAccepts((m) => { m.licences.data = v; }, 'licences.data') },
+  // A global database identity (globalDatabaseIdProblem, 574a7ad and d089fa8): the Directory's own function.
+  'global-id': { directory: (v) => urls.globalDatabaseIdProblem(v) === null },
   // The Directory takes a recordset as the database names it (nativeRecordsetNameProblem, an inline rule of manifestProblems), and writes its page URL from
   // the name as one encoded path segment (encodePathSegment, and publicHttpsProblem's encodedPathSegment, in analyseDatabase). Both are the Directory's own code.
   'recordset-name': {
@@ -195,6 +197,14 @@ urlSweep('template-between', 'url-template', 'https://e.openvaultdb.com/{na{C}me
 urlSweep('homepage-host', 'homepage', 'https://a{C}b.openvaultdb.com/x');
 urlSweep('homepage-path', 'homepage', 'https://e.openvaultdb.com/a{C}b');
 urlSweep('homepage-after-end', 'homepage', 'https://e.openvaultdb.com/x{C}');
+urlSweep('gid-host', 'global-id', 'https://a{C}b.openvaultdb.com/x/');
+urlSweep('gid-host-example', 'global-id', 'https://a{C}b.example/x/');
+urlSweep('gid-path', 'global-id', 'https://e.openvaultdb.com/a{C}b/');
+urlSweep('gid-escape-first', 'global-id', 'https://e.openvaultdb.com/a%{C}0/');
+urlSweep('gid-escape-second', 'global-id', 'https://e.openvaultdb.com/a%2{C}/');
+urlSweep('gid-escape-char', 'global-id', 'https://e.openvaultdb.com/a%C3%A{C}/');
+urlSweep('gid-after-end', 'global-id', 'https://e.openvaultdb.com/x/{C}');
+urlSweep('gid-before-scheme', 'global-id', '{C}https://e.openvaultdb.com/x/');
 // The smaller sweeps of the other rules.
 const smallSweep = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'narrow', template });
 const smallSweepWide = (name, fn, template) => sweepSpecs.push({ name, fn, span: 'wide', template });
@@ -242,6 +252,8 @@ const productSpecs = [
   { name: 'repository-segments', fn: 'repository', template: 'https://github.com/{S}', alphabet: 'a./-g', min: 1, max: 5 },
   { name: 'engine-shape', fn: 'engine', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
   { name: 'licence-shape', fn: 'licence', template: '{S}', alphabet: 'a9-.+_/', min: 0, max: 4 },
+  { name: 'gid-path-shape', fn: 'global-id', template: 'https://e.example/{S}', alphabet: 'a%2eC3/', min: 0, max: 5 },
+  { name: 'gid-escape-shape', fn: 'global-id', template: 'https://e.openvaultdb.com/{S}/', alphabet: '%25aeF.', min: 0, max: 5 },
   { name: 'recordset-name-shape', fn: 'recordset-name', template: '{S}', alphabet: 'a. /\\\t', min: 0, max: 4 },
   { name: 'recordset-page-shape', fn: 'recordset-page', template: '{S}', alphabet: 'a.%2F5c ~', min: 0, max: 5 },
 ];
@@ -435,6 +447,12 @@ const recordsetList = {
     '\u20ac'.repeat(256), '\u20ac'.repeat(257), '\u8868'.repeat(230), '\u00e9'.repeat(400), 'a'.repeat(2100), '%'.repeat(1000), 'a%2Fb'.repeat(500),
   ].map((input) => [input, verdicts(nameFns, input)]),
 };
+const globalIdHosts = ['example', 'x.example', 'x.EXAMPLE', 'a.b.example', 'x.example.', 'x.examples', 'xexample', 'x.test', 'x.localhost', 'x.local', 'x.internal', 'ovdb.example', 'x.example.com', 'x.com.example', 'demodb.dev', 'localhost', '127.0.0.1', 'xn--bcher-kva.de'];
+const globalIdPaths = ['', '/', '/sakila', '/sakila/', '/a/b/', '/a/b', '/a//b/', '//', '/./', '/../', '/.../', '/order%20details/', '/order%20details', '/%41/', '/%61/', '/%2f/', '/%2F/', '/%5C/', '/%5c/', '/%00/', '/%1f/', '/%7F/', '/%7f/', '/%2e/', '/%2E/', '/%2e%2e/', '/.%2e/', '/%252e/', '/%252e%252e/', '/%252F/', '/%2525/', '/%25/', '/%2/', '/%/', '/%zz/', '/%C3%A9/', '/%c3%a9/', '/%C3/', '/%FF/', '/%C0%80/', '/%ED%A0%80/', '/%7E/', '/~/', '/%21/', '/!/', '/%27/', '/%28/', '/%2A/', '/*/', '/a%20b/c%20d/', '/a%20b%/', '/a%20b%2/', '/%E2%82%AC/', '/%f0%9f%98%80/', '/%F0%9F%98%80/', '/\u00e9/', '/a b/', '/a\\b/', '/a?b/', '/a#b/', '/a:b/', '/{name}/', '/%7Bname%7D/', '/%25252e/', '/%252e/x/%2e/'];
+const globalIdList = {
+  fns: ['global-id'],
+  cases: [...new Set([...urlLike, ...globalIdHosts.flatMap((host) => globalIdPaths.map((path) => `https://${host}${path}`)), ...globalIdPaths.map((path) => `https://demodb.dev${path}`), 'https://demodb.dev', 'https://demodb.dev/sakila/?x', 'https://demodb.dev:443/sakila/', 'https://u@demodb.dev/sakila/', 'http://demodb.dev/sakila/', rep('https://e.openvaultdb.com/', 'a', 2040, '/'), rep('https://e.openvaultdb.com/', '%20', 700, '/')])].map((input) => [input, verdicts(['global-id'], expand(input))]),
+};
 const urlList = { fns: urlFns, cases: [...urlLike, ...punycodeInputs].map((input) => [input, verdicts(urlFns, expand(input))]) };
 // A string that no reference accepts as a URL still goes through the repository rule below.
 
@@ -502,7 +520,7 @@ const countCases = () => {
   let total = 0;
   for (const sweep of sweeps) total += codesOf(sweepRanges[sweep.span]).length;
   for (const product of products) total += product.size;
-  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList]) total += list.cases.length * list.fns.length;
+  for (const list of [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList]) total += list.cases.length * list.fns.length;
   total += claimAddresses.length * claimAddresses.length;
   return total;
 };
@@ -517,7 +535,7 @@ const golden = {
   sweepRanges,
   sweeps,
   products,
-  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList],
+  lists: [urlList, repositoryList, idList, commitList, pathList, engineList, textList, recordsetList, globalIdList],
   claims: claimList,
 };
 

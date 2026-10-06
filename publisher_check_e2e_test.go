@@ -255,15 +255,16 @@ func TestPublisherCheckEndToEnd(t *testing.T) {
 					t.Fatalf("legacy input: exit %d: %s", code, stdout)
 				}
 			} else {
-				// The current companion also publishes a JSON descriptor and a general
-				// identity URL. Those remain outside the released Go manifest profile.
+				// The current companion also publishes a JSON descriptor, which is still judged as a
+				// manifest (slice A0b). Its general identity URL (a trailing slash, no ovdb marker)
+				// is accepted, as the Directory accepts it (slice A0c).
 				url, format := false, false
 				for _, f := range result.Findings {
 					url = url || f.Rule == "manifest-url"
 					format = format || f.Rule == "manifest-format"
 				}
-				if code != 1 || result.OK || !url || !format {
-					t.Fatalf("expected legacy profile differences: exit %d: %s", code, stdout)
+				if code != 1 || result.OK || url || !format {
+					t.Fatalf("expected the descriptor to be refused and the identity URL accepted: exit %d: %s", code, stdout)
 				}
 			}
 		})

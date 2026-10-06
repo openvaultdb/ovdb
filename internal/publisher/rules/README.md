@@ -23,6 +23,7 @@ later changes and calls these functions.
 | `IsEngine` | `^[A-Za-z][A-Za-z0-9_.+-]{0,39}$`. |
 | `IsLicenceID` | The shape of an SPDX licence id, `^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$`; it does not know which ids SPDX has assigned. |
 | `IsBlank` | Whether a text is empty or only white space **as JavaScript's `trim()` sees it** (it strips U+FEFF and not U+0085; Go's `strings.TrimSpace` does the reverse). Every "is required" check must use it, never `strings.TrimSpace`. |
+| `GlobalDatabaseID` | A database's canonical url as the Directory takes it since it published global identities: every rule of `PublicHTTPSURL` (a trailing slash is fine; one path segment or several), and two differences. A path segment may hold percent escapes when it is the canonical encoding of its text (see `EncodePathSegment`) and the text, decoded again and again, never becomes `.`, `..`, a slash, a backslash or a control character; and a host under `.example` is allowed. |
 | `RecordsetName` | A recordset name as the Directory takes it since it took native names: text that is not blank by JavaScript's `trim()`, at most 256 UTF-16 code units (an astral character counts for two), not `.` or `..`, with no `/`, `\` or control character (U+0000 to U+001F, U+007F). A space, a dot and any non-ASCII letter are allowed: `dbo.DatabaseLog`, `Order Details`. |
 | `EncodePathSegment` | JavaScript's `encodeURIComponent`, with `! ' ( ) *` encoded too: everything except `A-Z a-z 0-9 - _ . ~` as `%XX`, in upper case. |
 | `RecordsetPage` | The page of a recordset: the `deployment.recordset_page` template with `{name}` replaced by the encoded name. A name that needs no encoding makes an ordinary public https URL. One that does is accepted only as one whole path segment of the template's path (nothing else shares it), when nothing in the name, decoded again and again, can become `.`, `..`, a slash, a backslash or a control character, and the rest of the URL passes the ordinary rules. The page has no length bound of its own, as the Directory has none: the name is bounded (256 UTF-16 code units, 2304 characters at most once encoded) and the template is a URL of at most 2048, so a page is judged in one pass however long. |
@@ -80,7 +81,7 @@ imports them as they are, runs their functions over a generated matrix and
 writes the verdicts to `testdata/reference/matrix.golden.json` (Node
 v24.19.0 made the committed one). `go test` reads the golden and judges every
 verdict of the Go functions against it; it starts no process and needs no
-network. The matrix is **2018357** verdicts:
+network. The matrix is **2584083** verdicts:
 
 - every character U+0000 to U+FFFF, placed in the host (first, middle, last, last
   label), after the host, in the path, before the scheme and after the end of a
@@ -117,9 +118,9 @@ with the one limit named taken away, Go accepts the same input.
 
 | Kind | Cases | Why |
 | --- | --- | --- |
-| `url-length` | 5 | A URL over 2048 bytes. The references have no bound; a published URL is text that people and tools read, and an unbounded input is a way to make a check slow. |
+| `url-length` | 11 | A URL over 2048 bytes. The references have no bound; a published URL is text that people and tools read, and an unbounded input is a way to make a check slow. |
 | `punycode-decoded-hyphens` | 376 | An `xn--` label that is valid punycode of Latin-1 letters but decodes to text that begins with `xn--` or has hyphens in its third and fourth positions. As UTS #46 reads it (15.1 on), such a label is invalid when hyphens are not checked, so a later Node may refuse it; Node v24.19.0 accepts it. One comparison makes the rule independent of the Node version. |
-| `punycode-other-text` | 3437 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says which letters a label may spell, that other scripts and letters are not accepted yet, and to use an ASCII host name; whether to accept more is a product decision. |
+| `punycode-other-text` | 3442 | An `xn--` label that is valid punycode of text other than Latin-1 lower-case letters (Cyrillic, CJK, control characters, ...). Which code points UTS #46 accepts changes with every Unicode release and Go has no copy of its tables, so a label is accepted only when it spells Latin-1 letters (U+00E0 to U+00FF without U+00F7), which have always been valid. `xn--bcher-kva.de` passes; `xn--80ak6aa92e.com` does not, though Node accepts it. The message says which letters a label may spell, that other scripts and letters are not accepted yet, and to use an ASCII host name; whether to accept more is a product decision. |
 | `punycode-malformed` | 50 | An `xn--` label that is not punycode of any text (truncated, ASCII only, a number too large). Node's URL parser takes such labels as written; a hostile publisher could use one to name a host no client can resolve the same way. The message says it is not valid punycode and to write the host name in ASCII. |
 | `repository-length` | 4 | A repository URL over 255 bytes. The references have no bound; GitHub names are far shorter. |
 | `path-length` | 3 | A path inside a repository over 1024 bytes. The references have no bound. |

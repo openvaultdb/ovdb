@@ -143,6 +143,7 @@ var goFns = map[string]func(string) bool{
 	"licence":      IsLicenceID,
 	"text":         func(s string) bool { return !IsBlank(s) },
 	// The page of a recordset, from a template that is a plain public URL (see recordsetPageTemplate in the generator).
+	"global-id":      func(s string) bool { return GlobalDatabaseID(s) == nil },
 	"recordset-name": func(s string) bool { return RecordsetName(s) == nil },
 	"recordset-page": func(s string) bool { return RecordsetPage(recordsetPageTemplate, s) == nil },
 }
@@ -152,6 +153,7 @@ const recordsetPageTemplate = "https://cloud.openvaultdb.com/ovdb/dbs/chinook/co
 // goErrs are the URL functions again, for the message of a refusal.
 var goErrs = map[string]func(string) error{
 	"url": PublicHTTPSURL, "url-template": PublicHTTPSURLTemplate, "homepage": Homepage,
+	"global-id":      GlobalDatabaseID,
 	"recordset-name": RecordsetName,
 	"recordset-page": func(s string) error { return RecordsetPage(recordsetPageTemplate, s) },
 }
@@ -167,11 +169,14 @@ type difference struct {
 
 const unbounded = 1 << 30
 
-func urlFn(fn string) bool { return fn == "url" || fn == "url-template" || fn == "homepage" }
+func urlFn(fn string) bool {
+	return fn == "url" || fn == "url-template" || fn == "homepage" || fn == "global-id"
+}
 
 func urlLift(o options) func(fn, s string) bool {
 	return func(fn, s string) bool {
 		o.template = fn == "url-template"
+		o.encoded, o.example = fn == "global-id", fn == "global-id"
 		if o.maxLen == 0 {
 			o.maxLen = MaxURLLength
 		}

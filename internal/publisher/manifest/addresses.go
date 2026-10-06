@@ -82,37 +82,3 @@ func isModuleName(s string) bool {
 
 func parseModelAddress(s string) (Address, bool) { return parseAddress(s, "modelspec://", true) }
 func parseGraphAddress(s string) (Address, bool) { return parseAddress(s, "meaning://", false) }
-
-// twoLabelSuffixes are public suffixes of two labels, where the registered name
-// sits one label further left (ovdb.co.uk is a registered name under co.uk).
-var twoLabelSuffixes = map[string]bool{
-	"co.uk": true, "org.uk": true, "ac.uk": true, "gov.uk": true, "me.uk": true, "com.au": true, "net.au": true, "org.au": true,
-	"co.nz": true, "co.jp": true, "co.in": true, "co.za": true, "com.br": true, "com.cn": true, "com.mx": true, "com.tr": true, "com.ar": true,
-}
-
-// hasOvdbMarker reports whether a canonical url has ovdb as a complete path
-// segment or as a subdomain: a host label left of the registered name, which is
-// the last two labels, or the last three under a two-label suffix such as co.uk.
-// So ovdb.acme.com and x.ovdb.acme.co.uk count; ovdb.com and ovdb.co.uk do not.
-func hasOvdbMarker(u rules.URL) bool {
-	for _, segment := range strings.Split(u.Path, "/") {
-		if segment == "ovdb" {
-			return true
-		}
-	}
-	labels := strings.Split(u.Host, ".")
-	suffix := 1
-	if n := len(labels); n >= 2 && twoLabelSuffixes[labels[n-2]+"."+labels[n-1]] {
-		suffix = 2
-	}
-	end := len(labels) - suffix - 1
-	if end < 0 { // the references slice with a negative end, which counts from the right
-		end = max(end+len(labels), 0)
-	}
-	for _, label := range labels[:end] {
-		if label == "ovdb" {
-			return true
-		}
-	}
-	return false
-}
