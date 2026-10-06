@@ -86,22 +86,37 @@ func (c *checker) entryFile(path string) string {
 	return "is " + kind.String()
 }
 
-// addresses holds meaning.graph.address and the own-form model.address to the repository that publisher.repository names, as the Directory does through the
-// record: the record's repository is the one the manifest names, the graph is registered for it at the address that is derived from it, and the manifest's address
-// is the registry's (directory.mjs 428, 495-500 and 546). Without publisher.repository there is no repository to compare with here. The Publisher profile holds the
-// same two facts in the manifest stage (manifest-meaning, manifest-model), with the Chinook checker's wording, so only the Directory profile needs it.
+// addresses holds meaning.graph.address and the own-form model.address to the repository that the record would name, as the Directory does: the record's
+// repository is the one the manifest names (publisher.repository, directory.mjs 428) or, when the manifest names none, the one that --repository names (a hoster
+// that runs the check on a repository says which it is); the graph is registered for it at the address that is derived from it (495-500), and the manifest's
+// address is the registry's, and the own-form model.address names it (546). With neither there is no repository to compare with. The Publisher profile holds the
+// same two facts in the manifest stage (manifest-meaning, manifest-model), with the Chinook checker's wording and, when it names a repository, publisher.repository only,
+// so only the Directory profile needs it here.
 func (c *checker) addresses(path string, m manifest.Manifest) {
-	if !m.PublisherRepository.Usable() {
+	var own, from string
+	switch {
+	case m.PublisherRepository.Usable():
+		own, _ = rules.CompareKey(m.PublisherRepository.Value) // a usable publisher.repository is a repository
+		from = "publisher.repository"
+	case m.PublisherRepository.Absent() && c.repository != nil:
+		var ok bool
+		if own, ok = rules.CompareKey(*c.repository); !ok {
+			return
+		}
+		from = "--repository"
+	default:
 		return
 	}
-	own, _ := rules.CompareKey(m.PublisherRepository.Value) // a usable publisher.repository is a repository
-	if a := m.GraphAddress; a.Usable() && manifest.LowerASCII(a.Value) != "meaning://"+own {
-		c.add(path, RuleAddress, a.Line, "meaning.graph.address must be meaning://%s (in any case), the address of publisher.repository, got %s", own, rules.Quote(a.Value))
+	if a := m.GraphAddress; a.Usable() && !manifest.GraphAddressNames(a.Value, own) {
+		c.add(path, RuleAddress, a.Line, "meaning.graph.address must be meaning://%s (the host as written, the organisation and the repository in any case), the address of %s, got %s", own, from, rules.Quote(a.Value))
 	}
 	if a := m.ModelAddress; a.Usable() && a.Value.Repository != own {
-		c.add(path, RuleAddress, a.Line, "model.address names %s, but publisher.repository is %s: a manifest with its own model files addresses its own repository", rules.Quote(a.Value.Repository), rules.Quote(own))
+		c.add(path, RuleAddress, a.Line, "model.address names %s, but %s is %s: a manifest with its own model files addresses its own repository", rules.Quote(a.Value.Repository), from, rules.Quote(own))
 	}
 }
+
+// maxModelKept is the most that the readings of model files may hold together while a check runs.
+const maxModelKept = 16 << 20
 
 // modelRead is the result of reading a model file. A repository lists up to MaxManifests manifests that may name one file, and the file is the same for
 // all of them, so it is read once.
@@ -122,7 +137,12 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 	if !ok {
 		spec, err := readModel(data)
 		read = modelRead{spec, err}
-		c.models[file] = read
+		// What a reading holds is bounded by the file (4 MiB of properties is some 17 MB of names), so what is held for the manifests that name the file
+		// together is bounded too: a reading that does not fit is made again for the next manifest, one at a time.
+		if c.modelKept+spec.size <= maxModelKept {
+			c.modelKept += spec.size
+			c.models[file] = read
+		}
 	}
 	spec, err := read.spec, read.err
 	switch {
@@ -139,6 +159,12 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		c.add(file, RuleModelJSON, jsonLine(data, err), "is not a ModelSpec JSON file: %s", ascii(err.Error()))
 		return "", nil
 	}
+	// The Directory reports the version first (parseModelSpec), then the module, then the entities; the version is the first issue, if there is one.
+	for _, issue := range spec.issues {
+		if issue.rule == RuleModelVersion {
+			c.add(file, issue.rule, 0, "%s", issue.text)
+		}
+	}
 	if spec.module == "" {
 		c.add(file, RuleModelModule, 0, "has no module.name that is a ModelSpec module name (a letter, then letters, digits and _)")
 	}
@@ -146,7 +172,9 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		c.add(file, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)")
 	}
 	for _, issue := range spec.issues {
-		c.add(file, issue.rule, 0, "%s", issue.text)
+		if issue.rule != RuleModelVersion {
+			c.add(file, issue.rule, 0, "%s", issue.text)
+		}
 	}
 	if name := m.ModelName; name.Usable() && spec.module != "" && name.Value != spec.module {
 		c.add(path, RuleModelName, name.Line, "model.name is %s, but %s is module %s", rules.Quote(name.Value), rules.Quote(file), rules.Quote(spec.module))

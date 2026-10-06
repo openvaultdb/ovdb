@@ -20,6 +20,7 @@
 //   looser:<slice>         Go (the Directory profile) accepts what the Directory refuses; the slice (F2 to F6) ports the rule
 //   out-of-reach:record    the Directory refuses by what the database's registry record says; no check of a repository alone can. MECHANICAL: the case carries
 //                          a `fix` (a record, a key, a registry or a URL map), and the generator runs the same files again under it and requires the Directory to accept
+//   out-of-reach:history   the Directory refuses by what the repository's earlier commits say (a pin to its own graph); the fix is a repository that has that commit
 //   out-of-reach:registry  the Directory refuses by what the ModelSpec or MeaningGraph registry says, or by another repository (the Publisher profile
 //                          stands in for the graph's address with publisher.repository, and so refuses what the Directory profile cannot)
 //   stricter:<kind>        Go refuses what the Directory accepts, as a recorded kind (stricterKinds in directory_stage_test.go)
@@ -101,12 +102,16 @@ const writeTree = (dir, files) => {
 // A commit that is the same on every run: the commit id of the core repository is written into the meaning file.
 const gitEnv = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'ovdb', GIT_AUTHOR_EMAIL: 'ovdb@example.invalid', GIT_COMMITTER_NAME: 'ovdb', GIT_COMMITTER_EMAIL: 'ovdb@example.invalid', GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z' };
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { env: gitEnv, encoding: 'utf8' }).trim();
-const origin = (files, name) => {
+// A repository of one commit of `files`, or, with `earlier`, of that commit and then one of `files`: the history that a pinned reference to the repository's own graph needs.
+const origin = (files, name, earlier) => {
   const dir = mkdtempSync(join(tmpdir(), `ovdb-stage-${name}-`));
   git(dir, 'init', '-q', '-b', 'main');
-  writeTree(dir, files);
-  git(dir, 'add', '-A');
-  git(dir, 'commit', '-q', '-m', 'c');
+  for (const tree of earlier ? [earlier, files] : [files]) {
+    for (const entry of readdirSync(dir)) if (entry !== '.git') rmSync(join(dir, entry), { recursive: true, force: true });
+    writeTree(dir, tree);
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'c');
+  }
   return { dir, commit: git(dir, 'rev-parse', 'HEAD') };
 };
 
@@ -116,6 +121,7 @@ const fixtureCorePin = 'cb97dbcd9e951b00e7d46cb2e0c4e120c24c8db7';
 const core = origin(readTree(join(root, 'scripts/fixtures/core')), 'core');
 const base = readTree(join(root, 'scripts/fixtures/chinookdb'));
 base.set('model/chinook.meaning.yaml', base.get('model/chinook.meaning.yaml').replaceAll(fixtureCorePin, core.commit));
+const baseCommit = origin(base, 'base').commit; // the commit of the base files, which a repository with history has as its first
 const manifestPath = 'ovdb.yaml';
 const modelPath = 'model/chinook.modelspec.json';
 const hclPath = 'model/chinook.modelspec.hcl';
@@ -125,8 +131,8 @@ const recordUrl = 'https://chinookdb.com/ovdb/dbs/chinook';
 const registryOf = (graphs) => indexMeaningRegistry({ format: 'meaning-registry/draft-1', checksum: `sha256:${sha(JSON.stringify(graphs))}`, graphs }, 'the test registry');
 
 // The Directory's verdict on one repository: the problems of analyseDatabase.
-const directoryVerdict = async (files, { editRegistry, record: editRecord, key = 'chinook', urls: extraUrls = [] } = {}) => {
-  const publisher = origin(files, 'publisher');
+const directoryVerdict = async (files, { editRegistry, record: editRecord, key = 'chinook', urls: extraUrls = [], history = false } = {}) => {
+  const publisher = origin(files, 'publisher', history ? base : undefined);
   const graphs = [
     { id: 'chinook', title: 'Chinook', kind: 'dataset', status: 'draft', address: 'meaning://github.com/demo-db/chinook', repository: chinookUrl, commit: publisher.commit, meaning_files: [meaningPath], maintainers: ['x'] },
     { id: 'core', title: 'Core', kind: 'universal', status: 'draft', address: 'meaning://github.com/meaninggraph/core', repository: coreUrl, commit: core.commit, meaning_files: ['*.meaning.yaml'], maintainers: ['x'] },
@@ -286,6 +292,32 @@ add('binding-module-underscore', 'binding', 'a reference whose module starts wit
 add('binding-entity-underscore', 'binding', 'a reference whose entity starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook._Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
 add('chain-51', 'chain', 'an extends chain of 51 concepts', { [meaningPath]: concepts(chain(51)) }, null, 'agree');
 
+// the form of a reference by address (meaning.mjs resolveGraph): a pin is needed, and it is a full commit id, whatever any registry says
+add('chain-address-no-pin', 'chain', 'extends names another graph by an address with no pin', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date\n') }, /needs a \?ref= pin/, 'agree');
+add('chain-values-of-no-pin', 'chain', 'values-of names another graph by an address with no pin', { [meaningPath]: concepts('  - id: artist\n    values-of: meaning://github.com/meaninggraph/core/date\n') }, /needs a \?ref= pin/, 'agree');
+add('chain-address-branch-pin', 'chain', 'the pin is a branch name', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=main\n') }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-address-short-pin', 'chain', 'the pin is 7 characters', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=cb97dbc\n') }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-address-upper-pin', 'chain', 'the pin is the registered commit id in upper case', { [meaningPath]: concepts(`  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=${core.commit.toUpperCase()}\n`) }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-own-bad-pin', 'chain', 'a reference to the repository\'s own graph with a pin that is not a commit id', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album?ref=abc\n  - id: album\n') }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-own-pinned', 'chain', 'a reference to the repository\'s own graph, pinned to an earlier commit of it', { [meaningPath]: concepts(`  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album?ref=${baseCommit}\n`) }, /(history|read|have|registered)/, 'out-of-reach:history', { fix: { history: true, because: 'the repository has that commit in the history of its default branch, and the concept is there' } });
+
+// Where the strict YAML reader refuses a meaning file that the Directory's YAML library reads: each is a choice of the reader (package manifest README), one case
+// each, so that the list of what is stricter than the Directory in the file stage is the whole list.
+add('yaml-key', 'stricter', 'a label whose key YAML reads as a number', { [meaningPath]: concepts('  - id: artist\n    labels:\n      1: One\n') }, null, 'stricter:yaml-key');
+add('yaml-anchor', 'stricter', 'an anchor in a label', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: &l text\n') }, null, 'stricter:yaml-anchor');
+add('yaml-tag', 'stricter', 'a tag on a label', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: !!str 5\n') }, null, 'stricter:yaml-tag');
+add('yaml-directive', 'stricter', 'a %YAML directive before the document', { [meaningPath]: (text) => `%YAML 1.2\n---\n${text}` }, null, 'stricter:yaml-directive');
+add('yaml-document-end', 'stricter', 'a document end marker after the document', { [meaningPath]: (text) => `${text}...\n` }, null, 'stricter:yaml-documents');
+add('yaml-continued-quote', 'stricter', 'a double-quoted label continued with a backslash at the end of the line', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a \\\n        b"\n') }, null, 'stricter:yaml-unsupported');
+
+// the addresses and the repository (lines 428, 495-500, 546): what the record's repository, which is publisher.repository or --repository, says
+const noRepository = edit('  repository: https://github.com/demo-db/chinook\n', '');
+add('nopubrepo-accepted', 'stricter', 'no publisher.repository: the Directory takes the record\'s repository, and accepts', { [manifestPath]: noRepository }, null, 'stricter:publisher-repository-required');
+add('nopubrepo-other-address', 'has', 'no publisher.repository, and a meaning.graph.address that is another repository\'s (the record\'s repository is the one --repository names)', { [manifestPath]: (text) => edit('    address: meaning://github.com/demo-db/chinook', '    address: meaning://github.com/demo-db/other')(noRepository(text)) }, /meaning\.graph\.address is meaning:\/\/github\.com\/demo-db\/other, but the MeaningGraph registry registers chinook as/, 'agree');
+add('nopubrepo-other-model-address', 'has', 'no publisher.repository, and an own-form model.address that names another repository', { [manifestPath]: (text) => edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://github.com/demo-db/other/chinook\n  modelspec: model/chinook.modelspec.json\n')(noRepository(text)) }, /model\.address names github\.com\/demo-db\/other, but the model's files are in/, 'agree');
+add('graph-address-host-case', 'has', 'the host of meaning.graph.address in another case: the Directory\'s repositoryKey knows only the literal github.com, so no record or registry carries it', { [manifestPath]: edit('    address: meaning://github.com/demo-db/chinook', '    address: meaning://GitHub.com/demo-db/chinook') }, /meaning\.graph\.address is meaning:\/\/GitHub\.com\/demo-db\/chinook, but the MeaningGraph registry registers chinook as/, 'agree');
+add('graph-address-org-case', 'registry', 'the organisation of meaning.graph.address in another case: a registry that spells the graph that way accepts it', { [manifestPath]: edit('    address: meaning://github.com/demo-db/chinook', '    address: meaning://github.com/Demo-DB/chinook') }, /meaning\.graph\.address is meaning:\/\/github\.com\/Demo-DB\/chinook, but the MeaningGraph registry registers chinook as/, 'out-of-reach:registry', { fix: { registry: (graphs) => { graphs[0].repository = 'https://github.com/Demo-DB/chinook'; graphs[0].address = 'meaning://github.com/Demo-DB/chinook'; }, because: 'the registry spells the graph\'s repository and address with that organisation' } });
+
 // what a repository alone cannot say
 add('record-id', 'record', 'manifest.id is not the record\'s id', { [manifestPath]: edit('id: chinook\ntitle', 'id: other\ntitle') }, /id is other, but the record id is chinook/, 'out-of-reach:record', { fix: { key: 'other', because: 'the record is called other' } });
 add('record-url', 'record', 'manifest.url is not the record\'s url', { [manifestPath]: edit('url: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment', 'url: https://chinookdb.com/ovdb/dbs/other\n\ndeployment') }, /url is https:\/\/chinookdb\.com\/ovdb\/dbs\/other, but the record's url is/, 'out-of-reach:record', { fix: { record: (data) => { data.url = 'https://chinookdb.com/ovdb/dbs/other'; }, because: 'the record\'s url is that one' } });
@@ -307,7 +339,7 @@ for (const c of cases) {
   let acceptedWhen;
   if (c.outcome.startsWith('out-of-reach:')) {
     if (!c.fix) throw new Error(`${c.id}: an out-of-reach case needs a fix`);
-    const again = await directoryVerdict(files, { editRegistry: c.fix.registry, record: c.fix.record, key: c.fix.key, urls: c.fix.urls });
+    const again = await directoryVerdict(files, { editRegistry: c.fix.registry, record: c.fix.record, key: c.fix.key, urls: c.fix.urls, history: c.fix.history });
     if (again.length > 0) { console.error(`${c.id}: the Directory should accept these files under the fix (${c.fix.because}), and says: ${again.join(' | ').slice(0, 300)}`); process.exit(1); }
     acceptedWhen = c.fix.because;
   } else if (c.fix) throw new Error(`${c.id}: only an out-of-reach case has a fix`);
@@ -328,11 +360,20 @@ if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s)
 // first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
 // empty entities object always leaves recordsets that name things that are not entities.)
 const goRules = {
+  'nopubrepo-other-address': 'repo-address',
+  'nopubrepo-other-model-address': 'repo-address',
+  'graph-address-host-case': 'repo-address',
   'has-graph-address': 'repo-address',
   'has-model-address-other-repository': 'repo-address',
   'nohcl-entry-suffix': 'meaning-models',
   'nohcl-entry-missing': 'meaning-model-file',
   'nohcl-entry-spelling': 'meaning-models',
+  'chain-address-no-pin': 'meaning-chain',
+  'chain-values-of-no-pin': 'meaning-chain',
+  'chain-address-branch-pin': 'meaning-chain',
+  'chain-address-short-pin': 'meaning-chain',
+  'chain-address-upper-pin': 'meaning-chain',
+  'chain-own-bad-pin': 'meaning-chain',
   'chain-cycle': 'meaning-chain',
   'chain-self': 'meaning-chain',
   'chain-unresolved': 'meaning-chain',

@@ -390,8 +390,8 @@ are not identifiers and pages that would be too long, an unknown key in every ma
 a known key at the wrong level, names and addresses of the two forms, and `OVDB.md` with
 unknown keys, and entries that repeat or nearly repeat.
 
-On the corpus: **7507 agree, 485 stricter, 0 unrecorded Go acceptances where the Chinook
-checker refuses**. The facts: under the Publisher profile, 930 manifests and 104
+On the corpus: **7506 agree, 486 stricter, 0 unrecorded Go acceptances where the Chinook
+checker refuses**. The facts: under the Publisher profile, 929 manifests and 104
 OVDB.md documents have their facts compared with those the reference derives
 (`publisher.facts.json`), by the same code as the Directory's.
 
@@ -669,6 +669,7 @@ lower case), and the address is compared with `publisher.repository` in ASCII ca
 | --- | --- | --- |
 | `manifest-recordsets` | 2 | Not a bound: D0 (the lead's default; the Directory at its pin is the reference for both profiles). The Directory refuses a recordset name over 256 UTF-16 code units (nativeRecordsetNameProblem, 1c7e126); the Chinook checker, which read every name as an entity identifier, accepted it. |
 | `graph-address-case` | 2 | An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round. |
+| `graph-address-host-case` | 1 | The host of an own-form meaning.graph.address must be written in lower case, as the Directory's repositoryKey knows only that spelling (a record carries no other); the checker lower-cases the whole address, the host included, and accepts GitHub.com. |
 | `graph-address-scheme` | 4 | An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://. |
 
 
@@ -682,7 +683,7 @@ slice 2b). The Go comparison now folds A to Z and nothing else. Its other side i
 `publisher.repository`, which is ASCII, so a lower-cased ASCII string is the same in both
 languages and the comparison is never looser than the checker's; it is stricter only where
 JavaScript folds a non-ASCII letter onto an ASCII one (the Kelvin sign U+212A onto `k`),
-the kind `graph-address-case`. The corpus holds U+0130, U+0131, U+017F, U+212A, U+00DF,
+the kind `graph-address-case`. The host is compared as written, not in ASCII case: the Directory's `repositoryKey` knows the host only as the literal it is listed under, so no record carries another spelling and `meaning://GitHub.com/org/repo` is refused whatever a registry says; the checker lower-cases the whole address and accepts it, which is the kind `graph-address-host-case`. The corpus holds U+0130, U+0131, U+017F, U+212A, U+00DF,
 U+03A3 and U+03C2, a fullwidth Latin letter and a combining mark after an ASCII letter in
 every field that either side compares or lower-cases (families `unicode: case` and
 `unicode: kitchen`).

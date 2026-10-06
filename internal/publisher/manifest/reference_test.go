@@ -284,6 +284,8 @@ func kindOf(f Finding) string {
 		return "punycode"
 	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "(in any case), derived from publisher.repository"):
 		return "graph-address-case"
+	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "must spell the host as the repository's host is spelled"):
+		return "graph-address-host-case"
 	case f.Rule == "manifest-meaning" && strings.Contains(f.Message, "must be the graph's meaning:// address"):
 		return "graph-address-scheme"
 	}
@@ -581,9 +583,10 @@ func runReference(t *testing.T, spec referenceSpec) {
 // publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker through rules that only it has (the
 // others are sharedKinds).
 var publisherKinds = map[string]string{
-	"manifest-recordsets":  "Not a bound: D0 (the lead's default; the Directory at its pin is the reference for both profiles). The Directory refuses a recordset name over 256 UTF-16 code units (nativeRecordsetNameProblem, 1c7e126); the Chinook checker, which read every name as an entity identifier, accepted it.",
-	"graph-address-case":   "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
-	"graph-address-scheme": "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
+	"manifest-recordsets":     "Not a bound: D0 (the lead's default; the Directory at its pin is the reference for both profiles). The Directory refuses a recordset name over 256 UTF-16 code units (nativeRecordsetNameProblem, 1c7e126); the Chinook checker, which read every name as an entity identifier, accepted it.",
+	"graph-address-host-case": "The host of an own-form meaning.graph.address must be written in lower case, as the Directory's repositoryKey knows only that spelling (a record carries no other); the checker lower-cases the whole address, the host included, and accepts GitHub.com.",
+	"graph-address-case":      "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
+	"graph-address-scheme":    "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
 }
 
 var publisherSpec = referenceSpec{
