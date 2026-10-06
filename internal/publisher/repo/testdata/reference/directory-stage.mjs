@@ -286,6 +286,15 @@ add('binding-module-underscore', 'binding', 'a reference whose module starts wit
 add('binding-entity-underscore', 'binding', 'a reference whose entity starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook._Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
 add('chain-51', 'chain', 'an extends chain of 51 concepts', { [meaningPath]: concepts(chain(51)) }, null, 'agree');
 
+// Where the strict YAML reader refuses a meaning file that the Directory's YAML library reads: each is a choice of the reader (package manifest README), one case
+// each, so that the list of what is stricter than the Directory in the file stage is the whole list.
+add('yaml-key', 'stricter', 'a label whose key YAML reads as a number', { [meaningPath]: concepts('  - id: artist\n    labels:\n      1: One\n') }, null, 'stricter:yaml-key');
+add('yaml-anchor', 'stricter', 'an anchor in a label', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: &l text\n') }, null, 'stricter:yaml-anchor');
+add('yaml-tag', 'stricter', 'a tag on a label', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: !!str 5\n') }, null, 'stricter:yaml-tag');
+add('yaml-directive', 'stricter', 'a %YAML directive before the document', { [meaningPath]: (text) => `%YAML 1.2\n---\n${text}` }, null, 'stricter:yaml-directive');
+add('yaml-document-end', 'stricter', 'a document end marker after the document', { [meaningPath]: (text) => `${text}...\n` }, null, 'stricter:yaml-documents');
+add('yaml-continued-quote', 'stricter', 'a double-quoted label continued with a backslash at the end of the line', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a \\\n        b"\n') }, null, 'stricter:yaml-unsupported');
+
 // what a repository alone cannot say
 add('record-id', 'record', 'manifest.id is not the record\'s id', { [manifestPath]: edit('id: chinook\ntitle', 'id: other\ntitle') }, /id is other, but the record id is chinook/, 'out-of-reach:record', { fix: { key: 'other', because: 'the record is called other' } });
 add('record-url', 'record', 'manifest.url is not the record\'s url', { [manifestPath]: edit('url: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment', 'url: https://chinookdb.com/ovdb/dbs/other\n\ndeployment') }, /url is https:\/\/chinookdb\.com\/ovdb\/dbs\/other, but the record's url is/, 'out-of-reach:record', { fix: { record: (data) => { data.url = 'https://chinookdb.com/ovdb/dbs/other'; }, because: 'the record\'s url is that one' } });

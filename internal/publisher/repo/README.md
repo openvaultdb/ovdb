@@ -122,6 +122,8 @@ and a path below a file or symlink do not):
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
 | `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
 
+The order of these findings is not the Directory's: it reports the version, the module, the entities, then each entity and property in file order (integer-like names first), and this check reports the version first and then entities and properties by name; at most 1000 of them are kept for a file, because a check shows 101 findings at most and what is kept of a model file is held for every manifest that names it. The verdict is the same either way. `--json` consumers should not read `findings[0]` as the Directory's first problem.
+
 Every other manifest OVDB.md lists is judged with the Publisher profile through
 `manifest.Judge` (the checker's line 226).
 
@@ -134,7 +136,7 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 108 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 114 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
 its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
@@ -149,6 +151,14 @@ its name states. `directory_stage_test.go` replays each case in memory with both
 | outcome: stricter:model-hcl-required | 1 | Go refuses a manifest that does not write `model.hcl`; the Directory accepts it |
 | outcome: stricter:meaning-license-required | 2 | Go refuses a meaning file with no text `license`; the Directory compares it only when it is text |
 | outcome: stricter:meaning-id-compared | 1 | Go refuses a meaning file whose `id` is not `meaning.graph.id`; the Directory does not read it in this stage |
+| outcome: stricter:yaml-key | 1 | Go refuses a mapping key that YAML reads as a number, a boolean or null (the strict reader); the Directory's YAML library reads it as a key |
+| outcome: stricter:yaml-anchor | 1 | Go refuses anchors and aliases; the Directory's library expands them |
+| outcome: stricter:yaml-tag | 1 | Go refuses tags (`!`, `!!`); the Directory's library resolves them |
+| outcome: stricter:yaml-directive | 1 | Go refuses a `%YAML` or `%TAG` directive; the Directory's library follows it |
+| outcome: stricter:yaml-documents | 1 | Go refuses a document end marker and a second document; the Directory's library reads the first document |
+| outcome: stricter:yaml-unsupported | 1 | Go refuses a quoted value written over more than one line; the Directory's library reads it |
+
+The strict YAML reader refuses some meaning files that the Directory's library reads (the six `stricter:yaml-*` kinds above, one case each); and a concept that breaks a rule of the concepts' shape may be refused by the reader first, under its own code (a merge key, `%YAML 1.1`, an integer of 30 digits as a label), with the same verdict: do not expect `meaning-concept` for every one of them.
 
 An `out-of-reach` label is mechanical, not a judgement: the case carries the record, key, registry or URL map (`fix`) under which the Directory accepts **the same
 files**, the generator runs `analyseDatabase` again under it and stops unless the Directory accepts, and the golden says which (`acceptedWhen`). A refusal that no
