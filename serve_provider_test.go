@@ -130,6 +130,18 @@ func TestServeHTTPProviderReadsExplicitOptIn(t *testing.T) {
 						t.Fatal("discovery changed full notices or retention")
 					}
 				}
+				for _, humanPath := range []string{"/ovdb/dbs/ecb", "/ovdb/dbs/ecb/collections/daily"} {
+					page := serveHTTPRequest(h, "GET", humanPath, "", nil)
+					body := page.Body.String()
+					if page.Code != 200 || calls.Load() != 0 || !strings.Contains(body, "Retention: none") || !strings.Contains(body, "do not grant an output license") || strings.Contains(body, "001.23000") {
+						t.Fatalf("human page read upstream or lost retention: %s: %d", humanPath, page.Code)
+					}
+					for _, notice := range []string{"Attribution:", "Synthetic provider", "Original free source:", "Synthetic original is free", "Transformations", "Synthetic XML restructured into rows"} {
+						if strings.Contains(body, notice) != optIn {
+							t.Fatalf("human page admission mismatch: %s: %q", humanPath, notice)
+						}
+					}
+				}
 				for _, route := range []struct {
 					path, body string
 					empty      bool
