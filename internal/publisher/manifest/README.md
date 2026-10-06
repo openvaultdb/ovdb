@@ -652,6 +652,11 @@ that removes each entry; `TestDrift` fails when the list and what Go does disagr
 that ports its rule. The rules of the Directory that the corpus does not reach are covered by `testdata/reference/drift.probes.json`: one manifest
 for each, with the verdict of the reference at the pin.
 
+`TestDrift` and the probes are of the **manifest stage**. The Directory's file stage (what `analyseDatabase` does after the manifest: the model file, the meaning
+file, its concepts and bindings) has its own probes, `repo/testdata/reference/directory-stage.json`, and its looser cases are in the same `drift.json`
+(`fileProbes`, slices F2 to F6); package repo's README says what they are and holds the table of every refusal of that stage. Until they were added, an empty
+looser class here said nothing about the file stage.
+
 The representation envelope and compound data licence probes now agree with the Directory: this implementation validates the optional envelope and accepts bounded compound data licences in both profiles. All probes remain committed, so `TestDrift` detects regressions.
 
 ### Recorded differences: the Publisher profile's own
