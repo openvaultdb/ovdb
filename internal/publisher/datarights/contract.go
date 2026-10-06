@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/license"
 	"github.com/openvaultdb/ovdb/internal/publisher/rules"
@@ -69,14 +71,18 @@ func (r Reference) Validate() error {
 	return nil
 }
 
-// Decode refuses duplicate keys anywhere, excessive nesting, and trailing data.
+// Decode rejects invalid UTF-8, duplicate keys, and noncanonical struct keys
+// before decoding. Raw messages and map keys are checked by their own parsers.
 func Decode(data []byte, target any) error {
 	if len(data) > MaxDocumentBytes {
 		return fmt.Errorf("rights document exceeds 256 KiB")
 	}
+	if !utf8.Valid(data) {
+		return fmt.Errorf("rights document is not valid UTF-8")
+	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.UseNumber()
-	if err := walk(d, 0); err != nil {
+	if err := walk(d, 0, reflect.TypeOf(target)); err != nil {
 		return err
 	}
 	if _, err := d.Token(); err != io.EOF {
@@ -86,7 +92,13 @@ func Decode(data []byte, target any) error {
 	d.DisallowUnknownFields()
 	return d.Decode(target)
 }
-func walk(d *json.Decoder, depth int) error {
+func walk(d *json.Decoder, depth int, target reflect.Type) error {
+	for target != nil && target.Kind() == reflect.Pointer {
+		target = target.Elem()
+	}
+	if target == reflect.TypeFor[json.RawMessage]() {
+		target = nil
+	}
 	if depth > 64 {
 		return fmt.Errorf("rights nesting exceeds 64")
 	}
@@ -111,19 +123,50 @@ func walk(d *json.Decoder, depth int) error {
 				return fmt.Errorf("duplicate rights key")
 			}
 			seen[text] = true
-			if err := walk(d, depth+1); err != nil {
+			child, err := fieldType(target, text)
+			if err != nil {
+				return err
+			}
+			if err := walk(d, depth+1, child); err != nil {
 				return err
 			}
 		}
 	default: // Decoder only yields opening delimiters at a value boundary.
+		var child reflect.Type
+		if target != nil && (target.Kind() == reflect.Slice || target.Kind() == reflect.Array) {
+			child = target.Elem()
+		}
 		for d.More() {
-			if err := walk(d, depth+1); err != nil {
+			if err := walk(d, depth+1, child); err != nil {
 				return err
 			}
 		}
 	}
 	_, err = d.Token()
 	return err
+}
+
+// fieldType uses exact JSON tags. encoding/json's case folding must never
+// turn an unknown authored key into a supplied canonical declaration field.
+func fieldType(target reflect.Type, key string) (reflect.Type, error) {
+	if target == nil {
+		return nil, nil
+	}
+	switch target.Kind() {
+	case reflect.Struct:
+		for i := 0; i < target.NumField(); i++ {
+			field := target.Field(i)
+			name := strings.Split(field.Tag.Get("json"), ",")[0]
+			if name == key {
+				return field.Type, nil
+			}
+		}
+		return nil, fmt.Errorf("unknown or noncanonical rights key %q", key)
+	case reflect.Map:
+		return target.Elem(), nil
+	default:
+		return nil, nil // The final typed decode refuses a wrong value shape.
+	}
 }
 
 func ParseProfile(data []byte, profile license.Profile, names []string) (*Profile, error) {
@@ -212,7 +255,7 @@ func ParseProvenance(data []byte) (*Provenance, error) {
 		}
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(value, &fields)
-		if _, ok := fields["url"]; ok {
+		if _, ok := fields["url"]; ok || n.URL != "" {
 			// Decode already checked the field type; presence keeps null/blank
 			// explicit URLs distinct from an omitted optional URL.
 			if err := license.ValidateURL(n.URL); err != nil {
@@ -256,15 +299,11 @@ func quote(s string) string { b, _ := json.Marshal(s); return string(b) }
 func (r *Reference) UnmarshalJSON(data []byte) error {
 	type plain Reference
 	var out plain
-	d := json.NewDecoder(bytes.NewReader(data))
-	d.DisallowUnknownFields()
-	if err := d.Decode(&out); err != nil {
+	if err := Decode(data, &out); err != nil {
 		return err
 	}
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
+	_ = json.Unmarshal(data, &fields) // Decode already checked this exact JSON value.
 	for _, key := range []string{"path", "sha256", "bytes"} {
 		value, ok := fields[key]
 		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
