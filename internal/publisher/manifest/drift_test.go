@@ -25,6 +25,8 @@ type driftEntry struct {
 	Probes    []string    `json:"probes"`
 	Real      []driftPair `json:"real"`
 	Corpus    int         `json:"corpus"`
+	// FileProbes name cases of repo/testdata/reference/directory-stage.json: the Directory's file stage, held by a test of package repo.
+	FileProbes []string `json:"fileProbes"`
 }
 
 type driftPair struct {
@@ -56,7 +58,7 @@ var recordedProbeKinds = map[string]string{
 	"representation-hash-list": "a sha256 written as a list of one hash is read by the Directory's regular expression as that hash; Go refuses it (README)",
 }
 
-var driftSlice = regexp.MustCompile(`^(A0[a-z]|A[1-7]|X1|P-n)$`)
+var driftSlice = regexp.MustCompile(`^(A0[a-z]|A[1-7]|F[1-6]|X1|P-n)$`)
 
 // driftCorpusLooser is the number of documents of the corpus on which Go is looser than the Directory, as drift.json says.
 func driftCorpusLooser(t testing.TB) int {
@@ -105,10 +107,10 @@ func TestDrift(t *testing.T) {
 				t.Errorf("entry %q: profile %q", e.Kind, e.Profile)
 			}
 			if e.Kind == "" || e.Why == "" || !driftSlice.MatchString(e.Slice) {
-				t.Errorf("entry %q (%s): a kind, a reason and a slice (A0a to A0z, A1 to A7, X1, P-n) are required: %+v", e.Kind, e.Profile, e)
+				t.Errorf("entry %q (%s): a kind, a reason and a slice (A0a to A0z, A1 to A7, F1 to F6, X1, P-n) are required: %+v", e.Kind, e.Profile, e)
 			}
-			if len(e.Probes) == 0 && len(e.Real) == 0 && e.Corpus == 0 {
-				t.Errorf("entry %q (%s) accounts for nothing: no probe, no finding of a registered repository, no corpus document", e.Kind, e.Profile)
+			if len(e.Probes) == 0 && len(e.Real) == 0 && e.Corpus == 0 && len(e.FileProbes) == 0 {
+				t.Errorf("entry %q (%s) accounts for nothing: no probe, no file-stage case, no finding of a registered repository, no corpus document", e.Kind, e.Profile)
 			}
 			for _, p := range e.Probes {
 				k := key{e.Profile, e.Direction, p}

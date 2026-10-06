@@ -250,6 +250,8 @@ jobs:
         run: node internal/publisher/manifest/testdata/reference/generate.mjs --check
       - name: The goldens of package repo are current
         run: node internal/publisher/repo/testdata/reference/generate.mjs --check
+      - name: The Directory's file stage verdicts are current
+        run: node internal/publisher/repo/testdata/reference/directory-stage.mjs --check
       # The slower test of package repo: repositories built at test time, read by the real git
       # through the real Reader, and compared with the in-memory one (go test skips it).
       - uses: actions/setup-go@v7
