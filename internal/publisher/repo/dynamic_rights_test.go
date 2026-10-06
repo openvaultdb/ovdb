@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -83,5 +85,58 @@ func TestPrepareDynamicSourceRightRejectsInvalidInputs(t *testing.T) {
 	m.Nodes["ovdb-database.json"] = n
 	if _, err := PrepareDynamicSourceRight(m, publisher(), "Album", valid); err == nil {
 		t.Fatal("unclean publisher accepted")
+	}
+}
+
+// A non-Git Reader is an explicitly trusted seam. Simulate it violating the
+// immutable-read contract after Check to prove preparation refuses stale pins.
+type driftingDynamicReader struct {
+	Reader
+	fault string
+	heads int
+}
+
+func (r *driftingDynamicReader) Head() (string, error) {
+	r.heads++
+	if r.heads == 3 {
+		if r.fault == "head unavailable" {
+			return "", errors.New("synthetic read failure")
+		}
+		if r.fault == "revision changed" {
+			return strings.Repeat("b", 40), nil
+		}
+	}
+	return r.Reader.Head()
+}
+
+func (r *driftingDynamicReader) Blob(name string, limit int) ([]byte, error) {
+	data, err := r.Reader.Blob(name, limit)
+	if r.heads == 3 && name == "ovdb.yaml" {
+		switch r.fault {
+		case "blob unavailable":
+			return nil, errors.New("synthetic read failure")
+		case "size changed":
+			return append(bytes.Clone(data), ' '), nil
+		case "digest changed":
+			copy := bytes.Clone(data)
+			copy[0] = ' '
+			return copy, nil
+		}
+	}
+	return data, err
+}
+
+func TestPrepareDynamicSourceRightRefusesReadDrift(t *testing.T) {
+	for fault, expected := range map[string]string{
+		"head unavailable": "identity changed", "revision changed": "identity changed",
+		"blob unavailable": "bytes unavailable", "size changed": "bytes changed", "digest changed": "bytes changed",
+	} {
+		t.Run(fault, func(t *testing.T) {
+			r := &driftingDynamicReader{Reader: syntheticDynamicRepository(t), fault: fault}
+			_, err := PrepareDynamicSourceRight(r, publisher(), "Album", license.Identity{ServerID: "proxy", DatabaseID: "local", Recordset: "daily"})
+			if err == nil || !strings.Contains(err.Error(), expected) {
+				t.Fatal("drift was accepted or refused for the wrong reason", err)
+			}
+		})
 	}
 }
