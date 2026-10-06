@@ -1665,6 +1665,118 @@
    "outcome": "agree"
   },
   {
+   "id": "chain-address-no-pin",
+   "group": "chain",
+   "note": "extends names another graph by an address with no pin",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: extends: meaning://github.com/meaninggraph/core needs a ?ref= pin",
+   "outcome": "agree",
+   "go": "meaning-chain"
+  },
+  {
+   "id": "chain-values-of-no-pin",
+   "group": "chain",
+   "note": "values-of names another graph by an address with no pin",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    values-of: meaning://github.com/meaninggraph/core/date\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: values-of: meaning://github.com/meaninggraph/core needs a ?ref= pin",
+   "outcome": "agree",
+   "go": "meaning-chain"
+  },
+  {
+   "id": "chain-address-branch-pin",
+   "group": "chain",
+   "note": "the pin is a branch name",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=main\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: extends: meaning://github.com/meaninggraph/core?ref=main: a pin is a full 40-character commit id",
+   "outcome": "agree",
+   "go": "meaning-chain"
+  },
+  {
+   "id": "chain-address-short-pin",
+   "group": "chain",
+   "note": "the pin is 7 characters",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=cb97dbc\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: extends: meaning://github.com/meaninggraph/core?ref=cb97dbc: a pin is a full 40-character commit id",
+   "outcome": "agree",
+   "go": "meaning-chain"
+  },
+  {
+   "id": "chain-address-upper-pin",
+   "group": "chain",
+   "note": "the pin is the registered commit id in upper case",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=4130FB4D99545E4466D4A2034AFA8FBFCE565D65\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: extends: meaning://github.com/meaninggraph/core?ref=4130FB4D99545E4466D4A2034AFA8FBFCE565D65: a pin is a full 40-character commit id",
+   "outcome": "agree",
+   "go": "meaning-chain"
+  },
+  {
+   "id": "chain-own-bad-pin",
+   "group": "chain",
+   "note": "a reference to the repository's own graph with a pin that is not a commit id",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album?ref=abc\n  - id: album\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: extends: meaning://github.com/demo-db/chinook?ref=abc: a pin is a full 40-character commit id",
+   "outcome": "agree",
+   "go": "meaning-chain"
+  },
+  {
+   "id": "chain-own-pinned",
+   "group": "chain",
+   "note": "a reference to the repository's own graph, pinned to an earlier commit of it",
+   "ops": [
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album?ref=cccb7fea00b27f4a110d2d3b85dd240d6a9d3846\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "model/chinook.meaning.yaml: concept artist: extends: meaning://github.com/demo-db/chinook?ref=cccb7fea00b27f4a110d2d3b85dd240d6a9d3846: commit cccb7fea00b27f4a110d2d3b85dd240d6a9d3846 is not in the history of main, the default branch of htt",
+   "outcome": "out-of-reach:history",
+   "acceptedWhen": "the repository has that commit in the history of its default branch, and the concept is there"
+  },
+  {
    "id": "yaml-key",
    "group": "stricter",
    "note": "a label whose key YAML reads as a number",
