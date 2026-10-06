@@ -32,8 +32,12 @@ type modelSpec struct {
 	entities    []string // its keys, sorted
 	set         map[string]struct{}
 	issues      []modelIssue                   // what parseModelSpec refuses beyond the module and the entities object, in the order of entity and property names
+	size        int                            // about what this reading holds, in bytes: the names of the entities and of the properties, and the issues
 	properties  map[string]map[string]struct{} // for each entity, the names of its properties as the Directory reads them (the bindings of a concept name them)
 }
+
+// maxModelIssues is the most issues kept of one model file (see judgeEntities).
+const maxModelIssues = 1000
 
 // modelIssue is one refusal of parseModelSpec: the rule that reports it and the text.
 type modelIssue struct{ rule, text string }
@@ -138,9 +142,16 @@ func readModel(data []byte) (modelSpec, error) {
 		spec.judgeEntities(keys)
 		spec.properties = make(map[string]map[string]struct{}, len(keys))
 		for name, info := range keys {
+			spec.size += len(name) + 64
 			if info != nil {
 				spec.properties[name] = info.names
+				for prop := range info.names {
+					spec.size += len(prop) + 48
+				}
 			}
+		}
+		for _, issue := range spec.issues {
+			spec.size += len(issue.text) + 32
 		}
 	}
 	return spec, nil
@@ -148,8 +159,14 @@ func readModel(data []byte) (modelSpec, error) {
 
 // judgeEntities turns what was kept of the entities into issues, the entities and their properties by name. The Directory reads an entity whose name is
 // an identifier (the others it refuses), and refuses a reference to an entity that the model does not have by name, whatever that entity is like.
+//
+// It keeps at most maxModelIssues issues: the findings of a check are capped far below that (manifest.MaxFindings), a model file is refused as soon as it has
+// one, and what is kept of a reading is held for every manifest that names the file, so what a hostile file can make it keep must not grow with the file.
 func (spec *modelSpec) judgeEntities(keys map[string]*entityInfo) {
 	for _, name := range spec.entities {
+		if len(spec.issues) >= maxModelIssues {
+			return
+		}
 		info := keys[name]
 		switch {
 		case info.badName:
@@ -165,6 +182,9 @@ func (spec *modelSpec) judgeEntities(keys map[string]*entityInfo) {
 		}
 		slices.Sort(props)
 		for _, prop := range props {
+			if len(spec.issues) >= maxModelIssues {
+				return
+			}
 			p := info.props[prop]
 			switch at := name + "." + prop; p.kind {
 			case propBadName:

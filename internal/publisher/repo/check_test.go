@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -669,7 +671,7 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 	// A model with neither: two findings, in the order of the checker's lines.
 	m := goodRepository()
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{}`)}
-	if r := Check(m, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelModule, RuleModelEntities, RuleModelVersion}) {
+	if r := Check(m, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelVersion, RuleModelModule, RuleModelEntities}) {
 		t.Errorf("findings %v", r.Findings)
 	}
 }
@@ -951,3 +953,85 @@ func TestTheModelsEntryIsJudgedByItselfWithoutModelHCL(t *testing.T) {
 		}
 	}
 }
+
+// The expensive arrangement of a hostile repository: MaxManifests manifests, each naming its own model file of the most that one may be (MaxFileBytes), each
+// refused for about 340,000 properties that have neither a type nor an entity. What a reading of such a file keeps is held for every manifest that names the
+// file; before it was bounded it was about 68 MB a file (a measured 833 MB at 12 files, some 2.2 GB at 32), though a check shows 101 findings at most. The
+// peak heap above its start is held to modelCheckPeak (measured: 195 MiB, and 1553 MiB with the issues of a file not bounded), and the time to hostileModelsTime.
+func TestManyDistinctHostileModelFilesCostABoundedAmount(t *testing.T) {
+	t.Run("properties that are refused", func(t *testing.T) { distinctModels(t, `0`, true) })
+	t.Run("properties that are good", func(t *testing.T) { distinctModels(t, `{"type":"int"}`, false) })
+}
+
+// distinctModels runs the check of MaxManifests manifests, each naming its own model file of MaxFileBytes whose Artist has as many properties as fit, each
+// written with the value (a number, which is no property, or a good one).
+func distinctModels(t *testing.T, value string, refused bool) {
+	const files = MaxManifests
+	m := goodRepository()
+	var paths []string
+	for i := range files {
+		var b strings.Builder
+		fmt.Fprintf(&b, `{"modelspec":"1.0-draft","module":{"name":"chinook"},"entities":{"Album":{"properties":{"Id":{"type":"int"}}},"Artist":{"properties":{"f%d":`+value, i)
+		for p := 0; b.Len() < MaxFileBytes-64; p++ {
+			b.WriteString(`,"p` + strconv.Itoa(p) + `":` + value)
+		}
+		b.WriteString("}}}}")
+		model := fmt.Sprintf("model/%02d.modelspec.json", i)
+		m.Nodes[model] = Node{Kind: File, Content: []byte(b.String())}
+		manifestPath := fmt.Sprintf("m/%02d.yaml", i)
+		m.Nodes[manifestPath] = Node{Kind: File, Content: []byte(strings.Replace(ownManifest, "model/chinook.modelspec.json", model, 1))}
+		paths = append(paths, "./"+manifestPath)
+	}
+	m.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte("---\novdb: 1\npublish: [" + strings.Join(paths, ", ") + "]\n---\n")}
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var peak atomic.Uint64
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		var s runtime.MemStats
+		for {
+			runtime.ReadMemStats(&s)
+			if s.HeapAlloc > peak.Load() {
+				peak.Store(s.HeapAlloc)
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+	start := time.Now()
+	r := Check(m, publisher())
+	took := time.Since(start)
+	close(stop)
+	<-done
+
+	if refused && (r.OK() || len(r.Findings) == 0 || r.Findings[0].Rule != RuleModelProperty) {
+		t.Fatalf("a hostile model file must be refused: %v", rulesOf(r))
+	}
+	if !refused && !r.OK() {
+		t.Fatalf("a model file with many good properties is good: %v", rulesOf(r))
+	}
+	assertBounded(t, r.Findings)
+	if took > hostileModelsTime {
+		t.Errorf("%d manifests naming %d distinct model files of %d bytes took %v, want under %v", files, files, MaxFileBytes, took, hostileModelsTime)
+	}
+	grew := int64(peak.Load()) - int64(before.HeapAlloc)
+	t.Logf("%d distinct model files, refused: %v: %v, the heap grew by %d MiB at its peak", files, refused, took, grew>>20)
+	if grew > modelCheckPeak {
+		t.Errorf("the heap grew by %d MiB while %d distinct hostile model files were read, want at most %d MiB", grew>>20, files, modelCheckPeak>>20)
+	}
+}
+
+// modelCheckPeak is the most that the heap may grow by while the check of hostile model files runs: the files the check holds (maxKept), the reading of one file
+// at a time (about 70 MB for a file of the most it may be) and what a check keeps of each, which is bounded; not the sum of the readings.
+const modelCheckPeak = 400 << 20
+
+// hostileModelsTime is the bound on the time of the same check: 128 MiB of JSON is read in all, each file once (what they have in common is not shared, they
+// differ), so it is the cost of the reading, which is 17 s under -race on a loaded laptop and a few seconds without; the bound is a tripwire for a change
+// that makes it grow, not an estimate.
+const hostileModelsTime = 90 * time.Second
