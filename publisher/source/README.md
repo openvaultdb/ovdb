@@ -66,8 +66,13 @@ The paired server capability is the optional
 `openvaultdb-go/server.ProviderReadProfile.sourceRight` field: it verifies exact
 mounted terms/identity and the full rights digest before supplying those notices
 to discovery and query responses. Library deployment comes first. The OVDB CLI
-must adopt the independently reviewed, CI-published `openvaultdb-go` tag before
-its existing `--provider-read-profiles` loader accepts that field; no development
+uses published `openvaultdb-go v0.20.0`; its `--provider-read-profiles` loader
+requires the operator-supplied `sourceRight` inventory. Startup checks preserve
+mounted source terms, identity and `retention: none`, including attribution,
+the original free-source link, transformation notices and the immutable
+metadata pin. This capability does not admit the preparatory example or grant
+semantic, rights or paid-use clearance. The shared server human pages still
+need notice and retention rendering before public activation. No development
 replacement or manual tag is part of this metadata preparation change.
 `readEvidence` advertises the required `ovdb-provider-read/1` boundary and
 executor-observed classification; it does not create a read receipt or claim
