@@ -36,11 +36,13 @@ func httpDefinitionRepository(t *testing.T) *Memory {
 		t.Fatal(err)
 	}
 	doc["source_definition"] = d
-	doc["licences"].(map[string]any)["data"] = map[string]any{"name": "ECB reuse conditions", "url": d.Rights.Terms[0].URL}
+	doc["licences"].(map[string]any)["data"] = d.Rights.Declaration
 	m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: rightsEncoded(doc)}
 	var desc map[string]any
 	_ = json.Unmarshal([]byte(goodDescriptor), &desc)
 	desc["source_definition"] = d
+	desc["licences"] = map[string]any{"data": d.Rights.Declaration}
+	desc["recordsets"] = []any{map[string]any{"name": "Album", "licences": map[string]any{"data": d.Rights.Declaration}}, map[string]any{"name": "Artist", "licences": map[string]any{"data": d.Rights.Declaration}}}
 	m.Nodes["ovdb-database.json"] = Node{Kind: File, Content: rightsEncoded(desc)}
 	return m
 }
@@ -146,5 +148,30 @@ func TestHTTPDefinitionRequiresImmutablePublisherIdentity(t *testing.T) {
 	}
 	if fullSHA(strings.Repeat("A", 40)) || fullSHA("short") || !fullSHA(strings.Repeat("a", 40)) {
 		t.Fatal("revision validation wrong")
+	}
+}
+
+func TestHTTPRepositoryClearsEvidenceForContradictoryRights(t *testing.T) {
+	for _, mutate := range []func(map[string]any){
+		func(d map[string]any) { d["licences"] = map[string]any{"data": "MIT"} },
+		func(d map[string]any) {
+			d["recordsets"].([]any)[0].(map[string]any)["licences"] = map[string]any{"data": "MIT"}
+		},
+		func(d map[string]any) {
+			d["licences"].(map[string]any)["data"].(map[string]any)["text"] = "Contradictory replacement terms"
+		},
+		func(d map[string]any) { d["sourceRights"] = []any{} },
+	} {
+		m := httpDefinitionRepository(t)
+		n := m.Nodes["ovdb-database.json"]
+		var d map[string]any
+		_ = json.Unmarshal(n.Content, &d)
+		mutate(d)
+		n.Content = rightsEncoded(d)
+		m.Nodes["ovdb-database.json"] = n
+		r := Check(m, publisher())
+		if r.OK() || r.Manifest.SourceDefinitionEvidence != nil || len(r.Manifest.SourceRights) > 0 {
+			t.Fatal("contradictory rights/evidence admitted", r.Findings)
+		}
 	}
 }

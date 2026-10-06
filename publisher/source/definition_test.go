@@ -3,11 +3,13 @@ package source
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/license"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func example(t *testing.T) []byte {
@@ -17,6 +19,88 @@ func example(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func TestPublicNoticeLinksAndWholeDeclarations(t *testing.T) {
+	for _, field := range []string{"terms", "attribution", "declaration", "freeSource"} {
+		for _, link := range []string{"https://127.0.0.1/terms", "https://10.0.0.1/terms", "https://metadata.google.internal/terms", "https://localhost/terms", "https://public-provider.org/terms?token=secret", "https://user:secret@public-provider.org/terms", "https://public-provider.org/terms#"} {
+			d, err := Parse(example(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch field {
+			case "terms":
+				d.Rights.Terms[0].URL = link
+			case "attribution":
+				d.Rights.Attribution.URL = link
+			case "declaration":
+				d.Rights.Declaration.URL = link
+			default:
+				d.Rights.FreeSource.URL = link
+			}
+			b, _ := json.Marshal(d)
+			if _, err := Parse(b); err == nil {
+				t.Fatalf("accepted unsafe %s URL %s", field, link)
+			}
+		}
+	}
+	if err := noticeURL("https://public-provider.org/terms#reuse"); err != nil {
+		t.Fatal("legitimate anchor rejected", err)
+	}
+	if err := noticeURL("https://public-provider.org/terms#token=secret"); err == nil {
+		t.Fatal("non-simple anchor accepted")
+	}
+	d, err := Parse(example(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := d.Rights.Declaration
+	changed.Text = "Contradictory replacement terms"
+	if d.MatchesTerms(changed) == nil {
+		t.Fatal("whole-declaration replacement accepted")
+	}
+	changed = d.Rights.Declaration
+	changed.Name = "Other declaration"
+	if d.MatchesTerms(changed) == nil {
+		t.Fatal("name drift accepted")
+	}
+	if d.Matches(nil, nil) == nil {
+		t.Fatal("recordset inventory mismatch accepted")
+	}
+	for _, mutate := range []func(*Definition){
+		func(d *Definition) { d.Provider.URL = "https://metadata.google.internal/" },
+		func(d *Definition) { d.Resources["unused"] = d.Resources["daily"] },
+		func(d *Definition) { d.Rights.Declaration.URL = "https://public-provider.org/other" },
+	} {
+		d, err := Parse(example(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mutate(d)
+		b, _ := json.Marshal(d)
+		if _, err := Parse(b); err == nil {
+			t.Fatal("invalid public declaration accepted")
+		}
+	}
+}
+
+func TestSchemaCompilationFailureRefusesAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		data []byte
+	}{
+		{"https://openvaultdb.com/schemas/test.json", []byte("broken")},
+		{"https://json-schema.org/draft/2020-12/schema", []byte(`{}`)},
+		{"https://openvaultdb.com/schemas/test.json", []byte(`{"type":42}`)},
+	} {
+		if _, err := compileSchema(tc.id, tc.data); err == nil {
+			t.Fatal("invalid/conflicting schema admitted")
+		}
+	}
+	failure := errors.New("schema unavailable")
+	if _, err := parse(example(t), func() (*jsonschema.Schema, error) { return nil, failure }); !errors.Is(err, failure) {
+		t.Fatal("schema failure did not close admission", err)
+	}
 }
 
 func TestBlockedDailyDefinition(t *testing.T) {
@@ -36,7 +120,7 @@ func TestBlockedDailyDefinition(t *testing.T) {
 	if err := d.Matches([]string{"FxReferenceQuote"}, map[string]string{"FxReferenceQuote": "Other"}); err == nil {
 		t.Fatal("model changed")
 	}
-	if err := d.MatchesTerms(license.Declaration{URL: d.Rights.Terms[0].URL}); err != nil {
+	if err := d.MatchesTerms(d.Rights.Declaration); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.MatchesTerms(license.Declaration{SPDX: "MIT", URL: d.Rights.Terms[0].URL}); err == nil {

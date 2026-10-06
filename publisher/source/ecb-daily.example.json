@@ -41,6 +41,10 @@
     }
   },
   "rights": {
+    "declaration": {
+      "name": "ECB reuse conditions",
+      "url": "https://www.ecb.europa.eu/services/using-our-site/disclaimer/html/index.en.html"
+    },
     "terms": [
       {
         "text": "ECB reuse conditions",

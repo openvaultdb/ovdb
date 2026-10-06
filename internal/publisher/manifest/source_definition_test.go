@@ -33,7 +33,7 @@ func httpManifest(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	doc["source_definition"] = d
-	doc["licences"].(map[string]any)["data"] = map[string]any{"url": d.Rights.Terms[0].URL}
+	doc["licences"].(map[string]any)["data"] = d.Rights.Declaration
 	b, err = json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestHTTPDescriptorRequiresExactDefinition(t *testing.T) {
 	if len(f) != 0 {
 		t.Fatal(f)
 	}
-	base := map[string]any{"source_definition": paired.SourceDefinition.Value}
+	base := map[string]any{"source_definition": paired.SourceDefinition.Value, "licences": map[string]any{"data": paired.DataDeclaration.Value}, "recordsets": []any{map[string]any{"name": "Album", "licences": map[string]any{"data": paired.DataDeclaration.Value}}, map[string]any{"name": "Artist", "licences": map[string]any{"data": paired.DataDeclaration.Value}}}}
 	j, _ := NewJudge(Publisher)
 	check := func(doc map[string]any, paired Manifest) (Descriptor, []Finding) {
 		c := newCollector("db.json", newBudget())
@@ -118,6 +118,8 @@ func TestHTTPDescriptorRequiresExactDefinition(t *testing.T) {
 	// The normal descriptor path checks duplicate original JSON before any
 	// last-key-wins object could provide a successful dynamic admission.
 	full := map[string]any{"format": DescriptorFormat, "id": paired.URL.Value, "localId": paired.ID.Value, "serverId": "https://chinookdb.com/ovdb", "serverDbBaseUrl": "https://chinookdb.com/ovdb/dbs/chinook", "apiUrl": "https://chinookdb.com/ovdb/api", "deployment": map[string]any{"discovery": paired.Discovery.Value}, "source_definition": paired.SourceDefinition.Value}
+	full["licences"] = base["licences"]
+	full["recordsets"] = base["recordsets"]
 	b, _ = json.Marshal(full)
 	if _, f := j.Descriptor(b, "db.json", paired, "ovdb.yaml"); len(f) != 0 {
 		t.Fatal(f)

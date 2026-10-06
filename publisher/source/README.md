@@ -11,6 +11,13 @@ combining the HTTP definition with that profile or a representation contract is
 refused. Manifest `licences.data` links the upstream terms without an inferred
 SPDX or output licence. Linked rights are declarations, not legal clearance.
 
+`rights.declaration` is the one complete linked declaration (`name` and `url`)
+shared by the database and every recordset. Manifest and materialized descriptor
+`licences.data` must equal that whole normalized declaration; this version
+supports no recordset overrides or replacement text. Descriptors list every
+native recordset exactly once with matching materialized terms. Authored
+`sourceRights`, `providerReads` or definition-verification evidence is refused.
+
 The definition identifies the original provider independently of an executor.
 `providerSourceId` binds `provider:<provider.id>/<native recordset name>` to an
 exact declared resource. Native names must match the manifest, and `entity`
@@ -28,6 +35,13 @@ consumer route. Current-response parsing in bounded RAM requires the runtime
 contract; no durable source rows, bodies, caches, snapshots or fixtures are
 authorized by this declaration. Explicit user authorization is required for
 any later retention exception, which this version cannot express.
+
+Declaration, terms and attribution links use the same public host/path policy
+as resources. Queries, credentials, IP literals and local/reserved hosts are
+refused. Simple nonempty fragments such as `#reuse` are allowed for notices;
+resource URLs retain the stricter exact-address policy. These are static checks,
+with no link fetch or DNS/authenticity certification. The exported schema checks
+structure and link shape; the Go parser also enforces the public-target policy.
 
 Every admission gate is required and fixed to `blocked`; status is `blocked`
 and `executionEnabled` is false. `RequireExecution` always refuses, including

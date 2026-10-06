@@ -7,7 +7,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/license"
@@ -59,10 +61,11 @@ type Recordset struct {
 	Context          map[string]string `json:"context"`
 }
 type Rights struct {
-	Terms           []license.Notice `json:"terms"`
-	Attribution     license.Notice   `json:"attribution"`
-	FreeSource      license.Notice   `json:"freeSource"`
-	Transformations []string         `json:"transformations"`
+	Declaration     license.Declaration `json:"declaration"`
+	Terms           []license.Notice    `json:"terms"`
+	Attribution     license.Notice      `json:"attribution"`
+	FreeSource      license.Notice      `json:"freeSource"`
+	Transformations []string            `json:"transformations"`
 }
 type ReadEvidence struct {
 	Format            string `json:"format"`
@@ -91,35 +94,41 @@ type Definition struct {
 }
 
 var compiledSchema = sync.OnceValues(func() (*jsonschema.Schema, error) {
+	return compileSchema("https://openvaultdb.com/schemas/http-source-1.json", schemaBytes)
+})
+
+func compileSchema(id string, data []byte) (*jsonschema.Schema, error) {
 	var value any
-	if err := json.Unmarshal(schemaBytes, &value); err != nil {
+	if err := json.Unmarshal(data, &value); err != nil {
 		return nil, err
 	}
 	c := jsonschema.NewCompiler()
-	const id = "https://openvaultdb.com/schemas/http-source-1.json"
 	if err := c.AddResource(id, value); err != nil {
 		return nil, err
 	}
 	return c.Compile(id)
-})
+}
 
 // Parse refuses missing/null fields, unknown/case-folded/duplicate keys,
 // retention, execution admission and secret-bearing resource URLs. The schema
 // deliberately has no pass/enable state: runtime and consumer enforcement plus
 // semantic, source-rights and paid applicability reviews require a later contract.
 func Parse(data []byte) (*Definition, error) {
+	return parse(data, compiledSchema)
+}
+
+func parse(data []byte, schema func() (*jsonschema.Schema, error)) (*Definition, error) {
 	var d Definition
 	if err := datarights.Decode(data, &d); err != nil {
 		return nil, err
 	}
-	s, err := compiledSchema()
+	s, err := schema()
 	if err != nil {
 		return nil, err
 	}
 	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return nil, err
-	}
+	// Decode has already established one valid JSON value.
+	_ = json.Unmarshal(data, &value)
 	if err := s.Validate(value); err != nil {
 		return nil, fmt.Errorf("HTTP source schema: %w", err)
 	}
@@ -157,9 +166,19 @@ func (d Definition) validateLinks() error {
 		}
 	}
 	for _, n := range append(append([]license.Notice{}, d.Rights.Terms...), d.Rights.Attribution, d.Rights.FreeSource) {
-		if err := license.ValidateURL(n.URL); err != nil {
+		if err := noticeURL(n.URL); err != nil {
 			return err
 		}
+	}
+	if err := noticeURL(d.Rights.Declaration.URL); err != nil {
+		return err
+	}
+	linked := false
+	for _, n := range d.Rights.Terms {
+		linked = linked || n.URL == d.Rights.Declaration.URL
+	}
+	if !linked {
+		return fmt.Errorf("effective declaration must link to a declared terms notice")
 	}
 	free := false
 	for _, r := range d.Resources {
@@ -167,6 +186,22 @@ func (d Definition) validateLinks() error {
 	}
 	if !free {
 		return fmt.Errorf("freeSource must link to an original resource")
+	}
+	return nil
+}
+
+var noticeFragment = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
+
+// noticeURL applies the public resource host/path policy and permits only a
+// simple nonempty anchor. Query strings, credentials, IPs and reserved hosts
+// never enter verified metadata. It does not fetch links or certify DNS.
+func noticeURL(value string) error {
+	base, fragment, present := strings.Cut(value, "#")
+	if present && !noticeFragment.MatchString(fragment) {
+		return fmt.Errorf("notice URL requires a simple nonempty fragment")
+	}
+	if _, err := rules.ParsePublicHTTPSURL(base); err != nil {
+		return fmt.Errorf("notice URL: %w", err)
 	}
 	return nil
 }
@@ -189,18 +224,13 @@ func (d Definition) Matches(names []string, entities map[string]string) error {
 	return nil
 }
 
-// MatchesTerms prevents an unrelated legacy/SPDX licence from replacing this
-// linked upstream declaration. It makes no judgement about permitted reuse.
+// MatchesTerms enforces one shared normalized linked declaration. This version
+// supports no recordset overrides, replacement text or inferred output licence.
 func (d Definition) MatchesTerms(declaration license.Declaration) error {
-	if declaration.SPDX != "" {
-		return fmt.Errorf("HTTP source requires linked source terms without inferred SPDX")
+	if declaration.Normalized() != d.Rights.Declaration.Normalized() {
+		return fmt.Errorf("HTTP source requires the identical complete linked declaration")
 	}
-	for _, n := range d.Rights.Terms {
-		if declaration.URL == n.URL {
-			return nil
-		}
-	}
-	return fmt.Errorf("manifest data terms must link to the source definition terms")
+	return nil
 }
 
 // RequireExecution is a hard refusal in this preparatory contract, even if a
