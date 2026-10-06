@@ -470,6 +470,9 @@ for (const [name, ops] of Object.entries({
   // The Directory's validateConcept (meaning.mjs 58-80) and its rule that a concept is declared once; the checker never reads the concepts.
   'a concept with no id': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - labels: {en: A}\n']], 'a concept id that is not lower case': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: Artist\n']],
   'a concept declared twice': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: artist\n  - id: artist\n']], 'a label with an angle bracket': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    labels: {en: "a<b"}\n']],
+  // The Directory's rules for the bindings of a concept against the model (directory.mjs 728-754); the checker never reads the concepts.
+  'a binding that names an entity the model lacks': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    bindings:\n      - model: modelspec:///chinook.Nope\n        role: entity\n']],
+  'a binding that names a property the entity lacks': [['edit', meaningPath, '\nconcepts:\n', '\nconcepts:\n  - id: a-b\n    bindings:\n      - model: modelspec:///chinook.Album\n        property: Nope\n        role: identifier\n']],
   'id of another graph': [['edit', meaningPath, '\nid: chinook\n', '\nid: other\n']], 'id missing': [['edit', meaningPath, '\nid: chinook\n', '\n']],
   'id a number': [['edit', meaningPath, '\nid: chinook\n', '\nid: 5\n']], 'id null': [['edit', meaningPath, '\nid: chinook\n', '\nid:\n']],
   'id quoted': [['edit', meaningPath, '\nid: chinook\n', '\nid: "chinook"\n']],
@@ -519,7 +522,9 @@ addCase('listed', 'a second own-form manifest, all there, the same files', secon
 
 // What one check may cost: the entities of a model and the recordsets of a manifest are bounded (MaxEntities, MaxRecordsets, 10000 each); the checker compares them
 // in time that grows with the product of the two.
-const sameNames = (n) => [['entities', modelPath, n], ['recordsets', manifestPath, n]];
+// The entities are no longer Chinook's, so the concepts of the meaning file, whose bindings name Chinook's entities, go too: the Directory refuses a binding to an entity the model lacks.
+const withoutConcepts = base[meaningPath].slice(0, base[meaningPath].indexOf('\nconcepts:\n') + 1) + 'concepts: []\n';
+const sameNames = (n) => [['entities', modelPath, n], ['recordsets', manifestPath, n], ['file', meaningPath, withoutConcepts]];
 addCase('limits', '10000 entities and the same 10000 recordsets', sameNames(10000));
 addCase('limits', '10001 entities and the same 10001 recordsets', sameNames(10001));
 addCase('limits', '20000 recordsets against 330000 entities', [['entities', modelPath, 330000], ['recordsets', manifestPath, 20000]]);

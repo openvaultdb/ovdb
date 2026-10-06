@@ -114,6 +114,7 @@ and a path below a file or symlink do not):
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
 | `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
 | `meaning-id`, `meaning-license` | its `id` is `meaning.graph.id` and its `license` is `licences.meaning`, as strings (the Directory compares the licence only when the file has a text one, and does not read the id here: Go is stricter than it, as the checker is) | 453-457 |
+| `meaning-binding` | 2 | A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts. |
 | `meaning-concept` | 3 | A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts. |
 | `meaning-concept-duplicate` | 1 | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. |
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
@@ -138,8 +139,7 @@ its name states. `directory_stage_test.go` replays each case in memory with both
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 73 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
-| outcome: looser:F4 | 10 | the same, for the bindings of a concept |
+| outcome: agree | 83 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: looser:F5 | 7 | the same, for the `extends` and `values-of` chains inside the repository's own graph |
 | outcome: looser:F6 | 3 | the same, for the meaning file's `models:` entry when the manifest does not write `model.hcl` |
 | outcome: looser:F7 | 2 | the same, for the addresses: `meaning.graph.address` (the Publisher profile compares it with `publisher.repository`, the Directory profile does not) and an own-form `model.address` that names another repository (no profile compares it) |
@@ -187,7 +187,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 546 | own-form `model.address` names the record's repository | **F7** (no profile compares it with `publisher.repository`) | `has-model-address-other-repository` |
 | 549-572 | the model as the ModelSpec registry registers it | needs the registry | none |
 | 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | has (F3: `meaning-concept`, `meaning-concept-duplicate`) | `concept-*` (27) |
-| 728-754 | bindings | **F4** | `binding-*` (10) |
+| 728-754 | bindings | has (F4: `meaning-binding`) | `binding-*` (10) |
 | 767-770 | chains (meaning.mjs 195-226) inside the own graph | **F5**; by address to another graph needs the registry | `chain-*` (7), `chain-address-unregistered`, `chain-core-unregistered` |
 | 775-781 | the page of every recordset, with the real names | has (the page loop of #58, code `manifest-recordsets`) | `has-recordset-page` |
 | 784-800 | `representation_contract`: envelope, attachment, source data | has (#54; the attachment content checks are not audited, ovdb#61); the canonical meaning needs the registry | none |
@@ -240,10 +240,10 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-347 cases: 129 accepted by the checker, 120 accepted with `--repository`; 293 agree with Go, 54
-are stricter in Go, in 30 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
+349 cases: 131 accepted by the checker, 122 accepted with `--repository`; 293 agree with Go, 56
+are stricter in Go, in 31 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
 (5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 40 model files, 45 JSON
-differences, 66 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+differences, 68 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
 states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
 

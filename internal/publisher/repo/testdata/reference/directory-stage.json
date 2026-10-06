@@ -734,7 +734,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding model undefined is not a modelspec:///{module}.{Entity} reference (the module and the entity name in a reference start with a letter, so an entity or module whose name starts with _ cannot",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-model-form",
@@ -749,7 +750,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding model \"chinook.Artist\" is not a modelspec:///{module}.{Entity} reference (the module and the entity name in a reference start with a letter, so an entity or module whose name starts with _",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-other-model",
@@ -764,7 +766,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding modelspec://github.com/other/repo/chinook.Artist names a model outside this database; bindings name this repository's own ModelSpec",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-module",
@@ -779,7 +782,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding modelspec:///other.Artist names module other, but the ModelSpec at model/chinook.modelspec.json is module chinook",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-entity",
@@ -794,7 +798,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding modelspec:///chinook.Nope names an entity that is not in the ModelSpec",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-role-needs-property",
@@ -809,7 +814,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding modelspec:///chinook.Artist with role identifier must name a property",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-property",
@@ -824,7 +830,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding modelspec:///chinook.Artist names property \"Nope\", which Artist does not have in the ModelSpec",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-property-number",
@@ -839,7 +846,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding modelspec:///chinook.Artist names property 5, which Artist does not have in the ModelSpec",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "chain-own",
@@ -1616,7 +1624,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding model \"modelspec:///_chinook.Artist\" is not a modelspec:///{module}.{Entity} reference (the module and the entity name in a reference start with a letter, so an entity or module whose name",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "binding-entity-underscore",
@@ -1631,7 +1640,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.meaning.yaml: concept artist: binding model \"modelspec:///chinook._Artist\" is not a modelspec:///{module}.{Entity} reference (the module and the entity name in a reference start with a letter, so an entity or module whose name",
-   "outcome": "looser:F4"
+   "outcome": "agree",
+   "go": "meaning-binding"
   },
   {
    "id": "chain-51",

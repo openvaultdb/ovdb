@@ -169,3 +169,34 @@ func FuzzReadModel(f *testing.F) {
 		}
 	})
 }
+
+// The names of the properties of each entity, as the Directory reads them: the last of a repeated property or properties, the properties that it refuses
+// not among them, and a reference that is good among them.
+func TestReadModelProperties(t *testing.T) {
+	spec, err := readModel([]byte(`{"modelspec":"1","module":{"name":"m"},"entities":{
+		"A":{"properties":{"id":{"type":"int"},"id":{"type":"int"},"b":{"entity":"B"},"c":{"type":"int"},"c":{}}},
+		"B":{"properties":{"x":{"type":"int"}},"properties":{"y":{"type":"int"}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for entity, names := range spec.properties {
+		for name := range names {
+			got[entity] = append(got[entity], name)
+		}
+		slices.Sort(got[entity])
+	}
+	if !slices.Equal(got["A"], []string{"b", "id"}) || !slices.Equal(got["B"], []string{"y"}) || len(got) != 2 {
+		t.Errorf("properties %v", got)
+	}
+}
+
+// A binding of a concept is held to the model file only when the Directory reads the model file: with an entity that has no property, it does not.
+func TestBindingsAreJudgedOnlyAgainstAModelTheDirectoryReads(t *testing.T) {
+	meaning := "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts:\n  - id: a\n    bindings:\n      - model: modelspec:///chinook.Album\n        property: Nope\n        role: identifier\n"
+	m := goodRepository()
+	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(meaning)}
+	only(t, Check(m, publisher()), "meaning-binding", meaningPth, 9, `names property "Nope", which Album does not have in the ModelSpec`)
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(strings.Replace(goodModel, `"Album": {"properties": {"Id": {"type": "int"}}}`, `"Album": {}`, 1))}
+	only(t, Check(m, publisher()), RuleModelEntity, modelPath, 0, "entity Album has no properties")
+}

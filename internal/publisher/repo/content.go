@@ -53,11 +53,12 @@ type ownFiles struct {
 // a file that was not read: its finding is already made.
 func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
 	module := ""
+	var facts *manifest.ModelFacts
 	if f.haveModel {
-		module = c.model(path, m, f.model)
+		module, facts = c.model(path, m, f.model)
 	}
 	if f.haveMeaning {
-		wants := manifest.MeaningWants{File: m.MeaningFile.Value, GraphID: m.GraphID, Licence: m.LicenceMeaning, Module: module}
+		wants := manifest.MeaningWants{File: m.MeaningFile.Value, GraphID: m.GraphID, Licence: m.LicenceMeaning, Module: module, Model: facts}
 		if f.haveHCL {
 			wants.ModelHCL = m.ModelHCL.Value
 		}
@@ -73,8 +74,9 @@ type modelRead struct {
 }
 
 // model reads the model file and holds the manifest to it: model.name and the module of model.address are its module, and the recordsets are its
-// entities. It returns the module, or "" when the file declares none that can be read.
-func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
+// entities. It returns the module, or "" when the file declares none that can be read, and what the bindings of a concept are held to when the file is a
+// ModelSpec that the Directory reads (the Directory reads a concept's bindings only then).
+func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, *manifest.ModelFacts) {
 	file := m.ModelSpec.Value
 	if c.models == nil {
 		c.models = map[string]modelRead{}
@@ -89,16 +91,16 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	switch {
 	case errors.Is(err, errDepth):
 		c.add(file, RuleModelDepth, 0, "is nested more than %d levels deep, which is more than this check reads", maxJSONDepth)
-		return ""
+		return "", nil
 	case errors.Is(err, errEntities):
 		c.add(file, RuleEntitiesLimit, 0, "has an entities object of more than %d entities, which is more than this check reads (a repeated entities member is read as the last, but each of them is read)", MaxEntities)
-		return ""
+		return "", nil
 	case endsEarly(err):
 		c.add(file, RuleModelJSON, lineAt(data, len(data)), "is not a ModelSpec JSON file: it is empty or ends before the JSON value does")
-		return ""
+		return "", nil
 	case err != nil:
 		c.add(file, RuleModelJSON, jsonLine(data, err), "is not a ModelSpec JSON file: %s", ascii(err.Error()))
-		return ""
+		return "", nil
 	}
 	if spec.module == "" {
 		c.add(file, RuleModelModule, 0, "has no module.name that is a ModelSpec module name (a letter, then letters, digits and _)")
@@ -152,7 +154,10 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordset_entities maps more than one native recordset to the same ModelSpec entity; mappings must be one-to-one")
 		}
 	}
-	return spec.module
+	if spec.module == "" || !spec.hasEntities || len(spec.issues) > 0 {
+		return spec.module, nil
+	}
+	return spec.module, &manifest.ModelFacts{Entities: spec.properties}
 }
 
 // endsEarly reports whether err says that the data ended before the JSON value did: the decoder says it in three ways (EOF, unexpected EOF, and a syntax

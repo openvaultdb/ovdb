@@ -31,7 +31,8 @@ type modelSpec struct {
 	hasEntities bool     // entities is an object
 	entities    []string // its keys, sorted
 	set         map[string]struct{}
-	issues      []modelIssue // what parseModelSpec refuses beyond the module and the entities object, in the order of entity and property names
+	issues      []modelIssue                   // what parseModelSpec refuses beyond the module and the entities object, in the order of entity and property names
+	properties  map[string]map[string]struct{} // for each entity, the names of its properties as the Directory reads them (the bindings of a concept name them)
 }
 
 // modelIssue is one refusal of parseModelSpec: the rule that reports it and the text.
@@ -43,6 +44,7 @@ type entityInfo struct {
 	badName bool                // the name is not an identifier: the Directory refuses it and reads nothing of the entity
 	noProps bool                // no properties object with a property in it
 	props   map[string]propInfo // the properties that are refused, or that reference an entity (judged when every entity is known)
+	names   map[string]struct{} // the names of the properties that are not refused (the last of a repeated name)
 }
 
 type propKind int
@@ -134,6 +136,12 @@ func readModel(data []byte) (modelSpec, error) {
 	}
 	if spec.hasEntities {
 		spec.judgeEntities(keys)
+		spec.properties = make(map[string]map[string]struct{}, len(keys))
+		for name, info := range keys {
+			if info != nil {
+				spec.properties[name] = info.names
+			}
+		}
 	}
 	return spec, nil
 }
@@ -188,7 +196,7 @@ func readEntity(dec *json.Decoder, first json.Token, name string) (*entityInfo, 
 		if key != "properties" {
 			return consume(dec, tok, 3)
 		}
-		info.props, info.noProps = nil, true // the last of a repeated properties
+		info.props, info.names, info.noProps = nil, nil, true // the last of a repeated properties
 		if open, ok := tok.(json.Delim); !ok || open != '{' {
 			return consume(dec, tok, 3)
 		}
@@ -197,7 +205,14 @@ func readEntity(dec *json.Decoder, first json.Token, name string) (*entityInfo, 
 			count++
 			info.noProps = false
 			delete(info.props, prop) // the last of a repeated property
+			delete(info.names, prop)
 			judged, kept, err := readProperty(dec, tok, prop)
+			if !kept || judged.kind == propReference {
+				if info.names == nil {
+					info.names = map[string]struct{}{}
+				}
+				info.names[prop] = struct{}{}
+			}
 			if kept {
 				if info.props == nil {
 					info.props = map[string]propInfo{}
