@@ -2,6 +2,7 @@ package repo
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -127,5 +128,23 @@ func TestHTTPDefinitionUsesOriginalGitObjects(t *testing.T) {
 	result := Check(r, publisher())
 	if result.OK() || result.Manifest.SourceDefinitionEvidence != nil {
 		t.Fatal("replacement admitted blocked original", result.Findings)
+	}
+}
+
+func TestHTTPDefinitionRequiresImmutablePublisherIdentity(t *testing.T) {
+	m := httpDefinitionRepository(t)
+	parsed, f := manifest.CheckManifest(m.Nodes["ovdb.yaml"].Content, "ovdb.yaml", manifest.Publisher)
+	if len(f) != 0 {
+		t.Fatal(f)
+	}
+	j, _ := manifest.NewJudge(manifest.Publisher)
+	m.Err = errors.New("no selected commit")
+	c := checker{r: m, j: j}
+	c.sourceDefinition(&parsed, "ovdb.yaml", m.Nodes["ovdb.yaml"].Content)
+	if len(c.res.Findings) != 1 || parsed.SourceDefinitionEvidence != nil {
+		t.Fatal("missing immutable identity accepted")
+	}
+	if fullSHA(strings.Repeat("A", 40)) || fullSHA("short") || !fullSHA(strings.Repeat("a", 40)) {
+		t.Fatal("revision validation wrong")
 	}
 }
