@@ -66,14 +66,14 @@ The paired server capability is the optional
 `openvaultdb-go/server.ProviderReadProfile.sourceRight` field: it verifies exact
 mounted terms/identity and the full rights digest before supplying those notices
 to discovery and query responses. Library deployment comes first. The OVDB CLI
-uses published `openvaultdb-go v0.20.0`; its `--provider-read-profiles` loader
+uses published `openvaultdb-go v0.20.1`; its `--provider-read-profiles` loader
 requires the operator-supplied `sourceRight` inventory. Startup checks preserve
 mounted source terms, identity and `retention: none`, including attribution,
 the original free-source link, transformation notices and the immutable
 metadata pin. This capability does not admit the preparatory example or grant
-semantic, rights or paid-use clearance. The shared server human pages still
-need notice and retention rendering before public activation. No development
-replacement or manual tag is part of this metadata preparation change.
+semantic, rights or paid-use clearance. The shared server human pages render
+admitted notices and retention. Public activation still requires product-specific rights, no-retention and browser
+journey receipts. No development replacement or manual tag is part of this metadata preparation change.
 `readEvidence` advertises the required `ovdb-provider-read/1` boundary and
 executor-observed classification; it does not create a read receipt or claim
 that runtime/consumer support exists. Executor-scoped legacy rights IDs and
@@ -95,3 +95,32 @@ keys, unexpected XML namespaces/structure, DTDs and entities. Attribution,
 original free-source link and restructuring disclosure accompany results;
 paid notice applicability remains blocked. The example is neither published
 catalog admission nor proof that any query path works.
+
+The metadata-only [ECB pin-chain checker](pinchain/ecb-daily.pins.json) reproduces
+one fixed inactive baseline from local Git objects. Its candidate manifest pins
+both draft registry records, the same OVDB commit for HCL/JSON/meaning/descriptor,
+MeaningGraph core, decoder implementation/version declaration/synthetic tests
+and Directory. It verifies literal HCL/JSON property equivalence, native field
+and context bindings, core extends addresses, decoder output/version, original
+resource/terms links and inactive B1–B4 state. Any byte, object or chain drift
+refuses before a receipt. It does not follow a mutable branch or load working
+files. A changed baseline requires separate review of the manifest and validator.
+
+Run from the OVDB repository with the six local Git repositories already
+containing the pinned objects and decoder release tag `v0.3.0` (the checker
+has no network client and disables Git lazy fetching):
+
+```sh
+go run ./publisher/source/pinchain/cmd/ecb-pin-check \
+  -ovdb /path/to/ovdb -modelspec-registry /path/to/modelspec-registry \
+  -meaning-registry /path/to/meaning-registry -meaning-core /path/to/core \
+  -directory /path/to/directory -decoder /path/to/dalgo2http
+```
+
+The JSON receipt lists only immutable metadata refs, blob IDs, byte counts and
+SHA-256 digests. `blocked-baseline-verified` keeps execution disabled, Directory
+inactive and B1–B4 open. It proves neither current branch freshness, source
+rights clearance nor runtime integration; the checker is a preparatory tool,
+not an automatically wired admission gate. It never reads source XML. Synthetic
+decoder tests are pinned for review, not run or certified by this tool. Preserve
+review approval of the manifest separately from its reproducibility receipt.

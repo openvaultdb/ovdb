@@ -218,9 +218,9 @@ jobs:
           go-version: '1.27.0'
           cache: true
       - name: go test with coverage (publisher check packages)
-        run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./publisher/representation ./publisher/source ./internal/covergate/... ./cmd/covergate/...
+        run: go test -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./publisher/representation ./publisher/source/... ./internal/covergate/... ./cmd/covergate/...
       - name: Every statement of exactly those packages is covered
-        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/datarights ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/publisher/checkcmd ./publisher/representation ./publisher/source ./internal/covergate ./cmd/covergate
+        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/datarights ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/publisher/checkcmd ./publisher/representation ./publisher/source ./publisher/source/pinchain ./publisher/source/pinchain/cmd/ecb-pin-check ./internal/covergate ./cmd/covergate
 
   # The goldens that the parity tests of the publisher check read (testdata/reference of
   # internal/publisher/rules, manifest and repo) are made by three generators
