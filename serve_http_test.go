@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,15 +11,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dal-go/dalgo/dal"
 	"github.com/dal-go/dalgo2http"
+	"github.com/dal-go/record"
 	"github.com/openvaultdb/openvaultdb-go/pkg/core"
 	"github.com/openvaultdb/openvaultdb-go/pkg/license"
 	"github.com/openvaultdb/openvaultdb-go/pkg/manifest"
 	"github.com/openvaultdb/openvaultdb-go/pkg/mount"
 	"github.com/openvaultdb/openvaultdb-go/pkg/schema"
+	"github.com/spf13/cobra"
 )
 
 const serveHTTPManifest = `database: {id: ecb, schema_mode: strict, retention: none}
@@ -61,8 +67,20 @@ func snapshotFiles(t *testing.T, temp string) []os.DirEntry {
 	return entries
 }
 
+func isolatedServeTemp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, dir)
+	}
+	if filepath.Clean(os.TempDir()) != filepath.Clean(dir) {
+		t.Fatalf("temporary directory not isolated: got %q, want %q", os.TempDir(), dir)
+	}
+	return dir
+}
+
 func TestServeHTTPProductionMountIsFixedAndReadOnlyWithoutFetching(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolatedServeTemp(t)
 	dir := t.TempDir()
 	path := writeManifest(t, dir, "ecb.yaml", serveHTTPManifest)
 	_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", path}, func(h http.Handler) {
@@ -102,8 +120,7 @@ func TestServeHTTPProductionMountIsFixedAndReadOnlyWithoutFetching(t *testing.T)
 }
 
 func TestServeHTTPNoRetentionAndRightsThroughCLI(t *testing.T) {
-	temp := t.TempDir()
-	t.Setenv("TMPDIR", temp)
+	temp := isolatedServeTemp(t)
 	path := writeManifest(t, t.TempDir(), "ecb.yaml", strings.Replace(serveHTTPManifest, "retention: none", `retention: none, license: {url: "https://example.org/synthetic-terms"}`, 1))
 	calls, closed := 0, false
 	deps := defaultServeDeps()
@@ -183,7 +200,7 @@ func TestServeHTTPNoRetentionAndRightsThroughCLI(t *testing.T) {
 }
 
 func TestServeTermsRequireExplicitIdentityBeforeServing(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	isolatedServeTemp(t)
 	path := writeManifest(t, t.TempDir(), "ecb.yaml", strings.Replace(serveHTTPManifest, "retention: none", `retention: none, license: {text: "Synthetic terms"}`, 1))
 	_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", path}, func(http.Handler) { t.Fatal("served terms without configured identity") })
 	if err == nil || !strings.Contains(err.Error(), "stable server identity") {
@@ -217,8 +234,7 @@ func TestServeMountFailureClosesEarlierHTTPDatabase(t *testing.T) {
 // A permitted synthetic SQLite snapshot proves serve closes library resources
 // on return; the HTTP profile's refusals above prove it never creates one.
 func TestServeShutdownRemovesAuthorizedSyntheticSnapshot(t *testing.T) {
-	temp := t.TempDir()
-	t.Setenv("TMPDIR", temp)
+	temp := isolatedServeTemp(t)
 	_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", writeShop(t)}, func(h http.Handler) {
 		w := serveHTTPRequest(h, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
 		if w.Code != 200 || len(snapshotFiles(t, temp)) != 1 {
@@ -227,5 +243,138 @@ func TestServeShutdownRemovesAuthorizedSyntheticSnapshot(t *testing.T) {
 	})
 	if err != nil || len(snapshotFiles(t, temp)) != 0 {
 		t.Fatalf("snapshot retained after server return: %v", err)
+	}
+}
+
+type blockedServeReader struct {
+	ctx         context.Context
+	entered     chan struct{}
+	release     chan struct{}
+	cooperative bool
+	closed      atomic.Bool
+}
+
+func (r *blockedServeReader) Cursor() (string, error) { return "", nil }
+func (r *blockedServeReader) Close() error            { r.closed.Store(true); return nil }
+func (r *blockedServeReader) Next() (record.Record, error) {
+	close(r.entered)
+	if r.cooperative {
+		select {
+		case <-r.ctx.Done():
+			return nil, r.ctx.Err()
+		case <-r.release:
+		}
+	} else {
+		<-r.release
+	}
+	return nil, io.EOF
+}
+
+type blockedServeDB struct {
+	dal.DB
+	reader *blockedServeReader
+}
+
+func (d *blockedServeDB) ExecuteQueryToRecordsReader(ctx context.Context, _ dal.Query) (dal.RecordsReader, error) {
+	d.reader.ctx = ctx
+	return d.reader, nil
+}
+
+// The real permitted snapshot handler has already created an unregistered
+// synthetic spool when Next blocks. Failed graceful shutdown must cancel it,
+// force-close connections, and defer resource closure until the reader exits.
+func TestServeShutdownOwnsActiveSnapshotUntilHandlerSettles(t *testing.T) {
+	for _, mode := range []string{"graceful", "cancelled", "stubborn"} {
+		t.Run(mode, func(t *testing.T) {
+			temp := isolatedServeTemp(t)
+			reader := &blockedServeReader{entered: make(chan struct{}), release: make(chan struct{}), cooperative: mode == "cancelled"}
+			closed := make(chan struct{})
+			closedEarly := atomic.Bool{}
+			deps := defaultServeDeps()
+			deps.drainTimeout = 20 * time.Millisecond
+			deps.mountFile = func(path string) (*core.Database, error) {
+				m, err := manifest.Load(path)
+				if err != nil {
+					return nil, err
+				}
+				db, err := core.Open(m, &blockedServeDB{reader: reader}, []schema.Mode{schema.ModeStrict}, "")
+				if err == nil {
+					db.OnClose(func() error {
+						closedEarly.Store(!reader.closed.Load())
+						close(closed)
+						return nil
+					})
+				}
+				return db, err
+			}
+			requestDone := make(chan *httptest.ResponseRecorder, 1)
+			forced := false
+			deps.run = func(_ *cobra.Command, srv *http.Server) error {
+				go func() {
+					requestDone <- serveHTTPRequest(srv.Handler, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
+				}()
+				select {
+				case <-reader.entered:
+				case <-time.After(5 * time.Second):
+					return errors.New("synthetic snapshot reader never started")
+				}
+				if len(snapshotFiles(t, temp)) != 1 {
+					return errors.New("active synthetic spool is missing")
+				}
+				listener := newFakeListener()
+				if mode == "graceful" {
+					close(reader.release)
+					<-requestDone
+				} else {
+					listener.shutdownErr = context.DeadlineExceeded
+				}
+				stop := make(chan os.Signal, 1)
+				stop <- os.Interrupt
+				err := serveUntil(io.Discard, "synthetic-no-listener", listener, stop)
+				forced = listener.forced
+				return err
+			}
+			cmd := newServeCmdWith(deps)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs([]string{"--manifest", writeShop(t)})
+			err := cmd.Execute()
+			if mode == "graceful" {
+				if err != nil || forced {
+					t.Fatalf("graceful shutdown: %v forced=%v", err, forced)
+				}
+			} else if !errors.Is(err, context.DeadlineExceeded) || !forced {
+				t.Fatalf("failed shutdown lost error or force-close: %v forced=%v", err, forced)
+			}
+			if mode == "stubborn" {
+				if !errors.Is(err, errServeHandlersActive) {
+					t.Fatalf("active handler falsely reported settled: %v", err)
+				}
+				select {
+				case <-closed:
+					t.Fatal("database closed beneath active snapshot capture")
+				default:
+				}
+				if len(snapshotFiles(t, temp)) != 1 {
+					t.Fatal("active capture lost its spool ownership")
+				}
+				close(reader.release)
+			}
+			if mode != "graceful" {
+				select {
+				case <-requestDone:
+				case <-time.After(5 * time.Second):
+					t.Fatal("cancelled snapshot handler did not settle")
+				}
+			}
+			select {
+			case <-closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("settled handler leaked deferred cleanup")
+			}
+			if closedEarly.Load() || !reader.closed.Load() || len(snapshotFiles(t, temp)) != 0 {
+				t.Fatal("shutdown closed active resources or retained the synthetic spool/snapshot")
+			}
+		})
 	}
 }

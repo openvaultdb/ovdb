@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode"
@@ -77,6 +78,9 @@ func mebibytes(n int64) string { return grouped(n>>20) + " MiB" }
 type serveDeps struct {
 	mountFile func(path string) (*core.Database, error)
 	run       func(cmd *cobra.Command, srv *http.Server) error
+	// drainTimeout bounds forced handler settlement after run returns.
+	// Zero uses five seconds; tests inject a short deterministic deadline.
+	drainTimeout time.Duration
 }
 
 // defaultServeDeps is what the binary runs with: the real mount and a listener.
@@ -118,11 +122,16 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				publicURL = strings.TrimRight(publicURL, "/")
 			}
 			dbs := map[string]*core.Database{}
-			defer func() {
+			var dataServer *server.Server
+			requests := newServeRequests()
+			defer requests.cleanup(func() {
+				if dataServer != nil {
+					dataServer.CloseSnapshots()
+				}
 				for _, db := range dbs {
 					_ = db.Close()
 				}
-			}()
+			})
 			if dir != "" {
 				mounted, err := mount.Dir(dir)
 				if err != nil {
@@ -218,17 +227,22 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				}
 			}
 
-			dataServer, err := server.NewChecked(appVersion, dbs, opts...)
+			var err error
+			dataServer, err = server.NewChecked(appVersion, dbs, opts...)
 			if err != nil {
 				return err
 			}
-			defer dataServer.CloseSnapshots()
 			srv := &http.Server{
 				Addr:              addr,
-				Handler:           dataServer.Handler(),
+				Handler:           requests.wrap(dataServer.Handler()),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
-			return deps.run(cmd, srv)
+			runErr := deps.run(cmd, srv)
+			drainTimeout := deps.drainTimeout
+			if drainTimeout <= 0 {
+				drainTimeout = 5 * time.Second
+			}
+			return errors.Join(runErr, requests.drain(drainTimeout))
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", DefaultAddr, "listen address")
@@ -262,6 +276,7 @@ func serveUntilSignal(cmd *cobra.Command, srv *http.Server) error {
 type stoppableServer interface {
 	ListenAndServe() error
 	Shutdown(ctx context.Context) error
+	Close() error
 }
 
 // serveUntil starts srv, says where it listens, and returns when the listener
@@ -280,10 +295,99 @@ func serveUntil(out io.Writer, addr string, srv stoppableServer, stop <-chan os.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
+			// Shutdown leaves active connections alive when its deadline
+			// expires. Close cancels their request contexts before the command
+			// drains its tracked handlers and releases mounted resources.
+			return errors.Join(err, srv.Close())
 		}
 		return nil
 	}
+}
+
+var errServeHandlersActive = errors.New("HTTP handlers did not settle before the forced drain deadline; resource cleanup is deferred until they exit")
+
+// serveRequests owns admitted handlers and cleanup together. A driver that
+// ignores cancellation cannot make bounded shutdown report success or make
+// snapshots/databases close beneath its request. Its last exiting handler
+// performs any cleanup deferred after the drain deadline.
+type serveRequests struct {
+	mu       sync.Mutex
+	stopping bool
+	next     uint64
+	active   map[uint64]context.CancelFunc
+	idle     chan struct{}
+	pending  []func()
+}
+
+func newServeRequests() *serveRequests {
+	idle := make(chan struct{})
+	close(idle)
+	return &serveRequests{active: map[uint64]context.CancelFunc{}, idle: idle}
+}
+
+func (s *serveRequests) wrap(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		if s.stopping {
+			s.mu.Unlock()
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "server is stopping", http.StatusServiceUnavailable)
+			return
+		}
+		if len(s.active) == 0 {
+			s.idle = make(chan struct{})
+		}
+		s.next++
+		id := s.next
+		ctx, cancel := context.WithCancel(r.Context())
+		s.active[id] = cancel
+		s.mu.Unlock()
+		defer func() {
+			cancel()
+			s.mu.Lock()
+			delete(s.active, id)
+			var cleanup []func()
+			if len(s.active) == 0 {
+				cleanup, s.pending = s.pending, nil
+				close(s.idle)
+			}
+			s.mu.Unlock()
+			for _, release := range cleanup {
+				release()
+			}
+		}()
+		handler.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *serveRequests) drain(timeout time.Duration) error {
+	s.mu.Lock()
+	s.stopping = true
+	for _, cancel := range s.active {
+		cancel()
+	}
+	idle := s.idle
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return errServeHandlersActive
+	}
+}
+
+func (s *serveRequests) cleanup(release func()) {
+	s.mu.Lock()
+	s.stopping = true
+	if len(s.active) != 0 {
+		s.pending = append(s.pending, release)
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	release()
 }
 
 // isNonLoopback reports whether addr (host:port) binds to a non-loopback
