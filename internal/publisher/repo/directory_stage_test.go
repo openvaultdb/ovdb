@@ -65,6 +65,7 @@ func readStageGolden(t testing.TB) stageGolden {
 // Publisher check that a slice may change (A0w makes model.hcl optional, as the Directory has it); none is a rule of the Directory.
 var stageStricterKinds = map[string]string{
 	"model-hcl-required":       "model.hcl is required by the manifest rules of the Publisher profile; the Directory reads it only when it is written, and takes the model file from the meaning file's models: entry (A0w)",
+	"module-name-underscore":   "module.name must start with a letter (the checker's pattern); the Directory's identifier pattern also allows _",
 	"meaning-license-required": "the meaning file's license must be text and equal to licences.meaning; the Directory compares it only when the file has a text license",
 	"meaning-id-compared":      "the meaning file's id must be meaning.graph.id; the Directory does not read the id of the file in the file stage (the registry holds the graph's id)",
 }

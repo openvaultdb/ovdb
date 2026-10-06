@@ -207,7 +207,7 @@ func build(t testing.TB, g golden, ops [][]json.RawMessage) *model {
 			}
 			entities := make(map[string]any, n)
 			for i := 0; i < n; i++ {
-				entities["e"+strconv.FormatInt(int64(i), 36)] = map[string]any{}
+				entities["e"+strconv.FormatInt(int64(i), 36)] = map[string]any{"properties": map[string]any{"id": map[string]any{"type": "int"}}}
 			}
 			object["entities"] = entities
 			changed, _ := json.Marshal(object)
@@ -285,6 +285,9 @@ func (m *model) memory() *Memory {
 // A refusal of a repository that the checker accepts is a kind by the rule of its first finding, or the test fails.
 var stricterKinds = map[string]string{
 	"meaning-concepts": "The meaning file has no concepts list (the key is missing, or is null, a mapping or text): the Directory refuses it (directory.mjs, parseMeaningFile) and the Chinook checker never reads the concepts.",
+	RuleModelVersion:   "The model file has no \"modelspec\" version that is text: the Directory refuses it (parseModelSpec, modelspec.mjs); the checker reads only the module and the names of the entities.",
+	RuleModelEntity:    "An entity of the model file has a name that is not an identifier, or no properties: the Directory refuses it (parseModelSpec); the checker reads only the names of the entities.",
+	RuleModelProperty:  "A property of the model file has a name that is not an identifier, a type that is not a type name, neither a type nor an entity, or references an entity the model lacks: the Directory refuses it (parseModelSpec); the checker never reads the properties.",
 	RuleCase:           "Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts.",
 	RuleTreeName:       "A directory on the path of a file that is judged has an entry whose name is empty or . or .. or .git, or has a slash, a backslash or a control character; the checker never lists a directory.",
 	RuleTreeLimit:      "A directory on the path of a file that is judged has more than 50000 entries; the checker asks git about one path and has no bound.",

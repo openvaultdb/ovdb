@@ -19,6 +19,9 @@ const (
 	RuleModelDepth    = "repo-model-depth"    // the model file nests deeper than maxJSONDepth
 	RuleModelModule   = "repo-model-module"   // no module.name that is a module name
 	RuleModelEntities = "repo-model-entities" // no entities object
+	RuleModelVersion  = "repo-model-version"  // no "modelspec" version that is text
+	RuleModelEntity   = "repo-model-entity"   // an entity whose name is not an identifier, or that has no properties
+	RuleModelProperty = "repo-model-property" // a property whose name is not an identifier, whose type is not a type name, that has neither a type nor an entity, or that references an entity the model lacks
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
 	RuleModelAddress  = "repo-model-address"  // the module of model.address is not the model file's
 	RuleRecordsets    = "repo-recordsets"     // recordsets are not the entities of the model
@@ -86,6 +89,9 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	}
 	if !spec.hasEntities {
 		c.add(file, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)")
+	}
+	for _, issue := range spec.issues {
+		c.add(file, issue.rule, 0, "%s", issue.text)
 	}
 	if name := m.ModelName; name.Usable() && spec.module != "" && name.Value != spec.module {
 		c.add(path, RuleModelName, name.Line, "model.name is %s, but %s is module %s", rules.Quote(name.Value), rules.Quote(file), rules.Quote(spec.module))
