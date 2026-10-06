@@ -56,6 +56,7 @@ type checker struct {
 	res             manifest.Result
 	dirs            map[string]dirResult
 	seen            map[string]bool
+	models          map[string]modelRead               // the model files that have been read, by path: the manifests that name one share the reading
 	files           map[string]fileRead                // the result of reading each file that a manifest names, while there is room
 	kept            int                                // the bytes in files
 	sourceProofs    map[representation.Reference]error // raw-byte proofs, this repository check only
