@@ -165,20 +165,23 @@ add('concept-minimal', 'control', 'one concept with an id', { [meaningPath]: con
 // the ModelSpec file, parseModelSpec (modelspec.mjs 92-118)
 const entityOf = (doc) => doc.entities.Genre;
 add('modelspec-not-json', 'modelspec', 'the model file is not JSON', { [modelPath]: () => '{' }, /is not JSON/, 'agree');
-add('modelspec-no-version', 'modelspec', 'no "modelspec" version', { [modelPath]: json((doc) => { delete doc.modelspec; }) }, /has no "modelspec" version/, 'looser:F2');
-add('modelspec-version-number', 'modelspec', 'the "modelspec" version is a number', { [modelPath]: json((doc) => { doc.modelspec = 1; }) }, /has no "modelspec" version/, 'looser:F2');
+add('modelspec-no-version', 'modelspec', 'no "modelspec" version', { [modelPath]: json((doc) => { delete doc.modelspec; }) }, /has no "modelspec" version/, 'agree');
+add('modelspec-version-number', 'modelspec', 'the "modelspec" version is a number', { [modelPath]: json((doc) => { doc.modelspec = 1; }) }, /has no "modelspec" version/, 'agree');
 add('modelspec-module-name', 'modelspec', 'module.name is not an identifier', { [modelPath]: json((doc) => { doc.module.name = 'bad-name'; }) }, /has no module\.name that is an identifier/, 'agree');
+add('modelspec-module-underscore', 'stricter', 'a module name that starts with _: the Directory\'s identifier pattern allows it, the checker\'s module pattern does not', {
+  [modelPath]: json((doc) => { doc.module.name = '_chinook'; }), [meaningPath]: (text) => concepts('  - id: artist\n')(text.replace('  chinook: chinook.modelspec.hcl', '  _chinook: chinook.modelspec.hcl')),
+}, null, 'stricter:module-name-underscore');
 add('modelspec-no-entities', 'modelspec', 'the entities object is empty', { [modelPath]: json((doc) => { doc.entities = {}; }) }, /has no entities/, 'agree');
 add('modelspec-entity-name', 'modelspec', 'an entity whose name is not an identifier (the recordsets and the references follow it)', {
   [modelPath]: (text) => text.replaceAll('"Genre"', '"Gen-re"'), [manifestPath]: (text) => text.replace('  - Genre\n', '  - Gen-re\n'),
-}, /entity name "Gen-re" must be an identifier/, 'looser:F2');
-add('modelspec-entity-no-properties', 'modelspec', 'an entity with an empty properties object', { [modelPath]: json((doc) => { entityOf(doc).properties = {}; }) }, /entity Genre has no properties/, 'looser:F2');
-add('modelspec-entity-properties-list', 'modelspec', 'an entity whose properties is a list', { [modelPath]: json((doc) => { entityOf(doc).properties = []; }) }, /entity Genre has no properties/, 'looser:F2');
-add('modelspec-entity-null', 'modelspec', 'an entity that is null', { [modelPath]: json((doc) => { doc.entities.Genre = null; }) }, /entity Genre has no properties/, 'looser:F2');
-add('modelspec-property-name', 'modelspec', 'a property whose name is not an identifier', { [modelPath]: json((doc) => { entityOf(doc).properties['Na-me'] = entityOf(doc).properties.Name; delete entityOf(doc).properties.Name; }) }, /property name "Genre\.Na-me" must be an identifier/, 'looser:F2');
-add('modelspec-property-type', 'modelspec', 'a property type that is not a type name', { [modelPath]: json((doc) => { entityOf(doc).properties.Name.type = 'not a type'; }) }, /Genre\.Name has type "not a type", which is not a type name/, 'looser:F2');
-add('modelspec-property-neither', 'modelspec', 'a property with neither a type nor an entity', { [modelPath]: json((doc) => { entityOf(doc).properties.Name = {}; }) }, /Genre\.Name has neither a type nor an entity/, 'looser:F2');
-add('modelspec-property-unknown-entity', 'modelspec', 'a property that references an entity the model lacks', { [modelPath]: json((doc) => { entityOf(doc).properties.Name = { entity: 'Nope' }; }) }, /Genre\.Name references entity Nope, which the ModelSpec does not have/, 'looser:F2');
+}, /entity name "Gen-re" must be an identifier/, 'agree');
+add('modelspec-entity-no-properties', 'modelspec', 'an entity with an empty properties object', { [modelPath]: json((doc) => { entityOf(doc).properties = {}; }) }, /entity Genre has no properties/, 'agree');
+add('modelspec-entity-properties-list', 'modelspec', 'an entity whose properties is a list', { [modelPath]: json((doc) => { entityOf(doc).properties = []; }) }, /entity Genre has no properties/, 'agree');
+add('modelspec-entity-null', 'modelspec', 'an entity that is null', { [modelPath]: json((doc) => { doc.entities.Genre = null; }) }, /entity Genre has no properties/, 'agree');
+add('modelspec-property-name', 'modelspec', 'a property whose name is not an identifier', { [modelPath]: json((doc) => { entityOf(doc).properties['Na-me'] = entityOf(doc).properties.Name; delete entityOf(doc).properties.Name; }) }, /property name "Genre\.Na-me" must be an identifier/, 'agree');
+add('modelspec-property-type', 'modelspec', 'a property type that is not a type name', { [modelPath]: json((doc) => { entityOf(doc).properties.Name.type = 'not a type'; }) }, /Genre\.Name has type "not a type", which is not a type name/, 'agree');
+add('modelspec-property-neither', 'modelspec', 'a property with neither a type nor an entity', { [modelPath]: json((doc) => { entityOf(doc).properties.Name = {}; }) }, /Genre\.Name has neither a type nor an entity/, 'agree');
+add('modelspec-property-unknown-entity', 'modelspec', 'a property that references an entity the model lacks', { [modelPath]: json((doc) => { entityOf(doc).properties.Name = { entity: 'Nope' }; }) }, /Genre\.Name references entity Nope, which the ModelSpec does not have/, 'agree');
 add('modelspec-list-type', 'control', 'a list type (datetime[]) is a type name', { [modelPath]: json((doc) => { entityOf(doc).properties.Name.type = 'datetime[]'; }) }, null, 'agree');
 
 // the concepts of the meaning file: validateConcept (meaning.mjs 58-80) and the duplicate rule
@@ -325,6 +328,16 @@ if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s)
 // first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
 // empty entities object always leaves recordsets that name things that are not entities.)
 const goRules = {
+  'modelspec-no-version': 'repo-model-version',
+  'modelspec-version-number': 'repo-model-version',
+  'modelspec-entity-name': 'repo-model-entity',
+  'modelspec-entity-no-properties': 'repo-model-entity',
+  'modelspec-entity-properties-list': 'repo-model-entity',
+  'modelspec-entity-null': 'repo-model-entity',
+  'modelspec-property-name': 'repo-model-property',
+  'modelspec-property-type': 'repo-model-property',
+  'modelspec-property-neither': 'repo-model-property',
+  'modelspec-property-unknown-entity': 'repo-model-property',
   'modelspec-not-json': 'repo-model-json',
   'modelspec-module-name': 'repo-model-module',
   'modelspec-no-entities': 'repo-recordsets',

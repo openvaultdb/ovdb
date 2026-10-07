@@ -133,7 +133,7 @@ const apply = (ops) => {
       case 'break': case 'break-tree': state.breaks.push([op, a, b]); break;
       case 'bytes': putEntry(state.tracked, a, { mode: '100644', text: Buffer.from(b, 'base64') }); break;
       case 'nest': state.tracked.get(a).text = text(a).replace(/\}\s*$/, `,"_deep":${'['.repeat(b)}${']'.repeat(b)}}\n`); break;
-      case 'entities': { const json = JSON.parse(text(a)); json.entities = Object.fromEntries(Array.from({ length: b }, (_, i) => [`e${i.toString(36)}`, {}])); state.tracked.get(a).text = JSON.stringify(json); break; }
+      case 'entities': { const json = JSON.parse(text(a)); json.entities = Object.fromEntries(Array.from({ length: b }, (_, i) => [`e${i.toString(36)}`, { properties: { id: { type: 'int' } } }])); state.tracked.get(a).text = JSON.stringify(json); break; }
       case 'recordsets': state.tracked.get(a).text = text(a).replace(/recordsets:\n(  - .*\n)+/, `recordsets:\n${Array.from({ length: b }, (_, i) => `  - e${i.toString(36)}\n`).join('')}`); break;
       case 'state': state.location = a; break;
       default: throw new Error(`unknown operation ${op}`);
@@ -385,9 +385,12 @@ for (const [name, text] of Object.entries({
   'module.name missing': modelText((m) => { delete m.module.name; }), 'no entities': modelText((m) => { delete m.entities; }), 'entities an array': modelText((m) => { m.entities = []; }),
   'entities null': modelText((m) => { m.entities = null; }), 'entities empty': modelText((m) => { m.entities = {}; }), 'another module': modelText((m) => { m.module.name = 'Hostile'; }),
   'one entity fewer': modelText((m) => { delete m.entities.Track; }), 'one entity more': modelText((m) => { m.entities.Extra = {}; }),
-  'an entity called __proto__ that recordsets lack': modelText((m) => { Object.defineProperty(m.entities, '__proto__', { value: {}, enumerable: true, configurable: true, writable: true }); }),
+  // The Directory's parseModelSpec (modelspec.mjs 92-118) refuses each of these; the checker reads only the module and the names of the entities.
+  'no modelspec version': modelText((m) => { delete m.modelspec; }), 'an entity without properties': modelText((m) => { m.entities.Genre.properties = {}; }),
+  'a property with neither type nor entity': modelText((m) => { m.entities.Genre.properties.Name = {}; }),
+  'an entity called __proto__ that recordsets lack': modelText((m) => { Object.defineProperty(m.entities, '__proto__', { value: { properties: { id: { type: 'int' } } }, enumerable: true, configurable: true, writable: true }); }),
 })) addCase('model', name, asModel(text));
-addCase('model', 'an entity called __proto__ that recordsets list', [...asModel(modelText((m) => { Object.defineProperty(m.entities, '__proto__', { value: {}, enumerable: true, configurable: true, writable: true }); })), ...inManifest('  - Track\n', '  - Track\n  - __proto__\n')]);
+addCase('model', 'an entity called __proto__ that recordsets list', [...asModel(modelText((m) => { Object.defineProperty(m.entities, '__proto__', { value: { properties: { id: { type: 'int' } } }, enumerable: true, configurable: true, writable: true }); })), ...inManifest('  - Track\n', '  - Track\n  - __proto__\n')]);
 addCase('model', 'a key called __proto__ at the top', rawModel('"__proto__":{"module":{"name":"Hostile"}},'));
 addCase('model', 'model.name is the module', inManifest('  address: modelspec', '  name: chinook\n  address: modelspec'));
 addCase('model', 'model.name is not the module', inManifest('  address: modelspec', '  name: Other\n  address: modelspec'));
@@ -610,6 +613,7 @@ const expectations = [
   [/^object: a model file (larger than this check reads|of 3 MiB)$/, null],
   // The model file.
   [/^model: (empty|only white space|not JSON|a JSON array|null|a number|a string)$/, /is not a ModelSpec JSON file/],
+  [/^model: (no modelspec version|an entity without properties|a property with neither type nor entity)$/, null],
   [/^model: (an empty object|no module|module |module\.name )/, /has no module\.name/],
   [/^model: (no entities|entities an array|entities null)$/, /has no entities/],
   [/^model: (entities empty|one entity fewer)$/, /recordsets names things/],

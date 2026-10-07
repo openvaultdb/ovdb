@@ -19,6 +19,9 @@ const (
 	RuleModelDepth    = "repo-model-depth"    // the model file nests deeper than maxJSONDepth
 	RuleModelModule   = "repo-model-module"   // no module.name that is a module name
 	RuleModelEntities = "repo-model-entities" // no entities object
+	RuleModelVersion  = "repo-model-version"  // no "modelspec" version that is text
+	RuleModelEntity   = "repo-model-entity"   // an entity whose name is not an identifier, or that has no properties
+	RuleModelProperty = "repo-model-property" // a property whose name is not an identifier, whose type is not a type name, that has neither a type nor an entity, or that references an entity the model lacks
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
 	RuleModelAddress  = "repo-model-address"  // the module of model.address is not the model file's
 	RuleRecordsets    = "repo-recordsets"     // recordsets are not the entities of the model
@@ -62,11 +65,27 @@ func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
 	}
 }
 
+// modelRead is the result of reading a model file. A repository lists up to MaxManifests manifests that may name one file, and the file is the same for
+// all of them, so it is read once.
+type modelRead struct {
+	spec modelSpec
+	err  error
+}
+
 // model reads the model file and holds the manifest to it: model.name and the module of model.address are its module, and the recordsets are its
 // entities. It returns the module, or "" when the file declares none that can be read.
 func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 	file := m.ModelSpec.Value
-	spec, err := readModel(data)
+	if c.models == nil {
+		c.models = map[string]modelRead{}
+	}
+	read, ok := c.models[file]
+	if !ok {
+		spec, err := readModel(data)
+		read = modelRead{spec, err}
+		c.models[file] = read
+	}
+	spec, err := read.spec, read.err
 	switch {
 	case errors.Is(err, errDepth):
 		c.add(file, RuleModelDepth, 0, "is nested more than %d levels deep, which is more than this check reads", maxJSONDepth)
@@ -81,11 +100,22 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) string {
 		c.add(file, RuleModelJSON, jsonLine(data, err), "is not a ModelSpec JSON file: %s", ascii(err.Error()))
 		return ""
 	}
+	// The Directory reports the version first (parseModelSpec), then the module, then the entities; the version is the first issue, if there is one.
+	for _, issue := range spec.issues {
+		if issue.rule == RuleModelVersion {
+			c.add(file, issue.rule, 0, "%s", issue.text)
+		}
+	}
 	if spec.module == "" {
 		c.add(file, RuleModelModule, 0, "has no module.name that is a ModelSpec module name (a letter, then letters, digits and _)")
 	}
 	if !spec.hasEntities {
 		c.add(file, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)")
+	}
+	for _, issue := range spec.issues {
+		if issue.rule != RuleModelVersion {
+			c.add(file, issue.rule, 0, "%s", issue.text)
+		}
 	}
 	if name := m.ModelName; name.Usable() && spec.module != "" && name.Value != spec.module {
 		c.add(path, RuleModelName, name.Line, "model.name is %s, but %s is module %s", rules.Quote(name.Value), rules.Quote(file), rules.Quote(spec.module))

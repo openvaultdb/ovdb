@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,7 +84,7 @@ const (
 )
 
 const (
-	goodModel   = `{"module": {"name": "chinook"}, "entities": {"Album": {}, "Artist": {}}}`
+	goodModel   = `{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`
 	goodMeaning = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts: []\n"
 )
 
@@ -619,7 +621,7 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 		text  string
 	}{
 		"empty":                         {"", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"cut short":                     {`{"module": {"name": "chinook"}, "entities": {`, RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short":                     {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": {`, RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
 		"cut short in a value":          {"{\n\"a\":", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
 		"cut short in a string":         {"{\n\"a\":\"x", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
 		"cut short after a number":      {"{\"a\":1", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
@@ -630,10 +632,27 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 		"text after the value":          {goodModel + "\n{}", RuleModelJSON, 0, "text after the JSON value"},
 		"nested too deep":               {`{"x":` + strings.Repeat("[", 100) + strings.Repeat("]", 100) + "}", RuleModelDepth, 0, "is nested more than 100 levels deep"},
 		"too many entities":             {manyEntities(MaxEntities + 1), RuleEntitiesLimit, 0, "has an entities object of more than 10000 entities, which is more than this check reads"},
-		"no module":                     {`{"entities": {"Album": {}, "Artist": {}}}`, RuleModelModule, 0, "has no module.name that is a ModelSpec module name"},
-		"a module name that is not one": {`{"module": {"name": "_x"}, "entities": {"Album": {}, "Artist": {}}}`, RuleModelModule, 0, "has no module.name"},
-		"no entities":                   {`{"module": {"name": "chinook"}}`, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)"},
-		"entities a list":               {`{"module": {"name": "chinook"}, "entities": []}`, RuleModelEntities, 0, "has no entities"},
+		"no module":                     {`{"modelspec": "1.0-draft", "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`, RuleModelModule, 0, "has no module.name that is a ModelSpec module name"},
+		"a module name that is not one": {`{"modelspec": "1.0-draft", "module": {"name": "_x"}, "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`, RuleModelModule, 0, "has no module.name"},
+		"no entities":                   {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}}`, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)"},
+		"entities a list":               {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": []}`, RuleModelEntities, 0, "has no entities"},
+		// The Directory's parseModelSpec (modelspec.mjs 92-118): what the model file says beyond its module and the names of its entities.
+		"no version":                                {strings.Replace(goodModel, `"modelspec": "1.0-draft", `, "", 1), RuleModelVersion, 0, `has no "modelspec" version`},
+		"a version that is a number":                {strings.Replace(goodModel, `"1.0-draft"`, "1", 1), RuleModelVersion, 0, `has no "modelspec" version`},
+		"an entity with no properties":              {modelWith(`"Artist": {"properties": {}}`), RuleModelEntity, 0, "entity Artist has no properties"},
+		"an entity that is null":                    {modelWith(`"Artist": null`), RuleModelEntity, 0, "entity Artist has no properties"},
+		"an entity that is a list":                  {modelWith(`"Artist": []`), RuleModelEntity, 0, "entity Artist has no properties"},
+		"properties that are a list":                {modelWith(`"Artist": {"properties": []}`), RuleModelEntity, 0, "entity Artist has no properties"},
+		"properties repeated, the last is empty":    {modelWith(`"Artist": {"properties": {"Id": {"type": "int"}}, "properties": {}}`), RuleModelEntity, 0, "entity Artist has no properties"},
+		"a property name that is not an identifier": {modelWith(`"Artist": {"properties": {"Na-me": {"type": "int"}}}`), RuleModelProperty, 0, `property name "Artist.Na-me" must be an identifier`},
+		"a type that is not a type name":            {modelWith(`"Artist": {"properties": {"Name": {"type": "not a type"}}}`), RuleModelProperty, 0, `Artist.Name has type "not a type", which is not a type name`},
+		"a list of lists":                           {modelWith(`"Artist": {"properties": {"Name": {"type": "int[][]"}}}`), RuleModelProperty, 0, `has type "int[][]"`},
+		"a property with no type and no entity":     {modelWith(`"Artist": {"properties": {"Name": {}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a property that is a number":               {modelWith(`"Artist": {"properties": {"Name": 5}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a property that is a list":                 {modelWith(`"Artist": {"properties": {"Name": [{"type": "int"}]}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a type that is a number":                   {modelWith(`"Artist": {"properties": {"Name": {"type": 5}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a reference to an entity the model lacks":  {modelWith(`"Artist": {"properties": {"Name": {"entity": "Nope"}}}`), RuleModelProperty, 0, "Artist.Name references entity Nope, which the model does not have"},
+		"a reference that is a number":              {modelWith(`"Artist": {"properties": {"Name": {"entity": 5}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
 	} {
 		m := goodRepository()
 		m.Nodes[modelPath] = Node{Kind: File, Content: []byte(c.model)}
@@ -643,10 +662,16 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 			t.Errorf("%s: line %d", name, c.line)
 		}
 	}
+	// An entity whose name is not an identifier is refused as the Directory refuses it, and the recordsets, which list Artist, no longer match the entities.
+	m0 := goodRepository()
+	m0.Nodes[modelPath] = Node{Kind: File, Content: []byte(strings.Replace(goodModel, `"Artist"`, `"Art-ist"`, 1))}
+	if r := Check(m0, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelEntity, RuleRecordsets, RuleRecordsets}) || !strings.Contains(r.Findings[0].Message, `entity name "Art-ist" must be an identifier`) {
+		t.Errorf("findings %v", r.Findings)
+	}
 	// A model with neither: two findings, in the order of the checker's lines.
 	m := goodRepository()
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{}`)}
-	if r := Check(m, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelModule, RuleModelEntities}) {
+	if r := Check(m, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelVersion, RuleModelModule, RuleModelEntities}) {
 		t.Errorf("findings %v", r.Findings)
 	}
 }
@@ -677,7 +702,7 @@ func TestTheManifestMustAgreeWithTheModelFile(t *testing.T) {
 		t.Errorf("findings %v", r.Findings)
 	}
 	m, _ = withManifest("  address: modelspec://github.com/datatug/chinookdb/chinook", "  name: Other\n  address: modelspec://github.com/datatug/chinookdb/Other")
-	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"entities": {"Album": {}, "Artist": {}}}`)}
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"modelspec": "1.0-draft", "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`)}
 	only(t, Check(m, publisher()), RuleModelModule, modelPath, 0, "has no module.name")
 }
 
@@ -727,7 +752,7 @@ func TestRecordsetsAreTheEntitiesOfTheModelFile(t *testing.T) {
 	if f := only(t, Check(m, publisher()), RuleRecordsets, "ovdb.yaml", lineOf(text, "- Album"), `"More0", "More1", "More2", "More3", "More4" and 2 more`); len(f.Message) > manifest400 {
 		t.Error(f.Message)
 	}
-	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"module": {"name": "chinook"}, "entities": {"Album": {}, "Artist": {}, "__proto__": {}}}`)}
+	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}, "__proto__": {"properties": {"Id": {"type": "int"}}}}}`)}
 	if r := Check(m, publisher()); len(r.Findings) != 2 || r.Findings[0].Rule != RuleRecordsets || r.Findings[1].Rule != RuleRecordsets {
 		t.Errorf("findings %v", r.Findings)
 	}
@@ -806,7 +831,7 @@ func TestWhatOneCheckCostsIsBounded(t *testing.T) {
 	only(t, Check(m2, publisher()), RuleRecordsetsLimit, "ovdb.yaml", lineOf(text, "- Album"), "recordsets lists 10001 names, which is more than the 10000 this check reads")
 	// An entities object that a later one replaces is read too, and the message says which kind of thing it found.
 	sup, _ := withManifest("  - Album\n  - Artist\n", "  - Album\n  - Artist\n")
-	sup.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"module":{"name":"chinook"},"entities":` + manyEntitiesObject(MaxEntities+1) + `,"entities":{"Album":{},"Artist":{}}}`)}
+	sup.Nodes[modelPath] = Node{Kind: File, Content: []byte(`{"modelspec":"1.0-draft","module":{"name":"chinook"},"entities":` + manyEntitiesObject(MaxEntities+1) + `,"entities":{"Album":{"properties":{"Id":{"type":"int"}}},"Artist":{"properties":{"Id":{"type":"int"}}}}}`)}
 	only(t, Check(sup, publisher()), RuleEntitiesLimit, modelPath, 0, "a repeated entities member is read as the last, but each of them is read")
 	// The reviewer's worst case is refused at once, and the most that is accepted takes a moment for 32 manifests.
 	start := time.Now()
@@ -833,9 +858,13 @@ func TestWhatOneCheckCostsIsBounded(t *testing.T) {
 // manifestWithEntities is a model whose entities are Album and the ones listed by list in TestWhatOneCheckCostsIsBounded: e1, e2 ... in base 36.
 func manifestWithEntities(n int) string {
 	var b strings.Builder
-	b.WriteString(`{"module":{"name":"chinook"},"entities":{"Album":{}`)
+	b.WriteString(`{"modelspec":"1.0-draft","module":{"name":"chinook"},"entities":{"Album":{"properties":{"Id":{"type":"int"}}}`)
+	entity := `{"properties":{"id":{"type":"int"}}}`
+	if n > MaxEntities {
+		entity = `{}` // refused for their number before they are looked at, and 330000 of the other kind are more than MaxFileBytes
+	}
 	for i := 1; i < n; i++ {
-		b.WriteString(`,"e` + strconv.FormatInt(int64(i), 36) + `":{}`)
+		b.WriteString(`,"e` + strconv.FormatInt(int64(i), 36) + `":` + entity)
 	}
 	b.WriteString("}}")
 	return b.String()
@@ -855,6 +884,13 @@ func TestFinishedRecordsOnlyATestThatRanToItsEnd(t *testing.T) {
 }
 
 // manyEntitiesObject is the JSON object of n entities e0, e1 ... in base 36.
+// modelWith is a model file that has the entities Album and Artist of goodModel and one more, written as the argument says (a member of entities, by
+// its text), so that a case of the rules of parseModelSpec has one thing wrong and the recordsets of the manifest are not what it is about: the manifest
+// of goodRepository lists Album and Artist, so the added entity is listed by the recordsets of the case's own manifest where it matters.
+func modelWith(entity string) string {
+	return `{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}, ` + entity + `}}`
+}
+
 func manyEntitiesObject(n int) string {
 	var b strings.Builder
 	b.WriteString("{")
@@ -862,7 +898,7 @@ func manyEntitiesObject(n int) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(`"e` + strconv.FormatInt(int64(i), 36) + `":{}`)
+		b.WriteString(`"e` + strconv.FormatInt(int64(i), 36) + `":{"properties":{"id":{"type":"int"}}}`)
 	}
 	b.WriteString("}")
 	return b.String()
@@ -889,3 +925,75 @@ func TestAsciiLeavesQuotesRaw(t *testing.T) {
 		t.Errorf("escapes: %q", got)
 	}
 }
+
+// The expensive arrangement of a hostile repository: MaxManifests manifests, each naming its own model file of the most that one may be (MaxFileBytes), each
+// refused for about 340,000 properties that have neither a type nor an entity. What a reading of such a file keeps is held for every manifest that names the
+// file; before it was bounded it was about 68 MB a file (a measured 833 MB at 12 files, some 2.2 GB at 32), though a check shows 101 findings at most. The
+// peak heap above its start is held to modelCheckPeak (measured: 195 MiB, and 1553 MiB with the issues of a file not bounded), and the time to hostileModelsTime.
+func TestManyDistinctHostileModelFilesCostABoundedAmount(t *testing.T) {
+	const files = MaxManifests
+	m := goodRepository()
+	var paths []string
+	for i := range files {
+		var b strings.Builder
+		fmt.Fprintf(&b, `{"modelspec":"1.0-draft","module":{"name":"chinook"},"entities":{"Album":{"properties":{"Id":{"type":"int"}}},"Artist":{"properties":{"f%d":0`, i)
+		for p := 0; b.Len() < MaxFileBytes-64; p++ {
+			b.WriteString(`,"p` + strconv.Itoa(p) + `":0`)
+		}
+		b.WriteString("}}}}")
+		model := fmt.Sprintf("model/%02d.modelspec.json", i)
+		m.Nodes[model] = Node{Kind: File, Content: []byte(b.String())}
+		manifestPath := fmt.Sprintf("m/%02d.yaml", i)
+		m.Nodes[manifestPath] = Node{Kind: File, Content: []byte(strings.Replace(ownManifest, "model/chinook.modelspec.json", model, 1))}
+		paths = append(paths, "./"+manifestPath)
+	}
+	m.Nodes["OVDB.md"] = Node{Kind: File, Content: []byte("---\novdb: 1\npublish: [" + strings.Join(paths, ", ") + "]\n---\n")}
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var peak atomic.Uint64
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		var s runtime.MemStats
+		for {
+			runtime.ReadMemStats(&s)
+			if s.HeapAlloc > peak.Load() {
+				peak.Store(s.HeapAlloc)
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+	start := time.Now()
+	r := Check(m, publisher())
+	took := time.Since(start)
+	close(stop)
+	<-done
+
+	if r.OK() || len(r.Findings) == 0 || r.Findings[0].Rule != RuleModelProperty {
+		t.Fatalf("a hostile model file must be refused: %v", rulesOf(r))
+	}
+	assertBounded(t, r.Findings)
+	if took > hostileModelsTime {
+		t.Errorf("%d manifests naming %d distinct model files of %d bytes took %v, want under %v", files, files, MaxFileBytes, took, hostileModelsTime)
+	}
+	grew := int64(peak.Load()) - int64(before.HeapAlloc)
+	t.Logf("%d distinct hostile model files: %v, the heap grew by %d MiB at its peak", files, took, grew>>20)
+	if grew > modelCheckPeak {
+		t.Errorf("the heap grew by %d MiB while %d distinct hostile model files were read, want at most %d MiB", grew>>20, files, modelCheckPeak>>20)
+	}
+}
+
+// modelCheckPeak is the most that the heap may grow by while the check of hostile model files runs: the files the check holds (maxKept), the reading of one file
+// at a time (about 70 MB for a file of the most it may be) and what a check keeps of each, which is bounded; not the sum of the readings.
+const modelCheckPeak = 400 << 20
+
+// hostileModelsTime is the bound on the time of the same check: 128 MiB of JSON is read in all, each file once (what they have in common is not shared, they
+// differ), so it is the cost of the reading, which is 17 s under -race on a loaded laptop and a few seconds without; the bound is a tripwire for a change
+// that makes it grow, not an estimate.
+const hostileModelsTime = 90 * time.Second

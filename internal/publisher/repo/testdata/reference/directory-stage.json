@@ -76,7 +76,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: has no \"modelspec\" version",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-version"
   },
   {
    "id": "modelspec-version-number",
@@ -91,7 +92,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: has no \"modelspec\" version",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-version"
   },
   {
    "id": "modelspec-module-name",
@@ -108,6 +110,25 @@
    "problem": "model/chinook.modelspec.json: has no module.name that is an identifier",
    "outcome": "agree",
    "go": "repo-model-module"
+  },
+  {
+   "id": "modelspec-module-underscore",
+   "group": "stricter",
+   "note": "a module name that starts with _: the Directory's identifier pattern allows it, the checker's module pattern does not",
+   "ops": [
+    [
+     "file",
+     "model/chinook.modelspec.json",
+     "{\n  \"modelspec\": \"1.0-draft\",\n  \"module\": {\n    \"id\": \"github.com/demo-db/chinook/model/chinook\",\n    \"name\": \"_chinook\",\n    \"version\": \"0.1.0\"\n  },\n  \"entities\": {\n    \"Artist\": {\n      \"key\": [\n        \"ArtistId\"\n      ],\n      \"properties\": {\n        \"ArtistId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Name\": {\n          \"type\": \"string\",\n          \"max_len\": 120\n        }\n      }\n    },\n    \"Album\": {\n      \"key\": [\n        \"AlbumId\"\n      ],\n      \"properties\": {\n        \"AlbumId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Title\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 160\n        },\n        \"ArtistId\": {\n          \"entity\": \"Artist\",\n          \"required\": true\n        }\n      }\n    },\n    \"Track\": {\n      \"key\": [\n        \"TrackId\"\n      ],\n      \"properties\": {\n        \"TrackId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Name\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 200\n        },\n        \"AlbumId\": {\n          \"entity\": \"Album\"\n        },\n        \"MediaTypeId\": {\n          \"entity\": \"MediaType\",\n          \"required\": true\n        },\n        \"GenreId\": {\n          \"entity\": \"Genre\"\n        },\n        \"Composer\": {\n          \"type\": \"string\",\n          \"max_len\": 220\n        },\n        \"Milliseconds\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Bytes\": {\n          \"type\": \"int\"\n        },\n        \"UnitPrice\": {\n          \"type\": \"decimal\",\n          \"required\": true\n        }\n      }\n    },\n    \"Genre\": {\n      \"key\": [\n        \"GenreId\"\n      ],\n      \"properties\": {\n        \"GenreId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Name\": {\n          \"type\": \"string\",\n          \"max_len\": 120\n        }\n      }\n    },\n    \"MediaType\": {\n      \"key\": [\n        \"MediaTypeId\"\n      ],\n      \"properties\": {\n        \"MediaTypeId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Name\": {\n          \"type\": \"string\",\n          \"max_len\": 120\n        }\n      }\n    },\n    \"Playlist\": {\n      \"key\": [\n        \"PlaylistId\"\n      ],\n      \"properties\": {\n        \"PlaylistId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"Name\": {\n          \"type\": \"string\",\n          \"max_len\": 120\n        }\n      }\n    },\n    \"PlaylistTrack\": {\n      \"key\": [\n        \"PlaylistId\",\n        \"TrackId\"\n      ],\n      \"properties\": {\n        \"PlaylistId\": {\n          \"entity\": \"Playlist\",\n          \"required\": true\n        },\n        \"TrackId\": {\n          \"entity\": \"Track\",\n          \"required\": true\n        }\n      }\n    },\n    \"Customer\": {\n      \"key\": [\n        \"CustomerId\"\n      ],\n      \"properties\": {\n        \"CustomerId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"FirstName\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 40\n        },\n        \"LastName\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 20\n        },\n        \"Company\": {\n          \"type\": \"string\",\n          \"max_len\": 80\n        },\n        \"Address\": {\n          \"type\": \"string\",\n          \"max_len\": 70\n        },\n        \"City\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"State\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"Country\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"PostalCode\": {\n          \"type\": \"string\",\n          \"max_len\": 10\n        },\n        \"Phone\": {\n          \"type\": \"string\",\n          \"max_len\": 24\n        },\n        \"Fax\": {\n          \"type\": \"string\",\n          \"max_len\": 24\n        },\n        \"Email\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 60,\n          \"format\": \"email\"\n        },\n        \"SupportRepId\": {\n          \"entity\": \"Employee\"\n        }\n      }\n    },\n    \"Employee\": {\n      \"key\": [\n        \"EmployeeId\"\n      ],\n      \"properties\": {\n        \"EmployeeId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"LastName\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 20\n        },\n        \"FirstName\": {\n          \"type\": \"string\",\n          \"required\": true,\n          \"max_len\": 20\n        },\n        \"Title\": {\n          \"type\": \"string\",\n          \"max_len\": 30\n        },\n        \"ReportsTo\": {\n          \"entity\": \"Employee\"\n        },\n        \"BirthDate\": {\n          \"type\": \"datetime\"\n        },\n        \"HireDate\": {\n          \"type\": \"datetime\"\n        },\n        \"Address\": {\n          \"type\": \"string\",\n          \"max_len\": 70\n        },\n        \"City\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"State\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"Country\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"PostalCode\": {\n          \"type\": \"string\",\n          \"max_len\": 10\n        },\n        \"Phone\": {\n          \"type\": \"string\",\n          \"max_len\": 24\n        },\n        \"Fax\": {\n          \"type\": \"string\",\n          \"max_len\": 24\n        },\n        \"Email\": {\n          \"type\": \"string\",\n          \"max_len\": 60,\n          \"format\": \"email\"\n        }\n      }\n    },\n    \"Invoice\": {\n      \"key\": [\n        \"InvoiceId\"\n      ],\n      \"properties\": {\n        \"InvoiceId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"CustomerId\": {\n          \"entity\": \"Customer\",\n          \"required\": true\n        },\n        \"InvoiceDate\": {\n          \"type\": \"datetime\",\n          \"required\": true\n        },\n        \"BillingAddress\": {\n          \"type\": \"string\",\n          \"max_len\": 70\n        },\n        \"BillingCity\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"BillingState\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"BillingCountry\": {\n          \"type\": \"string\",\n          \"max_len\": 40\n        },\n        \"BillingPostalCode\": {\n          \"type\": \"string\",\n          \"max_len\": 10\n        },\n        \"Total\": {\n          \"type\": \"decimal\",\n          \"required\": true\n        }\n      }\n    },\n    \"InvoiceLine\": {\n      \"key\": [\n        \"InvoiceLineId\"\n      ],\n      \"properties\": {\n        \"InvoiceLineId\": {\n          \"type\": \"int\",\n          \"required\": true\n        },\n        \"InvoiceId\": {\n          \"entity\": \"Invoice\",\n          \"required\": true\n        },\n        \"TrackId\": {\n          \"entity\": \"Track\",\n          \"required\": true\n        },\n        \"UnitPrice\": {\n          \"type\": \"decimal\",\n          \"required\": true\n        },\n        \"Quantity\": {\n          \"type\": \"int\",\n          \"required\": true\n        }\n      }\n    }\n  }\n}\n"
+    ],
+    [
+     "file",
+     "model/chinook.meaning.yaml",
+     "format: meaning/draft-1\nid: chinook\nname: Chinook music store\ndescription: >-\n  What the Chinook sample database means: a digital music store that sells\n  tracks to customers in 24 countries. Each concept says what it is, the words\n  people use for it, and which ModelSpec entity or property holds it, in which\n  role. Concepts that are not specific to Chinook (country, currency,\n  customer, invoice, price, revenue, date, population, per capita) are reused\n  from the universal concepts at meaning://github.com/meaninggraph/core, each\n  reference pinned to one commit with ?ref=.\nlicense: CC0-1.0\nmodels:\n  _chinook: chinook.modelspec.hcl\nsources:\n  - id: world-bank-population\n    provider: World Bank\n    dataset: SP.POP.TOTL\n    title: Population, total (World Development Indicators)\n    year: 2025\n    license: CC-BY-4.0\n    url: https://data.worldbank.org/indicator/SP.POP.TOTL\n    note: >-\n      Not part of Chinook. The latest observation per country. As of\n      github.com/datatug/chinook-demo commit d2fc437 (data/geo/population_wb),\n      the snapshot the DataTug Chinook demo uses, it is 2025 for all 24\n      Chinook countries.\n\nconcepts:\n  - id: artist\n"
+    ]
+   ],
+   "directory": "accepts",
+   "outcome": "stricter:module-name-underscore"
   },
   {
    "id": "modelspec-no-entities",
@@ -143,7 +164,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: entity name \"Gen-re\" must be an identifier (letters, digits and _, not starting with a digit)",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-entity"
   },
   {
    "id": "modelspec-entity-no-properties",
@@ -158,7 +180,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: entity Genre has no properties",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-entity"
   },
   {
    "id": "modelspec-entity-properties-list",
@@ -173,7 +196,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: entity Genre has no properties",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-entity"
   },
   {
    "id": "modelspec-entity-null",
@@ -188,7 +212,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: entity Genre has no properties",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-entity"
   },
   {
    "id": "modelspec-property-name",
@@ -203,7 +228,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: property name \"Genre.Na-me\" must be an identifier (letters, digits and _, not starting with a digit)",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-property"
   },
   {
    "id": "modelspec-property-type",
@@ -218,7 +244,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: Genre.Name has type \"not a type\", which is not a type name",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-property"
   },
   {
    "id": "modelspec-property-neither",
@@ -233,7 +260,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: Genre.Name has neither a type nor an entity",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-property"
   },
   {
    "id": "modelspec-property-unknown-entity",
@@ -248,7 +276,8 @@
    ],
    "directory": "refuses",
    "problem": "model/chinook.modelspec.json: Genre.Name references entity Nope, which the ModelSpec does not have",
-   "outcome": "looser:F2"
+   "outcome": "agree",
+   "go": "repo-model-property"
   },
   {
    "id": "modelspec-list-type",

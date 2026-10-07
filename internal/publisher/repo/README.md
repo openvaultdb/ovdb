@@ -109,6 +109,7 @@ and a path below a file or symlink do not):
 | `document-size` | OVDB.md and each manifest of at most 262144 bytes | 194, 244-246 |
 | `repo-model-json` | the model file is JSON that `JSON.parse` reads (no more than one value, no byte order mark, no trailing text), and an object | 405-410 |
 | `repo-model-module`, `repo-model-entities` | it has `module.name`, a letter and then letters, digits and `_`, and an `entities` object | 412-416 |
+| `repo-model-version`, `repo-model-entity`, `repo-model-property` | the rules of the Directory's `parseModelSpec` (modelspec.mjs 92-118) that the checker never reads: a text `"modelspec"` version; each entity's name is an identifier and it has at least one property; each property's name is an identifier, its type is a type name or it names an entity (a text `entity`) that the model has, and a property that is neither is refused. A repeated key is the last, as in `JSON.parse`. Stricter kinds against the checker, below | the Directory's, not the checker's |
 | `repo-model-name` | `model.name`, when written, is that module | 420 |
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
 | `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
@@ -116,6 +117,8 @@ and a path below a file or symlink do not):
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
 | `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
+
+The order of these findings is not the Directory's: it reports the version, the module, the entities, then each entity and property in file order (integer-like names first), and this check reports the version first and then entities and properties by name; at most 1000 of them are kept for a file, because a check shows 101 findings at most and what is kept of a model file is held for every manifest that names it. The verdict is the same either way. `--json` consumers should not read `findings[0]` as the Directory's first problem.
 
 Every other manifest OVDB.md lists is judged with the Publisher profile through
 `manifest.Judge` (the checker's line 226).
@@ -129,14 +132,13 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 107 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 108 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
 its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 36 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
-| outcome: looser:F2 | 10 | Go accepts what the Directory refuses; the ModelSpec file's own rules, `parseModelSpec` |
+| outcome: agree | 46 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: looser:F3 | 27 | the same, for the shape of a concept and a concept declared twice |
 | outcome: looser:F4 | 10 | the same, for the bindings of a concept |
 | outcome: looser:F5 | 7 | the same, for the `extends` and `values-of` chains inside the repository's own graph |
@@ -144,6 +146,7 @@ its name states. `directory_stage_test.go` replays each case in memory with both
 | outcome: looser:F7 | 2 | the same, for the addresses: `meaning.graph.address` (the Publisher profile compares it with `publisher.repository`, the Directory profile does not) and an own-form `model.address` that names another repository (no profile compares it) |
 | outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
 | outcome: out-of-reach:registry | 5 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
+| outcome: stricter:module-name-underscore | 1 | Go refuses a `module.name` that starts with `_` (the checker's pattern); the Directory's identifier pattern allows it |
 | outcome: stricter:model-hcl-required | 1 | Go refuses a manifest that does not write `model.hcl`; the Directory accepts it |
 | outcome: stricter:meaning-license-required | 2 | Go refuses a meaning file with no text `license`; the Directory compares it only when it is text |
 | outcome: stricter:meaning-id-compared | 1 | Go refuses a meaning file whose `id` is not `meaning.graph.id`; the Directory does not read it in this stage |
@@ -173,7 +176,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 485-487 | the meaning file is not valid YAML, not a mapping, has no concepts list | has (#63) | `meaning-not-yaml`, `meaning-a-list`, `concept-no-concepts`, `meaning-concepts-null` |
 | 510-513 | the model file or the meaning file is not a regular file at the commit | has | `model-file-missing`, `meaning-file-missing` |
 | 514-515 | `parseModelSpec` (modelspec.mjs 92-118): not JSON, `module.name`, no entities | has | `modelspec-not-json`, `modelspec-module-name`, `modelspec-no-entities` (through the recordsets rule) |
-| 514-515 | `parseModelSpec`: the `"modelspec"` version, entity and property names, properties, types, references | **F2** | `modelspec-*` (10) |
+| 514-515 | `parseModelSpec`: the `"modelspec"` version, entity and property names, properties, types, references | has (F2: `repo-model-version`, `repo-model-entity`, `repo-model-property`) | `modelspec-*` (10) |
 | 517, 453-471 | the recordsets are the entities (own form; `recordsets_partial` is for a shared model) | has | `has-recordsets-*` |
 | 470 | two recordsets mapped to one entity (the manifest stage cannot see it) | has | `has-recordsets-mapping-twice` |
 | 521 | the meaning file has no concepts list | has (#63) | `concept-no-concepts` |
@@ -238,9 +241,9 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-340 cases: 122 accepted by the checker, 113 accepted with `--repository`; 293 agree with Go, 47
-are stricter in Go, in 25 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
-(5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 37 model files, 45 JSON
+343 cases: 125 accepted by the checker, 116 accepted with `--repository`; 293 agree with Go, 50
+are stricter in Go, in 28 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
+(5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 40 model files, 45 JSON
 differences, 62 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
 states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
@@ -268,6 +271,9 @@ at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entitie
 
 | `document-size` | 3 | OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB. |
 | `meaning-concepts` | 4 | The meaning file has no concepts list (the key is missing, or is null, a mapping or text): the Directory refuses it (directory.mjs, parseMeaningFile) and the Chinook checker never reads the concepts. |
+| `repo-model-entity` | 1 | An entity of the model file has a name that is not an identifier, or no properties: the Directory refuses it (parseModelSpec); the checker reads only the names of the entities. |
+| `repo-model-property` | 1 | A property of the model file has a name that is not an identifier, a type that is not a type name, neither a type nor an entity, or references an entity the model lacks: the Directory refuses it (parseModelSpec); the checker never reads the properties. |
+| `repo-model-version` | 1 | The model file has no "modelspec" version that is text: the Directory refuses it (parseModelSpec, modelspec.mjs); the checker reads only the module and the names of the entities. |
 | `repo-case-collision` | 7 | Two names in a directory on the path of a file that is judged differ only in case, so they are one file on a case-insensitive file system; the checker reads the exact name and accepts. |
 | `repo-file-size` | 1 | A file that a manifest names (the model file or the meaning file) of more than 4194304 bytes (MaxFileBytes) is refused; the checker reads files of up to 16 MiB. |
 | `repo-manifests-limit` | 1 | OVDB.md lists more than 32 manifests; the checker judges every one. |
