@@ -515,14 +515,15 @@ func TestSyntheticOwnedCancellationAndUncooperativeBody(t *testing.T) {
 			if phase != "timeout before headers" {
 				cancel()
 			}
-			if phase == "context ignoring body" {
+			switch phase {
+			case "context ignoring body":
 				select {
 				case <-done:
 					t.Fatal("context ignoring body unexpectedly terminated without release")
 				case <-time.After(25 * time.Millisecond):
 				}
 				body.unblock()
-			} else if phase == "before headers" || phase == "timeout before headers" {
+			case "before headers", "timeout before headers":
 				syntheticAwait(t, contextAck, "transport context observed")
 			}
 			syntheticAwait(t, done, "handler returned")
@@ -653,7 +654,9 @@ func TestSyntheticInventedExplicitJourneys(t *testing.T) {
 				t.Fatal("invented marker reached configured logger sink")
 			}
 			consumer.dispose()
-			rt.db.Close()
+			if err := rt.db.Close(); err != nil {
+				t.Fatal("synthetic database close failed")
+			}
 			if c.calls.Load() != 1 {
 				t.Fatal("cleanup read provider")
 			}
