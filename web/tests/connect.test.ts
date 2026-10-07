@@ -49,7 +49,7 @@ describe('Connect an existing database', () => {
     expect(shown(wrapper)).toEqual(['ingitdb', 'sqlite', 'firestore', 'mysql', 'postgres', 'manifest'])
     await wrapper.get('input').setValue('sql')
     expect(shown(wrapper)).toEqual(['sqlite', 'mysql', 'postgres', 'manifest'])
-    expect(wrapper.get('[data-engine="manifest"]').text()).toContain('Any storage: inGitDB, SQLite, Firestore, MySQL or PostgreSQL.')
+    expect(wrapper.get('[data-engine="manifest"]').text()).toContain('Any supported storage: inGitDB, SQLite, Firestore, HTTP, MySQL or PostgreSQL.')
   })
 
   it('connects a folder, naming it after the folder, and shows the result with Browse data (AC:result-next-actions)', async () => {

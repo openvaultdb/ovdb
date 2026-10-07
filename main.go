@@ -64,13 +64,30 @@ func main() {
 		}
 	}))
 
-	err := fang.Execute(context.Background(), root, fangOpts...)
+	if code := executeRoot(root, app.FlushTelemetry, fangOpts...); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// executeRoot is the executable's command/cleanup/telemetry/exit boundary.
+// Only an error that owns pending cleanup can hold the process here; ordinary
+// errors retain their existing bounded telemetry flush and immediate exit.
+func executeRoot(root *cobra.Command, flush func(context.Context), opts ...fang.Option) int {
+	err := fang.Execute(context.Background(), root, opts...)
+	var owner interface{ WaitForCleanup() }
+	if errors.As(err, &owner) {
+		// Fang has already reported the bounded-drain failure. Keep the
+		// process alive until its resource owner settles and cleans up.
+		// A permanently non-cooperative handler can keep shutdown pending.
+		owner.WaitForCleanup()
+	}
 	// After the command's output, whatever its outcome: at most 2 s, silent
 	// (telemetry-consent#REQ:bounded-synchronous-sender).
-	app.FlushTelemetry(context.Background())
+	flush(context.Background())
 	if err != nil {
-		os.Exit(commandExitCode(err))
+		return commandExitCode(err)
 	}
+	return 0
 }
 
 // commandExitCode preserves an external command's nonzero process status when

@@ -505,7 +505,14 @@ func TestEnginesPointManifestSetupAtConnect(t *testing.T) {
 		if engine.Setup != SetupManifest {
 			continue
 		}
-		if got := commands(engine.ManifestSteps); !slices.Equal(got, []string{"ovdb init --engine " + engine.ID + " --id <name>", "ovdb databases connect --manifest <absolute path>", ""}) {
+		first := "ovdb init --engine " + engine.ID + " --id <name>"
+		if engine.ID == EngineHTTP {
+			first = ""
+			if !strings.Contains(engine.ManifestSteps[0].Label, "ecb-daily/1") || !strings.Contains(engine.ManifestSteps[0].Label, "retention: none") || !strings.Contains(engine.ManifestSteps[2].Label, "docs/http-ecb.md") {
+				t.Errorf("HTTP steps lost their fixed live-only contract: %+v", engine.ManifestSteps)
+			}
+		}
+		if got := commands(engine.ManifestSteps); !slices.Equal(got, []string{first, "ovdb databases connect --manifest <absolute path>", ""}) {
 			t.Errorf("%s steps = %q", engine.ID, got)
 		}
 	}
