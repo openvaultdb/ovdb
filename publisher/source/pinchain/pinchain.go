@@ -9,8 +9,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -57,7 +55,11 @@ func Manifest() []byte { return bytes.Clone(manifest) }
 // Callers must run this before a future provider read; this package deliberately
 // has no executor and successful validation leaves every admission gate blocked.
 func Validate(ctx context.Context, repositories map[string]string) (*Receipt, error) {
-	return validateRepositories(ctx, repositories, readGit)
+	runtime, err := AdmitGit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return runtime.Validate(ctx, repositories)
 }
 
 func validateRepositories(ctx context.Context, repositories map[string]string, read func(context.Context, string, Artifact) ([]byte, error)) (*Receipt, error) {
@@ -111,15 +113,7 @@ func digest(data []byte) string { return fmt.Sprintf("%x", sha256.Sum256(data)) 
 // gitOutput bounds all output and omits Git/parser diagnostics from errors.
 // Replacement objects are disabled, including replacements for parent commits.
 func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-replace-objects", "-C", dir}, args...)...)
-	// Partial clones must not lazily contact a promisor remote for missing objects.
-	cmd.Env = append(os.Environ(), "GIT_NO_LAZY_FETCH=1", "GIT_TERMINAL_PROMPT=0")
-	output := &boundedOutput{}
-	cmd.Stdout = output
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("local Git object verification failed")
-	}
-	return output.buffer.Bytes(), nil
+	return gitCommand(ctx, "git", dir, args...)
 }
 
 type boundedOutput struct{ buffer bytes.Buffer }
