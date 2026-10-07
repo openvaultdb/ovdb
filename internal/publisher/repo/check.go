@@ -56,6 +56,7 @@ type checker struct {
 	res             manifest.Result
 	dirs            map[string]dirResult
 	seen            map[string]bool
+	repository      *string                            // --repository, when given
 	models          map[string]modelRead               // the model files that have been read, by path: the manifests that name one share the reading
 	modelKept       int                                // the bytes that the readings in models hold, about (modelSpec.size)
 	files           map[string]fileRead                // the result of reading each file that a manifest names, while there is room
@@ -213,6 +214,7 @@ func (c *checker) add(document, rule string, line int, format string, args ...an
 }
 
 func (c *checker) run(o Options) {
+	c.repository = o.Repository
 	if _, err := c.r.Head(); err != nil {
 		c.add("repository", ruleOf(err), 0, "cannot be read: %s", ascii(err.Error()))
 		return

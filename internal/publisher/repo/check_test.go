@@ -954,6 +954,58 @@ func TestTheModelsEntryIsJudgedByItselfWithoutModelHCL(t *testing.T) {
 	}
 }
 
+// The Directory holds meaning.graph.address and the own-form model.address to the repository that publisher.repository names (through the record); the
+// Directory profile does it here, in the repository stage, and the Publisher profile in the manifest stage.
+func TestTheAddressesNameThePublishersRepositoryUnderTheDirectoryProfile(t *testing.T) {
+	directory := Options{Profile: manifest.Directory}
+	repository := "https://github.com/datatug/chinookdb"
+	for name, c := range map[string]struct {
+		find, replace string
+		options       Options
+		rule, text    string // of the one finding, or "" for none
+	}{
+		"as written":                                {options: directory},
+		"a graph address in another case":           {find: "meaning://github.com/datatug/chinookdb", replace: "meaning://github.com/DataTug/ChinookDB", options: directory},
+		"a host in another case":                    {find: "meaning://github.com/datatug/chinookdb", replace: "meaning://GitHub.com/datatug/chinookdb", options: directory, rule: RuleAddress, text: "the host as written"},
+		"another graph address":                     {find: "meaning://github.com/datatug/chinookdb", replace: "meaning://github.com/datatug/other", options: directory, rule: RuleAddress, text: "meaning.graph.address must be meaning://github.com/datatug/chinookdb"},
+		"another model address":                     {find: "modelspec://github.com/datatug/chinookdb/chinook", replace: "modelspec://github.com/datatug/other/chinook", options: directory, rule: RuleAddress, text: `model.address names "github.com/datatug/other", but publisher.repository is "github.com/datatug/chinookdb"`},
+		"no publisher.repository, and --repository": {find: "  repository: https://github.com/datatug/chinookdb\n", replace: "", options: Options{Profile: manifest.Directory, Repository: &repository}},
+		"no publisher.repository, another graph address, and --repository": {find: "  repository: https://github.com/datatug/chinookdb\n", replace: "", options: Options{Profile: manifest.Directory, Repository: &repository}},
+	} {
+		m, _ := withManifest(c.find, c.replace)
+		if name == "no publisher.repository, another graph address, and --repository" {
+			m, _ = withManifest("  repository: https://github.com/datatug/chinookdb\n", "")
+			m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: []byte(strings.Replace(string(m.Nodes["ovdb.yaml"].Content), "meaning://github.com/datatug/chinookdb", "meaning://github.com/datatug/other", 1))}
+			c.rule, c.text = RuleAddress, "the address of --repository"
+		}
+		got := Check(m, c.options).Findings
+		switch {
+		case c.rule == "" && len(got) != 0, c.rule != "" && (len(got) != 1 || got[0].Rule != c.rule || !strings.Contains(got[0].Message, c.text)):
+			t.Errorf("%s: findings %v", name, got)
+		}
+	}
+	// Without publisher.repository and without --repository there is no repository to compare with here, and with a publisher.repository that is not a
+	// repository, or a --repository that is not one, the other rules speak.
+	for name, c := range map[string]struct {
+		replace string
+		options Options
+	}{
+		"none":                     {"", directory},
+		"not a repository":         {"  repository: not-a-url\n", directory},
+		"--repository, not a repo": {"", Options{Profile: manifest.Directory, Repository: ptr("not-a-url")}},
+	} {
+		m, _ := withManifest("  repository: https://github.com/datatug/chinookdb\n", c.replace)
+		m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: []byte(strings.Replace(string(m.Nodes["ovdb.yaml"].Content), "meaning://github.com/datatug/chinookdb", "meaning://github.com/datatug/other", 1))}
+		for _, f := range Check(m, c.options).Findings {
+			if f.Rule == RuleAddress {
+				t.Errorf("%s: %v", name, f)
+			}
+		}
+	}
+}
+
+func ptr(s string) *string { return &s }
+
 func TestTheModelsEntryReportsAnUnreadableDirectoryWithoutModelHCL(t *testing.T) {
 	for _, err := range []error{errors.New("unreadable entry tree"), ErrPartialClone, ErrObjectMissing, ErrObjectCorrupt, ErrAlternates} {
 		t.Run(ruleOf(err), func(t *testing.T) {

@@ -128,6 +128,21 @@ func (k *manifestChecker) publisher() {
 // folds a non-ASCII letter onto an ASCII one (the Kelvin sign onto k) Go refuses,
 // which is a recorded kind.
 func lowerASCII(s string) string {
+	return LowerASCII(s)
+}
+
+// GraphAddressNames reports whether address is the meaning:// address of the repository whose comparison key (rules.CompareKey: lower case) is own. The host is
+// compared exactly: the Directory's repositoryKey knows the host only as the literal it is listed under, so no record carries another spelling of it; the organisation
+// and the repository are compared without case, as the registries are searched (and the Chinook checker lower-cases the whole address, which is looser than the
+// Directory for the host: a recorded kind).
+func GraphAddressNames(address, own string) bool {
+	host, rest, _ := strings.Cut(own, "/")
+	prefix := "meaning://" + host + "/"
+	return strings.HasPrefix(address, prefix) && lowerASCII(address[len(prefix):]) == rest
+}
+
+// LowerASCII is lowerASCII, for the repository stage, which holds meaning.graph.address to the repository in the Directory profile (what the Directory holds through the record).
+func LowerASCII(s string) string {
 	b := []byte(s)
 	for i, c := range b {
 		if c >= 'A' && c <= 'Z' {
@@ -194,8 +209,13 @@ func (k *manifestChecker) ownForm(own string) {
 		c.add("manifest-model", out.ModelAddress.Line, "model.address must be modelspec://%s/<module>, this repository plus the module name, got %s", own, rules.Quote(out.ModelAddress.Value.Text))
 		demote(&out.ModelAddress)
 	}
-	if out.GraphAddress.Usable() && own != "" && lowerASCII(out.GraphAddress.Value) != "meaning://"+own {
-		c.add("manifest-meaning", out.GraphAddress.Line, "meaning.graph.address must be meaning://%s (in any case), derived from publisher.repository, got %s", own, rules.Quote(out.GraphAddress.Value))
+	if a := out.GraphAddress; a.Usable() && own != "" && !GraphAddressNames(a.Value, own) {
+		if lowerASCII(a.Value) == "meaning://"+own {
+			// The Chinook checker lower-cases the whole address, the host too; the Directory knows only the literal host.
+			c.add("manifest-meaning", a.Line, "meaning.graph.address must spell the host as the repository's host is spelled, in lower case (the Directory knows no other spelling), got %s", rules.Quote(a.Value))
+		} else {
+			c.add("manifest-meaning", a.Line, "meaning.graph.address must be meaning://%s (in any case), derived from publisher.repository, got %s", own, rules.Quote(a.Value))
+		}
 		demote(&out.GraphAddress)
 	}
 }

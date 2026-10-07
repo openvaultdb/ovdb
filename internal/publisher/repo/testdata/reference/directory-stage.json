@@ -1378,7 +1378,8 @@
    ],
    "directory": "refuses",
    "problem": "ovdb.yaml: meaning.graph.address is meaning://github.com/demo-db/other, but the MeaningGraph registry registers chinook as meaning://github.com/demo-db/chinook",
-   "outcome": "looser:F7"
+   "outcome": "agree",
+   "go": "repo-address"
   },
   {
    "id": "has-recordset-page",
@@ -1534,7 +1535,8 @@
    ],
    "directory": "refuses",
    "problem": "ovdb.yaml: model.address names github.com/demo-db/other, but the model's files are in github.com/demo-db/chinook; a manifest with its own model files addresses its own repository. To use a model published in another repository, remove the l",
-   "outcome": "looser:F7"
+   "outcome": "agree",
+   "go": "repo-address"
   },
   {
    "id": "has-publisher-repository",
@@ -1862,6 +1864,84 @@
    ],
    "directory": "accepts",
    "outcome": "stricter:yaml-unsupported"
+  },
+  {
+   "id": "nopubrepo-accepted",
+   "group": "stricter",
+   "note": "no publisher.repository: the Directory takes the record's repository, and accepts",
+   "ops": [
+    [
+     "file",
+     "ovdb.yaml",
+     "# OpenVaultDB publisher manifest for the Chinook sample database.\n# Format: draft. Every path below is relative to the repository root (this file is there too)\n# and must be a regular file tracked by git. No secrets belong here.\nformat: ovdb-manifest/draft-1\nid: chinook\ntitle: Chinook music store\ndescription: >-\n  The Chinook sample database: a digital music store with artists, albums,\n  tracks, playlists, customers, employees and invoices. Read-only, served from\n  a pinned copy of the upstream SQLite fixture.\n\n# The canonical identity of the database. It stays the same if the deployment moves.\nurl: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment:\n  url: https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine: sqlite\n  # The discovery document at the origin of the canonical url; it lists that url.\n  discovery: https://chinookdb.com/.well-known/openvaultdb\n  # Where a recordset's page is. Clients use this template and never build the route themselves.\n  recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\n\nmodel:\n  modelspec: model/chinook.modelspec.json\n  hcl: model/chinook.modelspec.hcl\n\nmeaning:\n  file: model/chinook.meaning.yaml\n  # Registered as `chinook` in github.com/meaninggraph/registry.\n  graph:\n    id: chinook\n    address: meaning://github.com/demo-db/chinook\n\npublisher:\n  name: DemoDB\n  url: https://github.com/demo-db\n\n# licences.data is the licence the Directory shows for the database: the data is the upstream\n# Chinook data (Copyright (c) 2008-2024 Luis Rocha), MIT. The model and the meaning file are\n# this repository's own work.\nlicences:\n  data: MIT\n  model: MIT\n  meaning: CC0-1.0\n\n# Recordset names are the ModelSpec entity names, which are also the collection\n# names the deployment serves.\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
+    ]
+   ],
+   "directory": "accepts",
+   "outcome": "stricter:publisher-repository-required"
+  },
+  {
+   "id": "nopubrepo-other-address",
+   "group": "has",
+   "note": "no publisher.repository, and a meaning.graph.address that is another repository's (the record's repository is the one --repository names)",
+   "ops": [
+    [
+     "file",
+     "ovdb.yaml",
+     "# OpenVaultDB publisher manifest for the Chinook sample database.\n# Format: draft. Every path below is relative to the repository root (this file is there too)\n# and must be a regular file tracked by git. No secrets belong here.\nformat: ovdb-manifest/draft-1\nid: chinook\ntitle: Chinook music store\ndescription: >-\n  The Chinook sample database: a digital music store with artists, albums,\n  tracks, playlists, customers, employees and invoices. Read-only, served from\n  a pinned copy of the upstream SQLite fixture.\n\n# The canonical identity of the database. It stays the same if the deployment moves.\nurl: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment:\n  url: https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine: sqlite\n  # The discovery document at the origin of the canonical url; it lists that url.\n  discovery: https://chinookdb.com/.well-known/openvaultdb\n  # Where a recordset's page is. Clients use this template and never build the route themselves.\n  recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\n\nmodel:\n  modelspec: model/chinook.modelspec.json\n  hcl: model/chinook.modelspec.hcl\n\nmeaning:\n  file: model/chinook.meaning.yaml\n  # Registered as `chinook` in github.com/meaninggraph/registry.\n  graph:\n    id: chinook\n    address: meaning://github.com/demo-db/other\n\npublisher:\n  name: DemoDB\n  url: https://github.com/demo-db\n\n# licences.data is the licence the Directory shows for the database: the data is the upstream\n# Chinook data (Copyright (c) 2008-2024 Luis Rocha), MIT. The model and the meaning file are\n# this repository's own work.\nlicences:\n  data: MIT\n  model: MIT\n  meaning: CC0-1.0\n\n# Recordset names are the ModelSpec entity names, which are also the collection\n# names the deployment serves.\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "ovdb.yaml: meaning.graph.address is meaning://github.com/demo-db/other, but the MeaningGraph registry registers chinook as meaning://github.com/demo-db/chinook",
+   "outcome": "agree",
+   "go": "repo-address"
+  },
+  {
+   "id": "nopubrepo-other-model-address",
+   "group": "has",
+   "note": "no publisher.repository, and an own-form model.address that names another repository",
+   "ops": [
+    [
+     "file",
+     "ovdb.yaml",
+     "# OpenVaultDB publisher manifest for the Chinook sample database.\n# Format: draft. Every path below is relative to the repository root (this file is there too)\n# and must be a regular file tracked by git. No secrets belong here.\nformat: ovdb-manifest/draft-1\nid: chinook\ntitle: Chinook music store\ndescription: >-\n  The Chinook sample database: a digital music store with artists, albums,\n  tracks, playlists, customers, employees and invoices. Read-only, served from\n  a pinned copy of the upstream SQLite fixture.\n\n# The canonical identity of the database. It stays the same if the deployment moves.\nurl: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment:\n  url: https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine: sqlite\n  # The discovery document at the origin of the canonical url; it lists that url.\n  discovery: https://chinookdb.com/.well-known/openvaultdb\n  # Where a recordset's page is. Clients use this template and never build the route themselves.\n  recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\n\nmodel:\n  address: modelspec://github.com/demo-db/other/chinook\n  modelspec: model/chinook.modelspec.json\n  hcl: model/chinook.modelspec.hcl\n\nmeaning:\n  file: model/chinook.meaning.yaml\n  # Registered as `chinook` in github.com/meaninggraph/registry.\n  graph:\n    id: chinook\n    address: meaning://github.com/demo-db/chinook\n\npublisher:\n  name: DemoDB\n  url: https://github.com/demo-db\n\n# licences.data is the licence the Directory shows for the database: the data is the upstream\n# Chinook data (Copyright (c) 2008-2024 Luis Rocha), MIT. The model and the meaning file are\n# this repository's own work.\nlicences:\n  data: MIT\n  model: MIT\n  meaning: CC0-1.0\n\n# Recordset names are the ModelSpec entity names, which are also the collection\n# names the deployment serves.\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "ovdb.yaml: model.address names github.com/demo-db/other, but the model's files are in github.com/demo-db/chinook; a manifest with its own model files addresses its own repository. To use a model published in another repository, remove the l",
+   "outcome": "agree",
+   "go": "repo-address"
+  },
+  {
+   "id": "graph-address-host-case",
+   "group": "has",
+   "note": "the host of meaning.graph.address in another case: the Directory's repositoryKey knows only the literal github.com, so no record or registry carries it",
+   "ops": [
+    [
+     "file",
+     "ovdb.yaml",
+     "# OpenVaultDB publisher manifest for the Chinook sample database.\n# Format: draft. Every path below is relative to the repository root (this file is there too)\n# and must be a regular file tracked by git. No secrets belong here.\nformat: ovdb-manifest/draft-1\nid: chinook\ntitle: Chinook music store\ndescription: >-\n  The Chinook sample database: a digital music store with artists, albums,\n  tracks, playlists, customers, employees and invoices. Read-only, served from\n  a pinned copy of the upstream SQLite fixture.\n\n# The canonical identity of the database. It stays the same if the deployment moves.\nurl: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment:\n  url: https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine: sqlite\n  # The discovery document at the origin of the canonical url; it lists that url.\n  discovery: https://chinookdb.com/.well-known/openvaultdb\n  # Where a recordset's page is. Clients use this template and never build the route themselves.\n  recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\n\nmodel:\n  modelspec: model/chinook.modelspec.json\n  hcl: model/chinook.modelspec.hcl\n\nmeaning:\n  file: model/chinook.meaning.yaml\n  # Registered as `chinook` in github.com/meaninggraph/registry.\n  graph:\n    id: chinook\n    address: meaning://GitHub.com/demo-db/chinook\n\npublisher:\n  name: DemoDB\n  url: https://github.com/demo-db\n  repository: https://github.com/demo-db/chinook\n\n# licences.data is the licence the Directory shows for the database: the data is the upstream\n# Chinook data (Copyright (c) 2008-2024 Luis Rocha), MIT. The model and the meaning file are\n# this repository's own work.\nlicences:\n  data: MIT\n  model: MIT\n  meaning: CC0-1.0\n\n# Recordset names are the ModelSpec entity names, which are also the collection\n# names the deployment serves.\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "ovdb.yaml: meaning.graph.address is meaning://GitHub.com/demo-db/chinook, but the MeaningGraph registry registers chinook as meaning://github.com/demo-db/chinook",
+   "outcome": "agree",
+   "go": "repo-address"
+  },
+  {
+   "id": "graph-address-org-case",
+   "group": "registry",
+   "note": "the organisation of meaning.graph.address in another case: a registry that spells the graph that way accepts it",
+   "ops": [
+    [
+     "file",
+     "ovdb.yaml",
+     "# OpenVaultDB publisher manifest for the Chinook sample database.\n# Format: draft. Every path below is relative to the repository root (this file is there too)\n# and must be a regular file tracked by git. No secrets belong here.\nformat: ovdb-manifest/draft-1\nid: chinook\ntitle: Chinook music store\ndescription: >-\n  The Chinook sample database: a digital music store with artists, albums,\n  tracks, playlists, customers, employees and invoices. Read-only, served from\n  a pinned copy of the upstream SQLite fixture.\n\n# The canonical identity of the database. It stays the same if the deployment moves.\nurl: https://chinookdb.com/ovdb/dbs/chinook\n\ndeployment:\n  url: https://cloud.openvaultdb.com/ovdb/dbs/chinook\n  engine: sqlite\n  # The discovery document at the origin of the canonical url; it lists that url.\n  discovery: https://chinookdb.com/.well-known/openvaultdb\n  # Where a recordset's page is. Clients use this template and never build the route themselves.\n  recordset_page: https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\n\nmodel:\n  modelspec: model/chinook.modelspec.json\n  hcl: model/chinook.modelspec.hcl\n\nmeaning:\n  file: model/chinook.meaning.yaml\n  # Registered as `chinook` in github.com/meaninggraph/registry.\n  graph:\n    id: chinook\n    address: meaning://github.com/Demo-DB/chinook\n\npublisher:\n  name: DemoDB\n  url: https://github.com/demo-db\n  repository: https://github.com/demo-db/chinook\n\n# licences.data is the licence the Directory shows for the database: the data is the upstream\n# Chinook data (Copyright (c) 2008-2024 Luis Rocha), MIT. The model and the meaning file are\n# this repository's own work.\nlicences:\n  data: MIT\n  model: MIT\n  meaning: CC0-1.0\n\n# Recordset names are the ModelSpec entity names, which are also the collection\n# names the deployment serves.\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
+    ]
+   ],
+   "directory": "refuses",
+   "problem": "ovdb.yaml: meaning.graph.address is meaning://github.com/Demo-DB/chinook, but the MeaningGraph registry registers chinook as meaning://github.com/demo-db/chinook",
+   "outcome": "out-of-reach:registry",
+   "acceptedWhen": "the registry spells the graph's repository and address with that organisation"
   },
   {
    "id": "record-id",

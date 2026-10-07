@@ -134,7 +134,10 @@ func TestGraphAddressIsComparedInAsciiCaseOnly(t *testing.T) {
 		accepted      bool
 	}{
 		{"exact", own, true},
-		{"ASCII upper case", "meaning://GITHUB.com/DataTug/ChinookDB", true},
+		{"ASCII upper case in the organisation and the repository", "meaning://github.com/DataTug/ChinookDB", true},
+		// The Directory knows the host only as the literal github.com, so no record carries another spelling: the host is compared as written (kind graph-address-host-case).
+		{"ASCII upper case in the host", "meaning://GITHUB.com/datatug/chinookdb", false},
+		{"ASCII upper case everywhere", "meaning://GitHub.com/DataTug/ChinookDB", false},
 		// Go lower-cases U+0130 to i; JavaScript to i and a combining dot, so the checker refuses these.
 		{"dotted capital I in the name", "meaning://github.com/datatug/ch\u0130nookdb", false},
 		{"dotted capital I in the owner", "meaning://github.com/datatug\u0130/chinookdb", false},

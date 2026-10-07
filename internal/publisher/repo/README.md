@@ -114,10 +114,10 @@ and a path below a file or symlink do not):
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
 | `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
 | `meaning-id`, `meaning-license` | its `id` is `meaning.graph.id` and its `license` is `licences.meaning`, as strings (the Directory compares the licence only when the file has a text one, and does not read the id here: Go is stricter than it, as the checker is) | 453-457 |
-| `meaning-binding` | 2 | A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts. |
-| `meaning-chain` | 2 | The extends chain or the values-of of a concept of the meaning file, inside its own graph, returns to a concept already in the chain, is longer than 50 concepts, or names a concept the graph does not have: the Directory refuses it (meaning.mjs 195-226); the checker never reads the concepts. |
-| `meaning-concept` | 3 | A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts. |
-| `meaning-concept-duplicate` | 1 | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. |
+| `meaning-binding` | A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts. | the Directory's, not the checker's |
+| `meaning-chain` | The extends chain or the values-of of a concept of the meaning file, inside its own graph, returns to a concept already in the chain, is longer than 50 concepts, or names a concept the graph does not have: the Directory refuses it (meaning.mjs 195-226); the checker never reads the concepts. | the Directory's, not the checker's |
+| `meaning-concept` | A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts. | the Directory's, not the checker's |
+| `meaning-concept-duplicate` | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. | the Directory's, not the checker's |
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
 | `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
@@ -136,18 +136,18 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 121 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 126 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
 its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 99 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
-| outcome: looser:F7 | 2 | the same, for the addresses: `meaning.graph.address` (the Publisher profile compares it with `publisher.repository`, the Directory profile does not) and an own-form `model.address` that names another repository (no profile compares it) |
+| outcome: agree | 104 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
 | outcome: out-of-reach:history | 1 | the Directory refuses by what the repository's earlier commits say: a reference by address to the repository's own graph with a well-formed pin is read at that commit, which must be in the history of the default branch and have the concept (neither the record nor a registry; the fix is a repository that has the commit) |
-| outcome: out-of-reach:registry | 5 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
+| outcome: out-of-reach:registry | 6 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
 | outcome: stricter:module-name-underscore | 1 | Go refuses a `module.name` that starts with `_` (the checker's pattern); the Directory's identifier pattern allows it |
+| outcome: stricter:publisher-repository-required | 1 | Go (the Publisher profile) refuses a manifest that does not write `publisher.repository`; the Directory takes the record's repository |
 | outcome: stricter:model-hcl-required | 1 | Go refuses a manifest that does not write `model.hcl`; the Directory accepts it |
 | outcome: stricter:meaning-license-required | 2 | Go refuses a meaning file with no text `license`; the Directory compares it only when it is text |
 | outcome: stricter:meaning-id-compared | 1 | Go refuses a meaning file whose `id` is not `meaning.graph.id`; the Directory does not read it in this stage |
@@ -166,7 +166,8 @@ record or registry could lift is not out of reach: `meaning.graph.address` must 
 check is offline once `publisher.repository` is written, and that is F7.
 
 The looser cases are listed in `drift.json` (`goLooser`, `fileProbes`) with their slice, and a test holds the list to the golden both ways, as `TestDrift` does for
-the manifest stage: a slice removes its entries in its own pull request. None of them is ported yet (this change ports no rule).
+the manifest stage: each implemented slice removes its entries in its own pull request. With F2–F7 implemented, `goLooser` is empty for this 126-case own-form
+file-stage corpus. The record, history and registry outcomes, and the stricter kinds above, remain; shared-form checks are outside this corpus.
 
 ### Every refusal of the Directory's file stage, own form
 
@@ -181,7 +182,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 424-426 | `manifest.url`, `manifest.id` against the record | needs the record | `record-url`, `record-id` |
 | 427 | `meaning.graph.id` against the record's `meaning_graph` | needs the record (Go compares it with the meaning file's `id`) | `record-graph-id` |
 | 428 | `publisher.repository` against the record's repository | has, with `--repository` | `has-publisher-repository` |
-| 490-505 | the graph is registered, for this repository, with this address, and lists `meaning.file` | needs the registry; the address is derived from the repository, so offline once `publisher.repository` is written: **F7** | `registry-*`, `has-graph-address` |
+| 490-505 | the graph is registered, for this repository, with this address, and lists `meaning.file` | **partly.** The repository part of `meaning.graph.address` is held (F7): it must be `meaning://` and the key of the repository (`publisher.repository`, or `--repository` when the manifest names none): the host as written, the organisation and the repository without case (`repo-address` under the Directory profile, `manifest-meaning` under the Publisher profile). What the registry still decides is not held: that the graph is registered at all, how it spells the organisation and the repository, and which files it lists | `registry-*`, `has-graph-address`, `graph-address-host-case`, `graph-address-org-case`, `nopubrepo-*` |
 | 485-487 | the meaning file is not valid YAML, not a mapping, has no concepts list | has (#63) | `meaning-not-yaml`, `meaning-a-list`, `concept-no-concepts`, `meaning-concepts-null` |
 | 510-513 | the model file or the meaning file is not a regular file at the commit | has | `model-file-missing`, `meaning-file-missing` |
 | 514-515 | `parseModelSpec` (modelspec.mjs 92-118): not JSON, `module.name`, no entities | has | `modelspec-not-json`, `modelspec-module-name`, `modelspec-no-entities` (through the recordsets rule) |
@@ -194,7 +195,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 526-535 | the `models:` entry: a safe relative path, ending in `.modelspec.hcl`, an existing regular file | has (F6: judged by itself, with or without `model.hcl`: `meaning-models`, `meaning-model-file`) | `has-models-entry-*`, `nohcl-*` |
 | 536 | `model.hcl` is that entry | has | `has-models-entry-hcl` |
 | 537-545 | own-form `model.address`: host, lower case, module, no `?ref=` | has | `has-model-address-lower`, `-ref`, `-module`, `-host` |
-| 546 | own-form `model.address` names the record's repository | **F7** (no profile compares it with `publisher.repository`) | `has-model-address-other-repository` |
+| 546 | own-form `model.address` names the record's repository | has, in the Directory profile (F7: `repo-address`; the Publisher profile through `manifest-model`) | `has-model-address-other-repository` |
 | 549-572 | the model as the ModelSpec registry registers it | needs the registry | none |
 | 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | has (F3: `meaning-concept`, `meaning-concept-duplicate`) | `concept-*` (27) |
 | 728-754 | bindings | has (F4: `meaning-binding`) | `binding-*` (10) |
@@ -278,6 +279,12 @@ at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entitie
 
 ### Recorded differences: where Go is stricter
 
+| Rule | Cases | Difference from the Chinook checker |
+| --- | --- | --- |
+| `meaning-binding` | 2 | A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts. |
+| `meaning-chain` | 2 | The extends chain or the values-of of a concept of the meaning file, inside its own graph, returns to a concept already in the chain, is longer than 50 concepts, or names a concept the graph does not have: the Directory refuses it (meaning.mjs 195-226); the checker never reads the concepts. |
+| `meaning-concept` | 3 | A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts. |
+| `meaning-concept-duplicate` | 1 | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. |
 | `document-size` | 3 | OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB. |
 | `meaning-concepts` | 4 | The meaning file has no concepts list (the key is missing, or is null, a mapping or text): the Directory refuses it (directory.mjs, parseMeaningFile) and the Chinook checker never reads the concepts. |
 | `repo-model-entity` | 1 | An entity of the model file has a name that is not an identifier, or no properties: the Directory refuses it (parseModelSpec); the checker reads only the names of the entities. |

@@ -25,6 +25,7 @@ const (
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
 	RuleModelAddress  = "repo-model-address"  // the module of model.address is not the model file's
 	RuleRecordsets    = "repo-recordsets"     // recordsets are not the entities of the model
+	RuleAddress       = "repo-address"        // meaning.graph.address or model.address does not name the repository that publisher.repository names (the Directory profile)
 
 	RuleEntitiesLimit   = "repo-model-entities-limit" // the model file has more than MaxEntities entities
 	RuleRecordsetsLimit = "repo-recordsets-limit"     // the manifest lists more than MaxRecordsets recordsets
@@ -52,6 +53,9 @@ type ownFiles struct {
 // content holds what the model file and the meaning file say to what the manifest says (the checker's lines 408-468 and 535-539). It judges nothing of
 // a file that was not read: its finding is already made.
 func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
+	if c.res.Profile == manifest.Directory {
+		c.addresses(path, m)
+	}
 	module := ""
 	var facts *manifest.ModelFacts
 	if f.haveModel {
@@ -86,6 +90,35 @@ func (c *checker) entryFile(document, path string) string {
 		return "does not exist"
 	}
 	return "is " + kind.String()
+}
+
+// addresses holds meaning.graph.address and the own-form model.address to the repository that the record would name, as the Directory does: the record's
+// repository is the one the manifest names (publisher.repository, directory.mjs 428) or, when the manifest names none, the one that --repository names (a hoster
+// that runs the check on a repository says which it is); the graph is registered for it at the address that is derived from it (495-500), and the manifest's
+// address is the registry's, and the own-form model.address names it (546). With neither there is no repository to compare with. The Publisher profile holds the
+// same two facts in the manifest stage (manifest-meaning, manifest-model), with the Chinook checker's wording and, when it names a repository, publisher.repository only,
+// so only the Directory profile needs it here.
+func (c *checker) addresses(path string, m manifest.Manifest) {
+	var own, from string
+	switch {
+	case m.PublisherRepository.Usable():
+		own, _ = rules.CompareKey(m.PublisherRepository.Value) // a usable publisher.repository is a repository
+		from = "publisher.repository"
+	case m.PublisherRepository.Absent() && c.repository != nil:
+		var ok bool
+		if own, ok = rules.CompareKey(*c.repository); !ok {
+			return
+		}
+		from = "--repository"
+	default:
+		return
+	}
+	if a := m.GraphAddress; a.Usable() && !manifest.GraphAddressNames(a.Value, own) {
+		c.add(path, RuleAddress, a.Line, "meaning.graph.address must be meaning://%s (the host as written, the organisation and the repository in any case), the address of %s, got %s", own, from, rules.Quote(a.Value))
+	}
+	if a := m.ModelAddress; a.Usable() && a.Value.Repository != own {
+		c.add(path, RuleAddress, a.Line, "model.address names %s, but %s is %s: a manifest with its own model files addresses its own repository", rules.Quote(a.Value.Repository), from, rules.Quote(own))
+	}
 }
 
 // maxModelKept is the most that the readings of model files may hold together while a check runs.
