@@ -11,7 +11,9 @@ import (
 type MeaningWants struct {
 	File    string       // the path of the meaning file, which names it in the findings and is what models: is relative to
 	GraphID Fact[string] // meaning.graph.id of the manifest
-	Licence Fact[string] // licences.meaning of the manifest
+	// GraphAddress is meaning.graph.address of the manifest: the address of this graph, which a reference to a concept of this graph may spell out.
+	GraphAddress Fact[string]
+	Licence      Fact[string] // licences.meaning of the manifest
 	// Module is the module the model file declares, and "" when it declares none that can be read. ModelHCL is model.hcl, and "" when
 	// it is not a regular file of the commit: the models: entry is judged only when both are known, as the checker does.
 	Module, ModelHCL string

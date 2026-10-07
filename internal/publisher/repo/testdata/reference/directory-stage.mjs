@@ -20,6 +20,7 @@
 //   looser:<slice>         Go (the Directory profile) accepts what the Directory refuses; the slice (F2 to F6) ports the rule
 //   out-of-reach:record    the Directory refuses by what the database's registry record says; no check of a repository alone can. MECHANICAL: the case carries
 //                          a `fix` (a record, a key, a registry or a URL map), and the generator runs the same files again under it and requires the Directory to accept
+//   out-of-reach:history   the Directory refuses by what the repository's earlier commits say (a pin to its own graph); the fix is a repository that has that commit
 //   out-of-reach:registry  the Directory refuses by what the ModelSpec or MeaningGraph registry says, or by another repository (the Publisher profile
 //                          stands in for the graph's address with publisher.repository, and so refuses what the Directory profile cannot)
 //   stricter:<kind>        Go refuses what the Directory accepts, as a recorded kind (stricterKinds in directory_stage_test.go)
@@ -101,12 +102,16 @@ const writeTree = (dir, files) => {
 // A commit that is the same on every run: the commit id of the core repository is written into the meaning file.
 const gitEnv = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'ovdb', GIT_AUTHOR_EMAIL: 'ovdb@example.invalid', GIT_COMMITTER_NAME: 'ovdb', GIT_COMMITTER_EMAIL: 'ovdb@example.invalid', GIT_AUTHOR_DATE: '2000-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2000-01-01T00:00:00Z' };
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { env: gitEnv, encoding: 'utf8' }).trim();
-const origin = (files, name) => {
+// A repository of one commit of `files`, or, with `earlier`, of that commit and then one of `files`: the history that a pinned reference to the repository's own graph needs.
+const origin = (files, name, earlier) => {
   const dir = mkdtempSync(join(tmpdir(), `ovdb-stage-${name}-`));
   git(dir, 'init', '-q', '-b', 'main');
-  writeTree(dir, files);
-  git(dir, 'add', '-A');
-  git(dir, 'commit', '-q', '-m', 'c');
+  for (const tree of earlier ? [earlier, files] : [files]) {
+    for (const entry of readdirSync(dir)) if (entry !== '.git') rmSync(join(dir, entry), { recursive: true, force: true });
+    writeTree(dir, tree);
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', 'c');
+  }
   return { dir, commit: git(dir, 'rev-parse', 'HEAD') };
 };
 
@@ -116,6 +121,7 @@ const fixtureCorePin = 'cb97dbcd9e951b00e7d46cb2e0c4e120c24c8db7';
 const core = origin(readTree(join(root, 'scripts/fixtures/core')), 'core');
 const base = readTree(join(root, 'scripts/fixtures/chinookdb'));
 base.set('model/chinook.meaning.yaml', base.get('model/chinook.meaning.yaml').replaceAll(fixtureCorePin, core.commit));
+const baseCommit = origin(base, 'base').commit; // the commit of the base files, which a repository with history has as its first
 const manifestPath = 'ovdb.yaml';
 const modelPath = 'model/chinook.modelspec.json';
 const hclPath = 'model/chinook.modelspec.hcl';
@@ -125,8 +131,8 @@ const recordUrl = 'https://chinookdb.com/ovdb/dbs/chinook';
 const registryOf = (graphs) => indexMeaningRegistry({ format: 'meaning-registry/draft-1', checksum: `sha256:${sha(JSON.stringify(graphs))}`, graphs }, 'the test registry');
 
 // The Directory's verdict on one repository: the problems of analyseDatabase.
-const directoryVerdict = async (files, { editRegistry, record: editRecord, key = 'chinook', urls: extraUrls = [] } = {}) => {
-  const publisher = origin(files, 'publisher');
+const directoryVerdict = async (files, { editRegistry, record: editRecord, key = 'chinook', urls: extraUrls = [], history = false } = {}) => {
+  const publisher = origin(files, 'publisher', history ? base : undefined);
   const graphs = [
     { id: 'chinook', title: 'Chinook', kind: 'dataset', status: 'draft', address: 'meaning://github.com/demo-db/chinook', repository: chinookUrl, commit: publisher.commit, meaning_files: [meaningPath], maintainers: ['x'] },
     { id: 'core', title: 'Core', kind: 'universal', status: 'draft', address: 'meaning://github.com/meaninggraph/core', repository: coreUrl, commit: core.commit, meaning_files: ['*.meaning.yaml'], maintainers: ['x'] },
@@ -225,14 +231,14 @@ add('binding-property-number', 'binding', 'a property that is a number', { [mean
 const chain = (n) => Array.from({ length: n }, (_, i) => `  - id: c${i + 1}\n${i + 1 < n ? `    extends: c${i + 2}\n` : ''}`).join('');
 add('chain-own', 'control', 'a concept that extends another of the same graph by its bare id', { [meaningPath]: concepts('  - id: artist\n    extends: album\n  - id: album\n') }, null, 'agree');
 add('chain-own-address', 'control', 'a concept that extends another of the same graph by its address', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album\n  - id: album\n') }, null, 'agree');
-add('chain-cycle', 'chain', 'two concepts that extend each other', { [meaningPath]: concepts('  - id: artist\n    extends: album\n  - id: album\n    extends: artist\n') }, /extends returns to artist/, 'looser:F5');
-add('chain-self', 'chain', 'a concept that extends itself', { [meaningPath]: concepts('  - id: artist\n    extends: artist\n') }, /extends returns to artist/, 'looser:F5');
-add('chain-unresolved', 'chain', 'extends names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    extends: nothing\n') }, /extends: nothing names concept nothing, which chinook does not have/, 'looser:F5');
-add('chain-not-a-reference', 'chain', 'extends is not a concept reference', { [meaningPath]: concepts('  - id: artist\n    extends: Not A Ref\n') }, /extends: "Not A Ref" is not a concept reference/, 'looser:F5');
-add('chain-long', 'chain', 'an extends chain of 52 concepts (the limit is 50)', { [meaningPath]: concepts(chain(52)) }, /extends chain is longer than 50 concepts/, 'looser:F5');
+add('chain-cycle', 'chain', 'two concepts that extend each other', { [meaningPath]: concepts('  - id: artist\n    extends: album\n  - id: album\n    extends: artist\n') }, /extends returns to artist/, 'agree');
+add('chain-self', 'chain', 'a concept that extends itself', { [meaningPath]: concepts('  - id: artist\n    extends: artist\n') }, /extends returns to artist/, 'agree');
+add('chain-unresolved', 'chain', 'extends names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    extends: nothing\n') }, /extends: nothing names concept nothing, which chinook does not have/, 'agree');
+add('chain-not-a-reference', 'chain', 'extends is not a concept reference', { [meaningPath]: concepts('  - id: artist\n    extends: Not A Ref\n') }, /extends: "Not A Ref" is not a concept reference/, 'agree');
+add('chain-long', 'chain', 'an extends chain of 52 concepts (the limit is 50)', { [meaningPath]: concepts(chain(52)) }, /extends chain is longer than 50 concepts/, 'agree');
 add('chain-50', 'control', 'an extends chain of 50 concepts', { [meaningPath]: concepts(chain(50)) }, null, 'agree');
-add('chain-values-of-unresolved', 'chain', 'values-of names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    values-of: nothing\n') }, /values-of: nothing names concept nothing, which chinook does not have/, 'looser:F5');
-add('chain-values-of-cycle', 'chain', 'values-of names a concept whose chain loops', { [meaningPath]: concepts('  - id: artist\n    values-of: album\n  - id: album\n    extends: genre\n  - id: genre\n    extends: album\n') }, /values-of album: extends returns to album/, 'looser:F5');
+add('chain-values-of-unresolved', 'chain', 'values-of names a concept the graph does not have', { [meaningPath]: concepts('  - id: artist\n    values-of: nothing\n') }, /values-of: nothing names concept nothing, which chinook does not have/, 'agree');
+add('chain-values-of-cycle', 'chain', 'values-of names a concept whose chain loops', { [meaningPath]: concepts('  - id: artist\n    values-of: album\n  - id: album\n    extends: genre\n  - id: genre\n    extends: album\n') }, /values-of album: extends returns to album/, 'agree');
 add('chain-address-unregistered', 'chain', 'extends names a graph by an address that no registry lists', { [meaningPath]: (text) => concepts(`  - id: artist\n    extends: meaning://github.com/nobody/nothing/date?ref=${core.commit}\n`)(text) }, /is not registered in the MeaningGraph registry/, 'out-of-reach:registry', {
   fix: { urls: ['https://github.com/nobody/nothing'], registry: (graphs) => graphs.push({ id: 'nothing', title: 'Nothing', kind: 'universal', status: 'draft', address: 'meaning://github.com/nobody/nothing', repository: 'https://github.com/nobody/nothing', commit: core.commit, meaning_files: ['*.meaning.yaml'], maintainers: ['x'] }), because: 'the registry registers that address at the commit of the core graph' },
 });
@@ -286,6 +292,15 @@ add('binding-module-underscore', 'binding', 'a reference whose module starts wit
 add('binding-entity-underscore', 'binding', 'a reference whose entity starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook._Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
 add('chain-51', 'chain', 'an extends chain of 51 concepts', { [meaningPath]: concepts(chain(51)) }, null, 'agree');
 
+// the form of a reference by address (meaning.mjs resolveGraph): a pin is needed, and it is a full commit id, whatever any registry says
+add('chain-address-no-pin', 'chain', 'extends names another graph by an address with no pin', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date\n') }, /needs a \?ref= pin/, 'agree');
+add('chain-values-of-no-pin', 'chain', 'values-of names another graph by an address with no pin', { [meaningPath]: concepts('  - id: artist\n    values-of: meaning://github.com/meaninggraph/core/date\n') }, /needs a \?ref= pin/, 'agree');
+add('chain-address-branch-pin', 'chain', 'the pin is a branch name', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=main\n') }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-address-short-pin', 'chain', 'the pin is 7 characters', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=cb97dbc\n') }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-address-upper-pin', 'chain', 'the pin is the registered commit id in upper case', { [meaningPath]: concepts(`  - id: artist\n    extends: meaning://github.com/meaninggraph/core/date?ref=${core.commit.toUpperCase()}\n`) }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-own-bad-pin', 'chain', 'a reference to the repository\'s own graph with a pin that is not a commit id', { [meaningPath]: concepts('  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album?ref=abc\n  - id: album\n') }, /a pin is a full 40-character commit id/, 'agree');
+add('chain-own-pinned', 'chain', 'a reference to the repository\'s own graph, pinned to an earlier commit of it', { [meaningPath]: concepts(`  - id: artist\n    extends: meaning://github.com/demo-db/chinook/album?ref=${baseCommit}\n`) }, /(history|read|have|registered)/, 'out-of-reach:history', { fix: { history: true, because: 'the repository has that commit in the history of its default branch, and the concept is there' } });
+
 // Where the strict YAML reader refuses a meaning file that the Directory's YAML library reads: each is a choice of the reader (package manifest README), one case
 // each, so that the list of what is stricter than the Directory in the file stage is the whole list.
 add('yaml-key', 'stricter', 'a label whose key YAML reads as a number', { [meaningPath]: concepts('  - id: artist\n    labels:\n      1: One\n') }, null, 'stricter:yaml-key');
@@ -316,7 +331,7 @@ for (const c of cases) {
   let acceptedWhen;
   if (c.outcome.startsWith('out-of-reach:')) {
     if (!c.fix) throw new Error(`${c.id}: an out-of-reach case needs a fix`);
-    const again = await directoryVerdict(files, { editRegistry: c.fix.registry, record: c.fix.record, key: c.fix.key, urls: c.fix.urls });
+    const again = await directoryVerdict(files, { editRegistry: c.fix.registry, record: c.fix.record, key: c.fix.key, urls: c.fix.urls, history: c.fix.history });
     if (again.length > 0) { console.error(`${c.id}: the Directory should accept these files under the fix (${c.fix.because}), and says: ${again.join(' | ').slice(0, 300)}`); process.exit(1); }
     acceptedWhen = c.fix.because;
   } else if (c.fix) throw new Error(`${c.id}: only an out-of-reach case has a fix`);
@@ -337,6 +352,19 @@ if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s)
 // first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
 // empty entities object always leaves recordsets that name things that are not entities.)
 const goRules = {
+  'chain-address-no-pin': 'meaning-chain',
+  'chain-values-of-no-pin': 'meaning-chain',
+  'chain-address-branch-pin': 'meaning-chain',
+  'chain-address-short-pin': 'meaning-chain',
+  'chain-address-upper-pin': 'meaning-chain',
+  'chain-own-bad-pin': 'meaning-chain',
+  'chain-cycle': 'meaning-chain',
+  'chain-self': 'meaning-chain',
+  'chain-unresolved': 'meaning-chain',
+  'chain-not-a-reference': 'meaning-chain',
+  'chain-long': 'meaning-chain',
+  'chain-values-of-unresolved': 'meaning-chain',
+  'chain-values-of-cycle': 'meaning-chain',
   'binding-no-model': 'meaning-binding',
   'binding-model-form': 'meaning-binding',
   'binding-other-model': 'meaning-binding',

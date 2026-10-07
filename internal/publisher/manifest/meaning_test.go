@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -140,7 +141,7 @@ func TestMeaningConcepts(t *testing.T) {
 		rules    []string // the rules of the findings, in order; none when the concepts are good
 		text     string   // in the first message
 	}{
-		"good":                                    {concepts: "  - id: artist\n    labels:\n      en: Artist\n    extends: album\n    values-of: genre\n    bindings:\n      - model: x\n        role: entity\n  - id: a1-b2\n"},
+		"good":                                    {concepts: "  - id: artist\n    labels:\n      en: Artist\n    extends: album\n    values-of: genre\n    bindings:\n      - model: x\n        role: entity\n  - id: a1-b2\n  - id: album\n  - id: genre\n"},
 		"a label of 200":                          {concepts: "  - id: a\n    labels: {en: " + long + "}\n"},
 		"astral letters count two":                {concepts: "  - id: a\n    labels: {en: \"" + strings.Repeat("\U0001F600", 100) + "\"}\n"},
 		"astral letters over 200":                 {concepts: "  - id: a\n    labels: {en: \"" + strings.Repeat("\U0001F600", 101) + "\"}\n", rules: []string{"meaning-concept"}, text: "the \"en\" label must be a plain string"},
@@ -205,7 +206,7 @@ func TestMeaningBindings(t *testing.T) {
 	}{
 		"an entity":                    {binding: "      - model: modelspec:///chinook.Artist\n        role: entity\n"},
 		"a property":                   {binding: "      - model: modelspec:///chinook.Artist\n        property: Name\n        role: display-name\n"},
-		"a pin on the same model":      {binding: "      - model: modelspec:///chinook.Artist?ref=abc\n        role: entity\n"},
+		"a pin on the same model":      {binding: "      - model: modelspec:///chinook.Artist?ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        role: entity\n"},
 		"a model that is text":         {binding: "      - model: chinook.Artist\n        role: entity\n", text: "is not a modelspec:///{module}.{Entity} reference"},
 		"a model that is missing":      {binding: "      - role: entity\n", text: "binding model nothing"},
 		"a model that is a number":     {binding: "      - model: 5\n        role: entity\n", text: "is not a modelspec:///"},
@@ -247,5 +248,79 @@ func TestMeaningBindings(t *testing.T) {
 	}
 	if !slices.Equal(rules, []string{"meaning-concept", "meaning-concept-duplicate"}) {
 		t.Errorf("rules %v", rules)
+	}
+}
+
+// The chains of the concepts inside the graph (meaning.mjs 195-226): extends and values-of, by bare id or by the graph's own unpinned address; a reference
+// to another graph, or to this one pinned, goes through the registry, which is not here, and ends the chain.
+func TestMeaningChains(t *testing.T) {
+	const head = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts:\n"
+	wants := MeaningWants{File: "m.yaml", GraphID: usableFact("chinook"), Licence: usableFact("CC0-1.0"), Module: "chinook", ModelHCL: "chinook.modelspec.hcl", GraphAddress: usableFact("meaning://GitHub.com/Demo-DB/chinook")}
+	chain := func(n int, last string) string {
+		var b strings.Builder
+		for i := 1; i <= n; i++ {
+			fmt.Fprintf(&b, "  - id: c%d\n", i)
+			if i < n {
+				fmt.Fprintf(&b, "    extends: c%d\n", i+1)
+			} else if last != "" {
+				fmt.Fprintf(&b, "    extends: %s\n", last)
+			}
+		}
+		return b.String()
+	}
+	for name, c := range map[string]struct {
+		concepts string
+		edit     func(w *MeaningWants)
+		text     string // in the one finding, or "" for none
+	}{
+		"a bare id":                                      {concepts: "  - id: a\n    extends: b\n  - id: b\n"},
+		"the own address, in another case":               {concepts: "  - id: a\n    extends: meaning://github.com/demo-db/chinook/b\n  - id: b\n"},
+		"values-of":                                      {concepts: "  - id: a\n    values-of: b\n  - id: b\n    extends: c\n  - id: c\n"},
+		"a chain of 50":                                  {concepts: chain(50, "")},
+		"a chain of 51":                                  {concepts: chain(51, "")},
+		"a chain of 52":                                  {concepts: chain(52, ""), text: "extends chain is longer than 50 concepts"},
+		"a chain that leaves the graph":                  {concepts: chain(60, "") + "  - id: z\n", text: "extends chain is longer than 50 concepts"},
+		"a cycle":                                        {concepts: "  - id: a\n    extends: b\n  - id: b\n    extends: a\n", text: "extends returns to a"},
+		"itself":                                         {concepts: "  - id: a\n    extends: a\n", text: "extends returns to a"},
+		"a concept the graph lacks":                      {concepts: "  - id: a\n    extends: nothing\n", text: "extends: nothing names concept nothing, which this graph does not have"},
+		"not a reference":                                {concepts: "  - id: a\n    extends: Not A Ref\n", text: `extends: "Not A Ref" is not a concept reference`},
+		"an address that is not one":                     {concepts: "  - id: a\n    extends: meaning://x\n", text: "is not a concept reference"},
+		"another graph":                                  {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"},
+		"another graph, no pin":                          {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date\n", text: "needs a ?ref= pin"},
+		"values-of another graph, no pin":                {concepts: "  - id: a\n    values-of: meaning://github.com/meaninggraph/core/date\n", text: "needs a ?ref= pin"},
+		"a pin that is a branch":                         {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=main\n", text: "a pin is a full 40-character commit id"},
+		"a pin of 7 characters":                          {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=abcdef0\n", text: "a pin is a full 40-character commit id"},
+		"a pin in upper case":                            {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=" + strings.Repeat("A", 40) + "\n", text: "a pin is a full 40-character commit id"},
+		"a pin of 39 and of 41":                          {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=" + strings.Repeat("a", 39) + "\n", text: "a pin is a full 40-character commit id"},
+		"a pin of 41":                                    {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=" + strings.Repeat("a", 41) + "\n", text: "a pin is a full 40-character commit id"},
+		"this graph, a pin that is not an id":            {concepts: "  - id: a\n    extends: meaning://github.com/demo-db/chinook/b?ref=main\n  - id: b\n", text: "a pin is a full 40-character commit id"},
+		"this graph, well pinned":                        {concepts: "  - id: a\n    extends: meaning://github.com/demo-db/chinook/nothing?ref=" + strings.Repeat("a", 40) + "\n"},
+		"an unpinned address, no graph address known":    {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date\n", edit: func(w *MeaningWants) { w.GraphAddress = Fact[string]{} }},
+		"a pinned address, no graph address known":       {concepts: "  - id: a\n    extends: meaning://github.com/meaninggraph/core/date?ref=main\n", edit: func(w *MeaningWants) { w.GraphAddress = Fact[string]{} }, text: "a pin is a full 40-character commit id"},
+		"the own address, pinned":                        {concepts: "  - id: a\n    extends: meaning://github.com/demo-db/chinook/b?ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  - id: b\n"},
+		"the own address, no address known":              {concepts: "  - id: a\n    extends: meaning://github.com/demo-db/chinook/b\n  - id: b\n", edit: func(w *MeaningWants) { w.GraphAddress = Fact[string]{} }},
+		"the own address, a concept it lacks":            {concepts: "  - id: a\n    extends: meaning://github.com/demo-db/chinook/nothing\n", text: "names concept nothing, which this graph does not have"},
+		"values-of that is lacking":                      {concepts: "  - id: a\n    values-of: nothing\n", text: "values-of: nothing names concept nothing"},
+		"values-of another graph":                        {concepts: "  - id: a\n    values-of: meaning://github.com/meaninggraph/core/date?ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"},
+		"values-of whose chain loops":                    {concepts: "  - id: a\n    values-of: b\n  - id: b\n    extends: c\n  - id: c\n    extends: b\n", text: "values-of b: extends returns to b"},
+		"a chain that reaches a graph":                   {concepts: "  - id: a\n    extends: b\n  - id: b\n    extends: meaning://github.com/meaninggraph/core/date?ref=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"},
+		"a concept with a bad shape is not in the graph": {concepts: "  - id: a\n    extends: b\n  - id: b\n    extends: 5\n", text: "extends must be a concept reference"},
+		"a concept declared twice is one":                {concepts: "  - id: a\n    extends: b\n  - id: b\n  - id: b\n    extends: a\n", text: "concept b is declared twice"},
+	} {
+		w := wants
+		if c.edit != nil {
+			c.edit(&w)
+		}
+		j, _ := NewJudge(Publisher)
+		findings := j.Meaning([]byte(head+c.concepts), w)
+		if c.text == "" {
+			if len(findings) != 0 {
+				t.Errorf("%s: findings %+v", name, findings)
+			}
+			continue
+		}
+		if len(findings) == 0 || !strings.Contains(findings[0].Message, c.text) {
+			t.Errorf("%s: findings %+v, want %q", name, findings, c.text)
+		}
 	}
 }

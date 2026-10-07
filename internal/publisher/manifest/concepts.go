@@ -78,6 +78,9 @@ func plainLabel(n *Node) bool {
 // Directory does not.
 func (c *collector) concepts(list *Node, w MeaningWants) {
 	seen := map[string]bool{}
+	var good []*Node // the concepts with a good shape, declared once, in the order of the file
+	var ids []string
+	byID := map[string]*Node{}
 	for position, concept := range list.Items {
 		if concept.Kind != kindMap || concept.Field("id") == nil || concept.Field("id").Kind != kindString {
 			c.add("meaning-concept", concept.Line, "concept #%d has no id: each concept is a mapping with an id of text, got %s", position+1, describe(concept))
@@ -94,9 +97,11 @@ func (c *collector) concepts(list *Node, w MeaningWants) {
 			c.add("meaning-concept-duplicate", concept.Field("id").Line, "concept %s is declared twice", id)
 		default:
 			seen[id] = true
+			good, ids, byID[id] = append(good, concept), append(ids, id), concept
 			c.bindings(concept, id, w)
 		}
 	}
+	c.chains(good, ids, byID, w)
 }
 
 // conceptShape reports the shape problems of a concept whose id is good and says whether it found any.
