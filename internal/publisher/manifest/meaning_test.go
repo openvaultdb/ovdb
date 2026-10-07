@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,69 @@ func TestEntrySpelling(t *testing.T) {
 	for _, c := range []byte("/:@[`{") {
 		if c != '/' && entrySpelling("a"+string(c)) {
 			t.Errorf("%q is accepted", c)
+		}
+	}
+}
+
+// The shape of the concepts, as the Directory's validateConcept holds it (meaning.mjs 58-80), and the rule that a concept is declared once.
+func TestMeaningConcepts(t *testing.T) {
+	const head = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts:\n"
+	wants := MeaningWants{File: "m.yaml", GraphID: usableFact("chinook"), Licence: usableFact("CC0-1.0"), Module: "chinook", ModelHCL: "chinook.modelspec.hcl"}
+	long := strings.Repeat("a", 200)
+	for name, c := range map[string]struct {
+		concepts string
+		rules    []string // the rules of the findings, in order; none when the concepts are good
+		text     string   // in the first message
+	}{
+		"good":                                    {concepts: "  - id: artist\n    labels:\n      en: Artist\n    extends: album\n    values-of: genre\n    bindings:\n      - model: x\n        role: entity\n  - id: a1-b2\n"},
+		"a label of 200":                          {concepts: "  - id: a\n    labels: {en: " + long + "}\n"},
+		"astral letters count two":                {concepts: "  - id: a\n    labels: {en: \"" + strings.Repeat("\U0001F600", 100) + "\"}\n"},
+		"astral letters over 200":                 {concepts: "  - id: a\n    labels: {en: \"" + strings.Repeat("\U0001F600", 101) + "\"}\n", rules: []string{"meaning-concept"}, text: "the \"en\" label must be a plain string"},
+		"a label of 201":                          {concepts: "  - id: a\n    labels: {en: " + long + "a}\n", rules: []string{"meaning-concept"}, text: "plain string of at most 200"},
+		"a blank label":                           {concepts: "  - id: a\n    labels: {en: \"\\u00a0 \\ufeff\"}\n", rules: []string{"meaning-concept"}, text: "plain string"},
+		"a label with a no-break space and text":  {concepts: "  - id: a\n    labels: {en: \"\\u00a0x\"}\n"},
+		"a label with a control":                  {concepts: "  - id: a\n    labels: {en: \"a\\x01b\"}\n", rules: []string{"meaning-concept"}, text: "plain string"},
+		"a label with DEL":                        {concepts: "  - id: a\n    labels: {en: \"a\\x7fb\"}\n", rules: []string{"meaning-concept"}, text: "plain string"},
+		"a label with <":                          {concepts: "  - id: a\n    labels: {en: \"a<b\"}\n", rules: []string{"meaning-concept"}, text: "plain string"},
+		"a label with >":                          {concepts: "  - id: a\n    labels: {en: \"a>b\"}\n", rules: []string{"meaning-concept"}, text: "plain string"},
+		"a label that is a number":                {concepts: "  - id: a\n    labels: {en: 5}\n", rules: []string{"meaning-concept"}, text: "plain string"},
+		"labels a list":                           {concepts: "  - id: a\n    labels: [x]\n", rules: []string{"meaning-concept"}, text: "labels must map language codes"},
+		"labels null":                             {concepts: "  - id: a\n    labels:\n", rules: []string{"meaning-concept"}, text: "labels must map language codes"},
+		"extends a number":                        {concepts: "  - id: a\n    extends: 5\n", rules: []string{"meaning-concept"}, text: "extends must be a concept reference"},
+		"values-of null":                          {concepts: "  - id: a\n    values-of:\n", rules: []string{"meaning-concept"}, text: "values-of must be a concept reference"},
+		"bindings text":                           {concepts: "  - id: a\n    bindings: x\n", rules: []string{"meaning-concept"}, text: "bindings must be a list"},
+		"bindings null":                           {concepts: "  - id: a\n    bindings:\n", rules: []string{"meaning-concept"}, text: "bindings must be a list"},
+		"a binding that is text":                  {concepts: "  - id: a\n    bindings:\n      - x\n", rules: []string{"meaning-concept"}, text: "every binding must be a mapping"},
+		"a role that is not listed":               {concepts: "  - id: a\n    bindings:\n      - role: nope\n", rules: []string{"meaning-concept"}, text: "binding role \"nope\" must be one of"},
+		"a role that is a number":                 {concepts: "  - id: a\n    bindings:\n      - role: 5\n", rules: []string{"meaning-concept"}, text: "binding role"},
+		"no role":                                 {concepts: "  - id: a\n    bindings:\n      - model: x\n", rules: []string{"meaning-concept"}, text: "binding role nothing"},
+		"every problem of a concept":              {concepts: "  - id: a\n    labels: x\n    extends: 1\n    bindings: y\n", rules: []string{"meaning-concept", "meaning-concept", "meaning-concept"}, text: "labels must map"},
+		"a number":                                {concepts: "  - 1\n", rules: []string{"meaning-concept"}, text: "concept #1 has no id"},
+		"null":                                    {concepts: "  - null\n", rules: []string{"meaning-concept"}, text: "concept #1 has no id"},
+		"a list":                                  {concepts: "  - [a]\n", rules: []string{"meaning-concept"}, text: "concept #1 has no id"},
+		"no id":                                   {concepts: "  - labels: {en: A}\n", rules: []string{"meaning-concept"}, text: "concept #1 has no id"},
+		"an id that is a number":                  {concepts: "  - id: 5\n", rules: []string{"meaning-concept"}, text: "concept #1 has no id"},
+		"a second concept with no id":             {concepts: "  - id: a\n  - x: 1\n", rules: []string{"meaning-concept"}, text: "concept #2 has no id"},
+		"an id in capitals":                       {concepts: "  - id: Artist\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id with an underscore":                {concepts: "  - id: art_ist\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id with a leading hyphen":             {concepts: "  - id: \"-a\"\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id with a trailing hyphen":            {concepts: "  - id: a-\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id with a double hyphen":              {concepts: "  - id: a--b\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id with a word starting with a digit": {concepts: "  - id: a-1b\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id that starts with a digit":          {concepts: "  - id: 1a\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an empty id":                             {concepts: "  - id: ''\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"an id with a space":                      {concepts: "  - id: a b\n", rules: []string{"meaning-concept"}, text: "lower-case words"},
+		"a concept declared twice":                {concepts: "  - id: a\n  - id: b\n  - id: a\n", rules: []string{"meaning-concept-duplicate"}, text: "concept a is declared twice"},
+		"a concept with a problem is not counted": {concepts: "  - id: a\n    extends: 1\n  - id: a\n", rules: []string{"meaning-concept"}, text: "extends must be"},
+	} {
+		j, _ := NewJudge(Publisher)
+		findings := j.Meaning([]byte(head+c.concepts), wants)
+		var got []string
+		for _, f := range findings {
+			got = append(got, f.Rule)
+		}
+		if !slices.Equal(got, c.rules) || (len(findings) > 0 && !strings.Contains(findings[0].Message, c.text)) {
+			t.Errorf("%s: findings %+v, want rules %v with %q", name, findings, c.rules, c.text)
 		}
 	}
 }

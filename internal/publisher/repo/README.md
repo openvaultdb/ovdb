@@ -114,6 +114,8 @@ and a path below a file or symlink do not):
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
 | `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
 | `meaning-id`, `meaning-license` | its `id` is `meaning.graph.id` and its `license` is `licences.meaning`, as strings (the Directory compares the licence only when the file has a text one, and does not read the id here: Go is stricter than it, as the checker is) | 453-457 |
+| `meaning-concept` | 3 | A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts. |
+| `meaning-concept-duplicate` | 1 | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. |
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
 | `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
@@ -132,14 +134,13 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 108 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 114 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
 its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 46 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
-| outcome: looser:F3 | 27 | the same, for the shape of a concept and a concept declared twice |
+| outcome: agree | 73 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: looser:F4 | 10 | the same, for the bindings of a concept |
 | outcome: looser:F5 | 7 | the same, for the `extends` and `values-of` chains inside the repository's own graph |
 | outcome: looser:F6 | 3 | the same, for the meaning file's `models:` entry when the manifest does not write `model.hcl` |
@@ -150,6 +151,14 @@ its name states. `directory_stage_test.go` replays each case in memory with both
 | outcome: stricter:model-hcl-required | 1 | Go refuses a manifest that does not write `model.hcl`; the Directory accepts it |
 | outcome: stricter:meaning-license-required | 2 | Go refuses a meaning file with no text `license`; the Directory compares it only when it is text |
 | outcome: stricter:meaning-id-compared | 1 | Go refuses a meaning file whose `id` is not `meaning.graph.id`; the Directory does not read it in this stage |
+| outcome: stricter:yaml-key | 1 | Go refuses a mapping key that YAML reads as a number, a boolean or null (the strict reader); the Directory's YAML library reads it as a key |
+| outcome: stricter:yaml-anchor | 1 | Go refuses anchors and aliases; the Directory's library expands them |
+| outcome: stricter:yaml-tag | 1 | Go refuses tags (`!`, `!!`); the Directory's library resolves them |
+| outcome: stricter:yaml-directive | 1 | Go refuses a `%YAML` or `%TAG` directive; the Directory's library follows it |
+| outcome: stricter:yaml-documents | 1 | Go refuses a document end marker and a second document; the Directory's library reads the first document |
+| outcome: stricter:yaml-unsupported | 1 | Go refuses a quoted value written over more than one line; the Directory's library reads it |
+
+The strict YAML reader refuses some meaning files that the Directory's library reads (the six `stricter:yaml-*` kinds above, one case each); and a concept that breaks a rule of the concepts' shape may be refused by the reader first, under its own code (a merge key, `%YAML 1.1`, an integer of 30 digits as a label), with the same verdict: do not expect `meaning-concept` for every one of them.
 
 An `out-of-reach` label is mechanical, not a judgement: the case carries the record, key, registry or URL map (`fix`) under which the Directory accepts **the same
 files**, the generator runs `analyseDatabase` again under it and stops unless the Directory accepts, and the golden says which (`acceptedWhen`). A refusal that no
@@ -187,7 +196,7 @@ repositories at their pins; it is not part of a check of one repository and stay
 | 537-545 | own-form `model.address`: host, lower case, module, no `?ref=` | has | `has-model-address-lower`, `-ref`, `-module`, `-host` |
 | 546 | own-form `model.address` names the record's repository | **F7** (no profile compares it with `publisher.repository`) | `has-model-address-other-repository` |
 | 549-572 | the model as the ModelSpec registry registers it | needs the registry | none |
-| 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | **F3** | `concept-*` (27) |
+| 708-712 | `validateConcept` (meaning.mjs 58-80) and a concept declared twice | has (F3: `meaning-concept`, `meaning-concept-duplicate`) | `concept-*` (27) |
 | 728-754 | bindings | **F4** | `binding-*` (10) |
 | 767-770 | chains (meaning.mjs 195-226) inside the own graph | **F5**; by address to another graph needs the registry | `chain-*` (7), `chain-address-unregistered`, `chain-core-unregistered` |
 | 775-781 | the page of every recordset, with the real names | has (the page loop of #58, code `manifest-recordsets`) | `has-recordset-page` |
@@ -241,10 +250,10 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-343 cases: 125 accepted by the checker, 116 accepted with `--repository`; 293 agree with Go, 50
-are stricter in Go, in 28 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
+347 cases: 129 accepted by the checker, 120 accepted with `--repository`; 293 agree with Go, 54
+are stricter in Go, in 30 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
 (5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 40 model files, 45 JSON
-differences, 62 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+differences, 66 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
 states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
 
