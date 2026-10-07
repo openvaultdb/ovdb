@@ -792,8 +792,8 @@ func TestTheMeaningFileMustAgreeWithTheManifest(t *testing.T) {
 	only(t, Check(m, publisher()), "meaning-shape", meaningPth, 1, "is not a MeaningGraph file")
 	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte("id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: other.modelspec.hcl\nconcepts: []\n")}
 	only(t, Check(m, publisher()), "meaning-hcl", meaningPth, 4, `model.hcl is "model/chinook.modelspec.hcl", but the models: entry for "chinook" is "model/other.modelspec.hcl"`)
-	// The models: entry is judged when the module is known and model.hcl is a file: with no readable model there is no module, and with
-	// no model.hcl the manifest rules and the kind finding speak.
+	// The models: entry is judged when the module is known: with no readable model there is no module. With model.hcl written and not a file, the kind
+	// finding speaks of it and the entry (here, none) is judged as well, as the Directory does.
 	noModules := "id: chinook\nlicense: CC0-1.0\nconcepts: []\n"
 	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(noModules)}
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte("{")}
@@ -801,7 +801,9 @@ func TestTheMeaningFileMustAgreeWithTheManifest(t *testing.T) {
 	m = goodRepository()
 	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(noModules)}
 	delete(m.Nodes, hclPath)
-	only(t, Check(m, publisher()), RuleFile, "ovdb.yaml", 15, "model.hcl")
+	if r := Check(m, publisher()); !slices.Equal(rulesOf(r), []string{RuleFile, "meaning-models"}) {
+		t.Errorf("findings %v", r.Findings)
+	}
 	// The model file is not read when it cannot be, and the meaning file still is.
 	m = goodRepository()
 	m.BrokenBlobs = map[string]error{modelPath: ErrObjectMissing}
@@ -923,6 +925,48 @@ func TestAsciiLeavesQuotesRaw(t *testing.T) {
 	}
 	if got := ascii("tab\there\u00e9"); got != `tab\there\u00e9` {
 		t.Errorf("escapes: %q", got)
+	}
+}
+
+// Without model.hcl the models: entry of the meaning file is the only name of the model's source file, and it must be a regular file of the commit.
+func TestTheModelsEntryIsJudgedByItselfWithoutModelHCL(t *testing.T) {
+	for name, c := range map[string]struct {
+		edit func(m *Memory)
+		text string
+	}{
+		"a file":    {func(m *Memory) {}, ""},
+		"missing":   {func(m *Memory) { delete(m.Nodes, hclPath) }, "does not exist"},
+		"a symlink": {func(m *Memory) { m.Nodes[hclPath] = Node{Kind: Symlink, Content: []byte("x")} }, "is a symlink"},
+		"a bad filename": {func(m *Memory) {
+			m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(strings.Replace(goodMeaning, "chinook.modelspec.hcl", "chinook.txt", 1))}
+		}, "must be a .modelspec.hcl file"},
+	} {
+		m, _ := withManifest("  hcl: model/chinook.modelspec.hcl\n", "")
+		c.edit(m)
+		var found []string
+		for _, f := range Check(m, Options{Profile: manifest.Directory}).Findings {
+			found = append(found, f.Message)
+		}
+		switch {
+		case c.text == "" && len(found) != 0, c.text != "" && (len(found) != 1 || !strings.Contains(found[0], c.text)):
+			t.Errorf("%s: findings %v, want %q", name, found, c.text)
+		}
+	}
+}
+
+func TestTheModelsEntryReportsAnUnreadableDirectoryWithoutModelHCL(t *testing.T) {
+	for _, err := range []error{errors.New("unreadable entry tree"), ErrPartialClone, ErrObjectMissing, ErrObjectCorrupt, ErrAlternates} {
+		t.Run(ruleOf(err), func(t *testing.T) {
+			m, _ := withManifest("  hcl: model/chinook.modelspec.hcl\n", "")
+			m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(strings.Replace(goodMeaning, "chinook.modelspec.hcl", "../entry-only/chinook.modelspec.hcl", 1))}
+			m.Nodes["entry-only/chinook.modelspec.hcl"] = Node{Kind: File}
+			m.BrokenDirs = map[string]error{"entry-only": err}
+			result := Check(m, Options{Profile: manifest.Directory})
+			if result.OK() {
+				t.Fatal("an unreadable models: entry must not pass")
+			}
+			only(t, result, ruleOf(err), meaningPth, 0, "cannot list the files of the commit: "+err.Error())
+		})
 	}
 }
 

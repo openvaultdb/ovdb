@@ -20,6 +20,9 @@ type MeaningWants struct {
 	// Model is what the bindings of the concepts are held to: the entities of the model file and the names of their properties. It is nil when the
 	// model file is not one the Directory reads (it has refused it, and reads no binding).
 	Model *ModelFacts
+	// EntryFile says what the models: entry names when it is not a regular file of the commit ("is missing", "is a symlink"), and "" when it is one. The
+	// Directory reads the entry whether or not the manifest writes model.hcl; without model.hcl it is the only thing that names the model's source file.
+	EntryFile func(path string) string
 }
 
 // ModelFacts are the entities of a model file and, for each, the names of its properties.
@@ -59,14 +62,15 @@ func (j *Judge) Meaning(doc []byte, w MeaningWants) []Finding {
 			c.add("meaning-"+same.key, fieldLine(root, same.key), "%s is %s in the manifest, but the %s of this file is %s", same.label, rules.Quote(same.fact.Value), same.key, describe(got))
 		}
 	}
-	if w.Module != "" && w.ModelHCL != "" {
+	if w.Module != "" {
 		c.modelsEntry(root, w)
 	}
 	return c.findings
 }
 
 // modelsEntry holds the models: entry of the module to the checker's rule: spelled with letters, digits and . _ / - only, no leading
-// slash, no empty segment and no trailing slash, joined to the directory of the meaning file it must stay inside the repository, and it is model.hcl.
+// slash, no empty segment and no trailing slash, joined to the directory of the meaning file it must stay inside the repository, it ends in .modelspec.hcl,
+// and it is model.hcl; without model.hcl it must be a regular file of the commit (the Directory reads the entry whether or not model.hcl is written).
 func (c *collector) modelsEntry(root *Node, w MeaningWants) {
 	var entry *Node
 	if models := root.Field("models"); models != nil {
@@ -81,8 +85,16 @@ func (c *collector) modelsEntry(root *Node, w MeaningWants) {
 	// The checker also refuses a result that is .. or starts with ../, which rules.IsRepositoryPath refuses as it does any .. segment.
 	if !entrySpelling(entry.Text) || !rules.IsRepositoryPath(resolved) {
 		c.add("meaning-models", entry.Line, "models must name the ModelSpec module %s with a relative path that stays inside the repository (letters, digits and . _ / - only, no leading / or trailing /, no empty segment, no .. that leaves it), got %s", rules.Quote(w.Module), rules.Quote(entry.Text))
-	} else if resolved != w.ModelHCL {
-		c.add("meaning-hcl", entry.Line, "model.hcl is %s, but the models: entry for %s is %s", rules.Quote(w.ModelHCL), rules.Quote(w.Module), rules.Quote(resolved))
+	} else if !strings.HasSuffix(resolved, ".modelspec.hcl") {
+		c.add("meaning-models", entry.Line, "the %s model %s must be a .modelspec.hcl file (the model's source)", w.Module, rules.Quote(resolved))
+	} else if w.ModelHCL != "" {
+		if resolved != w.ModelHCL {
+			c.add("meaning-hcl", entry.Line, "model.hcl is %s, but the models: entry for %s is %s", rules.Quote(w.ModelHCL), rules.Quote(w.Module), rules.Quote(resolved))
+		}
+	} else if what := w.EntryFile; what != nil {
+		if found := what(resolved); found != "" {
+			c.add("meaning-model-file", entry.Line, "the %s model %s %s: the models: entry must name a regular file of the repository", w.Module, rules.Quote(resolved), found)
+		}
 	}
 }
 

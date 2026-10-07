@@ -259,9 +259,9 @@ add('has-models-entry-missing', 'has', 'the models: entry names a file that is n
 // model.hcl is optional for the Directory (a manifest stage rule only when it is written); the models: entry is then the only thing that names the file.
 const noHcl = edit('  hcl: model/chinook.modelspec.hcl\n', '');
 add('nohcl-accepted', 'stricter', 'no model.hcl: the models: entry names the model file, which is there', { [manifestPath]: noHcl }, null, 'stricter:model-hcl-required');
-add('nohcl-entry-suffix', 'has', 'no model.hcl, and the models: entry names a file that is not .modelspec.hcl (it exists)', { [manifestPath]: noHcl, [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: chinook.model.txt'), 'model/chinook.model.txt': () => 'x\n' }, /the chinook model model\/chinook\.model\.txt must be a \.modelspec\.hcl file/, 'looser:F6');
-add('nohcl-entry-missing', 'has', 'no model.hcl, and the models: entry names a file that is not there', { [manifestPath]: noHcl, [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: nowhere.modelspec.hcl') }, /model\/nowhere\.modelspec\.hcl does not exist at commit/, 'looser:F6');
-add('nohcl-entry-spelling', 'has', 'no model.hcl, and the models: entry has a space in it', { [manifestPath]: noHcl, [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: "chinook modelspec.hcl"') }, /models must name the ModelSpec module chinook/, 'looser:F6');
+add('nohcl-entry-suffix', 'has', 'no model.hcl, and the models: entry names a file that is not .modelspec.hcl (it exists)', { [manifestPath]: noHcl, [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: chinook.model.txt'), 'model/chinook.model.txt': () => 'x\n' }, /the chinook model model\/chinook\.model\.txt must be a \.modelspec\.hcl file/, 'agree');
+add('nohcl-entry-missing', 'has', 'no model.hcl, and the models: entry names a file that is not there', { [manifestPath]: noHcl, [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: nowhere.modelspec.hcl') }, /model\/nowhere\.modelspec\.hcl does not exist at commit/, 'agree');
+add('nohcl-entry-spelling', 'has', 'no model.hcl, and the models: entry has a space in it', { [manifestPath]: noHcl, [meaningPath]: edit('  chinook: chinook.modelspec.hcl', '  chinook: "chinook modelspec.hcl"') }, /models must name the ModelSpec module chinook/, 'agree');
 add('stricter-meaning-license-missing', 'stricter', 'the meaning file has no license: the Directory compares it only when it is text', { [meaningPath]: edit('license: CC0-1.0\n', '') }, null, 'stricter:meaning-license-required');
 add('stricter-meaning-license-number', 'stricter', 'the meaning file\'s license is a number', { [meaningPath]: edit('license: CC0-1.0\n', 'license: 5\n') }, null, 'stricter:meaning-license-required');
 add('stricter-meaning-id', 'stricter', 'the meaning file\'s id is not meaning.graph.id: the Directory does not read it', { [meaningPath]: edit('\nid: chinook\n', '\nid: other\n') }, null, 'stricter:meaning-id-compared');
@@ -352,6 +352,9 @@ if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s)
 // first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
 // empty entities object always leaves recordsets that name things that are not entities.)
 const goRules = {
+  'nohcl-entry-suffix': 'meaning-models',
+  'nohcl-entry-missing': 'meaning-model-file',
+  'nohcl-entry-spelling': 'meaning-models',
   'chain-address-no-pin': 'meaning-chain',
   'chain-values-of-no-pin': 'meaning-chain',
   'chain-address-branch-pin': 'meaning-chain',
