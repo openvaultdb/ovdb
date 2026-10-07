@@ -57,7 +57,7 @@ const Other = "other"
 var Options = []string{"demo", "create", "connect", "server", "browse", "explore", "skills", "settings", "databases"}
 
 // Engines are the storage engine ids ovdb offers.
-var Engines = []string{"ingitdb", "sqlite", "firestore", "mysql", "postgres"}
+var Engines = []string{"ingitdb", "sqlite", "firestore", "http", "mysql", "postgres"}
 
 // Skills are the skills ovdb installs.
 var Skills = []string{"openvaultdb", "todo-demo"}

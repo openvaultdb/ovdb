@@ -11,8 +11,11 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -75,6 +78,12 @@ func mebibytes(n int64) string { return grouped(n>>20) + " MiB" }
 type serveDeps struct {
 	mountFile func(path string) (*core.Database, error)
 	run       func(cmd *cobra.Command, srv *http.Server) error
+	// handler is a synthetic lifecycle seam. Production always uses the
+	// checked data server's real handler when this is nil.
+	handler func(*server.Server) http.Handler
+	// drainTimeout bounds forced handler settlement after run returns.
+	// Zero uses five seconds; tests inject a short deterministic deadline.
+	drainTimeout time.Duration
 }
 
 // defaultServeDeps is what the binary runs with: the real mount and a listener.
@@ -85,7 +94,7 @@ func defaultServeDeps() serveDeps {
 func newServeCmd() *cobra.Command { return newServeCmdWith(defaultServeDeps()) }
 
 func newServeCmdWith(deps serveDeps) *cobra.Command {
-	var addr, dir, dataDir, publicURL string
+	var addr, dir, dataDir, publicURL, serverID, providerProfilesPath string
 	var manifests []string
 	var authEnabled, readOnly bool
 	var ownerToken, authStorePath string
@@ -103,6 +112,22 @@ created databases persist as manifests in the data-dir and are remounted on rest
 
 ` + queryLimitsHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("server-id") {
+				if strings.TrimSpace(serverID) == "" || len(serverID) > 256 || !utf8.ValidString(serverID) || strings.ContainsFunc(serverID, unicode.IsControl) {
+					return fmt.Errorf("--server-id must be a nonblank identity of at most 256 UTF-8 bytes without control characters")
+				}
+			}
+			var providerProfiles map[string]server.ProviderReadProfile
+			if cmd.Flags().Changed("provider-read-profiles") {
+				if strings.TrimSpace(providerProfilesPath) == "" {
+					return fmt.Errorf("--provider-read-profiles requires an operator-supplied admission JSON file")
+				}
+				var err error
+				providerProfiles, err = loadProviderReadProfiles(providerProfilesPath)
+				if err != nil {
+					return err
+				}
+			}
 			if publicURL != "" {
 				parsed, err := url.Parse(publicURL)
 				if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -111,6 +136,20 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				publicURL = strings.TrimRight(publicURL, "/")
 			}
 			dbs := map[string]*core.Database{}
+			var dataServer *server.Server
+			var lifetimeSignals chan os.Signal
+			requests := newServeRequests()
+			defer requests.cleanup(func() {
+				if dataServer != nil {
+					dataServer.CloseSnapshots()
+				}
+				for _, db := range dbs {
+					_ = db.Close()
+				}
+				if lifetimeSignals != nil {
+					signal.Stop(lifetimeSignals)
+				}
+			})
 			if dir != "" {
 				mounted, err := mount.Dir(dir)
 				if err != nil {
@@ -124,6 +163,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 					return err
 				}
 				if _, dup := dbs[db.ID()]; dup {
+					_ = db.Close()
 					return fmt.Errorf("%s: duplicate database id %q", path, db.ID())
 				}
 				dbs[db.ID()] = db
@@ -138,21 +178,21 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				if err != nil {
 					return err
 				}
-				for id, db := range created {
+				for id := range created {
 					if _, dup := dbs[id]; dup {
+						for _, db := range created {
+							_ = db.Close()
+						}
 						return fmt.Errorf("%s: duplicate database id %q (also in --data-dir)", dataDir, id)
 					}
+				}
+				for id, db := range created {
 					dbs[id] = db
 				}
 			}
 			if len(dbs) == 0 && dataDir == "" {
 				return fmt.Errorf("no databases mounted: provide --manifest files, a --dir with *.yaml manifests, or a --data-dir for runtime-created databases")
 			}
-			defer func() {
-				for _, db := range dbs {
-					_ = db.Close()
-				}
-			}()
 
 			for _, db := range dbs {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "mounted %q (engine=%s, schema_mode=%s)\n",
@@ -160,6 +200,9 @@ created databases persist as manifests in the data-dir and are remounted on rest
 			}
 
 			var opts []server.Option
+			if serverID != "" {
+				opts = append(opts, server.WithSourceRights(serverID, nil))
+			}
 			if publicURL != "" {
 				opts = append(opts, server.WithPublicOrigin(publicURL))
 			}
@@ -202,15 +245,40 @@ created databases persist as manifests in the data-dir and are remounted on rest
 				}
 			}
 
+			var err error
+			if providerProfiles != nil {
+				opts = append(opts, server.WithProviderReadProfiles(providerProfiles))
+			}
+			dataServer, err = server.NewChecked(appVersion, dbs, opts...)
+			if err != nil {
+				return err
+			}
+			handler := dataServer.Handler()
+			if deps.handler != nil {
+				handler = deps.handler(dataServer)
+			}
 			srv := &http.Server{
 				Addr:              addr,
-				Handler:           server.New(appVersion, dbs, opts...).Handler(),
+				Handler:           requests.wrap(handler),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
-			return deps.run(cmd, srv)
+			// Keep repeated interrupt/termination signals from killing the
+			// cleanup owner after serveUntilSignal returns its timeout. The
+			// ordinary listener subscription still initiates shutdown; this
+			// lifetime guard is released only after resources are settled.
+			lifetimeSignals = make(chan os.Signal, 1)
+			signal.Notify(lifetimeSignals, os.Interrupt, syscall.SIGTERM)
+			runErr := deps.run(cmd, srv)
+			drainTimeout := deps.drainTimeout
+			if drainTimeout <= 0 {
+				drainTimeout = 5 * time.Second
+			}
+			return errors.Join(runErr, requests.drain(drainTimeout))
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", DefaultAddr, "listen address")
+	cmd.Flags().StringVar(&serverID, "server-id", "", "stable operator-supplied server identity for source-rights evidence (required when manifests declare terms)")
+	cmd.Flags().StringVar(&providerProfilesPath, "provider-read-profiles", "", "opt in mounted HTTP instances using an externally admitted JSON map of database id to collection, binding and sourceRight notices; requires aware consumers and --server-id, does not verify artifacts or authorize activation")
 	cmd.Flags().StringVar(&publicURL, "public-url", "", "externally reachable HTTP(S) origin for database connection URLs (set behind a reverse proxy)")
 	cmd.Flags().StringVar(&dir, "dir", "", "directory with database manifest *.yaml files")
 	cmd.Flags().StringArrayVar(&manifests, "manifest", nil, "database manifest file (repeatable)")
@@ -232,6 +300,7 @@ created databases persist as manifests in the data-dir and are remounted on rest
 func serveUntilSignal(cmd *cobra.Command, srv *http.Server) error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(stop)
 	return serveUntil(cmd.OutOrStdout(), srv.Addr, srv, stop)
 }
 
@@ -239,6 +308,7 @@ func serveUntilSignal(cmd *cobra.Command, srv *http.Server) error {
 type stoppableServer interface {
 	ListenAndServe() error
 	Shutdown(ctx context.Context) error
+	Close() error
 }
 
 // serveUntil starts srv, says where it listens, and returns when the listener
@@ -257,10 +327,112 @@ func serveUntil(out io.Writer, addr string, srv stoppableServer, stop <-chan os.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
+			// Shutdown leaves active connections alive when its deadline
+			// expires. Close cancels their request contexts before the command
+			// drains its tracked handlers and releases mounted resources.
+			return errors.Join(err, srv.Close())
 		}
 		return nil
 	}
+}
+
+var errServeHandlersActive = errors.New("HTTP handlers did not settle before the forced drain deadline; resource cleanup is deferred until they exit")
+
+type serveHandlersActiveError struct{ cleaned <-chan struct{} }
+
+func (*serveHandlersActiveError) Error() string     { return errServeHandlersActive.Error() }
+func (*serveHandlersActiveError) Unwrap() error     { return errServeHandlersActive }
+func (e *serveHandlersActiveError) WaitForCleanup() { <-e.cleaned }
+
+// serveRequests owns admitted handlers and cleanup together. A driver that
+// ignores cancellation cannot make bounded shutdown report success or make
+// snapshots/databases close beneath its request. Its last exiting handler
+// performs any cleanup deferred after the drain deadline.
+type serveRequests struct {
+	mu       sync.Mutex
+	stopping bool
+	next     uint64
+	active   map[uint64]context.CancelFunc
+	idle     chan struct{}
+	cleaned  chan struct{}
+	pending  []func()
+}
+
+func newServeRequests() *serveRequests {
+	idle := make(chan struct{})
+	close(idle)
+	return &serveRequests{active: map[uint64]context.CancelFunc{}, idle: idle, cleaned: make(chan struct{})}
+}
+
+func (s *serveRequests) wrap(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		if s.stopping {
+			s.mu.Unlock()
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "server is stopping", http.StatusServiceUnavailable)
+			return
+		}
+		if len(s.active) == 0 {
+			s.idle = make(chan struct{})
+		}
+		s.next++
+		id := s.next
+		ctx, cancel := context.WithCancel(r.Context())
+		s.active[id] = cancel
+		s.mu.Unlock()
+		defer func() {
+			cancel()
+			s.mu.Lock()
+			delete(s.active, id)
+			var cleanup []func()
+			if len(s.active) == 0 {
+				cleanup, s.pending = s.pending, nil
+				close(s.idle)
+			}
+			s.mu.Unlock()
+			for _, release := range cleanup {
+				release()
+			}
+		}()
+		handler.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *serveRequests) drain(timeout time.Duration) error {
+	s.mu.Lock()
+	s.stopping = true
+	for _, cancel := range s.active {
+		cancel()
+	}
+	idle := s.idle
+	s.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return &serveHandlersActiveError{cleaned: s.cleaned}
+	}
+}
+
+func (s *serveRequests) cleanup(release func()) {
+	// Each command supplies its one resource cleanup callback. Its completion,
+	// rather than handler-idle alone, permits the executable to exit.
+	cleanup := func() {
+		release()
+		close(s.cleaned)
+	}
+	s.mu.Lock()
+	s.stopping = true
+	if len(s.active) != 0 {
+		s.pending = append(s.pending, cleanup)
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	cleanup()
 }
 
 // isNonLoopback reports whether addr (host:port) binds to a non-loopback
