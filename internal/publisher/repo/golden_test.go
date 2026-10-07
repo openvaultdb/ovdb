@@ -286,6 +286,7 @@ func (m *model) memory() *Memory {
 var stricterKinds = map[string]string{
 	"meaning-concepts":          "The meaning file has no concepts list (the key is missing, or is null, a mapping or text): the Directory refuses it (directory.mjs, parseMeaningFile) and the Chinook checker never reads the concepts.",
 	"meaning-concept":           "A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts.",
+	"meaning-binding":           "A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts.",
 	"meaning-concept-duplicate": "A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts.",
 	RuleModelVersion:            "The model file has no \"modelspec\" version that is text: the Directory refuses it (parseModelSpec, modelspec.mjs); the checker reads only the module and the names of the entities.",
 	RuleModelEntity:             "An entity of the model file has a name that is not an identifier, or no properties: the Directory refuses it (parseModelSpec); the checker reads only the names of the entities.",

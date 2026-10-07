@@ -212,14 +212,14 @@ add('concept-duplicate', 'concept', 'a concept declared twice', { [meaningPath]:
 // the bindings (directory.mjs 728-754)
 const bound = (binding) => concepts(`  - id: artist\n    bindings:\n${binding}`);
 add('binding-valid', 'control', 'an entity binding and a property binding', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        role: entity\n      - model: modelspec:///chinook.Artist\n        property: Name\n        role: display-name\n') }, null, 'agree');
-add('binding-no-model', 'binding', 'a binding with no model', { [meaningPath]: bound('      - role: entity\n') }, /binding model undefined is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'looser:F4');
-add('binding-model-form', 'binding', 'a binding model that is not a reference', { [meaningPath]: bound('      - model: chinook.Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'looser:F4');
-add('binding-other-model', 'binding', 'a binding that names another repository\'s model', { [meaningPath]: bound('      - model: modelspec://github.com/other/repo/chinook.Artist\n        role: entity\n') }, /names a model outside this database/, 'looser:F4');
-add('binding-module', 'binding', 'a binding whose module is not the model\'s', { [meaningPath]: bound('      - model: modelspec:///other.Artist\n        role: entity\n') }, /names module other, but the ModelSpec at/, 'looser:F4');
-add('binding-entity', 'binding', 'a binding whose entity is not in the model', { [meaningPath]: bound('      - model: modelspec:///chinook.Nope\n        role: entity\n') }, /names an entity that is not in the ModelSpec/, 'looser:F4');
-add('binding-role-needs-property', 'binding', 'a role other than entity with no property', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        role: identifier\n') }, /with role identifier must name a property/, 'looser:F4');
-add('binding-property', 'binding', 'a property the entity does not have', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        property: Nope\n        role: identifier\n') }, /names property "Nope", which Artist does not have in the ModelSpec/, 'looser:F4');
-add('binding-property-number', 'binding', 'a property that is a number', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        property: 5\n        role: identifier\n') }, /names property 5, which Artist does not have in the ModelSpec/, 'looser:F4');
+add('binding-no-model', 'binding', 'a binding with no model', { [meaningPath]: bound('      - role: entity\n') }, /binding model undefined is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
+add('binding-model-form', 'binding', 'a binding model that is not a reference', { [meaningPath]: bound('      - model: chinook.Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
+add('binding-other-model', 'binding', 'a binding that names another repository\'s model', { [meaningPath]: bound('      - model: modelspec://github.com/other/repo/chinook.Artist\n        role: entity\n') }, /names a model outside this database/, 'agree');
+add('binding-module', 'binding', 'a binding whose module is not the model\'s', { [meaningPath]: bound('      - model: modelspec:///other.Artist\n        role: entity\n') }, /names module other, but the ModelSpec at/, 'agree');
+add('binding-entity', 'binding', 'a binding whose entity is not in the model', { [meaningPath]: bound('      - model: modelspec:///chinook.Nope\n        role: entity\n') }, /names an entity that is not in the ModelSpec/, 'agree');
+add('binding-role-needs-property', 'binding', 'a role other than entity with no property', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        role: identifier\n') }, /with role identifier must name a property/, 'agree');
+add('binding-property', 'binding', 'a property the entity does not have', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        property: Nope\n        role: identifier\n') }, /names property "Nope", which Artist does not have in the ModelSpec/, 'agree');
+add('binding-property-number', 'binding', 'a property that is a number', { [meaningPath]: bound('      - model: modelspec:///chinook.Artist\n        property: 5\n        role: identifier\n') }, /names property 5, which Artist does not have in the ModelSpec/, 'agree');
 
 // the chains of a concept (meaning.mjs 195-226), inside the repository's own graph
 const chain = (n) => Array.from({ length: n }, (_, i) => `  - id: c${i + 1}\n${i + 1 < n ? `    extends: c${i + 2}\n` : ''}`).join('');
@@ -282,8 +282,8 @@ add('record-graph-id', 'record', 'meaning.graph.id is not the record\'s meaning_
 add('concept-label-gt', 'concept', 'a label with > in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a>b"\n') }, /the en label must be a plain string/, 'agree');
 add('concept-label-del', 'concept', 'a label with DEL in it', { [meaningPath]: concepts('  - id: artist\n    labels:\n      en: "a\\x7fb"\n') }, /the en label must be a plain string/, 'agree');
 add('concept-binding-null', 'concept', 'a binding that is null', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - null\n') }, /every binding must be a mapping/, 'agree');
-add('binding-module-underscore', 'binding', 'a reference whose module starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///_chinook.Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'looser:F4');
-add('binding-entity-underscore', 'binding', 'a reference whose entity starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook._Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'looser:F4');
+add('binding-module-underscore', 'binding', 'a reference whose module starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///_chinook.Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
+add('binding-entity-underscore', 'binding', 'a reference whose entity starts with _ is not a reference', { [meaningPath]: concepts('  - id: artist\n    bindings:\n      - model: modelspec:///chinook._Artist\n        role: entity\n') }, /is not a modelspec:\/\/\/\{module\}\.\{Entity\} reference/, 'agree');
 add('chain-51', 'chain', 'an extends chain of 51 concepts', { [meaningPath]: concepts(chain(51)) }, null, 'agree');
 
 // Where the strict YAML reader refuses a meaning file that the Directory's YAML library reads: each is a choice of the reader (package manifest README), one case
@@ -337,6 +337,16 @@ if (reasonProblems.length > 0) { console.error(`${reasonProblems.length} case(s)
 // first finding of the Directory profile to it. (modelspec-no-entities agrees through the recordsets rule: a manifest cannot list no recordsets, so an
 // empty entities object always leaves recordsets that name things that are not entities.)
 const goRules = {
+  'binding-no-model': 'meaning-binding',
+  'binding-model-form': 'meaning-binding',
+  'binding-other-model': 'meaning-binding',
+  'binding-module': 'meaning-binding',
+  'binding-entity': 'meaning-binding',
+  'binding-role-needs-property': 'meaning-binding',
+  'binding-property': 'meaning-binding',
+  'binding-property-number': 'meaning-binding',
+  'binding-module-underscore': 'meaning-binding',
+  'binding-entity-underscore': 'meaning-binding',
   'concept-not-mapping': 'meaning-concept',
   'concept-flow-scalars': 'meaning-concept',
   'concept-no-id': 'meaning-concept',

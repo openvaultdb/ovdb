@@ -15,6 +15,14 @@ type MeaningWants struct {
 	// Module is the module the model file declares, and "" when it declares none that can be read. ModelHCL is model.hcl, and "" when
 	// it is not a regular file of the commit: the models: entry is judged only when both are known, as the checker does.
 	Module, ModelHCL string
+	// Model is what the bindings of the concepts are held to: the entities of the model file and the names of their properties. It is nil when the
+	// model file is not one the Directory reads (it has refused it, and reads no binding).
+	Model *ModelFacts
+}
+
+// ModelFacts are the entities of a model file and, for each, the names of its properties.
+type ModelFacts struct {
+	Entities map[string]map[string]struct{}
 }
 
 // Meaning judges the meaning file of an own-form manifest: it is YAML that the reader reads, a mapping with a concepts list, whose id and license are the
@@ -39,7 +47,7 @@ func (j *Judge) Meaning(doc []byte, w MeaningWants) []Finding {
 	if concepts := root.Field("concepts"); concepts == nil || concepts.Kind != kindSeq {
 		c.add("meaning-concepts", fieldLine(root, "concepts"), "has no concepts list: a MeaningGraph file lists its concepts under concepts:, got %s", describe(concepts))
 	} else {
-		c.concepts(concepts)
+		c.concepts(concepts, w)
 	}
 	for _, same := range []struct {
 		key, label string

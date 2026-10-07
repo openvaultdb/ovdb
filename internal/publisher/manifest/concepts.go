@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -75,7 +76,7 @@ func plainLabel(n *Node) bool {
 
 // concepts judges each concept of the list by its shape and holds the ids to being unique: a concept that has a shape problem is not counted, as the
 // Directory does not.
-func (c *collector) concepts(list *Node) {
+func (c *collector) concepts(list *Node, w MeaningWants) {
 	seen := map[string]bool{}
 	for position, concept := range list.Items {
 		if concept.Kind != kindMap || concept.Field("id") == nil || concept.Field("id").Kind != kindString {
@@ -93,6 +94,7 @@ func (c *collector) concepts(list *Node) {
 			c.add("meaning-concept-duplicate", concept.Field("id").Line, "concept %s is declared twice", id)
 		default:
 			seen[id] = true
+			c.bindings(concept, id, w)
 		}
 	}
 }
@@ -135,4 +137,54 @@ func (c *collector) conceptShape(concept *Node, id string) bool {
 		}
 	}
 	return found
+}
+
+// modelRef is the Directory's parseModelRef (modelspec.mjs 14): modelspec://{host}/{org}/{repo}/{module}.{Entity}, with the repository and its slash left out for
+// the model of the same repository (modelspec:///{module}.{Entity}), and an optional ?ref=. The module and the entity start with a letter.
+var modelRef = regexp.MustCompile(`^modelspec://((?:[A-Za-z0-9.-]+(?:/[A-Za-z0-9._-]+)+)?)/([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)(?:\?ref=([A-Za-z0-9._/-]+))?$`)
+
+// bindings holds the bindings of a concept to the model (directory.mjs 728-754): each names an entity of this database's own ModelSpec and, unless its role
+// is entity, a property of it. The concept has a good shape (every binding is a mapping with a role of the list). Nothing is held when the model file is
+// not one the Directory reads.
+func (c *collector) bindings(concept *Node, id string, w MeaningWants) {
+	list := concept.Field("bindings")
+	if list == nil || list.Kind != kindSeq || w.Model == nil || w.Module == "" {
+		return
+	}
+	for _, binding := range list.Items {
+		problem := func(line int, format string, args ...any) {
+			c.add("meaning-binding", line, "concept %s: %s", id, fmt.Sprintf(format, args...))
+		}
+		model := binding.Field("model")
+		var ref []string
+		if model != nil && model.Kind == kindString {
+			ref = modelRef.FindStringSubmatch(model.Text)
+		}
+		switch {
+		case ref == nil:
+			problem(fieldLine(binding, "model"), "binding model %s is not a modelspec:///{module}.{Entity} reference (the module and the entity name in a reference start with a letter, so an entity or module whose name starts with _ cannot be bound)", describe(model))
+			continue
+		case ref[1] != "":
+			problem(model.Line, "binding %s names a model outside this database; bindings name this repository's own ModelSpec", model.Text)
+			continue
+		case ref[2] != w.Module:
+			problem(model.Line, "binding %s names module %s, but the ModelSpec is module %s", model.Text, ref[2], w.Module)
+			continue
+		}
+		properties, ok := w.Model.Entities[ref[3]]
+		if !ok {
+			problem(model.Line, "binding %s names an entity that is not in the ModelSpec", model.Text)
+			continue
+		}
+		property := binding.Field("property")
+		role := binding.Field("role").Text
+		switch {
+		case property == nil && role != "entity":
+			problem(binding.Line, "binding %s with role %s must name a property", model.Text, role)
+		case property != nil:
+			if _, has := properties[property.Text]; property.Kind != kindString || !has {
+				problem(property.Line, "binding %s names property %s, which %s does not have in the ModelSpec", model.Text, describe(property), ref[3])
+			}
+		}
+	}
 }

@@ -192,3 +192,60 @@ func TestMeaningConcepts(t *testing.T) {
 		}
 	}
 }
+
+// The bindings of a concept, held to the model (directory.mjs 728-754): what the Directory reads when it has read the model file.
+func TestMeaningBindings(t *testing.T) {
+	const head = "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts:\n  - id: artist\n    bindings:\n"
+	model := &ModelFacts{Entities: map[string]map[string]struct{}{"Artist": {"ArtistId": {}, "Name": {}}, "Album": {"AlbumId": {}}}}
+	wants := MeaningWants{File: "m.yaml", GraphID: usableFact("chinook"), Licence: usableFact("CC0-1.0"), Module: "chinook", ModelHCL: "chinook.modelspec.hcl", Model: model}
+	for name, c := range map[string]struct {
+		binding string
+		edit    func(w *MeaningWants)
+		text    string // in the message of the one finding, or "" for none
+	}{
+		"an entity":                    {binding: "      - model: modelspec:///chinook.Artist\n        role: entity\n"},
+		"a property":                   {binding: "      - model: modelspec:///chinook.Artist\n        property: Name\n        role: display-name\n"},
+		"a pin on the same model":      {binding: "      - model: modelspec:///chinook.Artist?ref=abc\n        role: entity\n"},
+		"a model that is text":         {binding: "      - model: chinook.Artist\n        role: entity\n", text: "is not a modelspec:///{module}.{Entity} reference"},
+		"a model that is missing":      {binding: "      - role: entity\n", text: "binding model nothing"},
+		"a model that is a number":     {binding: "      - model: 5\n        role: entity\n", text: "is not a modelspec:///"},
+		"a module with an underscore":  {binding: "      - model: modelspec:///_chinook.Artist\n        role: entity\n", text: "is not a modelspec:///"},
+		"an entity with an underscore": {binding: "      - model: modelspec:///chinook._Artist\n        role: entity\n", text: "is not a modelspec:///"},
+		"another repository":           {binding: "      - model: modelspec://github.com/o/r/chinook.Artist\n        role: entity\n", text: "names a model outside this database"},
+		"another module":               {binding: "      - model: modelspec:///other.Artist\n        role: entity\n", text: "names module other, but the ModelSpec is module chinook"},
+		"an entity the model lacks":    {binding: "      - model: modelspec:///chinook.Nope\n        role: entity\n", text: "names an entity that is not in the ModelSpec"},
+		"a role with no property":      {binding: "      - model: modelspec:///chinook.Artist\n        role: identifier\n", text: "with role identifier must name a property"},
+		"a property the entity lacks":  {binding: "      - model: modelspec:///chinook.Artist\n        property: Nope\n        role: identifier\n", text: "which Artist does not have in the ModelSpec"},
+		"a property of another entity": {binding: "      - model: modelspec:///chinook.Artist\n        property: AlbumId\n        role: identifier\n", text: "names property \"AlbumId\", which Artist does not have"},
+		"a property that is a number":  {binding: "      - model: modelspec:///chinook.Artist\n        property: 5\n        role: identifier\n", text: "which Artist does not have"},
+		"a property that is null":      {binding: "      - model: modelspec:///chinook.Artist\n        property:\n        role: identifier\n", text: "which Artist does not have"},
+		"no model facts":               {binding: "      - model: modelspec:///chinook.Nope\n        role: entity\n", edit: func(w *MeaningWants) { w.Model = nil }},
+		"no module":                    {binding: "      - model: modelspec:///chinook.Nope\n        role: entity\n", edit: func(w *MeaningWants) { w.Module = "" }},
+	} {
+		w := wants
+		if c.edit != nil {
+			c.edit(&w)
+		}
+		j, _ := NewJudge(Publisher)
+		findings := j.Meaning([]byte(head+c.binding), w)
+		if c.text == "" {
+			if len(findings) != 0 {
+				t.Errorf("%s: findings %+v", name, findings)
+			}
+			continue
+		}
+		if len(findings) != 1 || findings[0].Rule != "meaning-binding" || !strings.Contains(findings[0].Message, c.text) {
+			t.Errorf("%s: findings %+v, want one of meaning-binding with %q", name, findings, c.text)
+		}
+	}
+	// A concept with a bad shape, or declared twice, is not read for its bindings; a concept with no bindings has none to read.
+	j, _ := NewJudge(Publisher)
+	doc := "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts:\n  - id: a\n    extends: 5\n    bindings:\n      - model: x\n        role: entity\n  - id: b\n  - id: b\n    bindings:\n      - model: x\n        role: entity\n"
+	var rules []string
+	for _, f := range j.Meaning([]byte(doc), wants) {
+		rules = append(rules, f.Rule)
+	}
+	if !slices.Equal(rules, []string{"meaning-concept", "meaning-concept-duplicate"}) {
+		t.Errorf("rules %v", rules)
+	}
+}
