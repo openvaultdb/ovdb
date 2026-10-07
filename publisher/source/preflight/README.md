@@ -59,9 +59,12 @@ The fixed embedded 12-artifact chain is reproduced; a supplied receipt does not
 replace verification. Caller Git environment variables and machine-level Git
 configuration cannot redirect the selected repositories. Missing objects refuse.
 
-There is currently no independently accepted original publisher-manifest pin
-in this baseline. When one exists, `publisher` contains its local `directory`
-and exact `artifact` fields (`role: publisher-manifest`, repository slug,
+The [original metadata acceptance fixture](metadata/README.md) now freezes the
+reviewed publisher manifest and paired descriptor, full independent rights and
+binding inventory, and the explicitly chosen planned executor identity. These
+are offline metadata expectations; B1 runtime admission remains open.
+`publisher` contains its local `directory` and exact `artifact` fields
+(`role: publisher-manifest`, repository slug,
 commit/path/blob/SHA-256/byte count). `expected` must contain the independently
 frozen `binding` and full `right` inventory. Root must accept those trusted
 inputs before invocation; supplying a flag or writing JSON conveys no authority.
