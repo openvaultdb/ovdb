@@ -66,12 +66,13 @@ type checker struct {
 	restartOriginal bool                               // an attachment appeared during legacy validation
 
 	// The database descriptor of the repository, when OVDB.md lists one with exactly one manifest: the manifest it goes with, as judged.
-	preread        map[string][]byte // the entries of OVDB.md read to tell descriptors from manifests, handed to the first read of each
-	judgedFirst    bool              // c.res.Manifest is the first manifest judged
-	pairedIndex    int               // the entry of OVDB.md that is the manifest a descriptor goes with, or -1
-	pairedManifest manifest.Manifest
-	pairedPath     string
-	pairedClean    bool // the manifest was judged without findings, as the Directory needs before it reads the descriptor
+	rightsDescriptors map[int][]byte    // immutable descriptor identities for the rights profile
+	preread           map[string][]byte // the entries of OVDB.md read to tell descriptors from manifests, handed to the first read of each
+	judgedFirst       bool              // c.res.Manifest is the first manifest judged
+	pairedIndex       int               // the entry of OVDB.md that is the manifest a descriptor goes with, or -1
+	pairedManifest    manifest.Manifest
+	pairedPath        string
+	pairedClean       bool // the manifest was judged without findings, as the Directory needs before it reads the descriptor
 }
 
 // fileRead is what reading a file gave.
@@ -141,6 +142,10 @@ func Check(r Reader, o Options) manifest.Result {
 		}
 	}
 	c.res.Findings = append(c.res.Findings, j.Notice("OVDB.md")...)
+	if !c.res.OK() {
+		c.res.Manifest.SourceRights = nil
+		c.res.Manifest.SourceDefinitionEvidence = nil
+	}
 	return c.res
 }
 
@@ -192,7 +197,7 @@ func discoverAttachment(r Reader, profile manifest.Profile) (attachmentState, st
 			continue // a descriptor has no attachment, and is not judged as a manifest
 		}
 		attachment, err := manifest.RepresentationAttachment(data)
-		if attachment != nil || err != nil {
+		if attachment != nil || err != nil || manifest.HasDataRights(data) || manifest.HasSourceDefinition(data) {
 			return attachmentPresent, head, nil
 		}
 		// RepresentationAttachment deliberately leaves malformed syntax to the
@@ -225,6 +230,7 @@ func (c *checker) run(o Options) {
 	c.res.OVDBMd = md
 	c.res.Findings = append(c.res.Findings, findings...)
 	descriptors := c.descriptors(md)
+	c.rightsDescriptors = descriptors
 	c.res.Descriptors = len(descriptors)
 	c.j.DescriptorPaired(c.pairedIndex >= 0)
 	for i, path := range md.Entries {
@@ -314,12 +320,16 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		return
 	}
 	if c.original != nil {
-		if attachment, err := manifest.RepresentationAttachment(doc); attachment != nil || err != nil {
+		if attachment, err := manifest.RepresentationAttachment(doc); attachment != nil || err != nil || manifest.HasDataRights(doc) || manifest.HasSourceDefinition(doc) {
 			c.restartOriginal = true
 			return
 		}
 	}
 	m, attachment, findings := c.j.ManifestWithAttachment(doc, path)
+	if !m.SourceDefinition.Present {
+		c.dataRights(&m, path, doc, o.Dependencies)
+	}
+	c.sourceDefinition(&m, path, doc)
 	if !c.judgedFirst {
 		c.res.Manifest, c.judgedFirst = m, true
 	}
@@ -541,6 +551,11 @@ func lookup(entries []Entry, name string) (Kind, string) {
 // attached completes structural closure and then the separate required data
 // stage. Neither establishes canonical semantic admission or runtime success.
 func (c *checker) attached(m manifest.Manifest, attachment manifest.Fact[*representation.Reference], dependencies DependencyReaders) {
+	// A conflicting dynamic definition is refused by the manifest judge; never
+	// read retained input proofs while judging that attempted mixed profile.
+	if m.SourceDefinition.Present {
+		return
+	}
 	if !attachment.Usable() {
 		return
 	}

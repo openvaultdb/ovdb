@@ -64,20 +64,26 @@ func (c *checker) content(path string, m manifest.Manifest, f ownFiles) {
 	if f.haveMeaning {
 		wants := manifest.MeaningWants{File: m.MeaningFile.Value, GraphID: m.GraphID, Licence: m.LicenceMeaning, Module: module, Model: facts, GraphAddress: m.GraphAddress}
 		if !m.ModelHCL.Present {
-			wants.EntryFile = c.entryFile // without model.hcl the entry is the only name of the model's source file
+			wants.EntryFile = func(entry string) string { return c.entryFile(wants.File, entry) } // without model.hcl the entry is the only name of the model's source file
 		}
 		if f.haveHCL {
 			wants.ModelHCL = m.ModelHCL.Value
 		}
-		c.res.Findings = append(c.res.Findings, c.j.Meaning(f.meaning, wants)...)
+		// EntryFile may add a tree finding while Meaning runs; retain it before appending the meaning findings.
+		findings := c.j.Meaning(f.meaning, wants)
+		c.res.Findings = append(c.res.Findings, findings...)
 	}
 }
 
 // entryFile says what a path is when it is not a regular file of the commit, for the models: entry of a meaning file: "is missing" (or "does not exist"),
-// "is a symlink", and so on, and "" when it is one. A path that the tree cannot be read to, which has its own finding, is not judged here.
-func (c *checker) entryFile(path string) string {
+// "is a symlink", and so on, and "" when it is one. A path that the tree cannot be read to gets its tree finding and is not judged here.
+func (c *checker) entryFile(document, path string) string {
 	kind, _, err := c.kind(path)
-	if err != nil || kind.Regular() {
+	if err != nil {
+		c.tree(document, 0, err)
+		return ""
+	}
+	if kind.Regular() {
 		return ""
 	}
 	if kind == Missing {

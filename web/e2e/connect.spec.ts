@@ -64,7 +64,7 @@ test('Home offers the four options in order, and a Git folder connects without a
   await expect(page).toHaveURL(primary() + '/databases/connect')
   await expect(page.getByRole('heading', { name: 'What would you like to connect?' })).toBeVisible()
   const choices = page.locator('[data-engine]')
-  expect(await choices.evaluateAll((els) => els.map((el) => el.getAttribute('data-engine')))).toEqual(['ingitdb', 'sqlite', 'firestore', 'mysql', 'postgres', 'manifest'])
+  expect(await choices.evaluateAll((els) => els.map((el) => el.getAttribute('data-engine')))).toEqual(['ingitdb', 'sqlite', 'firestore', 'http', 'mysql', 'postgres', 'manifest'])
   await axe(page, 'connect picker')
   await page.locator('[data-engine="ingitdb"]').focus()
   await page.keyboard.press('Enter')

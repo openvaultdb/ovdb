@@ -13,6 +13,7 @@ const (
 	EngineInGitDB   = "ingitdb"
 	EngineSQLite    = "sqlite"
 	EngineFirestore = "firestore"
+	EngineHTTP      = "http"
 	EngineMySQL     = "mysql"
 	EnginePostgres  = "postgres"
 )
@@ -67,6 +68,8 @@ func Engines() []Engine {
 			SchemaModes: []string{"strict"}, Pinned: true, Setup: SetupGuided},
 		manifestEngine(EngineFirestore, uicopy.T("engine.firestore.name", nil), uicopy.T("engine.firestore.description", nil),
 			[]string{"strict", "partial", "schemaless"}),
+		manifestEngine(EngineHTTP, uicopy.T("engine.http.name", nil), uicopy.T("engine.http.description", nil),
+			[]string{"strict"}),
 		manifestEngine(EngineMySQL, uicopy.T("engine.mysql.name", nil), uicopy.T("engine.mysql.description", nil),
 			[]string{"strict"}),
 		manifestEngine(EnginePostgres, uicopy.T("engine.postgres.name", nil), uicopy.T("engine.postgres.description", nil),
@@ -82,6 +85,13 @@ func manifestEngine(id, name, description string, modes []string) Engine {
 // ManifestSteps is how to set up a manifest-only engine: write a manifest,
 // edit it and connect it (database-setup-and-providers#REQ:manifest-only-engines-are-honest).
 func ManifestSteps(engine string) []envelope.Next {
+	if engine == EngineHTTP {
+		return []envelope.Next{
+			{Label: uicopy.T("engine.http.step_manifest", nil)},
+			{Label: uicopy.T("engine.manifest.step_connect", nil), Command: "ovdb databases connect --manifest <absolute path>", Action: ActionEditManifest},
+			{Label: uicopy.T("engine.manifest.step_docs", map[string]string{"url": "https://github.com/openvaultdb/openvaultdb-go/blob/main/docs/http-ecb.md"})},
+		}
+	}
 	return []envelope.Next{
 		{Label: uicopy.T("engine.manifest.step_init", nil), Command: "ovdb init --engine " + engine + " --id <name>"},
 		{Label: uicopy.T("engine.manifest.step_connect", nil), Command: "ovdb databases connect --manifest <absolute path>", Action: ActionEditManifest},
