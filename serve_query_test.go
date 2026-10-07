@@ -524,8 +524,8 @@ func TestServeHelpNamesTheQueryLimitsTheServerEnforces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(limits) != 12 {
-		t.Fatalf("discovery lists %d limits, the help was written for 12: %v", len(limits), limits)
+	if len(limits) != 13 {
+		t.Fatalf("discovery lists %d limits, the help was written for 13: %v", len(limits), limits)
 	}
 	n := func(name string) int64 { return int64(limits[name]) }
 	queue, snapshot := server.DefaultQueryLimits(), server.DefaultSnapshotLimits()
@@ -594,6 +594,7 @@ type fakeListener struct {
 	listenErr   error
 	shutdownErr error
 	done        chan struct{}
+	forced      bool
 }
 
 func newFakeListener() *fakeListener { return &fakeListener{done: make(chan struct{})} }
@@ -610,6 +611,8 @@ func (f *fakeListener) Shutdown(context.Context) error {
 	close(f.done)
 	return f.shutdownErr
 }
+
+func (f *fakeListener) Close() error { f.forced = true; return nil }
 
 func TestServeUntilReturnsTheListenerError(t *testing.T) {
 	f := newFakeListener()
@@ -639,6 +642,9 @@ func TestServeUntilShutsDownOnASignal(t *testing.T) {
 			err := serveUntil(&out, "127.0.0.1:1", f, stop)
 			if (err != nil) != c.wantErr || !strings.Contains(out.String(), "shutting down...") {
 				t.Errorf("err = %v, out = %q", err, out.String())
+			}
+			if f.forced != (c.wantErr) {
+				t.Errorf("failed graceful drain forced connection close = %v, want %v", f.forced, c.wantErr)
 			}
 		})
 	}

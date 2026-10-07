@@ -26,11 +26,17 @@ func mountProbe(t *testing.T, engine string, mode schema.Mode) error {
 		storage = "  firestore:\n    project: probe\n"
 	case EnginePostgres, EngineMySQL:
 		storage = ""
+	case EngineHTTP:
+		storage = "  http: {profile: ecb-daily/1, collection: daily}\n"
 	default:
 		storage = "  path: " + filepath.ToSlash(filepath.Join(dir, "data")) + "\n"
 	}
 	yaml := "database:\n  id: probe\n  schema_mode: " + string(mode) + "\nstorage:\n  engine: " + engine + "\n" + storage
-	if mode == schema.ModeStrict {
+	if engine == EngineHTTP {
+		yaml = strings.Replace(yaml, "  id: probe\n", "  id: probe\n  retention: none\n", 1)
+		yaml += "schemas:\n  collections:\n    daily:\n      fields:\n        time: {type: string}\n        currency: {type: string}\n        rate: {type: string}\n"
+	}
+	if mode == schema.ModeStrict && engine != EngineHTTP {
 		yaml += "schemas:\n  collections:\n    items:\n      fields:\n        title: {type: string}\n"
 	}
 	path := filepath.Join(dir, "probe.yaml")
@@ -38,6 +44,9 @@ func mountProbe(t *testing.T, engine string, mode schema.Mode) error {
 		t.Fatal(err)
 	}
 	if _, err := manifest.Load(path); err != nil {
+		if engine == EngineHTTP && mode != schema.ModeStrict && strings.Contains(err.Error(), "strict") {
+			return err
+		}
 		t.Fatalf("%s: the manifest parser rejects %s: %v", engine, yaml, err)
 	}
 	db, err := mount.FileWithOptions(path, mount.Options{CatalogueDir: dir, SkipGitIdentity: true})
@@ -65,7 +74,7 @@ func TestCatalogueMatchesBinary(t *testing.T) {
 		catalogue = append(catalogue, engine.ID)
 	}
 	sorted := slices.Sorted(slices.Values(catalogue))
-	if !slices.Equal(sorted, mountable) || !slices.Equal(sorted, []string{"firestore", "ingitdb", "mysql", "postgres", "sqlite"}) {
+	if !slices.Equal(sorted, mountable) || !slices.Equal(sorted, []string{"firestore", "http", "ingitdb", "mysql", "postgres", "sqlite"}) {
 		t.Errorf("catalogue %v, mount supports %v", sorted, mountable)
 	}
 
@@ -81,6 +90,7 @@ func TestCatalogueMatchesBinary(t *testing.T) {
 			case err == nil:
 				modes = append(modes, string(mode))
 			case errors.As(err, &incompatible):
+			case engine.ID == EngineHTTP && mode != schema.ModeStrict && strings.Contains(err.Error(), "strict"):
 			case engine.ID == EnginePostgres || engine.ID == EngineMySQL:
 				// No server: the mount fails on the connection string first.
 				if !strings.Contains(err.Error(), "DSN not set") {
@@ -99,7 +109,7 @@ func TestCatalogueMatchesBinary(t *testing.T) {
 		if guided := engine.ID == EngineInGitDB || engine.ID == EngineSQLite; guided != (engine.Setup == SetupGuided) || guided != engine.Pinned {
 			t.Errorf("%s: setup %s pinned %v", engine.ID, engine.Setup, engine.Pinned)
 		}
-		if engine.Setup == SetupManifest && (len(engine.ManifestSteps) != 3 || engine.ManifestSteps[0].Command != "ovdb init --engine "+engine.ID+" --id <name>") {
+		if engine.Setup == SetupManifest && engine.ID != EngineHTTP && (len(engine.ManifestSteps) != 3 || engine.ManifestSteps[0].Command != "ovdb init --engine "+engine.ID+" --id <name>") {
 			t.Errorf("%s manifest steps = %+v", engine.ID, engine.ManifestSteps)
 		}
 	}
@@ -122,7 +132,7 @@ func TestCatalogueOrderAndFilter(t *testing.T) {
 		}
 		return out
 	}
-	if got := ids(Engines()); !slices.Equal(got, []string{"ingitdb", "sqlite", "firestore", "mysql", "postgres"}) {
+	if got := ids(Engines()); !slices.Equal(got, []string{"ingitdb", "sqlite", "firestore", "http", "mysql", "postgres"}) {
 		t.Errorf("order = %v", got)
 	}
 	for filter, want := range map[string][]string{
@@ -130,7 +140,7 @@ func TestCatalogueOrderAndFilter(t *testing.T) {
 		"SQL":       {"sqlite", "mysql", "postgres"},
 		"git":       {"ingitdb"},
 		"google":    {"firestore"},
-		"":          {"ingitdb", "sqlite", "firestore", "mysql", "postgres"},
+		"":          {"ingitdb", "sqlite", "firestore", "http", "mysql", "postgres"},
 		"no match!": nil,
 	} {
 		if got := ids(FilterEngines(Engines(), filter)); !slices.Equal(got, want) {
