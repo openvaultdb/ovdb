@@ -27,9 +27,13 @@ The linked conditions are declarations, not a licence grant or paid entitlement.
 manifest and paired descriptor with commit/path/blob/SHA-256/size. This inventory
 is an offline review fixture, not a new admission format or runtime loader. The
 existing 12-entry semantic/decoder baseline stays unchanged. `TestAccepted*`
-checks every original pin with the admitted Git executable, runs the full
-publisher/paired-descriptor checker at the pinned commit, compares the independently
-authored expectation through preflight, and requires the blocked disposition.
+checks every original pin in a complete clone with the admitted Git executable,
+runs the full publisher/paired-descriptor checker at the pinned commit, compares
+the independently authored expectation through preflight, and requires the blocked
+disposition. In a shallow CI checkout it instead checks
+tracked current artifact bytes/hash/blob/size against the frozen inventory; it
+explicitly reports that historical-object publisher/preflight proof was not run.
+The local depth-1 regression challenges both tracked-object and checkout drift.
 Existing authored-metadata tests challenge missing/changed publisher, descriptor,
 model and notices; strict runtime tests cover alias refusal before provider reads.
 

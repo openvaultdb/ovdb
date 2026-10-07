@@ -3,9 +3,12 @@ package preflight
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/providerreads"
@@ -46,10 +49,22 @@ func TestAcceptedOriginalMetadataInventory(t *testing.T) {
 	if !reflect.DeepEqual(inventory.Artifacts[1], p.Publisher.Artifact) {
 		t.Fatal("whole manifest pin diverges from independent proposal")
 	}
+	runner := repo.ExecRunner{Git: g.Executable(), Dir: "../../.."}
+	shallow, err := runner.Run([]string{"--no-replace-objects", "rev-parse", "--is-shallow-repository"}, 32)
+	if err != nil || (strings.TrimSpace(string(shallow)) != "true" && strings.TrimSpace(string(shallow)) != "false") {
+		t.Fatal("cannot establish checkout history boundary", err)
+	}
+	isShallow := strings.TrimSpace(string(shallow)) == "true"
 	for i, role := range []string{"publisher-index", "publisher-manifest", "paired-descriptor"} {
 		a := inventory.Artifacts[i]
 		if a.Role != role || a.Commit != p.Publisher.Artifact.Commit || a.Repository != "openvaultdb/ovdb" {
 			t.Fatal("metadata pairing changed")
+		}
+		if isShallow {
+			if err := checkCurrentMetadata(ctx, g, "../../..", a); err != nil {
+				t.Fatal(err)
+			}
+			continue
 		}
 		if _, err := g.ReadArtifact(ctx, "../../..", a); err != nil {
 			t.Fatal(err)
@@ -75,6 +90,10 @@ func TestAcceptedOriginalMetadataInventory(t *testing.T) {
 				}
 			})
 		}
+	}
+	if isShallow {
+		t.Log("shallow checkout: tracked current artifact bytes/hash/blob/size match frozen inventory; historical commit and original publisher/preflight proof not performed")
+		return
 	}
 	reader := repo.AtCommit(repo.NewGit(repo.ExecRunner{Git: g.Executable(), Dir: "../../.."}), p.Publisher.Artifact.Commit)
 	url := "https://github.com/openvaultdb/ovdb"
@@ -174,5 +193,86 @@ func TestAcceptedDetachedRightAndBinding(t *testing.T) {
 				t.Fatal("altered independent expectation accepted")
 			}
 		})
+	}
+}
+
+// checkCurrentMetadata proves only current tracked bytes and blob identity. It
+// deliberately substitutes HEAD's revision and does not certify the frozen
+// historical commit, which a depth-1 CI checkout need not contain.
+func checkCurrentMetadata(ctx context.Context, g *pinchain.GitRuntime, dir string, a pinchain.Artifact) error {
+	runner := repo.ExecRunner{Git: g.Executable(), Dir: dir}
+	head, err := runner.Run([]string{"--no-replace-objects", "rev-parse", "HEAD"}, 128)
+	if err != nil {
+		return err
+	}
+	a.Commit = strings.TrimSpace(string(head))
+	if _, err := g.ReadArtifact(ctx, dir, a); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(a.Path)))
+	if err != nil {
+		return err
+	}
+	if len(data) != a.Bytes || hash(data) != a.SHA256 {
+		return fmt.Errorf("current metadata checkout bytes drift")
+	}
+	return nil
+}
+
+func TestAcceptedShallowCurrentMetadata(t *testing.T) {
+	ctx := context.Background()
+	g, err := pinchain.AdmitGit(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "depth-one")
+	runner := repo.ExecRunner{Git: g.Executable(), Dir: t.TempDir()}
+	if _, err := runner.Run([]string{"--no-replace-objects", "clone", "--quiet", "--depth=1", "--no-local", "file://" + filepath.ToSlash(source), dir}, 4096); err != nil {
+		t.Fatal(err)
+	}
+	runner.Dir = dir
+	// Restore only the publisher origin identity after the local file transport;
+	// setting this metadata performs no network request.
+	if _, err := runner.Run([]string{"remote", "set-url", "origin", "https://github.com/openvaultdb/ovdb"}, 4096); err != nil {
+		t.Fatal(err)
+	}
+	shallow, err := runner.Run([]string{"rev-parse", "--is-shallow-repository"}, 32)
+	if err != nil || strings.TrimSpace(string(shallow)) != "true" {
+		t.Fatal("regression fixture is not depth one", err)
+	}
+	a := acceptedProposal(t).Publisher.Artifact
+	if _, err := g.ReadArtifact(ctx, dir, a); err == nil {
+		t.Fatal("depth-one fixture unexpectedly contains historical commit")
+	}
+	if err := checkCurrentMetadata(ctx, g, dir, a); err != nil {
+		t.Fatal("matching current tracked artifact refused", err)
+	}
+	for _, fault := range []string{"path", "blob", "digest", "size"} {
+		t.Run(fault, func(t *testing.T) {
+			bad := a
+			switch fault {
+			case "path":
+				bad.Path = "missing-current-metadata"
+			case "blob":
+				bad.Blob = "0000000000000000000000000000000000000000"
+			case "digest":
+				bad.SHA256 = hash([]byte("altered metadata"))
+			case "size":
+				bad.Bytes++
+			}
+			if err := checkCurrentMetadata(ctx, g, dir, bad); err == nil {
+				t.Fatal("current tracked metadata drift accepted")
+			}
+		})
+	}
+	if err := os.WriteFile(filepath.Join(dir, a.Path), []byte("changed checkout metadata"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkCurrentMetadata(ctx, g, dir, a); err == nil {
+		t.Fatal("dirty current metadata accepted")
 	}
 }
