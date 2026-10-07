@@ -954,6 +954,22 @@ func TestTheModelsEntryIsJudgedByItselfWithoutModelHCL(t *testing.T) {
 	}
 }
 
+func TestTheModelsEntryReportsAnUnreadableDirectoryWithoutModelHCL(t *testing.T) {
+	for _, err := range []error{errors.New("unreadable entry tree"), ErrPartialClone, ErrObjectMissing, ErrObjectCorrupt, ErrAlternates} {
+		t.Run(ruleOf(err), func(t *testing.T) {
+			m, _ := withManifest("  hcl: model/chinook.modelspec.hcl\n", "")
+			m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(strings.Replace(goodMeaning, "chinook.modelspec.hcl", "../entry-only/chinook.modelspec.hcl", 1))}
+			m.Nodes["entry-only/chinook.modelspec.hcl"] = Node{Kind: File}
+			m.BrokenDirs = map[string]error{"entry-only": err}
+			result := Check(m, Options{Profile: manifest.Directory})
+			if result.OK() {
+				t.Fatal("an unreadable models: entry must not pass")
+			}
+			only(t, result, ruleOf(err), meaningPth, 0, "cannot list the files of the commit: "+err.Error())
+		})
+	}
+}
+
 // The expensive arrangement of a hostile repository: MaxManifests manifests, each naming its own model file of the most that one may be (MaxFileBytes), each
 // refused for about 340,000 properties that have neither a type nor an entity. What a reading of such a file keeps is held for every manifest that names the
 // file; before it was bounded it was about 68 MB a file (a measured 833 MB at 12 files, some 2.2 GB at 32), though a check shows 101 findings at most. The
