@@ -28,24 +28,24 @@ func AdmitGit(ctx context.Context) (*GitRuntime, error) {
 func admitGit(ctx context.Context, lookup func(string) (string, error), run func(context.Context, string, string, ...string) ([]byte, error)) (*GitRuntime, error) {
 	path, err := lookup("git")
 	if err != nil {
-		return nil, fmt.Errorf("Git runtime unavailable")
+		return nil, fmt.Errorf("git runtime unavailable")
 	}
 	path, err = absolutePath(path)
 	if err != nil {
-		return nil, fmt.Errorf("Git executable path unavailable")
+		return nil, fmt.Errorf("git executable path unavailable")
 	}
 	output, err := run(ctx, path, "", "version")
 	if err != nil {
-		return nil, fmt.Errorf("Git version unavailable")
+		return nil, fmt.Errorf("git version unavailable")
 	}
 	match := gitVersion.FindStringSubmatch(strings.TrimSpace(string(output)))
 	if match == nil {
-		return nil, fmt.Errorf("Git version unrecognized; require >=2.45")
+		return nil, fmt.Errorf("git version unrecognized; require >=2.45")
 	}
 	major, _ := strconv.Atoi(match[1])
 	minor, _ := strconv.Atoi(match[2])
 	if major < 2 || major == 2 && minor < 45 {
-		return nil, fmt.Errorf("Git runtime too old; require >=2.45")
+		return nil, fmt.Errorf("git runtime too old; require >=2.45")
 	}
 	return &GitRuntime{path: path, version: strings.TrimSpace(string(output))}, nil
 }
@@ -63,7 +63,7 @@ func (g *GitRuntime) ready() bool { return g != nil && filepath.IsAbs(g.path) &&
 // Validate reproduces the fixed baseline using only this admitted executable.
 func (g *GitRuntime) Validate(ctx context.Context, repositories map[string]string) (*Receipt, error) {
 	if !g.ready() {
-		return nil, fmt.Errorf("Git runtime not admitted")
+		return nil, fmt.Errorf("git runtime not admitted")
 	}
 	return validateRepositories(ctx, repositories, g.ReadArtifact)
 }
@@ -72,7 +72,7 @@ func (g *GitRuntime) Validate(ctx context.Context, repositories map[string]strin
 // It never follows a URL, lazy-fetches an object or grants read permission.
 func (g *GitRuntime) ReadArtifact(ctx context.Context, dir string, a Artifact) ([]byte, error) {
 	if !g.ready() {
-		return nil, fmt.Errorf("Git runtime not admitted")
+		return nil, fmt.Errorf("git runtime not admitted")
 	}
 	if !objectID.MatchString(a.Commit) || !objectID.MatchString(a.Blob) || a.Bytes < 1 || a.Bytes > maxMetadataBytes {
 		return nil, fmt.Errorf("invalid metadata artifact pin")
