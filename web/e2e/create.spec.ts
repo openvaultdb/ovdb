@@ -16,6 +16,21 @@ interface Listed {
 
 const listed = () => (JSON.parse(ovdb('databases', '--json')) as Listed).databases
 
+test('HTTP setup shows the fixed ECB profile and no unsupported init command', async ({ browser }) => {
+  const context = await signedInContext(browser)
+  const page = await context.newPage()
+  await page.goto(primary() + '/databases/new')
+  await page.locator('[data-engine="http"]').click()
+  const steps = page.getByTestId('manifest-steps')
+  await expect(steps).toContainText('ecb-daily/1')
+  await expect(steps).toContainText('retention: none')
+  await expect(steps).not.toContainText('ovdb init')
+  await expect(steps.getByText('ovdb databases connect --manifest <absolute path>')).toBeVisible()
+  await expect(steps.getByRole('link', { name: /github\.com\/openvaultdb/ })).toHaveAttribute('href', 'https://github.com/openvaultdb/openvaultdb-go/blob/main/docs/http-ecb.md')
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+  await context.close()
+})
+
 test('create an inGitDB database from Home, see it listed, then remove it and keep its data', async ({ browser }) => {
   const context = await signedInContext(browser)
   const page = await context.newPage()
@@ -26,9 +41,9 @@ test('create an inGitDB database from Home, see it listed, then remove it and ke
 
   // Pinned inGitDB and SQLite, then the rest by name; the filter keeps that order.
   const choices = page.locator('[data-engine]')
-  await expect(choices).toHaveCount(5)
+  await expect(choices).toHaveCount(6)
   expect(await choices.evaluateAll((els) => els.map((el) => el.getAttribute('data-engine')))).toEqual([
-    'ingitdb', 'sqlite', 'firestore', 'mysql', 'postgres',
+    'ingitdb', 'sqlite', 'firestore', 'http', 'mysql', 'postgres',
   ])
   await page.getByLabel('Filter').fill('sql')
   await expect(choices).toHaveCount(3)

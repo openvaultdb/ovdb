@@ -67,7 +67,7 @@ func openCreate(t *testing.T, m Model) Model {
 func TestCreatePickerOrderAndFilter(t *testing.T) {
 	t.Parallel()
 	m := openCreate(t, testModel(t, 80, 24))
-	if ids := visibleIDs(m); !slices.Equal(ids, []string{"ingitdb", "sqlite", "firestore", "mysql", "postgres"}) {
+	if ids := visibleIDs(m); !slices.Equal(ids, []string{"ingitdb", "sqlite", "firestore", "http", "mysql", "postgres"}) {
 		t.Errorf("order = %v", ids)
 	}
 	view := stripANSI(m.viewCreate())
