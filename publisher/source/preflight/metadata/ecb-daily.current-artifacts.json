@@ -1,0 +1,37 @@
+{
+  "format": "ovdb-ecb-current-metadata-inventory/1",
+  "artifacts": [
+    {
+      "role": "publisher-index",
+      "repository": "openvaultdb/ovdb",
+      "path": "OVDB.md",
+      "blob": "cec29d7092095605b9844b28eeacfdd39ed5d321",
+      "sha256": "a87b485c79a3b04cd47ae35b4b3f588e2f439d73ed1c84541b1b747caedfc1d5",
+      "bytes": 1069
+    },
+    {
+      "role": "publisher-manifest",
+      "repository": "openvaultdb/ovdb",
+      "path": "publisher/source/ecb-daily/ovdb.yaml",
+      "blob": "8016ca43e50c1450208d8f066eec61143a0ff399",
+      "sha256": "c5fbed7a561d7048e4ed29a346b677a6e44915e067cb4feceed34d7200e0b77e",
+      "bytes": 4717
+    },
+    {
+      "role": "paired-descriptor",
+      "repository": "openvaultdb/ovdb",
+      "path": "publisher/source/ecb-daily/ovdb-database.json",
+      "blob": "338074306663b95bc9974e1791e99888eb9c3e62",
+      "sha256": "47871072b632551392fc48057a61e009dd23fab4ea8deb5ee07fc4711a36c843",
+      "bytes": 4341
+    },
+    {
+      "role": "source-definition",
+      "repository": "openvaultdb/ovdb",
+      "path": "publisher/source/ecb-daily.example.json",
+      "blob": "3b1d77654bfb51d4693de45e80467d3304200cb9",
+      "sha256": "1d57eb8dadb481b1111fc8339426892e6d4086ae215c0cace3305d83e25a21e9",
+      "bytes": 2497
+    }
+  ]
+}
