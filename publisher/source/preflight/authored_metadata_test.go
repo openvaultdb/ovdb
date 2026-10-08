@@ -19,14 +19,19 @@ import (
 const authoredManifest = "publisher/source/ecb-daily/ovdb.yaml"
 const authoredDescriptor = "publisher/source/ecb-daily/ovdb-database.json"
 
-// The repository's authored documents are checked with independently authored
-// synthetic expectations. This fixture does not accept a real operator identity.
+// Historical authored metadata is checked with independently authored synthetic
+// expectations. Current declarations are checked separately; this fixture does
+// not accept a real operator identity or advance the original acceptance.
 func authoredFixture(t *testing.T) (*repo.Memory, Proposal, *pinchain.Receipt, []byte) {
 	t.Helper()
 	_, p, b, d := publisherFixture(t)
 	m := &repo.Memory{Nodes: map[string]repo.Node{}}
 	for _, path := range []string{"OVDB.md", authoredManifest, authoredDescriptor, "publisher/source/model/ecb-daily.modelspec.hcl", "publisher/source/model/ecb-daily.modelspec.json", "publisher/source/model/ecb-daily.meaning.yaml"} {
-		m.Nodes[path] = repo.Node{Kind: repo.File, Content: bytesAt(t, filepath.Join("../../..", path))}
+		fixture := filepath.Join("../../..", path)
+		if path == authoredManifest || path == authoredDescriptor {
+			fixture = filepath.Join("metadata/historical", filepath.Base(path))
+		}
+		m.Nodes[path] = repo.Node{Kind: repo.File, Content: bytesAt(t, fixture)}
 	}
 	data := m.Nodes[authoredManifest].Content
 	p.Publisher.Artifact.Path = authoredManifest

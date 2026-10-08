@@ -1,5 +1,20 @@
 # ECB original metadata acceptance
 
+## Current linked terms inventory
+
+The current example, manifest and paired descriptor also link the official
+ESCB statistics reuse policy. `ecb-daily.current-artifacts.json` binds their
+current metadata bytes independently; it contains no historical revision or
+rights acceptance. Current terms, rights and execution gates remain blocked.
+The original proposal and original-artifacts inventory below remain unchanged.
+The metadata-only `historical/ovdb.yaml` and `historical/ovdb-database.json`
+copies match their original blob/SHA-256/size pins and keep historical tests
+bound to the declaration actually reviewed at that time. They contain no source
+rates or provider responses. In shallow CI, the current byte inventory is
+checked; historical publisher/preflight acceptance is explicitly unproved.
+
+## Historical original acceptance
+
 The project decision for the planned shared OVDB proxy is an explicitly configured
 `openvaultdb-cloud` executor, database `ecb`, local collection `daily`, source ID
 `ovdb:openvaultdb-cloud/ecb/daily`. Root accepted this identity and the native
@@ -31,7 +46,7 @@ checks every original pin in a complete clone with the admitted Git executable,
 runs the full publisher/paired-descriptor checker at the pinned commit, compares
 the independently authored expectation through preflight, and requires the blocked
 disposition. In a shallow CI checkout it instead checks
-tracked current artifact bytes/hash/blob/size against the frozen inventory; it
+tracked current artifact bytes/hash/blob/size against the separate current inventory; it
 explicitly reports that historical-object publisher/preflight proof was not run.
 The local depth-1 regression challenges both tracked-object and checkout drift.
 Existing authored-metadata tests challenge missing/changed publisher, descriptor,

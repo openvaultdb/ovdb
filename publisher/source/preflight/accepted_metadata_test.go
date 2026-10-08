@@ -55,13 +55,17 @@ func TestAcceptedOriginalMetadataInventory(t *testing.T) {
 		t.Fatal("cannot establish checkout history boundary", err)
 	}
 	isShallow := strings.TrimSpace(string(shallow)) == "true"
+	current := currentMetadataInventory(t)
 	for i, role := range []string{"publisher-index", "publisher-manifest", "paired-descriptor"} {
 		a := inventory.Artifacts[i]
 		if a.Role != role || a.Commit != p.Publisher.Artifact.Commit || a.Repository != "openvaultdb/ovdb" {
 			t.Fatal("metadata pairing changed")
 		}
 		if isShallow {
-			if err := checkCurrentMetadata(ctx, g, "../../..", a); err != nil {
+			if current[i].Path != a.Path || current[i].Role != a.Role {
+				t.Fatal("current inventory changed historical artifact locations")
+			}
+			if err := checkCurrentMetadata(ctx, g, "../../..", current[i]); err != nil {
 				t.Fatal(err)
 			}
 			continue
@@ -92,7 +96,7 @@ func TestAcceptedOriginalMetadataInventory(t *testing.T) {
 		}
 	}
 	if isShallow {
-		t.Log("shallow checkout: tracked current artifact bytes/hash/blob/size match frozen inventory; historical commit and original publisher/preflight proof not performed")
+		t.Log("shallow checkout: tracked current artifact bytes/hash/blob/size match separate current inventory; historical commit and original publisher/preflight proof not performed")
 		return
 	}
 	reader := repo.AtCommit(repo.NewGit(repo.ExecRunner{Git: g.Executable(), Dir: "../../.."}), p.Publisher.Artifact.Commit)
@@ -244,10 +248,11 @@ func TestAcceptedShallowCurrentMetadata(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(shallow)) != "true" {
 		t.Fatal("regression fixture is not depth one", err)
 	}
-	a := acceptedProposal(t).Publisher.Artifact
-	if _, err := g.ReadArtifact(ctx, dir, a); err == nil {
+	original := acceptedProposal(t).Publisher.Artifact
+	if _, err := g.ReadArtifact(ctx, dir, original); err == nil {
 		t.Fatal("depth-one fixture unexpectedly contains historical commit")
 	}
+	a := currentMetadataInventory(t)[1]
 	if err := checkCurrentMetadata(ctx, g, dir, a); err != nil {
 		t.Fatal("matching current tracked artifact refused", err)
 	}
