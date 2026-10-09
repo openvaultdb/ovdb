@@ -12,8 +12,8 @@ import (
 // itself is not in a vocabulary: its own fields (entity, property and the rest) keep their names and their meaning, and under "1.0-draft-2" the
 // contract's entity names a record type and its property names a field.
 //
-// This is the same pair of vocabularies that internal/publisher/repo reads for the publisher's own model (model.go). That package imports this one, so
-// this one cannot import it; the words are mirrored here, in this one place, and a test holds the two to the same strings.
+// These are the same two vocabularies that internal/publisher/repo reads for the publisher's own model (model.go). That package imports this one, so this one
+// cannot import it: the words are mirrored here, in this one place, and TestTheVocabulariesAreTheModelSpecOnes holds them to the ModelSpec ones.
 type vocabulary struct {
 	identifier string
 	records    string // the top-level key of the record types

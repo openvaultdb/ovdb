@@ -243,18 +243,35 @@ through one reading (the same code at each level), and keeps what it reads out o
 - **A model file in the current vocabulary is read by this check and by the representation check.** A manifest that has a `representation_contract`
   makes the same run call the representation check (`publisher/representation`), which reads the same model file a second time, and each source
   schema that is ModelSpec JSON. It pins the file's bytes by sha256 (`contract.go`, `Hash`) and reads either vocabulary, the identifier deciding
-  (`vocabulary.go`; `contract.go`, `property`; `strict.go`, `exactModel`; `native.go`). Formats 1 to 3 of the contract are amended on this one point:
-  a model or source schema that a contract refers to may be in either ModelSpec vocabulary. The contract's own fields keep their names and
-  meaning: its `entity` names a record type and its `property` a field of it, whichever vocabulary the model is in. Releases up to v0.42.0 read only
-  `1.0-draft` there, so a model rewritten to the current vocabulary fails the representation check with a checksum finding, and, with the contract and
-  the manifest re-pinned to the new bytes, with "does not resolve exactly". The first release with this change (v0.43.0, when no other release comes
-  before it) reads it. A publisher with a contract then writes the model file in either vocabulary (`modelspec rewrite --write` changes it) and
-  re-pins what holds the file's bytes: the contract, for a native contract the receipt and the snapshot that name the model, and the manifest's pin
-  of the contract. A publisher without a contract needs none of that.
-- The representation check refuses a model or a source schema whose keys disagree with its identifier, in either direction, and one with a removed or
-  reserved top-level key, as this check does and as the Directory's does (`repo-model-vocabulary`, `repo-model-removed` here). A source schema in
-  the earlier vocabulary with such a key, which the representation check accepted before, is refused now; a contract that points at a `1.0-draft`
-  model without one is read exactly as before.
+  (`vocabulary.go`; `contract.go`, `property`; `strict.go`, `exactModel`; `native.go`), and it matches keys by their exact bytes, as the Directory's reader
+  does: a key that only folds to a word of the other vocabulary (`Entities`, `PROPERTIES` in a `1.0-draft-2` document) is an unrelated key, and a case
+  variant of a word of the document's own vocabulary (`RECORDS`, `Entities` in a `1.0-draft` one) is refused. Decision 0011 of the
+  OpenVaultDB specification records that a model or source schema that a contract refers to may be in either ModelSpec vocabulary, as an amendment
+  of formats 1 to 3 on that one point; it is In Review, and this text follows it
+  (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
+  The contract formats, their schemas and their keys are as published: the contract's `entity` names a record type and its `property` a field of it,
+  whichever vocabulary the model is in. Releases up to v0.42.0 read only `1.0-draft` there, so a model rewritten to the current vocabulary fails the
+  representation check with a checksum finding, and, with the contract and the manifest re-pinned to the new bytes, with "does not resolve exactly".
+  Releases after v0.42.0 read it. A publisher with a contract then writes the model file in either vocabulary (`modelspec rewrite --write` changes
+  it), and the values that hold the file's bytes move, by the kind of contract entry:
+  - a label-bridge entry (all of format 1; the four GeoNames entries): `target.model.sha256`, once per entry that names the model; and
+    `target.snapshot.sha256` as well if the publisher keeps its snapshot true and the snapshot lists the model;
+  - a native-identifier entry (all of format 3; ROR's entry): `target.model.sha256`, `native.provenance.sha256` and `target.snapshot.sha256`,
+    because the receipt names the model and the snapshot lists the model and the receipt, so both are rewritten first;
+  - then `representation_contract.sha256` in `ovdb.yaml`, because the contract file's bytes changed;
+  - a source schema (`source.schema`) is another repository's file, pinned by repository, revision and hash: it moves, by revision and hash,
+    only when that repository has a rewritten revision, and a publisher that rewrites its own model does not touch it.
+
+  A publisher without a contract needs none of that.
+- **A separate rule, not part of that amendment: a model whose keys disagree with its identifier, or that has a removed or reserved top-level key,
+  is refused by the representation check** (a key of the other vocabulary at the top level, on a record type or on a member; `collections`,
+  `recordsets`, `projections`, `migrations`). Its justification is ModelSpec's specification (`spec/json-format.md`), which makes such a document an
+  error under either identifier, and the Directory's reference, which refuses it (`scripts/lib/representation.mjs`, `modelWordProblems` of
+  `scripts/lib/modelspec.mjs` at ec53d75); this check refuses it for the publisher's own model since v0.42.0 (`repo-model-vocabulary`,
+  `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in `1.0-draft` with such a key,
+  which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as before, and no model or source
+  schema pinned by a registered contract has one. **This rule was not put to the owner.** Decision 0011 says it adds no rule about mixing, so the rule
+  is to be added to that decision's text for his approval, and this paragraph stays until it has been.
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with
@@ -280,6 +297,8 @@ through one reading (the same code at each level), and keeps what it reads out o
   are not part of that comparison: they call `readModel` and `Check` on documents of their own (`model_vocabulary_test.go`,
   `check_vocabulary_test.go`). The cases of the earlier vocabulary that these rules refuse are in the golden. The representation check's reading of
   both vocabularies is compared with the Directory's (`representation-stages.json`, below).
+- The reader of the ECB pin chain (`publisher/source/pinchain/model.go`) still requires `1.0-draft` with `entities` and `properties`: it is not covered by this
+  change, and a model it pins by hash stays in the earlier vocabulary until that reader is changed.
 
 ### Reading the meaning file, against what a manifest can reach
 
@@ -408,11 +427,9 @@ Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a3
 The checked `representation-stages.json` golden compares 52 cases across two
 independent native metadata fixtures, each in the earlier ModelSpec vocabulary and
 in the current one (the `-current` fixtures of `publisher/representation/testdata`),
-at the landed Directory validator. Its `vocabulary` part has 56 further cases: one
-string replacement in the target model or in the source schema of a current-vocabulary
-fixture, with the hash of the document it makes, so that Go makes the same document
-the Directory was asked about; 4 are accepted by both and 52 refused by both, and Go
-says why it refuses each. Metadata
+at the landed Directory validator. Its `vocabulary` part has 132 further cases: 33 edits, each a list of string
+replacements in the target model or in the source schema of a current-vocabulary fixture, with the hash of the document it makes, so that Go makes the
+same document the Directory was asked about; 40 are accepted by both and 92 refused by both, and Go says why it refuses each. Metadata
 never reads source or native data; the separate byte stage includes 5MiB boundaries,
 raw BOM/invalid UTF8 bytes and reader/mode/hash refusals. Its result strength is
 explicitly structural metadata plus offline raw bytes, without canonical admission.

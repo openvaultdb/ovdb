@@ -15,10 +15,17 @@ reference closure, source/target ModelSpec property datatypes, the target's actu
 MeaningGraph identifier binding and canonical meaning pin, physical bridge columns,
 exact raw-label uniqueness and native target-key membership. Every referenced file
 has an exact SHA256. A ModelSpec JSON document that a contract refers to (a target model, a source schema) may be in either
-ModelSpec vocabulary, and its identifier decides: `1.0-draft` has entities, properties and entity; `1.0-draft-2` has records, fields and record.
-The contract's own fields keep their names and meaning in formats 1 to 3: its `entity` names a record type and its `property` a field of it. A
-document whose keys disagree with its identifier, or that has a removed or reserved top-level key (`collections`, `recordsets`, `projections`,
-`migrations`), is refused. Releases up to v0.42.0 read only `1.0-draft` here. Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
+ModelSpec vocabulary, and its identifier decides: `1.0-draft` has entities, properties and entity; `1.0-draft-2` has records, fields and record. Keys are
+matched by their exact bytes: under `1.0-draft-2`, `Entities` is an unrelated key and not `entities`, and under either identifier a case variant of a word the
+document's own vocabulary uses (`RECORDS`, `Entities` under `1.0-draft`) is refused. Decision 0011 of the OpenVaultDB specification records this as an
+amendment of formats 1 to 3 on that one point; it is In Review
+(https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
+The contract formats, their schemas and their keys are as published: a contract's `entity` names a record type and its `property` a field of it.
+Releases up to v0.42.0 read only `1.0-draft` here. Separately, and not part of that amendment: a document whose keys disagree with its identifier, or
+that has a removed or reserved top-level key (`collections`, `recordsets`, `projections`, `migrations`), is refused, because ModelSpec's specification
+(`spec/json-format.md`) and the Directory's reference refuse it. That rule was not put to the owner; it is to be added to decision 0011's text for his
+approval. The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change.
+Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
 escapes, multiple YAML documents, path escapes,
 URLs masquerading as paths and mutable revisions are refused.
 
