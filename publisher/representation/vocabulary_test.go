@@ -130,6 +130,71 @@ func TestAModelWhoseKeysDisagreeWithItsIdentifierIsRefused(t *testing.T) {
 	}
 }
 
+// Keys are matched by their exact bytes, as the Directory's reader does: a key that differs from a word of the other vocabulary only by case (or by the long s)
+// is an unrelated key, which is ignored, in either vocabulary. encoding/json matches a key without regard to case and would read it as the word.
+func TestAKeyThatOnlyFoldsToAWordOfAnotherVocabularyIsIgnored(t *testing.T) {
+	withTop := func(text, member string) string { return strings.Replace(text, "{\n", "{\n  "+member+",\n", 1) }
+	once := func(old, new string) func(string) string {
+		return func(text string) string { return strings.Replace(text, old, new, 1) }
+	}
+	// the record types and the members of the first record type, under another key: the contract's scope resolves only through that key
+	moved := func(group, members string) func(string) string {
+		return func(text string) string {
+			return strings.Replace(strings.Replace(text, `"records": {`, `"`+group+`": {`, 1), `"fields": {`, `"`+members+`": {`, 1)
+		}
+	}
+	type edit struct {
+		earlier bool
+		change  func(string) string
+		want    string // "" when the document is accepted
+	}
+	const resolve = "does not resolve exactly"
+	cases := map[string]edit{
+		"records only under Entities":           {false, moved("Entities", "properties"), resolve},
+		"records only under ENTITIES":           {false, moved("ENTITIES", "properties"), resolve},
+		"records only under the long s":         {false, moved("entitie\u017f", "properties"), resolve},
+		"fields only under Properties":          {false, once(`"fields": {`, `"Properties": {`), resolve},
+		"fields only under PROPERTIES":          {false, once(`"fields": {`, `"PROPERTIES": {`), resolve},
+		"fields only under the long s":          {false, once(`"fields": {`, `"propertie\u017f": {`), resolve},
+		"the long s as null beside the records": {false, func(text string) string { return withTop(text, `"entitie\u017f": null`) }, ""},
+		"Entities as true beside the records":   {false, func(text string) string { return withTop(text, `"Entities": true`) }, ""},
+		"Entities as a list beside the records": {false, func(text string) string { return withTop(text, `"Entities": []`) }, ""},
+		"Entities with a record type beside the records": {false, func(text string) string {
+			return withTop(text, `"Entities": {"Customer": {"properties": {"Country": {"type": "int"}}}}`)
+		}, ""},
+		"the long s as null in the record type":   {false, once(`"fields": {`, `"propertie\u017f": null, "fields": {`), ""},
+		"Properties as a list in the record type": {false, once(`"fields": {`, `"Properties": [], "fields": {`), ""},
+		"Entity on a field":                       {false, once(`"type": "string"`, `"Entity": "x", "type": "string"`), ""},
+		"Records beside the entities":             {true, func(text string) string { return withTop(text, `"Records": null`) }, ""},
+		"Fields in an entity":                     {true, once(`"properties": {`, `"Fields": [], "properties": {`), ""},
+		"Record on a property":                    {true, once(`"type": "string"`, `"Record": "x", "type": "string"`), ""},
+		"the identifier key in capitals":          {false, once(`"modelspec"`, `"MODELSPEC"`), "non-exact JSON field"},
+		"the identifier key in capitals, earlier": {true, once(`"modelspec"`, `"MODELSPEC"`), "non-exact JSON field"},
+	}
+	for name, tc := range cases {
+		for _, position := range []string{"source.modelspec.json", "target.modelspec.json"} {
+			t.Run(name+"/"+position, func(t *testing.T) {
+				base := fixtureModel(t, position)
+				if !tc.earlier {
+					base = currentSpelling(base)
+				}
+				asset := tc.change(base)
+				if asset == base {
+					t.Fatal("the edit changed nothing")
+				}
+				data, ctx := rewrittenFixture(t, map[string][]byte{position: []byte(asset)})
+				_, err := Check(data, ctx)
+				if tc.want == "" && err != nil {
+					t.Fatalf("refused: %v\n%s", err, asset)
+				}
+				if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+					t.Fatalf("want a refusal that says %q, got %v\n%s", tc.want, err, asset)
+				}
+			})
+		}
+	}
+}
+
 // The contract names things of a model in the current vocabulary by its own words, and each of them is held to the model.
 func TestTheContractNamesThingsOfTheCurrentVocabularyByItsOwnWords(t *testing.T) {
 	source, target := currentSpelling(fixtureModel(t, "source.modelspec.json")), currentSpelling(fixtureModel(t, "target.modelspec.json"))

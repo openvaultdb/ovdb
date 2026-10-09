@@ -2,7 +2,7 @@ package representation
 
 import (
 	"fmt"
-	"maps"
+	"strings"
 )
 
 // A ModelSpec JSON document that a contract refers to (a target model, a source schema) is read in either vocabulary of the format, and the
@@ -79,23 +79,34 @@ func wordsAgree(root map[string]any, words vocabulary) error {
 // asEarlier is the document with the keys of the earlier vocabulary: the record types under entities and their fields under properties. The rest of the
 // document is the same value, so that one set of types reads both vocabularies and a document in the current one is read exactly as the same document in
 // the earlier one is. It is called only for a document that wordsAgree accepted, which has no key of the earlier vocabulary to collide with.
+//
+// A key that only folds to one of the two earlier words (Entities, entitie\u017f, PROPERTIES) is not that word, and is dropped: encoding/json matches a key
+// without regard to case and would otherwise read it as the word, which the Directory's reader, matching the exact bytes, does not.
 func asEarlier(root map[string]any) map[string]any {
-	out := maps.Clone(root)
-	records, present := out[currentWords.records]
+	out := make(map[string]any, len(root))
+	for key, value := range root {
+		if key != currentWords.records && !strings.EqualFold(key, earlierWords.records) {
+			out[key] = value
+		}
+	}
+	records, present := root[currentWords.records]
 	if !present {
 		return out
 	}
-	delete(out, currentWords.records)
 	if group, ok := records.(map[string]any); ok {
 		renamed := make(map[string]any, len(group))
 		for name, raw := range group {
 			if record, ok := raw.(map[string]any); ok {
-				record = maps.Clone(record)
-				if fields, ok := record[currentWords.fields]; ok {
-					delete(record, currentWords.fields)
-					record[earlierWords.fields] = fields
+				copied := make(map[string]any, len(record))
+				for key, value := range record {
+					switch {
+					case key == currentWords.fields:
+						copied[earlierWords.fields] = value
+					case !strings.EqualFold(key, earlierWords.fields):
+						copied[key] = value
+					}
 				}
-				raw = record
+				raw = copied
 			}
 			renamed[name] = raw
 		}
