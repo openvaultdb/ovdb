@@ -1,13 +1,13 @@
 {
-  "modelspec": "1.0-draft",
+  "modelspec": "1.0-draft-2",
   "module": {
     "id": "github.com/openvaultdb/ovdb/publisher/source/model/ecb",
     "name": "ecb",
     "version": "0.1.0"
   },
-  "entities": {
+  "records": {
     "FxReferenceQuote": {
-      "properties": {
+      "fields": {
         "time": {
           "type": "string",
           "required": true,
