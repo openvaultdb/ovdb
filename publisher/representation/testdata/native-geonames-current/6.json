@@ -1,0 +1,15 @@
+{
+  "modelspec": "1.0-draft-2",
+  "module": {
+    "name": "fixture"
+  },
+  "records": {
+    "Input": {
+      "fields": {
+        "country_iso": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

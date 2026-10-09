@@ -1,0 +1,13 @@
+{
+  "modelspec": "1.0-draft-2",
+  "module": { "name": "affiliations", "id": "github.com/datatug/datatug-apps/affiliations", "version": "0.1.0" },
+  "records": {
+    "Affiliation": {
+      "fields": {
+        "affiliation_id": { "type": "string", "required": true },
+        "ror_id": { "type": "string", "required": false }
+      },
+      "key": ["affiliation_id"]
+    }
+  }
+}

@@ -346,6 +346,8 @@ func checkContract(c Contract, format string, ctx Context) error {
 	return nil
 }
 
+// property resolves a scope of a contract in a ModelSpec JSON document: the contract's entity names a record type and its property names a field of it,
+// whichever vocabulary the document is in (vocabulary.go).
 func property(data []byte, module, entity, key, datatype string) error {
 	var spec struct {
 		Format string `json:"modelspec"`
@@ -362,7 +364,7 @@ func property(data []byte, module, entity, key, datatype string) error {
 		return err
 	}
 	p, ok := spec.Entities[entity].Properties[key]
-	if spec.Format != "1.0-draft" || spec.Module.Name != module || !ok || datatype != "" && p.Type != datatype {
+	if spec.Format != earlierWords.identifier && spec.Format != currentWords.identifier || spec.Module.Name != module || !ok || datatype != "" && p.Type != datatype {
 		return fmt.Errorf("ModelSpec module/entity/property/datatype does not resolve exactly: %s.%s.%s", module, entity, key)
 	}
 	return nil
