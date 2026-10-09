@@ -85,9 +85,9 @@ describes the exact daily XML resource separately from ECB historical XML.
 The candidate identity `provider:ecb/FxReferenceQuote` awaits namespace-owner
 acceptance and final model mapping review. The authored preparatory model is
 [`model/ecb-daily.modelspec.hcl`](model/ecb-daily.modelspec.hcl), module `ecb`,
-entity `FxReferenceQuote`, with [meanings](model/ecb-daily.meaning.yaml).
+record `FxReferenceQuote`, with [meanings](model/ecb-daily.meaning.yaml).
 Native `time`, `currency` and `rate` are strings and map to identically named
-model properties; the meaning of `time` is reference date, not publication instant. `rate`
+model fields; the meaning of `time` is reference date, not publication instant. `rate`
 preserves the positive lexical decimal in quote units per 1 EUR. EUR base and
 indicative-reference context add no fabricated EUR row or derived cross-rates.
 Runtime validation must reject malformed dates/decimals, duplicate date/currency
@@ -105,6 +105,10 @@ and context bindings, core extends addresses, decoder output/version, original
 resource/terms links and inactive B1–B4 state. Any byte, object or chain drift
 refuses before a receipt. It does not follow a mutable branch or load working
 files. A changed baseline requires separate review of the manifest and validator.
+The chain pins the two model files by their bytes at commit `6751a14`, which are in the earlier ModelSpec
+spelling (`entity`, `property`, `1.0-draft`), so its model reader still reads that spelling. The model files on
+`main` are in the current spelling (`record`, `field`, `1.0-draft-2`) and are exactly the rename of the pinned
+bytes; a test of [`preflight`](preflight) holds them to those two states and to no other.
 
 Run from the OVDB repository with the six local Git repositories already
 containing the pinned objects and decoder release tag `v0.3.0` (the checker

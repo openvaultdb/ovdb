@@ -26,7 +26,7 @@ Releases up to v0.42.0 read only `1.0-draft` here. Separately, and not part of t
 on a member) or a removed top-level key (`collections`, `recordsets`), and, by ModelSpec's specification (`spec/json-format.md`), also when it carries a reserved
 top-level key (`projections`, `migrations`). The Directory's reference refuses all of them. The project's owner approved the first two kinds of key on
 2026-10-09; the reserved keys are refused on the specification, not on his approval. Decision 0011 of the OpenVaultDB specification records this rule as well (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
-The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change.
+The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change: the chain pins the ECB model by its bytes at commit `6751a14`, which are in that vocabulary, while the model on `main` is now their exact rename in `1.0-draft-2`.
 Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
 escapes, multiple YAML documents, path escapes,
 URLs masquerading as paths and mutable revisions are refused.

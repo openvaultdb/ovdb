@@ -300,8 +300,11 @@ through one reading (the same code at each level), and keeps what it reads out o
   are not part of that comparison: they call `readModel` and `Check` on documents of their own (`model_vocabulary_test.go`,
   `check_vocabulary_test.go`). The cases of the earlier vocabulary that these rules refuse are in the golden. The representation check's reading of
   both vocabularies is compared with the Directory's (`representation-stages.json`, below).
-- The reader of the ECB pin chain (`publisher/source/pinchain/model.go`) still requires `1.0-draft` with `entities` and `properties`: it is not covered by this
-  change, and a model it pins by hash stays in the earlier vocabulary until that reader is changed.
+- The reader of the ECB pin chain (`publisher/source/pinchain/model.go`) still requires `1.0-draft` with `entities` and `properties`, because the chain pins the model
+  file by the bytes it has at commit `6751a14`, which are in the earlier vocabulary; it is not covered by this change. The model on `main`
+  (`publisher/source/model/ecb-daily.modelspec.hcl` and `.json`) is now in the current vocabulary, and is exactly the rename of the pinned bytes: `modelspec rewrite --write`
+  (modelspec 0.2.0) made it from them. A test of package `publisher/source/preflight` holds the files on `main` to those two states (the pinned bytes, or exactly their rename) and
+  to no other, and the chain's stored copy of the pinned JSON is the earlier-vocabulary file that this package's tests of the registered model read.
 
 ### Reading the meaning file, against what a manifest can reach
 
