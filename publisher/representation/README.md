@@ -14,7 +14,11 @@ representation_contract:
 reference closure, source/target ModelSpec property datatypes, the target's actual
 MeaningGraph identifier binding and canonical meaning pin, physical bridge columns,
 exact raw-label uniqueness and native target-key membership. Every referenced file
-has an exact SHA256. Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
+has an exact SHA256. A ModelSpec JSON document that a contract refers to (a target model, a source schema) may be in either
+ModelSpec vocabulary, and its identifier decides: `1.0-draft` has entities, properties and entity; `1.0-draft-2` has records, fields and record.
+The contract's own fields keep their names and meaning in formats 1 to 3: its `entity` names a record type and its `property` a field of it. A
+document whose keys disagree with its identifier, or that has a removed or reserved top-level key (`collections`, `recordsets`, `projections`,
+`migrations`), is refused. Releases up to v0.42.0 read only `1.0-draft` here. Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
 escapes, multiple YAML documents, path escapes,
 URLs masquerading as paths and mutable revisions are refused.
 

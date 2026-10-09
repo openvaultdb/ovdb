@@ -240,14 +240,21 @@ through one reading (the same code at each level), and keeps what it reads out o
 | members of a record type | `properties` | `fields` |
 | reference on a member | `entity` | `record` |
 
-- **A model file with the current vocabulary is read by this check, and by this check only.** A manifest that has a `representation_contract`
-  makes the same run call the representation check (`publisher/representation`), which reads the same model file a second time: it pins the
-  file's bytes by sha256 (`contract.go`, `Hash`), accepts only the identifier `1.0-draft`, and reads `entities` and `properties` and nothing
-  else (`contract.go`, `property`; `strict.go`, `exactModel`; `native.go`). For such a repository the model file cannot be written in the current
-  vocabulary today: rewritten, it fails the representation check with a checksum finding, and re-pinning the contract and the manifest to the
-  new bytes fails it again, because the module, entity and property do not resolve. A publisher in that position keeps the model file in the earlier
-  vocabulary, bytes included. A publisher without a contract can write the model file in either, and `modelspec rewrite --write` is how it
-  is changed. Formats 1 to 3 of the contract are published, so reading the current vocabulary there is a later decision of its own.
+- **A model file in the current vocabulary is read by this check and by the representation check.** A manifest that has a `representation_contract`
+  makes the same run call the representation check (`publisher/representation`), which reads the same model file a second time, and each source
+  schema that is ModelSpec JSON. It pins the file's bytes by sha256 (`contract.go`, `Hash`) and reads either vocabulary, the identifier deciding
+  (`vocabulary.go`; `contract.go`, `property`; `strict.go`, `exactModel`; `native.go`). Formats 1 to 3 of the contract are amended on this one point:
+  a model or source schema that a contract refers to may be in either ModelSpec vocabulary. The contract's own fields keep their names and
+  meaning: its `entity` names a record type and its `property` a field of it, whichever vocabulary the model is in. Releases up to v0.42.0 read only
+  `1.0-draft` there, so a model rewritten to the current vocabulary fails the representation check with a checksum finding, and, with the contract and
+  the manifest re-pinned to the new bytes, with "does not resolve exactly". The first release with this change (v0.43.0, when no other release comes
+  before it) reads it. A publisher with a contract then writes the model file in either vocabulary (`modelspec rewrite --write` changes it) and
+  re-pins what holds the file's bytes: the contract, for a native contract the receipt and the snapshot that name the model, and the manifest's pin
+  of the contract. A publisher without a contract needs none of that.
+- The representation check refuses a model or a source schema whose keys disagree with its identifier, in either direction, and one with a removed or
+  reserved top-level key, as this check does and as the Directory's does (`repo-model-vocabulary`, `repo-model-removed` here). A source schema in
+  the earlier vocabulary with such a key, which the representation check accepted before, is refused now; a contract that points at a `1.0-draft`
+  model without one is read exactly as before.
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with
@@ -269,9 +276,10 @@ through one reading (the same code at each level), and keeps what it reads out o
 - A repeated key is read as the last of them, as in `JSON.parse` (ModelSpec's own reader refuses a repeated key; this check accepts it today and
   still does). A key of the other vocabulary is the one exception: it is noticed wherever it occurs, also in an occurrence that a later one
   overwrites, and the document is refused. That is the safer verdict, and it is held by tests (`model_vocabulary_test.go`).
-- The reference checker and the pinned Directory do not read the current vocabulary, so the tests of it are not part of the comparison with the
-  reference: they call `readModel` and `Check` on documents of their own (`model_vocabulary_test.go`, `check_vocabulary_test.go`). The cases of the
-  earlier vocabulary that these rules refuse are in the golden.
+- The cases of the Directory's file stage (`directory-stage.json`) are all in the earlier vocabulary, so the tests of this check on the current one
+  are not part of that comparison: they call `readModel` and `Check` on documents of their own (`model_vocabulary_test.go`,
+  `check_vocabulary_test.go`). The cases of the earlier vocabulary that these rules refuse are in the golden. The representation check's reading of
+  both vocabularies is compared with the Directory's (`representation-stages.json`, below).
 
 ### Reading the meaning file, against what a manifest can reach
 
