@@ -272,8 +272,8 @@ through one reading (the same code at each level), and keeps what it reads out o
   `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in `1.0-draft` with such a key,
   which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as before. The pull request's independent
   reviewer fetched every model and source schema pinned by a contract in the two publishers' repositories (GeoNames and ROR) and in the fixtures of
-  other repositories, and none of them has one. **This rule was not put to the project's owner.** Decision 0011 says it adds no rule about mixing, so
-  the rule is to be added to that decision's text for the owner's approval, and this paragraph stays until it has been.
+  other repositories, and none of them has one. The rule was put to the project's owner on 2026-10-09 and he approved
+  it. Decision 0011 of the OpenVaultDB specification, which still says that it adds no rule about mixing, is being updated to record it and is In Review.
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with
