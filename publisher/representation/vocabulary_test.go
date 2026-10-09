@@ -201,7 +201,7 @@ func TestTheRefusalOfSeveralWrongKeysIsTheSameEveryTime(t *testing.T) {
 	for _, name := range []string{"Countries", "CustomerCountries"} {
 		text = strings.Replace(text, `"`+name+`": {`, `"`+name+`": {"properties": {},`, 1)
 	}
-	text = strings.Replace(text, `"type": "string"`, `"entity": "x", "type": "string"`, -1)
+	text = strings.ReplaceAll(text, `"type": "string"`, `"entity": "x", "type": "string"`)
 	var first string
 	for i := 0; i < 200; i++ {
 		err := wordsAgree(mustObject(t, text), currentWords)
