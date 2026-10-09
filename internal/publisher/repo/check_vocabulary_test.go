@@ -127,41 +127,15 @@ func TestTheRegisteredModelAndItsRewrittenCopyAreAcceptedAlike(t *testing.T) {
 	}
 }
 
-// The README has a row for every rule with no verdict of the reference checker, with the text that is here.
-var noReferenceVerdict = map[string]string{
-	RuleModelVocabulary: "The `\"modelspec\"` identifier of the model file names one vocabulary, `1.0-draft` (entities, properties, entity) or `1.0-draft-2` (records, fields, record), and the document has a key of the other (at the top level, in a record type or entity, or in a member of one or of a component): it is refused, as ModelSpec's own reader refuses it. The reference checker reads the earlier vocabulary only.",
-	RuleModelRemoved:    "The model file has a top-level key of a construct that ModelSpec removed (`collections`, `recordsets`) or reserved with no content (`projections`, `migrations`), in either vocabulary: it is refused, as ModelSpec's own reader refuses it. The reference checker never reads those keys.",
-}
-
-func TestReadmeDescribesTheRulesWithNoReferenceVerdict(t *testing.T) {
-	readme, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
+// A model in the current vocabulary under an identifier that this check does not know is refused for its identifier first, and the message says which two it knows;
+// a model in the earlier vocabulary under such an identifier is accepted, as it always was.
+func TestAnUnknownIdentifierIsNamedWhenTheModelIsInTheCurrentVocabulary(t *testing.T) {
+	r := Check(repositoryWithModel(strings.Replace(goodCurrentModel, `"1.0-draft-2"`, `"1.0-draft2"`, 1)), publisher())
+	if !slices.Equal(rulesOf(r), []string{RuleModelVersion, RuleModelEntities}) || !strings.Contains(r.Findings[0].Message, `"modelspec" is "1.0-draft2", which this check does not know: it reads "1.0-draft" (entities, properties, entity) and "1.0-draft-2" (records, fields, record)`) {
+		t.Errorf("findings %v", r.Findings)
 	}
-	section := string(readme)
-	_, section, ok := strings.Cut(section, "### Rules with no verdict of the reference\n")
-	if !ok {
-		t.Fatal("the README has no section \"Rules with no verdict of the reference\"")
-	}
-	section, _, _ = strings.Cut(section, "\n#")
-	rows := map[string]string{}
-	for _, line := range strings.Split(section, "\n") {
-		if cells := strings.Split(line, "|"); len(cells) == 4 && strings.HasPrefix(strings.TrimSpace(cells[1]), "`") {
-			rows[strings.Trim(strings.TrimSpace(cells[1]), "`")] = strings.TrimSpace(cells[2])
-		}
-	}
-	for rule, text := range noReferenceVerdict {
-		if rows[rule] != text {
-			t.Errorf("README row of %q is %q, want %q", rule, rows[rule], text)
-		}
-	}
-	if len(rows) != len(noReferenceVerdict) {
-		t.Errorf("README has rows %v", rows)
-	}
-	// None of them is among the kinds in which Go is stricter than the reference: no case of the comparison shows them.
-	for rule := range noReferenceVerdict {
-		if _, ok := stricterKinds[rule]; ok {
-			t.Errorf("%s is in stricterKinds", rule)
-		}
+	assertBounded(t, r.Findings)
+	if r := Check(repositoryWithModel(strings.Replace(goodModel, `"1.0-draft"`, `"1.0-draft2"`, 1)), publisher()); !r.OK() {
+		t.Errorf("the earlier vocabulary under another identifier: %v", r.Findings)
 	}
 }

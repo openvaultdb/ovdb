@@ -541,6 +541,16 @@ addCase('fixtures', 'the Directory\'s fixture, with the repository its manifest 
 
 addCase('fixtures', 'the hoster example alone, with no model files', [['copy', 'hoster.yaml', manifestPath], ['remove', modelPath], ['remove', hclPath], ['remove', meaningPath]], null);
 
+// A model file in the earlier vocabulary that has a key ModelSpec removed or reserved at the top level (collections, recordsets, projections, migrations), or a key of the
+// current vocabulary (records, fields, record) under the identifier 1.0-draft. The checker reads the module and the names of the entities and accepts every one of these;
+// this check refuses them, as ModelSpec's own reader does (repo-model-removed, repo-model-vocabulary). They come last, so that the cases before them keep their places.
+for (const word of ['collections', 'recordsets', 'projections', 'migrations']) addCase('model', `a top-level ${word} key`, asModel(base[modelPath].replace('"entities"', `"${word}": {}, "entities"`)));
+addCase('model', 'a top-level records key beside entities', asModel(base[modelPath].replace('"entities"', '"records": {}, "entities"')));
+addCase('model', 'a fields key in an entity', asModel(base[modelPath].replace('"properties"', '"fields": {}, "properties"')));
+addCase('model', 'a record key in a property', asModel(base[modelPath].replace('"type"', '"record": "Album", "type"')));
+// The checker takes any text as the identifier; this check refuses one that it does not know when the model has a key of the current vocabulary (repo-model-version).
+addCase('model', 'an identifier this check does not know, and a records key beside entities', asModel(base[modelPath].replace('"1.0-draft"', '"1.0-draft2"').replace('"entities"', '"records": {}, "entities"')));
+
 // ---- the reasons ----
 //
 // A golden case is only as good as the reason the checker gives for its verdict: a case named "a byte that is not UTF-8" that the checker refuses
