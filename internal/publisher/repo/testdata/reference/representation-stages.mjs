@@ -63,6 +63,7 @@ export async function representationStages(directoryRoot, checkOnly) {
     const ref=doc.contracts[0].target.model;
     const renames=new Map([[ref.sha256,hash(replace.bytes)]]);
     provider.set(ref.path,replace.bytes);
+    // A file can change in more than one pass. A hash that a file had at any time is renamed to the hash it has last, so that what holds an earlier one ends right.
     for(let again=true;again;) {
      again=false;
      for(const [path,bytes] of provider) {
@@ -70,7 +71,11 @@ export async function representationStages(directoryRoot, checkOnly) {
       let text=bytes.toString('latin1');
       for(const [from,to] of renames)text=text.replaceAll(from,to);
       const next=Buffer.from(text,'latin1');
-      if(!next.equals(bytes)) {renames.set(hash(bytes),hash(next));provider.set(path,next);again=true;}
+      if(!next.equals(bytes)) {
+       const was=hash(bytes),now=hash(next);
+       for(const [from,to] of renames)if(to===was)renames.set(from,now);
+       renames.set(was,now);provider.set(path,next);again=true;
+      }
      }
     }
     let text=JSON.stringify(doc);

@@ -289,6 +289,8 @@ func replaceModel(t *testing.T, p *Memory, deps DependencyReaders, position stri
 	ref := &contract.Target.Model
 	renames := map[string]string{ref.SHA256: representation.Hash(document)}
 	p.Nodes[ref.Path] = Node{Kind: File, Content: document}
+	// A file can change in more than one pass (it holds a hash that is renamed only after another file has changed), and the order of a map is not fixed. A hash
+	// that a file had at any time is renamed to the hash it has last, so that what holds an earlier one, in whatever order, ends right.
 	for again := true; again; {
 		again = false
 		for path, node := range p.Nodes {
@@ -300,7 +302,13 @@ func replaceModel(t *testing.T, p *Memory, deps DependencyReaders, position stri
 				text = strings.ReplaceAll(text, from, to)
 			}
 			if text != string(node.Content) {
-				renames[representation.Hash(node.Content)] = representation.Hash([]byte(text))
+				was, now := representation.Hash(node.Content), representation.Hash([]byte(text))
+				for from, to := range renames {
+					if to == was {
+						renames[from] = now
+					}
+				}
+				renames[was] = now
 				p.Nodes[path] = Node{Kind: File, Content: []byte(text)}
 				again = true
 			}
