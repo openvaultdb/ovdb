@@ -397,8 +397,14 @@ expected differences do not constitute full canonical or runtime parity.
 
 Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
-The checked `representation-stages.json` golden compares 26 cases across two
-independent native metadata fixtures at the landed Directory validator. Metadata
+The checked `representation-stages.json` golden compares 52 cases across two
+independent native metadata fixtures, each in the earlier ModelSpec vocabulary and
+in the current one (the `-current` fixtures of `publisher/representation/testdata`),
+at the landed Directory validator. Its `vocabulary` part has 56 further cases: one
+string replacement in the target model or in the source schema of a current-vocabulary
+fixture, with the hash of the document it makes, so that Go makes the same document
+the Directory was asked about; 4 are accepted by both and 52 refused by both, and Go
+says why it refuses each. Metadata
 never reads source or native data; the separate byte stage includes 5MiB boundaries,
 raw BOM/invalid UTF8 bytes and reader/mode/hash refusals. Its result strength is
 explicitly structural metadata plus offline raw bytes, without canonical admission.
