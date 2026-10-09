@@ -19,7 +19,7 @@ const (
 	RuleModelDepth    = "repo-model-depth"    // the model file nests deeper than maxJSONDepth
 	RuleModelModule   = "repo-model-module"   // no module.name that is a module name
 	RuleModelEntities = "repo-model-entities" // no entities object
-	RuleModelVersion  = "repo-model-version"  // no "modelspec" version that is text
+	RuleModelVersion  = "repo-model-version"  // no "modelspec" version that is text, or an identifier that is neither of the two on a document with a key of the current vocabulary
 	RuleModelEntity   = "repo-model-entity"   // an entity whose name is not an identifier, or that has no properties
 	RuleModelProperty = "repo-model-property" // a property whose name is not an identifier, whose type is not a type name, that has neither a type nor an entity, or that references an entity the model lacks
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file

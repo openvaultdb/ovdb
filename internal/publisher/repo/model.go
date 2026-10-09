@@ -125,7 +125,8 @@ func (k refKeys) has(key string) bool {
 //
 // The identifier of the document ("modelspec") decides the vocabulary it is read in: "1.0-draft-2" has records, fields and record, and anything else the
 // entities, properties and entity that this check has always read (see spelling). A document under either identifier that carries a key of the other
-// vocabulary, or a removed or reserved top-level key, is refused (RuleModelVocabulary, RuleModelRemoved).
+// vocabulary, or a removed or reserved top-level key, is refused (RuleModelVocabulary, RuleModelRemoved), and so is a document under any other identifier
+// that carries a key of the current vocabulary (RuleModelVersion). A key is noticed wherever it occurs, also in a repeated key that a later one overwrites.
 func readModel(data []byte) (modelSpec, error) {
 	var spec modelSpec
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -198,6 +199,23 @@ func readModel(data []byte) (modelSpec, error) {
 	slices.Sort(spec.entities)
 	if !versioned {
 		spec.issues = append(spec.issues, modelIssue{RuleModelVersion, `has no "modelspec" version (a text, such as "1.0-draft")`})
+	}
+	if versioned && version != identifierCurrent && version != identifierEarlier {
+		// An identifier that is neither is read in the earlier vocabulary, as it always was. A document that has a key of the current vocabulary under it is
+		// not in the earlier one, and reading it so would say that it has no entities, which sends its author to the wrong key.
+		var current []string
+		if other.present {
+			current = append(current, words.otherGroup)
+		}
+		if group.otherMembers {
+			current = append(current, words.otherMembers)
+		}
+		if group.otherRef || components.has(words.otherRef) {
+			current = append(current, words.otherRef)
+		}
+		if len(current) > 0 {
+			spec.issues = append(spec.issues, modelIssue{RuleModelVersion, `"modelspec" is ` + rules.Quote(version) + ", which this check does not know: it reads " + rules.Quote(identifierEarlier) + " (entities, properties, entity) and " + rules.Quote(identifierCurrent) + " (records, fields, record), and the model has " + names(current) + ", which belong to " + rules.Quote(identifierCurrent) + ": write that identifier if the model is in that vocabulary"})
+		}
 	}
 	if version == identifierCurrent || version == identifierEarlier {
 		var stray []string // the keys of the other vocabulary, in the order of the keys of a spelling
