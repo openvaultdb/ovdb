@@ -244,8 +244,9 @@ through one reading (the same code at each level), and keeps what it reads out o
   makes the same run call the representation check (`publisher/representation`), which reads the same model file a second time, and each source
   schema that is ModelSpec JSON. It pins the file's bytes by sha256 (`contract.go`, `Hash`) and reads either vocabulary, the identifier deciding
   (`vocabulary.go`; `contract.go`, `property`; `strict.go`, `exactModel`; `native.go`), and it matches keys by their exact bytes, as the Directory's reader
-  does: a key that only folds to a word of the other vocabulary (`Entities`, `PROPERTIES` in a `1.0-draft-2` document) is an unrelated key, and a case
-  variant of a word of the document's own vocabulary (`RECORDS`, `Entities` in a `1.0-draft` one) is refused. Decision 0011 of the
+  does. A case variant of `modelspec`, `module`, `name`, `type`, or of the group key or the members key of the document's own vocabulary (`RECORDS`, `Fields` in a
+  `1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
+  document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one). Decision 0011 of the
   OpenVaultDB specification records that a model or source schema that a contract refers to may be in either ModelSpec vocabulary, as an amendment
   of formats 1 to 3 on that one point; it is In Review, and this text follows it
   (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
