@@ -53,9 +53,10 @@ func exactModel(data []byte, out any, native bool) error {
 	if err := exactKeys(module, []string{"name"}, false); err != nil {
 		return err
 	}
+	// In order, so that a document with wrong keys in several record types or members is refused with the same words every time.
 	records, _ := root[words.records].(map[string]any)
-	for _, raw := range records {
-		record, _ := raw.(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(records)) {
+		record, _ := records[name].(map[string]any)
 		recordFields := []string{words.fields}
 		if native {
 			recordFields = append(recordFields, "key")
@@ -64,8 +65,8 @@ func exactModel(data []byte, out any, native bool) error {
 			return err
 		}
 		fields, _ := record[words.fields].(map[string]any)
-		for _, raw := range fields {
-			field, _ := raw.(map[string]any)
+		for _, member := range slices.Sorted(maps.Keys(fields)) {
+			field, _ := fields[member].(map[string]any)
 			fieldKeys := []string{"type"}
 			if native {
 				fieldKeys = append(fieldKeys, "required")

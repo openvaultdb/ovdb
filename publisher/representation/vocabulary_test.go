@@ -232,6 +232,43 @@ func TestTheRefusalOfSeveralWrongKeysIsTheSameEveryTime(t *testing.T) {
 	}
 }
 
+// The same for the keys of the record types and the members that exactModel looks at: with wrong keys in several of them, the first in sorted order is the
+// one named, on every run, in either vocabulary; and wordsAgree names the first member in sorted order.
+func TestTheRefusalNamesTheFirstRecordTypeAndMemberInOrder(t *testing.T) {
+	for _, words := range []vocabulary{earlierWords, currentWords} {
+		identifier, group, members := words.identifier, words.records, words.fields
+		field := func(name, kind string) string { return `"` + name + `": {"` + kind + `": "string"}` }
+		cases := map[string]struct{ doc, want string }{
+			"record types": {`{"modelspec": "` + identifier + `", "module": {"name": "m"}, "` + group + `": {` +
+				`"c": {"fIELDS": 1, "` + members + `": {}}, "a": {"` + strings.ToUpper(members[:1]) + members[1:] + `": 1, "` + members + `": {}}, "b": {"` + strings.ToUpper(members) + `": 1, "` + members + `": {}}}}`,
+				`non-exact JSON field "` + strings.ToUpper(members[:1]) + members[1:] + `"`},
+			"members": {`{"modelspec": "` + identifier + `", "module": {"name": "m"}, "` + group + `": {"r": {"` + members + `": {` +
+				strings.Join([]string{field("c", "tYPE"), field("a", "Type"), field("b", "TYPE")}, ", ") + `}}}}`, `non-exact JSON field "Type"`},
+			"members with the key of the other vocabulary": {`{"modelspec": "` + identifier + `", "module": {"name": "m"}, "` + group + `": {"r": {"` + members + `": {` +
+				strings.Join([]string{`"c": {"` + otherRef(words) + `": "x"}`, `"a": {"` + otherRef(words) + `": "x"}`, `"b": {"` + otherRef(words) + `": "x"}`}, ", ") + `}}}}`, "r.a: "},
+		}
+		for name, tc := range cases {
+			t.Run(words.identifier+"/"+name, func(t *testing.T) {
+				for i := 0; i < 200; i++ {
+					var spec struct{}
+					err := exactModel([]byte(tc.doc), &spec, false)
+					if err == nil || !strings.Contains(err.Error(), tc.want) {
+						t.Fatalf("run %d: want a refusal that says %q, got %v", i, tc.want, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// otherRef is the reference key of the vocabulary that words is not.
+func otherRef(words vocabulary) string {
+	if words == currentWords {
+		return earlierWords.record
+	}
+	return currentWords.record
+}
+
 func mustObject(t *testing.T, text string) map[string]any {
 	t.Helper()
 	var root map[string]any
