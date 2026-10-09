@@ -10,18 +10,18 @@
 # can change its value. No stable logical key is asserted; currency-only adapter
 # locators apply to one transient response. This model admits no execution,
 # history, Get/Exists, cross-rates, reciprocals, conversions or retained paging.
-entity "FxReferenceQuote" {
-  property "time" {
+record "FxReferenceQuote" {
+  field "time" {
     type = "string"
     required = true
     pattern = "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
   }
-  property "currency" {
+  field "currency" {
     type = "string"
     required = true
     pattern = "^[A-Z]{3}$"
   }
-  property "rate" {
+  field "rate" {
     type = "string"
     required = true
     pattern = "^([0-9]+)([.][0-9]+)?$"

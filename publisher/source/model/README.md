@@ -2,19 +2,22 @@
 
 These CC0-1.0 files contain authored metadata only. They describe the native
 `time`, `currency`, `rate` strings of `ecb-daily.example.json`, separately from
-ECB historical resources. The ModelSpec module is `ecb`, entity
+ECB historical resources. The ModelSpec module is `ecb`, record
 `FxReferenceQuote`; its logical model address is
 `modelspec://github.com/openvaultdb/ovdb/ecb`. The MeaningGraph address is
 `meaning://github.com/openvaultdb/ovdb`, with registry id `ecb-daily` and the
-explicit meaning-file path in that registry. The graph has no identifier binding
+explicit meaning-file path in that registry. The model files are in the current
+ModelSpec spelling (`1.0-draft-2`: `record`, `field`); the ECB pin chain pins them
+by the bytes they had in the earlier one (`1.0-draft`: `entity`, `property`), and
+the files here are exactly the rename of those bytes. The graph has no identifier binding
 and the model has no stable key. `(time, currency)` is semantic grain within a
-daily response; a read observation distinguishes revisions. Model properties
+daily response; a read observation distinguishes revisions. Model fields
 remain native: definition `fieldMapping` maps each native name to the same
-model property. `referenceDate` and `quoteCurrency` are explanatory semantic
-aliases, not renamed properties in this model or native query output.
+model field. `referenceDate` and `quoteCurrency` are explanatory semantic
+aliases, not renamed fields in this model or native query output.
 
 EUR and `indicative-reference` are explicit source-definition context. There is
-no EUR row or modeled base-currency property. The date is a Gregorian reference
+no EUR row or modeled base-currency field. The date is a Gregorian reference
 date, without a time zone or publication instant. Decimal strings preserve all
 digits and trailing zeros; the lexical pattern does not prove positivity or
 calendar validity, which runtime admission must validate. The core currency

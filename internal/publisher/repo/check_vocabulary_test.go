@@ -108,17 +108,18 @@ func TestBindingsAreJudgedAgainstAModelInTheCurrentVocabulary(t *testing.T) {
 	only(t, Check(m, publisher()), RuleModelEntity, modelPath, 0, "record Album has no fields")
 }
 
-// The registered model of this repository, and the copy of it that `modelspec rewrite --write` makes, are accepted alike in a repository that registers them.
-func TestTheRegisteredModelAndItsRewrittenCopyAreAcceptedAlike(t *testing.T) {
+// The registered model of this repository, and the file that the ECB pin chain pins (the registered model before `modelspec rewrite --write` made it the
+// current vocabulary), are accepted alike in a repository that registers them.
+func TestTheRegisteredModelAndTheModelThatTheChainPinsAreAcceptedAlike(t *testing.T) {
 	registered, err := os.ReadFile("../../../publisher/source/model/ecb-daily.modelspec.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewritten, err := os.ReadFile("testdata/modelspec/ecb-daily.rewritten.modelspec.json")
+	pinned, err := os.ReadFile(pinnedEarlierModel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, model := range map[string][]byte{"registered": registered, "rewritten": rewritten} {
+	for name, model := range map[string][]byte{"registered": registered, "pinned": pinned} {
 		m := repositoryWithModel(strings.Replace(string(model), `"name": "ecb"`, `"name": "chinook"`, 1))
 		m.Nodes["ovdb.yaml"] = Node{Kind: File, Content: []byte(strings.Replace(ownManifest, "  - Album\n  - Artist\n", "  - FxReferenceQuote\n", 1))}
 		if r := Check(m, publisher()); !r.OK() {

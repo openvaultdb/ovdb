@@ -26,12 +26,24 @@ func authoredFixture(t *testing.T) (*repo.Memory, Proposal, *pinchain.Receipt, [
 	t.Helper()
 	_, p, b, d := publisherFixture(t)
 	m := &repo.Memory{Nodes: map[string]repo.Node{}}
+	// The model files of the working tree must be in an accepted state (model_guard_test.go): the pinned bytes, or exactly their rename. The fixture
+	// is built from the pinned bytes either way, which are the bytes that the chain accepts.
+	model := requirePinnedModel(t)
 	for _, path := range []string{"OVDB.md", authoredManifest, authoredDescriptor, "publisher/source/model/ecb-daily.modelspec.hcl", "publisher/source/model/ecb-daily.modelspec.json", "publisher/source/model/ecb-daily.meaning.yaml"} {
 		fixture := filepath.Join("../../..", path)
 		if path == authoredManifest || path == authoredDescriptor {
 			fixture = filepath.Join("metadata/historical", filepath.Base(path))
 		}
-		m.Nodes[path] = repo.Node{Kind: repo.File, Content: bytesAt(t, fixture)}
+		var content []byte
+		switch path {
+		case "publisher/source/model/ecb-daily.modelspec.hcl":
+			content = model.hcl
+		case "publisher/source/model/ecb-daily.modelspec.json":
+			content = model.json
+		default:
+			content = bytesAt(t, fixture)
+		}
+		m.Nodes[path] = repo.Node{Kind: repo.File, Content: content}
 	}
 	data := m.Nodes[authoredManifest].Content
 	p.Publisher.Artifact.Path = authoredManifest

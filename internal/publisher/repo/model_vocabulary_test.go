@@ -18,6 +18,10 @@ const (
 	currentDoc = `{"modelspec":"1.0-draft-2","module":{"name":"m"},"records":{"A":{"key":["id"],"fields":{"id":{"type":"int"},"b":{"record":"B"}}},"B":{"fields":{"id":{"type":"int"}}}}}`
 )
 
+// pinnedEarlierModel is the stored copy, in the chain's testdata, of the ECB model file that the pin chain pins (SHA-256 d284028a...): the registered model
+// of this repository in the earlier vocabulary. The chain's own tests hold that copy to its pinned digest.
+const pinnedEarlierModel = "../../../publisher/source/pinchain/testdata/model-json"
+
 // issueTexts are the issues of a reading, each as "rule: text".
 func issueTexts(spec modelSpec) []string {
 	var out []string
@@ -215,28 +219,29 @@ func TestTheCurrentVocabularyIsReadAsTheEarlierOne(t *testing.T) {
 		t.Errorf("current %+v", currentSpec)
 	}
 
-	// The same for the registered model of this repository and the copy of it that `modelspec rewrite --write` makes (modelspec 0.2.0): its testdata copy.
+	// The same for the registered model of this repository, which is in the current vocabulary (it is what `modelspec rewrite --write` (modelspec 0.2.0) made of
+	// the file that the ECB pin chain pins), and for that file, which is in the earlier one: the chain's stored copy of it.
 	registered, err := os.ReadFile("../../../publisher/source/model/ecb-daily.modelspec.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewritten, err := os.ReadFile("testdata/modelspec/ecb-daily.rewritten.modelspec.json")
+	pinned, err := os.ReadFile(pinnedEarlierModel)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(registered), `"1.0-draft"`) || !strings.Contains(string(rewritten), `"1.0-draft-2"`) {
-		t.Fatal("the registered model must be in the earlier vocabulary and its copy in the current one")
+	if !strings.Contains(string(pinned), `"1.0-draft"`) || !strings.Contains(string(registered), `"1.0-draft-2"`) {
+		t.Fatal("the model that the chain pins must be in the earlier vocabulary and the registered model in the current one")
 	}
-	a, err := readModel(registered)
+	a, err := readModel(pinned)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := readModel(rewritten)
+	b, err := readModel(registered)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !sameReading(a, b) || a.module != "ecb" || !slices.Equal(a.entities, []string{"FxReferenceQuote"}) || len(a.issues) > 0 || a.spelling.group != "entities" || b.spelling.group != "records" {
-		t.Errorf("registered %+v, rewritten %+v", a, b)
+		t.Errorf("pinned %+v, registered %+v", a, b)
 	}
 }
 
