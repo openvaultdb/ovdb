@@ -2,7 +2,7 @@
  "format": "ovdb-real-entries/1",
  "registry": {
   "repository": "openvaultdb/directory",
-  "commit": "087067483686865b13cb76511ff86f7364ea47ff"
+  "commit": "ec53d7539aafd23d006b4943acdd7a31f4eb9340"
  },
  "entries": [
   {

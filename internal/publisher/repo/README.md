@@ -395,7 +395,7 @@ with Directory preserves conservative JavaScript safe-integer and null-count
 refusals; Go retains exact integer tokens for native count associations. These
 expected differences do not constitute full canonical or runtime parity.
 
-Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
 The checked `representation-stages.json` golden compares 26 cases across two
 independent native metadata fixtures at the landed Directory validator. Metadata

@@ -2,7 +2,7 @@
   "format": "ovdb-publisher-rules-reference/1",
   "generatedBy": "internal/publisher/rules/testdata/reference/generate.mjs",
   "node": "v24.19.0",
-  "references": {"directory":{"repository":"openvaultdb/directory","commit":"087067483686865b13cb76511ff86f7364ea47ff","files":["scripts/lib/urls.mjs","scripts/lib/git.mjs","scripts/lib/directory.mjs"],"testSuite":"scripts/test.mjs","literalsMined":383},"chinookdb":{"repository":"demo-db/chinook","commit":"8b904298d0c3bba20c12dfbc29bb75bf5c37f683","files":["scripts/lib/directory-rules.mjs"],"testSuite":null,"literalsMined":0},"fixtures":{"repository":"datatug/chinookdb","commit":"79e7bb0b1d6f0666dce465874990dec64348331f","files":["scripts/test-model.mjs"],"testSuite":"scripts/test-model.mjs","literalsMined":210}},
+  "references": {"directory":{"repository":"openvaultdb/directory","commit":"ec53d7539aafd23d006b4943acdd7a31f4eb9340","files":["scripts/lib/urls.mjs","scripts/lib/git.mjs","scripts/lib/directory.mjs"],"testSuite":"scripts/test.mjs","literalsMined":383},"chinookdb":{"repository":"demo-db/chinook","commit":"8b904298d0c3bba20c12dfbc29bb75bf5c37f683","files":["scripts/lib/directory-rules.mjs"],"testSuite":null,"literalsMined":0},"fixtures":{"repository":"datatug/chinookdb","commit":"79e7bb0b1d6f0666dce465874990dec64348331f","files":["scripts/test-model.mjs"],"testSuite":"scripts/test-model.mjs","literalsMined":210}},
   "referenceCalls": {"thrown":0},
   "matrixSize": 2599599,
   "sweepRanges": {"wide":[[0,65535]],"narrow":[[0,591],[55295,57344],[65280,65535]],"scalar":[[0,55295],[57344,65535]]},

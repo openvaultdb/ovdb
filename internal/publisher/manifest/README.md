@@ -101,39 +101,39 @@ form.
 
 | Field | Where the Directory reads it | Fact |
 | --- | --- | --- |
-| `format` | directory.mjs 205, 321 | `Format` |
-| `id` | directory.mjs 206, 426 | `ID` |
-| `title` | directory.mjs 206 | `Title` |
-| `description` | directory.mjs 206 | `Description` |
-| `url` | directory.mjs 118, 213, 218, 219, 424 | `URL` |
-| `homepage` | directory.mjs 255, 256, 812 | `Homepage` |
-| `deployment.url` | directory.mjs 119, 214, 811 | `DeploymentURL` |
-| `deployment.engine` | directory.mjs 215, 811 | `Engine` |
-| `deployment.discovery` | directory.mjs 216, 218, 219, 321, 418 | `Discovery` |
-| `deployment.recordset_page` | directory.mjs 120, 222, 777, 823 | `RecordsetPage` |
-| `model.modelspec` | directory.mjs 198, 241, 511, 512, 516, 523, 545, 562, 571 | `ModelSpec` |
-| `model.hcl` | directory.mjs 198, 223, 536 | `ModelHCL` |
-| `model.address` | directory.mjs 226, 227, 242, 539, 540, 542, 543, 547, 579, 596 | `ModelAddress` |
-| `model.name` | directory.mjs 523, 673 | `ModelName` |
-| `meaning.address` | directory.mjs 230, 231, 243, 580, 597 | `MeaningAddress` |
-| `meaning.file` | directory.mjs 234, 245, 493, 507, 513, 522, 528, 530, 534, 536, 581, 656, 660, 667 | `MeaningFile` |
-| `meaning.graph.id` | directory.mjs 235, 246, 427 | `GraphID` |
-| `meaning.graph.address` | directory.mjs 236, 247, 504, 623 | `GraphAddress` |
-| `licences.model` | directory.mjs 238, 248, 611 | `LicenceModel` |
-| `licences.meaning` | directory.mjs 238, 249, 522, 624 | `LicenceMeaning` |
-| `licences.data` | directory.mjs 259, 817 | `LicenceData` |
-| `publisher.name` | directory.mjs 251 | `PublisherName` |
-| `publisher.url` | directory.mjs 252 | `PublisherURL` |
-| `publisher.repository` | directory.mjs 428, 429 | `PublisherRepository` |
-| `recordsets` | directory.mjs 264, 265, 275, 453 | `Recordsets` |
-| `recordsets_partial` | directory.mjs 239, 244, 460, 471, 472 | `RecordsetsPartial` |
-| `recordset_entities` | directory.mjs 269, 270, 433, 434 | `RecordsetEntities` |
-| `form` | directory.mjs 198, 204, 432 | `Form` |
-| `model.address.repository` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Repository` |
-| `model.address.module` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Module` |
-| `model.address.ref` | directory.mjs 226, 242, 540, 579, 685 | `ModelAddress.Ref` |
-| `meaning.address.repository` | directory.mjs 230, 580 | `MeaningAddress.Repository` |
-| `meaning.address.ref` | directory.mjs 230, 580 | `MeaningAddress.Ref` |
+| `format` | directory.mjs 208, 324 | `Format` |
+| `id` | directory.mjs 209, 438 | `ID` |
+| `title` | directory.mjs 209 | `Title` |
+| `description` | directory.mjs 209 | `Description` |
+| `url` | directory.mjs 121, 216, 221, 222, 436 | `URL` |
+| `homepage` | directory.mjs 258, 259, 826 | `Homepage` |
+| `deployment.url` | directory.mjs 122, 217, 825 | `DeploymentURL` |
+| `deployment.engine` | directory.mjs 218, 825 | `Engine` |
+| `deployment.discovery` | directory.mjs 219, 221, 222, 324, 430 | `Discovery` |
+| `deployment.recordset_page` | directory.mjs 123, 225, 791, 837 | `RecordsetPage` |
+| `model.modelspec` | directory.mjs 201, 244, 523, 524, 528, 530, 536, 558, 575, 584 | `ModelSpec` |
+| `model.hcl` | directory.mjs 201, 226, 549 | `ModelHCL` |
+| `model.address` | directory.mjs 229, 230, 245, 552, 553, 555, 556, 560, 592, 609 | `ModelAddress` |
+| `model.name` | directory.mjs 536, 687 | `ModelName` |
+| `meaning.address` | directory.mjs 233, 234, 246, 593, 610 | `MeaningAddress` |
+| `meaning.file` | directory.mjs 237, 248, 505, 519, 525, 535, 541, 543, 547, 549, 594, 669, 673, 680 | `MeaningFile` |
+| `meaning.graph.id` | directory.mjs 238, 249, 439 | `GraphID` |
+| `meaning.graph.address` | directory.mjs 239, 250, 516, 636 | `GraphAddress` |
+| `licences.model` | directory.mjs 241, 251, 624 | `LicenceModel` |
+| `licences.meaning` | directory.mjs 241, 252, 535, 637 | `LicenceMeaning` |
+| `licences.data` | directory.mjs 262, 831 | `LicenceData` |
+| `publisher.name` | directory.mjs 254 | `PublisherName` |
+| `publisher.url` | directory.mjs 255 | `PublisherURL` |
+| `publisher.repository` | directory.mjs 440, 441 | `PublisherRepository` |
+| `recordsets` | directory.mjs 267, 268, 278, 465 | `Recordsets` |
+| `recordsets_partial` | directory.mjs 242, 247, 472, 483, 484 | `RecordsetsPartial` |
+| `recordset_entities` | directory.mjs 272, 273, 445, 446 | `RecordsetEntities` |
+| `form` | directory.mjs 201, 207, 444 | `Form` |
+| `model.address.repository` | directory.mjs 229, 245, 553, 592, 699 | `ModelAddress.Repository` |
+| `model.address.module` | directory.mjs 229, 245, 553, 592, 699 | `ModelAddress.Module` |
+| `model.address.ref` | directory.mjs 229, 245, 553, 592, 699 | `ModelAddress.Ref` |
+| `meaning.address.repository` | directory.mjs 233, 593 | `MeaningAddress.Repository` |
+| `meaning.address.ref` | directory.mjs 233, 593 | `MeaningAddress.Ref` |
 
 `OVDB.md`: `ovdb` (`analyseDatabase`, `frontmatter.ovdb !== 1`) is `OVDBMd.Version`;
 `publish` (`frontmatter.publish`, each entry, and `published.has(data.manifest)`) is
@@ -280,7 +280,7 @@ A length refusal says the length and the limit, not that the field is missing.
 
 The rule is the one of package `rules`: **the Go function never accepts a pair of
 documents that the JavaScript of the profile refuses**. The reference of the
-`Directory` profile is `openvaultdb/directory@087067483686865b13cb76511ff86f7364ea47ff`: `parseFrontmatter` and `manifestProblems` of
+`Directory` profile is `openvaultdb/directory@ec53d7539aafd23d006b4943acdd7a31f4eb9340`: `parseFrontmatter` and `manifestProblems` of
 `scripts/lib/directory.mjs`, called as they are; the `OVDB.md` checks that
 `analyseDatabase` keeps inline, and the record-stage refusals of the table above,
 composed from the same expressions (the generator fails if the pinned file no
@@ -752,7 +752,7 @@ no legal compatibility or distribution-compliance claim.
 lowercase SHA256 pair. Manifest validation checks its shape; repository validation
 completes structural associations and required format3 raw source-data proofs.
 
-Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
 The current Publisher validator is `demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Upstream native-recordset validation closes all four legacy Directory corpus differences. The Directory comparator permits no looser cases. Publisher cases accepted under the upstream D0 rule must also be accepted by Directory, and every problem reported by the pinned Chinook checker must be classified as D (the dropped entity-name restriction) or K (the added recordset_entities key); every other unrecorded acceptance fails. The generated reference refusals remain intact.
 

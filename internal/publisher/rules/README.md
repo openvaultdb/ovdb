@@ -74,7 +74,7 @@ them (both in JavaScript, which is where a publisher's check meets them today):
 
 | Reference | Repository | Commit | Files |
 | --- | --- | --- | --- |
-| directory | `openvaultdb/directory` (CC0-1.0) | `087067483686865b13cb76511ff86f7364ea47ff` | `scripts/lib/urls.mjs`, `git.mjs`, `directory.mjs` |
+| directory | `openvaultdb/directory` (CC0-1.0) | `ec53d7539aafd23d006b4943acdd7a31f4eb9340` | `scripts/lib/urls.mjs`, `git.mjs`, `directory.mjs` |
 | chinookdb | `demo-db/chinook` (MIT) | `8b904298d0c3bba20c12dfbc29bb75bf5c37f683` | `scripts/lib/directory-rules.mjs` |
 
 `testdata/reference/generate.mjs` fetches those files at exactly those commits,
@@ -206,4 +206,4 @@ more). The Unicode tables that UTS #46 needs change with every release and Go ha
 there is a reason to carry them, a publisher writes the ASCII host name. Accepting more is a
 product decision, and the kinds `punycode-other-text` and `punycode-malformed` are its record.
 
-Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
