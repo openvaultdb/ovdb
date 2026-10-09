@@ -24,8 +24,8 @@ Keys of the model are matched by their exact bytes. A case variant of `modelspec
 document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one).
 Releases up to v0.42.0 read only `1.0-draft` here. Separately, and not part of that amendment: a document whose keys disagree with its identifier, or
 that has a removed or reserved top-level key (`collections`, `recordsets`, `projections`, `migrations`), is refused, because ModelSpec's specification
-(`spec/json-format.md`) and the Directory's reference refuse it. That rule was not put to the owner; it is to be added to decision 0011's text for his
-approval. The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change.
+(`spec/json-format.md`) and the Directory's reference refuse it. That rule was not put to the project's owner; it is to be added to decision 0011's text for the
+owner's approval. The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change.
 Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
 escapes, multiple YAML documents, path escapes,
 URLs masquerading as paths and mutable revisions are refused.

@@ -255,9 +255,9 @@ through one reading (the same code at each level), and keeps what it reads out o
   representation check with a checksum finding, and, with the contract and the manifest re-pinned to the new bytes, with "does not resolve exactly".
   Releases after v0.42.0 read it. A publisher with a contract then writes the model file in either vocabulary (`modelspec rewrite --write` changes
   it), and the values that hold the file's bytes move, by the kind of contract entry:
-  - a label-bridge entry (all of format 1; the four GeoNames entries): `target.model.sha256`, once per entry that names the model; and
+  - a label-bridge entry (all of format 1; the four GeoNames entries, which are format 2): `target.model.sha256`, once per entry that names the model; and
     `target.snapshot.sha256` as well if the publisher keeps its snapshot true and the snapshot lists the model;
-  - a native-identifier entry (all of format 3; ROR's entry): `target.model.sha256`, `native.provenance.sha256` and `target.snapshot.sha256`,
+  - a native-identifier entry (all of format 3, and one kind of entry in format 2; ROR's entry is format 3): `target.model.sha256`, `native.provenance.sha256` and `target.snapshot.sha256`,
     because the receipt names the model and the snapshot lists the model and the receipt, so both are rewritten first;
   - then `representation_contract.sha256` in `ovdb.yaml`, because the contract file's bytes changed;
   - a source schema (`source.schema`) is another repository's file, pinned by repository, revision and hash: it moves, by revision and hash,
@@ -270,9 +270,10 @@ through one reading (the same code at each level), and keeps what it reads out o
   error under either identifier, and the Directory's reference, which refuses it (`scripts/lib/representation.mjs`, `modelWordProblems` of
   `scripts/lib/modelspec.mjs` at ec53d75); this check refuses it for the publisher's own model since v0.42.0 (`repo-model-vocabulary`,
   `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in `1.0-draft` with such a key,
-  which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as before, and no model or source
-  schema pinned by a registered contract has one. **This rule was not put to the owner.** Decision 0011 says it adds no rule about mixing, so the rule
-  is to be added to that decision's text for his approval, and this paragraph stays until it has been.
+  which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as before. The pull request's independent
+  reviewer fetched every model and source schema pinned by a contract in the two publishers' repositories (GeoNames and ROR) and in the fixtures of
+  other repositories, and none of them has one. **This rule was not put to the project's owner.** Decision 0011 says it adds no rule about mixing, so
+  the rule is to be added to that decision's text for the owner's approval, and this paragraph stays until it has been.
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with
