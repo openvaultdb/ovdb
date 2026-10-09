@@ -108,8 +108,9 @@ and a path below a file or symlink do not):
 | `repo-repository` | `publisher.repository` equals `--repository` exactly (compared only when the manifest rules accept `publisher.repository`; when they do not their finding says so) | 309 |
 | `document-size` | OVDB.md and each manifest of at most 262144 bytes | 194, 244-246 |
 | `repo-model-json` | the model file is JSON that `JSON.parse` reads (no more than one value, no byte order mark, no trailing text), and an object | 405-410 |
-| `repo-model-module`, `repo-model-entities` | it has `module.name`, a letter and then letters, digits and `_`, and an `entities` object | 412-416 |
+| `repo-model-module`, `repo-model-entities` | it has `module.name`, a letter and then letters, digits and `_`, and an `entities` object (or, in the current vocabulary of the JSON form, a `records` object: see below) | 412-416 |
 | `repo-model-version`, `repo-model-entity`, `repo-model-property` | the rules of the Directory's `parseModelSpec` (modelspec.mjs 92-118) that the checker never reads: a text `"modelspec"` version; each entity's name is an identifier and it has at least one property; each property's name is an identifier, its type is a type name or it names an entity (a text `entity`) that the model has, and a property that is neither is refused. A repeated key is the last, as in `JSON.parse`. Stricter kinds against the checker, below | the Directory's, not the checker's |
+| `repo-model-vocabulary`, `repo-model-removed` | the model file keeps to the vocabulary its `"modelspec"` identifier names (`1.0-draft`: entities, properties, entity; `1.0-draft-2`: records, fields, record) and has none of the removed or reserved top-level keys `collections`, `recordsets`, `projections`, `migrations`. Rules with no verdict of the reference, below | ModelSpec's own reader, not the checker's |
 | `repo-model-name` | `model.name`, when written, is that module | 420 |
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
 | `meaning-shape`, and the reader's own rules | the meaning file is YAML that the strict reader reads, and a mapping (an empty file is not one) | 445-451 |
@@ -228,6 +229,33 @@ is a regular file, and its path is compared with the `models:` entry.
 | nesting deeper than 100 levels | refused, `repo-model-depth`, recorded below | `JSON.parse` has no bound; the reading is recursive and a file of 4 MiB can nest 2 million levels |
 | a model file of more than 4 MiB | refused, `repo-file-size` (from slice 3b-1) | the checker reads 16 MiB |
 
+### The two vocabularies of the model file
+
+ModelSpec renamed three words in the JSON form of a model, and the `"modelspec"` identifier says which a document uses. `readModel` reads both,
+through one reading (the same code at each level), and keeps what it reads out of the words:
+
+| | `1.0-draft` (earlier) | `1.0-draft-2` (current) |
+| --- | --- | --- |
+| top-level group of the record types | `entities` | `records` |
+| members of a record type | `properties` | `fields` |
+| reference on a member | `entity` | `record` |
+
+- Any other identifier, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the version
+  (as the Directory does), and still does. ModelSpec's own reader refuses an identifier that is neither; this check does not, because that would
+  refuse a model that is accepted today.
+- A document under either of the two identifiers that carries a key of the other vocabulary is refused (`repo-model-vocabulary`): the group, the
+  members key of a record type, the reference key of a member of a record type or of a component. A component has `fields` in both.
+- A top-level `collections`, `recordsets`, `projections` or `migrations` is refused in every case (`repo-model-removed`).
+- The findings of a model in the current vocabulary use its words (`record Album has no fields`, `has no records`), and the rules are the same
+  (`repo-model-entities`, `repo-model-entity`, `repo-model-property`): the names of the rules, and every word of a finding about a model in the earlier
+  vocabulary, are as they were.
+- Nothing is reported about the earlier vocabulary being deprecated. A finding of this check is an error, and a check that has none passes: there is no
+  place for a notice that does not fail it (`modelspec rewrite --write` is how a model is brought to the current words).
+- A repeated key is the last of them in both vocabularies, as in `JSON.parse` (ModelSpec's own reader refuses a repeated key; this check accepts it
+  today and still does).
+- The reference checker and the pinned Directory do not read the current vocabulary, so the tests of it are not part of the comparison with the
+  reference (see "Rules with no verdict of the reference" below).
+
 ### Reading the meaning file, against what a manifest can reach
 
 The meaning file goes through the same strict reader as a manifest and OVDB.md, with the same bound (`document-size`, 262144 bytes), so
@@ -316,6 +344,19 @@ at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entitie
 
 A path that git cannot report is not tested: git prints only the modes 100644, 100755, 120000,
 160000 and 040000 (it canonicalises the others, so `100664` is `100644`).
+
+### Rules with no verdict of the reference
+
+The reference checker, and the Directory at the commit that is pinned, read one vocabulary of the model file's JSON, the earlier one (`entities`,
+`properties`, `entity`; identifier `1.0-draft`). The model file may now be in either: see "The two vocabularies of the model file" above. A refusal
+that only a document in the current vocabulary, or a mixed one, can bring has no case in the comparison (the golden is made by the reference and has
+none), so these rules are not kinds of the table above; `TestReadmeDescribesTheRulesWithNoReferenceVerdict` holds this table to the code. Their
+tests are in `model_vocabulary_test.go` and `check_vocabulary_test.go`, and call `readModel` and `Check` on documents of their own.
+
+| Rule | Difference from the reference |
+| --- | --- |
+| `repo-model-vocabulary` | The `"modelspec"` identifier of the model file names one vocabulary, `1.0-draft` (entities, properties, entity) or `1.0-draft-2` (records, fields, record), and the document has a key of the other (at the top level, in a record type or entity, or in a member of one or of a component): it is refused, as ModelSpec's own reader refuses it. The reference checker reads the earlier vocabulary only. |
+| `repo-model-removed` | The model file has a top-level key of a construct that ModelSpec removed (`collections`, `recordsets`) or reserved with no content (`projections`, `migrations`), in either vocabulary: it is refused, as ModelSpec's own reader refuses it. The reference checker never reads those keys. |
 
 ### Regenerate
 
