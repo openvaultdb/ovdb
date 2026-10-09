@@ -144,14 +144,13 @@ type stageGoldenCase struct {
 	Data     SourceDataStage `json:"data"`
 }
 type vocabularyCase struct {
-	Fixture  string `json:"fixture"`
-	Position string `json:"position"`
-	Edit     string `json:"edit"`
-	From     string `json:"from"`
-	Old      string `json:"old"`
-	New      string `json:"new"`
-	Bytes    string `json:"bytes"`
-	Metadata bool   `json:"metadata"`
+	Fixture  string      `json:"fixture"`
+	Position string      `json:"position"`
+	Edit     string      `json:"edit"`
+	From     string      `json:"from"`
+	Replace  [][2]string `json:"replace"`
+	Bytes    string      `json:"bytes"`
+	Metadata bool        `json:"metadata"`
 }
 
 func readStages(t *testing.T) stageGoldenFile {
@@ -332,6 +331,7 @@ var vocabularyRefusals = map[string]string{
 	"current-keys-under-the-earlier-identifier": "ModelSpec document says",
 	"earlier-keys-under-the-current-identifier": "ModelSpec document says",
 	"current-keys-under-an-unknown-identifier":  "does not resolve exactly",
+	"earlier-keys-under-an-unknown-identifier":  "does not resolve exactly",
 	"entities-beside-records":                   "ModelSpec document says",
 	"records-beside-entities":                   "ModelSpec document says",
 	"properties-in-a-record-type":               "ModelSpec document says",
@@ -339,16 +339,34 @@ var vocabularyRefusals = map[string]string{
 	"entity-on-a-field":                         "ModelSpec document says",
 	"record-on-a-property":                      "ModelSpec document says",
 	"collections-under-the-current":             "removed or reserved",
+	"recordsets-under-the-current":              "removed or reserved",
 	"projections-under-the-earlier":             "removed or reserved",
+	"migrations-under-the-earlier":              "removed or reserved",
 	"records-in-capitals":                       "non-exact JSON field",
+	"identifier-key-in-capitals":                "non-exact JSON field",
 	"module-is-another":                         "does not resolve exactly",
+	// the contract's record type is only under a key that folds to the word: the Directory reads the exact word, and finds no record type
+	"records-only-under-Entities":        "does not resolve exactly",
+	"records-only-under-ENTITIES":        "does not resolve exactly",
+	"records-only-under-entitie-long-s":  "does not resolve exactly",
+	"fields-only-under-Properties":       "does not resolve exactly",
+	"fields-only-under-PROPERTIES":       "does not resolve exactly",
+	"fields-only-under-propertie-long-s": "does not resolve exactly",
+}
+
+func distinctEdits(cases []vocabularyCase) map[string]bool {
+	edits := map[string]bool{}
+	for _, c := range cases {
+		edits[c.Edit] = true
+	}
+	return edits
 }
 
 // The edits to a model or a schema in either vocabulary are the Directory's (each one string replacement; the golden carries it and the hash of the document it
 // makes): Go and the Directory agree on which of them the contract can point at.
 func TestRepresentationVocabularyAgreesWithLandedDirectory(t *testing.T) {
 	golden := readStages(t)
-	if len(golden.Vocabulary) != 56 {
+	if len(golden.Vocabulary) != 4*len(distinctEdits(golden.Vocabulary)) {
 		t.Fatalf("%d cases", len(golden.Vocabulary))
 	}
 	accepted := 0
@@ -366,10 +384,14 @@ func TestRepresentationVocabularyAgreesWithLandedDirectory(t *testing.T) {
 				from = strings.TrimSuffix(tc.Fixture, "-current")
 			}
 			base := string(fixtureDocument(t, from, path))
-			if !strings.Contains(base, tc.Old) {
-				t.Fatalf("%q is not in the document", tc.Old)
+			text := base
+			for _, step := range tc.Replace {
+				if !strings.Contains(text, step[0]) {
+					t.Fatalf("%q is not in the document", step[0])
+				}
+				text = strings.Replace(text, step[0], step[1], 1)
 			}
-			edited := []byte(strings.Replace(base, tc.Old, tc.New, 1))
+			edited := []byte(text)
 			if representation.Hash(edited) != tc.Bytes {
 				t.Fatalf("this edit makes another document than the one the Directory was asked about")
 			}
@@ -385,7 +407,7 @@ func TestRepresentationVocabularyAgreesWithLandedDirectory(t *testing.T) {
 			}
 		})
 	}
-	if accepted != 4 {
-		t.Fatalf("%d edits are accepted, want the 4 that leave the document in one vocabulary", accepted)
+	if want := 4 * (len(distinctEdits(golden.Vocabulary)) - len(vocabularyRefusals)); accepted != want {
+		t.Fatalf("%d cases are accepted, want %d: the edits that are not listed as refusals", accepted, want)
 	}
 }

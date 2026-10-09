@@ -241,6 +241,27 @@ func mustObject(t *testing.T, text string) map[string]any {
 	return root
 }
 
+// An identifier that is neither of the two decides nothing: such a document does not resolve, whatever its keys, and so is none.
+func TestADocumentUnderAnIdentifierThatIsNotKnownDoesNotResolve(t *testing.T) {
+	earlier := fixtureModel(t, "source.modelspec.json")
+	for name, text := range map[string]string{
+		"earlier keys under 1.0-draft-3":                    strings.Replace(earlier, `"1.0-draft"`, `"1.0-draft-3"`, 1),
+		"earlier keys under no identifier":                  strings.Replace(earlier, `  "modelspec": "1.0-draft",`+"\n", "", 1),
+		"earlier keys under an identifier that is not text": strings.Replace(earlier, `"1.0-draft"`, `1`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if text == earlier {
+				t.Fatal("the edit changed nothing")
+			}
+			data, ctx := rewrittenFixture(t, map[string][]byte{"source.modelspec.json": []byte(text)})
+			_, err := Check(data, ctx)
+			if err == nil || !strings.Contains(err.Error(), "does not resolve exactly") && !strings.Contains(err.Error(), "cannot unmarshal") {
+				t.Fatalf("got %v", err)
+			}
+		})
+	}
+}
+
 // The contract names things of a model in the current vocabulary by its own words, and each of them is held to the model.
 func TestTheContractNamesThingsOfTheCurrentVocabularyByItsOwnWords(t *testing.T) {
 	source, target := currentSpelling(fixtureModel(t, "source.modelspec.json")), currentSpelling(fixtureModel(t, "target.modelspec.json"))

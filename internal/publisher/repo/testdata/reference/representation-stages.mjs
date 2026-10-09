@@ -3,7 +3,7 @@
 //
 // Two groups of cases. `cases` run each fixture through the data-stage mutations; the fixtures with `-current` in their name are the same fixtures with
 // their ModelSpec JSON documents in the current vocabulary (publisher/representation/testdata). `vocabulary` edit the target model or the source schema of
-// those, one string replacement each, and record what the Directory says: the edit is data in the golden, and `bytes` is the SHA-256 of the document it
+// those, string replacements, and record what the Directory says: the edit is data in the golden, and `bytes` is the SHA-256 of the document it
 // makes, so that the Go test, which makes the same edit, shows that it checked the same document.
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -15,28 +15,53 @@ const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const fixtureRoot = join(here, '../../../../../publisher/representation/testdata');
 const mutations = [['none',3],['missing-data-reader',3],['wrong-data-head',3],['wrong-data-hash',3],['data-symlink',3],['data-submodule',3],['data-missing',3],['metadata-symlink',3],['raw-bom',3],['raw-invalid-utf8',1],['four-mib-plus-one',(4<<20)+1],['five-mib',5<<20],['five-mib-plus-one',(5<<20)+1]];
 const fixtures = ['real-ror','native-geonames','real-ror-current','native-geonames-current'];
-// Each edit of a ModelSpec JSON document: the vocabulary it starts from, the text it replaces (the first occurrence, and it must exist) and what it
-// puts there. The document it makes is read as the target model or as the source schema of the fixture.
+// Each edit of a ModelSpec JSON document: the vocabulary it starts from, and the replacements it makes, in order, each of the first occurrence of a text that must be
+// in the document. The document it makes is read as the target model or as the source schema of the fixture.
+const top = (member) => ['{\n', `{\n  ${member},\n`];
+const moved = (group, members) => [['"records": {', `"${group}": {`], ['"fields": {', `"${members}": {`]]; // the contract's record type only under another key
 const edits = [
- {name:'unrelated-key-is-kept',from:'current',old:'{\n',new:'{\n  "description": "unrelated",\n'},
- {name:'current-keys-under-the-earlier-identifier',from:'current',old:'"modelspec": "1.0-draft-2"',new:'"modelspec": "1.0-draft"'},
- {name:'earlier-keys-under-the-current-identifier',from:'earlier',old:'"modelspec": "1.0-draft"',new:'"modelspec": "1.0-draft-2"'},
- {name:'current-keys-under-an-unknown-identifier',from:'current',old:'"modelspec": "1.0-draft-2"',new:'"modelspec": "1.0-draft-3"'},
- {name:'entities-beside-records',from:'current',old:'{\n',new:'{\n  "entities": {},\n'},
- {name:'records-beside-entities',from:'earlier',old:'{\n',new:'{\n  "records": {},\n'},
- {name:'properties-in-a-record-type',from:'current',old:'"fields": {',new:'"properties": {}, "fields": {'},
- {name:'fields-in-an-entity',from:'earlier',old:'"properties": {',new:'"fields": {}, "properties": {'},
- {name:'entity-on-a-field',from:'current',old:'"type": "string"',new:'"entity": "x", "type": "string"'},
- {name:'record-on-a-property',from:'earlier',old:'"type": "string"',new:'"record": "x", "type": "string"'},
- {name:'collections-under-the-current',from:'current',old:'{\n',new:'{\n  "collections": {},\n'},
- {name:'projections-under-the-earlier',from:'earlier',old:'{\n',new:'{\n  "projections": {},\n'},
- {name:'records-in-capitals',from:'current',old:'"records"',new:'"RECORDS"'},
- {name:'module-is-another',from:'current',old:'"name": "',new:'"name": "other'},
+ {name:'unrelated-key-is-kept',from:'current',replace:[top('"description": "unrelated"')]},
+ {name:'current-keys-under-the-earlier-identifier',from:'current',replace:[['"modelspec": "1.0-draft-2"','"modelspec": "1.0-draft"']]},
+ {name:'earlier-keys-under-the-current-identifier',from:'earlier',replace:[['"modelspec": "1.0-draft"','"modelspec": "1.0-draft-2"']]},
+ {name:'current-keys-under-an-unknown-identifier',from:'current',replace:[['"modelspec": "1.0-draft-2"','"modelspec": "1.0-draft-3"']]},
+ {name:'earlier-keys-under-an-unknown-identifier',from:'earlier',replace:[['"modelspec": "1.0-draft"','"modelspec": "1.0-draft-3"']]},
+ {name:'entities-beside-records',from:'current',replace:[top('"entities": {}')]},
+ {name:'records-beside-entities',from:'earlier',replace:[top('"records": {}')]},
+ {name:'properties-in-a-record-type',from:'current',replace:[['"fields": {','"properties": {}, "fields": {']]},
+ {name:'fields-in-an-entity',from:'earlier',replace:[['"properties": {','"fields": {}, "properties": {']]},
+ {name:'entity-on-a-field',from:'current',replace:[['"type": "string"','"entity": "x", "type": "string"']]},
+ {name:'record-on-a-property',from:'earlier',replace:[['"type": "string"','"record": "x", "type": "string"']]},
+ {name:'collections-under-the-current',from:'current',replace:[top('"collections": {}')]},
+ {name:'recordsets-under-the-current',from:'current',replace:[top('"recordsets": {}')]},
+ {name:'projections-under-the-earlier',from:'earlier',replace:[top('"projections": {}')]},
+ {name:'migrations-under-the-earlier',from:'earlier',replace:[top('"migrations": {}')]},
+ {name:'records-in-capitals',from:'current',replace:[['"records"','"RECORDS"']]},
+ {name:'identifier-key-in-capitals',from:'current',replace:[['"modelspec"','"MODELSPEC"']]},
+ {name:'module-is-another',from:'current',replace:[['"name": "','"name": "other']]},
+ // A key that only folds to a word of the other vocabulary is not that word: the Directory matches the exact bytes, and so must Go.
+ {name:'records-only-under-Entities',from:'current',replace:moved('Entities','properties')},
+ {name:'records-only-under-ENTITIES',from:'current',replace:moved('ENTITIES','properties')},
+ {name:'records-only-under-entitie-long-s',from:'current',replace:moved('entitieſ','properties')},
+ {name:'fields-only-under-Properties',from:'current',replace:[['"fields": {','"Properties": {']]},
+ {name:'fields-only-under-PROPERTIES',from:'current',replace:[['"fields": {','"PROPERTIES": {']]},
+ {name:'fields-only-under-propertie-long-s',from:'current',replace:[['"fields": {','"propertieſ": {']]},
+ {name:'entitie-long-s-null-beside-records',from:'current',replace:[top('"entitieſ": null')]},
+ {name:'Entities-true-beside-records',from:'current',replace:[top('"Entities": true')]},
+ {name:'Entities-list-beside-records',from:'current',replace:[top('"Entities": []')]},
+ {name:'propertie-long-s-null-in-a-record-type',from:'current',replace:[['"fields": {','"propertieſ": null, "fields": {']]},
+ {name:'Properties-list-in-a-record-type',from:'current',replace:[['"fields": {','"Properties": [], "fields": {']]},
+ {name:'Entity-on-a-field',from:'current',replace:[['"type": "string"','"Entity": "x", "type": "string"']]},
+ {name:'Records-null-beside-entities',from:'earlier',replace:[top('"Records": null')]},
+ {name:'Fields-list-in-an-entity',from:'earlier',replace:[['"properties": {','"Fields": [], "properties": {']]},
+ {name:'Record-on-a-property',from:'earlier',replace:[['"type": "string"','"Record": "x", "type": "string"']]},
 ];
 const editedBytes = (bytes, edit) => {
- const text = bytes.toString('utf8');
- if (!text.includes(edit.old)) throw Error(`${edit.name}: the text to replace is not in the document`);
- return Buffer.from(text.replace(edit.old, () => edit.new));
+ let text = bytes.toString('utf8');
+ for (const [old, replacement] of edit.replace) {
+  if (!text.includes(old)) throw Error(`${edit.name}: the text to replace is not in the document`);
+  text = text.replace(old, () => replacement);
+ }
+ return Buffer.from(text);
 };
 export async function representationStages(directoryRoot, checkOnly) {
  const { checkRepresentation, verifySourceData } = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/representation.mjs')).href);
@@ -123,7 +148,7 @@ export async function representationStages(directoryRoot, checkOnly) {
    for (const edit of edits) {
     const bytes=editedBytes(readFileSync(join(fixtureRoot,edit.from==='current'?fixture:fixture.replace(/-current$/,''),file)),edit);
     const {metadata}=run(fixture,'none',3,{position,bytes});
-    vocabulary.push({fixture,position,edit:edit.name,from:edit.from,old:edit.old,new:edit.new,bytes:hash(bytes),metadata});
+    vocabulary.push({fixture,position,edit:edit.name,from:edit.from,replace:edit.replace,bytes:hash(bytes),metadata});
    }
   }
  }
