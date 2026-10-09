@@ -272,9 +272,9 @@ through one reading (the same code at each level), and keeps what it reads out o
   `modelWordProblems` of `scripts/lib/modelspec.mjs` at ec53d75), and this check has refused them for the publisher's own model since v0.42.0
   (`repo-model-vocabulary`, `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in
   `1.0-draft` with such a key, which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as
-  before. The pull request's independent reviewer fetched every model and source schema pinned by a contract in the two publishers' repositories
-  (GeoNames and ROR) and in the fixtures of other repositories, and none of them has one. The rule was put to the project's owner on 2026-10-09 and he
-  approved it. Decision 0011 of the OpenVaultDB specification records this rule as well (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
+  before. The pull request's independent reviewer opened every model and source schema pinned by a contract in the two publishers' repositories
+  (GeoNames and ROR) and in the fixtures of other repositories, wherever the pinned file exists (one fixture pin is a placeholder with no file), and
+  none of them has one. Decision 0011 of the OpenVaultDB specification records this rule as well (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with
