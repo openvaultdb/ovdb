@@ -195,6 +195,52 @@ func TestAKeyThatOnlyFoldsToAWordOfAnotherVocabularyIsIgnored(t *testing.T) {
 	}
 }
 
+// With several wrong keys, the refusal says the same thing on every run: the keys are looked at in order.
+func TestTheRefusalOfSeveralWrongKeysIsTheSameEveryTime(t *testing.T) {
+	text := currentSpelling(fixtureModel(t, "target.modelspec.json"))
+	for _, name := range []string{"Countries", "CustomerCountries"} {
+		text = strings.Replace(text, `"`+name+`": {`, `"`+name+`": {"properties": {},`, 1)
+	}
+	text = strings.Replace(text, `"type": "string"`, `"entity": "x", "type": "string"`, -1)
+	var first string
+	for i := 0; i < 200; i++ {
+		err := wordsAgree(mustObject(t, text), currentWords)
+		if err == nil {
+			t.Fatal("admitted")
+		}
+		if i == 0 {
+			first = err.Error()
+		} else if err.Error() != first {
+			t.Fatalf("%q then %q", first, err)
+		}
+	}
+	if !strings.Contains(first, "Countries: ") {
+		t.Fatalf("the first record type in order is not the one named: %s", first)
+	}
+	// exactKeys, too
+	var firstKey string
+	for i := 0; i < 200; i++ {
+		err := exactKeys(map[string]any{"Modelspec": 1, "MODULE": 2, "ENTITIES": 3}, []string{"modelspec", "module", "entities"}, false)
+		if i == 0 {
+			firstKey = err.Error()
+		} else if err.Error() != firstKey {
+			t.Fatalf("%q then %q", firstKey, err)
+		}
+	}
+	if !strings.Contains(firstKey, "ENTITIES") {
+		t.Fatal(firstKey)
+	}
+}
+
+func mustObject(t *testing.T, text string) map[string]any {
+	t.Helper()
+	var root map[string]any
+	if err := json.Unmarshal([]byte(text), &root); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 // The contract names things of a model in the current vocabulary by its own words, and each of them is held to the model.
 func TestTheContractNamesThingsOfTheCurrentVocabularyByItsOwnWords(t *testing.T) {
 	source, target := currentSpelling(fixtureModel(t, "source.modelspec.json")), currentSpelling(fixtureModel(t, "target.modelspec.json"))

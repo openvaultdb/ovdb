@@ -2,6 +2,8 @@ package representation
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -59,15 +61,16 @@ func wordsAgree(root map[string]any, words vocabulary) error {
 	if _, ok := root[foreign.records]; ok {
 		return wrong("", foreign.records, words.records)
 	}
+	// In order, so that a document with several wrong keys is refused with the same words every time.
 	records, _ := root[words.records].(map[string]any)
-	for name, raw := range records {
-		record, _ := raw.(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(records)) {
+		record, _ := records[name].(map[string]any)
 		if _, ok := record[foreign.fields]; ok {
 			return wrong(name+": ", foreign.fields, words.fields)
 		}
 		fields, _ := record[words.fields].(map[string]any)
-		for member, raw := range fields {
-			field, _ := raw.(map[string]any)
+		for _, member := range slices.Sorted(maps.Keys(fields)) {
+			field, _ := fields[member].(map[string]any)
 			if _, ok := field[foreign.record]; ok {
 				return wrong(name+"."+member+": ", foreign.record, words.record)
 			}

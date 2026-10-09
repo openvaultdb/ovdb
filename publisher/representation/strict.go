@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"unicode/utf16"
@@ -15,7 +16,7 @@ import (
 // exactKeys rejects aliases of the consumed protocol fields while permitting
 // unrelated canonical fields. Dynamic entity/property names are never folded.
 func exactKeys(object map[string]any, fields []string, closed bool) error {
-	for key := range object {
+	for _, key := range slices.Sorted(maps.Keys(object)) { // in order, so that the refusal of several keys says the same every time
 		if slices.Contains(fields, key) {
 			continue
 		}
