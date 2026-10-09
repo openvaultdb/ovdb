@@ -19,7 +19,7 @@ const (
 	RuleModelDepth    = "repo-model-depth"    // the model file nests deeper than maxJSONDepth
 	RuleModelModule   = "repo-model-module"   // no module.name that is a module name
 	RuleModelEntities = "repo-model-entities" // no entities object
-	RuleModelVersion  = "repo-model-version"  // no "modelspec" version that is text
+	RuleModelVersion  = "repo-model-version"  // no "modelspec" version that is text, or an identifier that is neither of the two on a document with a key of the current vocabulary
 	RuleModelEntity   = "repo-model-entity"   // an entity whose name is not an identifier, or that has no properties
 	RuleModelProperty = "repo-model-property" // a property whose name is not an identifier, whose type is not a type name, that has neither a type nor an entity, or that references an entity the model lacks
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
@@ -29,6 +29,13 @@ const (
 
 	RuleEntitiesLimit   = "repo-model-entities-limit" // the model file has more than MaxEntities entities
 	RuleRecordsetsLimit = "repo-recordsets-limit"     // the manifest lists more than MaxRecordsets recordsets
+)
+
+// The rules of the findings that the reference checker cannot give a verdict on, because it reads one vocabulary of the model file only (the earlier one, entities and
+// properties): the README has them in a table of their own, and no case of the reference comparison shows them.
+const (
+	RuleModelVocabulary = "repo-model-vocabulary" // the "modelspec" identifier names one vocabulary (entities, properties, entity; or records, fields, record) and the document has a key of the other
+	RuleModelRemoved    = "repo-model-removed"    // the model file has a top-level key of a construct that ModelSpec removed (collections, recordsets) or reserved (migrations, projections)
 )
 
 // What one check may cost. The checker compares the recordsets of a manifest with the entities of its model by searching a list for each of them, so
@@ -158,6 +165,9 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 	case errors.Is(err, errEntities):
 		c.add(file, RuleEntitiesLimit, 0, "has an entities object of more than %d entities, which is more than this check reads (a repeated entities member is read as the last, but each of them is read)", MaxEntities)
 		return "", nil
+	case errors.Is(err, errRecords):
+		c.add(file, RuleEntitiesLimit, 0, "has a records object of more than %d record types, which is more than this check reads (a repeated records member is read as the last, but each of them is read)", MaxEntities)
+		return "", nil
 	case endsEarly(err):
 		c.add(file, RuleModelJSON, lineAt(data, len(data)), "is not a ModelSpec JSON file: it is empty or ends before the JSON value does")
 		return "", nil
@@ -175,7 +185,7 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		c.add(file, RuleModelModule, 0, "has no module.name that is a ModelSpec module name (a letter, then letters, digits and _)")
 	}
 	if !spec.hasEntities {
-		c.add(file, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)")
+		c.add(file, RuleModelEntities, 0, "has no %s (an object of ModelSpec %s)", spec.spelling.group, spec.spelling.kinds)
 	}
 	for _, issue := range spec.issues {
 		if issue.rule != RuleModelVersion {
@@ -216,10 +226,10 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		}
 		slices.Sort(extra)
 		if len(missing) > 0 {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordsets lacks the ModelSpec entities of %s: %s", rules.Quote(file), names(missing))
+			c.add(path, RuleRecordsets, recordsets.Line, "recordsets lacks the ModelSpec %s of %s: %s", spec.spelling.kinds, rules.Quote(file), names(missing))
 		}
 		if len(extra) > 0 {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec entities of %s: %s; if they are the database's own names, map each to its entity under recordset_entities (name: Entity)", rules.Quote(file), names(extra))
+			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec %s of %s: %s; if they are the database's own names, map each to its %s under recordset_entities (name: Entity)", spec.spelling.kinds, rules.Quote(file), names(extra), spec.spelling.record)
 		}
 		if duplicate {
 			c.add(path, RuleRecordsets, recordsets.Line, "recordset_entities maps more than one native recordset to the same ModelSpec entity; mappings must be one-to-one")
