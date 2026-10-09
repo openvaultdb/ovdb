@@ -248,7 +248,7 @@ through one reading (the same code at each level), and keeps what it reads out o
   `1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
   document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one). Decision 0011 of the
   OpenVaultDB specification records that a model or source schema that a contract refers to may be in either ModelSpec vocabulary, as an amendment
-  of formats 1 to 3 on that one point; it is In Review, and this text follows it
+  of formats 1 to 3 on that one point, and this text follows it
   (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
   The contract formats, their schemas and their keys are as published: the contract's `entity` names a record type and its `property` a field of it,
   whichever vocabulary the model is in. Releases up to v0.42.0 read only `1.0-draft` there, so a model rewritten to the current vocabulary fails the
@@ -264,16 +264,17 @@ through one reading (the same code at each level), and keeps what it reads out o
     only when that repository has a rewritten revision, and a publisher that rewrites its own model does not touch it.
 
   A publisher without a contract needs none of that.
-- **A separate rule, not part of that amendment: a model whose keys disagree with its identifier, or that has a removed or reserved top-level key,
-  is refused by the representation check** (a key of the other vocabulary at the top level, on a record type or on a member; `collections`,
-  `recordsets`, `projections`, `migrations`). Its justification is ModelSpec's specification (`spec/json-format.md`), which makes such a document an
-  error under either identifier, and the Directory's reference, which refuses it (`scripts/lib/representation.mjs`, `modelWordProblems` of
-  `scripts/lib/modelspec.mjs` at ec53d75); this check refuses it for the publisher's own model since v0.42.0 (`repo-model-vocabulary`,
-  `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in `1.0-draft` with such a key,
-  which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as before. The pull request's independent
-  reviewer fetched every model and source schema pinned by a contract in the two publishers' repositories (GeoNames and ROR) and in the fixtures of
-  other repositories, and none of them has one. The rule was put to the project's owner on 2026-10-09 and he approved
-  it. Decision 0011 of the OpenVaultDB specification, which still says that it adds no rule about mixing, is being updated to record it and is In Review.
+- **A separate rule, not part of that amendment: a referenced model is refused by the representation check when it carries a key of the other
+  vocabulary (at the top level, on a record type or on a member) or a removed top-level key (`collections`, `recordsets`), and, by ModelSpec's
+  specification, also when it carries a reserved top-level key (`projections`, `migrations`).** The project's owner approved the first two kinds of
+  key on 2026-10-09; the reserved keys are refused on ModelSpec's specification (`spec/json-format.md`, which makes a document with any of the four an
+  error under either identifier), not on his approval. The Directory's reference refuses all of them too (`scripts/lib/representation.mjs`,
+  `modelWordProblems` of `scripts/lib/modelspec.mjs` at ec53d75), and this check has refused them for the publisher's own model since v0.42.0
+  (`repo-model-vocabulary`, `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in
+  `1.0-draft` with such a key, which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as
+  before. The pull request's independent reviewer fetched every model and source schema pinned by a contract in the two publishers' repositories
+  (GeoNames and ROR) and in the fixtures of other repositories, and none of them has one. The rule was put to the project's owner on 2026-10-09 and he
+  approved it. Decision 0011 of the OpenVaultDB specification records this rule as well (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with

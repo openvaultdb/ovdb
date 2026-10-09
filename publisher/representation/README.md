@@ -16,16 +16,18 @@ MeaningGraph identifier binding and canonical meaning pin, physical bridge colum
 exact raw-label uniqueness and native target-key membership. Every referenced file
 has an exact SHA256. A ModelSpec JSON document that a contract refers to (a target model, a source schema) may be in either
 ModelSpec vocabulary, and its identifier decides: `1.0-draft` has entities, properties and entity; `1.0-draft-2` has records, fields and record. Decision 0011 of the OpenVaultDB specification records this as an
-amendment of formats 1 to 3 on that one point; it is In Review
+amendment of formats 1 to 3 on that one point
 (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
 The contract formats, their schemas and their keys are as published: a contract's `entity` names a record type and its `property` a field of it.
 Keys of the model are matched by their exact bytes. A case variant of `modelspec`, `module`, `name`, `type`, or of the group key or the members key of the document's own vocabulary (`RECORDS`, `Fields` in a
 `1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
 document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one).
-Releases up to v0.42.0 read only `1.0-draft` here. Separately, and not part of that amendment: a document whose keys disagree with its identifier, or
-that has a removed or reserved top-level key (`collections`, `recordsets`, `projections`, `migrations`), is refused, because ModelSpec's specification
-(`spec/json-format.md`) and the Directory's reference refuse it. The rule was put to the project's owner on 2026-10-09 and he approved it; decision 0011 of the OpenVaultDB specification is being
-updated to record it and is In Review. The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change.
+Releases up to v0.42.0 read only `1.0-draft` here. Separately, and not part of that amendment: a referenced model is refused when it carries a key of the other vocabulary (at the top level, on a record type or
+on a member) or a removed top-level key (`collections`, `recordsets`), and, by ModelSpec's specification (`spec/json-format.md`), also when it carries a reserved
+top-level key (`projections`, `migrations`). The Directory's reference refuses all of them. The project's owner approved the first two kinds of key on
+2026-10-09; the reserved keys are refused on the specification, not on his approval. The rule was put to the project's owner on 2026-10-09 and he approved
+it. Decision 0011 of the OpenVaultDB specification records this rule as well (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
+The ECB pin chain reader (`publisher/source/pinchain/model.go`) still requires `1.0-draft` and is not covered by this change.
 Unknown versions/policies, JSON duplicate keys, consumed field aliases, unpaired surrogate
 escapes, multiple YAML documents, path escapes,
 URLs masquerading as paths and mutable revisions are refused.
