@@ -13,17 +13,21 @@ import (
 // This file is test support for the guard on the ECB model files (model_guard_test.go): the rename of ModelSpec's three words, computed from a
 // model in the earlier spelling. It is test code because no production code needs it; the released binary rewrites no model.
 //
-// The reference is `modelspec rewrite` (the ModelSpec CLI, 0.2.0), which replaces the old spellings as byte ranges and touches every other byte
-// of a file (decisions 0018, 0020 and 0022 of the ModelSpec specification):
+// The reference is `modelspec rewrite` (the ModelSpec CLI, 0.2.0), which replaces the old spellings as byte ranges and leaves every other byte of a
+// file as it was (decisions 0018, 0020 and 0022 of the ModelSpec specification):
 //
 //	HCL   the block type entity becomes record, the block type property directly inside a record becomes field, and the attribute entity
 //	      directly inside a member becomes record
 //	JSON  the identifier 1.0-draft becomes 1.0-draft-2, and the keys entities, properties (of a record type) and entity (of a member) become
 //	      records, fields and record
 //
-// The functions below do the same for the shapes the reference accepts and the ECB model has, and refuse every other shape with an error (an
-// escaped key, a heredoc, an object constructor, a document that is not in the earlier spelling), because a refusal makes the guard fail, which
-// is the safe side. TestTheRenameIsWhatTheReferenceWrites holds them to the bytes the reference wrote.
+// The functions below make the same renames, as byte ranges, in the shapes the tests show: the bytes the reference wrote for those documents
+// (TestTheRenameIsWhatTheReferenceWrites) and the pinned ECB files (TestTheRenameOfTheBaselineModelIsWhatTheReferenceWrote). They refuse, with an
+// error, the shapes TestTheRenameRefusesWhatItDoesNotKnow lists: an escaped key, a heredoc or a template in a string, a value that is an object,
+// unbalanced braces or brackets, and a JSON document that is not one object in the earlier spelling. They are not a general reader of either
+// format: an input outside those shapes (an HCL that is already in the current spelling comes back unchanged, and an HCL that the reference refuses
+// as unparseable may still be renamed) is not what the guard relies on. The guard compares the result with the two digests of the reference's
+// output, so any difference from what the reference writes for the pinned files fails it.
 
 // edit is one byte range of a file and what takes its place.
 type edit struct {

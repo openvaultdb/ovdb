@@ -22,6 +22,12 @@ import (
 // digests as well. Any other difference fails: the rename and one more change, a mixed spelling, one file renamed and not the other, a pinned copy
 // that is not the pinned bytes. The pins, the accepted proposal and the receipts are not touched by it.
 const (
+	// pinnedModelHCLSHA256 and pinnedModelJSONSHA256 are the SHA-256 of the two model files as the chain pins them (ecb-daily.pins.json, commit
+	// 6751a14). They occur in the chain's manifest and are named here too, so that a change of the manifest and of the stored copies alone does not
+	// move the guard: requirePinnedModel holds both to these constants.
+	pinnedModelHCLSHA256  = "937a7f0836d13c849dd8d68ed48df196fb7e61c11fd97bd10ed314d6e27961bd"
+	pinnedModelJSONSHA256 = "d284028a72070865347134715f0bab04e22e1c33fa71ef9bef645d57a8cc703c"
+
 	// renamedModelHCLSHA256 and renamedModelJSONSHA256 are the SHA-256 of the files that `modelspec rewrite --write` (ModelSpec CLI 0.2.0) writes
 	// from the pinned ones (937a7f08..., d284028a...). The CLI's `export` of the renamed HCL, with the module id, name and version of the JSON,
 	// is byte-identical to the renamed JSON.
@@ -86,11 +92,23 @@ func pinnedModel(t *testing.T) (pinned modelFiles, pins modelDigests) {
 	return pinned, pins
 }
 
+// holdToPinnedConstants requires the digests that the chain's manifest pins, and the stored copies, to be the named constants.
+func holdToPinnedConstants(pinned modelFiles, pins modelDigests) error {
+	want := modelDigests{pinnedModelHCLSHA256, pinnedModelJSONSHA256}
+	if pins != want || (modelDigests{hash(pinned.hcl), hash(pinned.json)}) != want {
+		return errors.New("the chain's pins or the stored copies of the model are not the pinned digests named in the guard")
+	}
+	return nil
+}
+
 // requirePinnedModel fails the test unless the model files of the working tree are in an accepted state, and returns the pinned bytes, which are
 // what the rest of a fixture is built from.
 func requirePinnedModel(t *testing.T) modelFiles {
 	t.Helper()
 	pinned, pins := pinnedModel(t)
+	if err := holdToPinnedConstants(pinned, pins); err != nil {
+		t.Fatal("publisher model artifact drift: ", err)
+	}
 	working := modelFiles{bytesAt(t, workingModelHCL), bytesAt(t, workingModelJSON)}
 	if _, err := acceptedModelState(pinned, working, pins); err != nil {
 		t.Fatal("publisher model artifact drift: ", err)
@@ -100,6 +118,27 @@ func requirePinnedModel(t *testing.T) modelFiles {
 
 func TestTheModelFilesInTheTreeAreAnAcceptedState(t *testing.T) {
 	requirePinnedModel(t)
+}
+
+func TestTheGuardNamesTheDigestsThatTheChainPins(t *testing.T) {
+	pinned, pins := pinnedModel(t)
+	if err := holdToPinnedConstants(pinned, pins); err != nil {
+		t.Fatal(err)
+	}
+	want := modelDigests{pinnedModelHCLSHA256, pinnedModelJSONSHA256}
+	other := modelFiles{hcl: append(bytes.Clone(pinned.hcl), '\n'), json: pinned.json}
+	for name, c := range map[string]struct {
+		files modelFiles
+		pins  modelDigests
+	}{
+		"a manifest that pins other bytes":   {pinned, modelDigests{"x", want.json}},
+		"a manifest that pins other JSON":    {pinned, modelDigests{want.hcl, "x"}},
+		"stored copies that are other bytes": {other, modelDigests{hash(other.hcl), want.json}},
+	} {
+		if err := holdToPinnedConstants(c.files, c.pins); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
 }
 
 func TestTheGuardAcceptsTwoStatesOfTheModel(t *testing.T) {

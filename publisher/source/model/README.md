@@ -17,7 +17,7 @@ model field. `referenceDate` and `quoteCurrency` are explanatory semantic
 aliases, not renamed fields in this model or native query output.
 
 EUR and `indicative-reference` are explicit source-definition context. There is
-no EUR row or modeled base-currency property. The date is a Gregorian reference
+no EUR row or modeled base-currency field. The date is a Gregorian reference
 date, without a time zone or publication instant. Decimal strings preserve all
 digits and trailing zeros; the lexical pattern does not prove positivity or
 calendar validity, which runtime admission must validate. The core currency
