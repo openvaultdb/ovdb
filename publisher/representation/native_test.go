@@ -39,6 +39,7 @@ func realFixture(t *testing.T, name string) ([]byte, Context, map[Reference][]by
 	}
 	repo := "https://github.com/ingitdb/ror-ingitdb"
 	rev := "bbbec903248680caea04e68f94b9a957b6efc55b"
+	name = strings.TrimSuffix(name, "-current") // the fixture in the current vocabulary is the same provider's
 	if name == "real-geonames" {
 		repo = "https://github.com/ingitdb/geo-ingitdb"
 		rev = "873538b63de475f8a04f5accdd9a14e51e59e90a"
@@ -112,7 +113,11 @@ func TestRealExecutionFixtures(t *testing.T) {
 }
 func nativeFixture(t *testing.T) (*Document, Context, map[Reference][]byte) {
 	t.Helper()
-	b, ctx, a := realFixture(t, "real-ror")
+	return nativeFixtureOf(t, "real-ror")
+}
+func nativeFixtureOf(t *testing.T, name string) (*Document, Context, map[Reference][]byte) {
+	t.Helper()
+	b, ctx, a := realFixture(t, name)
 	doc, err := Parse(b)
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +293,11 @@ func TestNativeReceiptAssociation(t *testing.T) {
 
 func mutateNativeAsset(t *testing.T, which string, raw []byte) ([]byte, Context) {
 	t.Helper()
-	d, ctx, assets := nativeFixture(t)
+	return mutateNativeAssetOf(t, "real-ror", which, raw)
+}
+func mutateNativeAssetOf(t *testing.T, name, which string, raw []byte) ([]byte, Context) {
+	t.Helper()
+	d, ctx, assets := nativeFixtureOf(t, name)
 	c := &d.Contracts[0]
 	oldModel, oldProof, oldSnapshot := c.Target.Model, c.Native.Provenance, c.Target.Snapshot
 	proof := assets[oldProof]

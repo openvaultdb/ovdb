@@ -240,14 +240,41 @@ through one reading (the same code at each level), and keeps what it reads out o
 | members of a record type | `properties` | `fields` |
 | reference on a member | `entity` | `record` |
 
-- **A model file with the current vocabulary is read by this check, and by this check only.** A manifest that has a `representation_contract`
-  makes the same run call the representation check (`publisher/representation`), which reads the same model file a second time: it pins the
-  file's bytes by sha256 (`contract.go`, `Hash`), accepts only the identifier `1.0-draft`, and reads `entities` and `properties` and nothing
-  else (`contract.go`, `property`; `strict.go`, `exactModel`; `native.go`). For such a repository the model file cannot be written in the current
-  vocabulary today: rewritten, it fails the representation check with a checksum finding, and re-pinning the contract and the manifest to the
-  new bytes fails it again, because the module, entity and property do not resolve. A publisher in that position keeps the model file in the earlier
-  vocabulary, bytes included. A publisher without a contract can write the model file in either, and `modelspec rewrite --write` is how it
-  is changed. Formats 1 to 3 of the contract are published, so reading the current vocabulary there is a later decision of its own.
+- **A model file in the current vocabulary is read by this check and by the representation check.** A manifest that has a `representation_contract`
+  makes the same run call the representation check (`publisher/representation`), which reads the same model file a second time, and each source
+  schema that is ModelSpec JSON. It pins the file's bytes by sha256 (`contract.go`, `Hash`) and reads either vocabulary, the identifier deciding
+  (`vocabulary.go`; `contract.go`, `property`; `strict.go`, `exactModel`; `native.go`), and it matches keys by their exact bytes, as the Directory's reader
+  does. A case variant of `modelspec`, `module`, `name`, `type`, or of the group key or the members key of the document's own vocabulary (`RECORDS`, `Fields` in a
+  `1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
+  document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one). Decision 0011 of the
+  OpenVaultDB specification records that a model or source schema that a contract refers to may be in either ModelSpec vocabulary, as an amendment
+  of formats 1 to 3 on that one point, and this text follows it
+  (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
+  The contract formats, their schemas and their keys are as published: the contract's `entity` names a record type and its `property` a field of it,
+  whichever vocabulary the model is in. Releases up to v0.42.0 read only `1.0-draft` there, so a model rewritten to the current vocabulary fails the
+  representation check with a checksum finding, and, with the contract and the manifest re-pinned to the new bytes, with "does not resolve exactly".
+  Releases after v0.42.0 read it. A publisher with a contract then writes the model file in either vocabulary (`modelspec rewrite --write` changes
+  it), and the values that hold the file's bytes move, by the kind of contract entry:
+  - a label-bridge entry (all of format 1; the four GeoNames entries, which are format 2): `target.model.sha256`, once per entry that names the model; and
+    `target.snapshot.sha256` as well if the publisher keeps its snapshot true and the snapshot lists the model;
+  - a native-identifier entry (all of format 3, and one kind of entry in format 2; ROR's entry is format 3): `target.model.sha256`, `native.provenance.sha256` and `target.snapshot.sha256`,
+    because the receipt names the model and the snapshot lists the model and the receipt, so both are rewritten first;
+  - then `representation_contract.sha256` in `ovdb.yaml`, because the contract file's bytes changed;
+  - a source schema (`source.schema`) is another repository's file, pinned by repository, revision and hash: it moves, by revision and hash,
+    only when that repository has a rewritten revision, and a publisher that rewrites its own model does not touch it.
+
+  A publisher without a contract needs none of that.
+- **A separate rule, not part of that amendment: a referenced model is refused by the representation check when it carries a key of the other
+  vocabulary (at the top level, on a record type or on a member) or a removed top-level key (`collections`, `recordsets`), and, by ModelSpec's
+  specification, also when it carries a reserved top-level key (`projections`, `migrations`).** The project's owner approved the first two kinds of
+  key on 2026-10-09; the reserved keys are refused on ModelSpec's specification (`spec/json-format.md`, which makes a document with any of the four an
+  error under either identifier), not on his approval. The Directory's reference refuses all of them too (`scripts/lib/representation.mjs`,
+  `modelWordProblems` of `scripts/lib/modelspec.mjs` at ec53d75), and this check has refused them for the publisher's own model since v0.42.0
+  (`repo-model-vocabulary`, `repo-model-removed`). It changes what the representation check accepts of the earlier vocabulary: a source schema in
+  `1.0-draft` with such a key, which v0.42.0 accepted, is refused now; a contract that points at a `1.0-draft` model without one is read exactly as
+  before. The pull request's independent reviewer opened every model and source schema pinned by a contract in the two publishers' repositories
+  (GeoNames and ROR) and in the fixtures of other repositories, wherever the pinned file exists (one fixture pin is a placeholder with no file), and
+  none of them has one. Decision 0011 of the OpenVaultDB specification records this rule as well (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
 - An identifier that is neither of the two, or none, is read in the earlier vocabulary, as it was before: this check has always accepted any text as the
   version (as the Directory does), and still does. ModelSpec's own reader refuses such an identifier; this check does not, because that would refuse
   a model that is accepted today. It does refuse one of those documents that has a key of the current vocabulary (`records`, `fields`, `record`), with
@@ -269,9 +296,12 @@ through one reading (the same code at each level), and keeps what it reads out o
 - A repeated key is read as the last of them, as in `JSON.parse` (ModelSpec's own reader refuses a repeated key; this check accepts it today and
   still does). A key of the other vocabulary is the one exception: it is noticed wherever it occurs, also in an occurrence that a later one
   overwrites, and the document is refused. That is the safer verdict, and it is held by tests (`model_vocabulary_test.go`).
-- The reference checker and the pinned Directory do not read the current vocabulary, so the tests of it are not part of the comparison with the
-  reference: they call `readModel` and `Check` on documents of their own (`model_vocabulary_test.go`, `check_vocabulary_test.go`). The cases of the
-  earlier vocabulary that these rules refuse are in the golden.
+- The cases of the Directory's file stage (`directory-stage.json`) are all in the earlier vocabulary, so the tests of this check on the current one
+  are not part of that comparison: they call `readModel` and `Check` on documents of their own (`model_vocabulary_test.go`,
+  `check_vocabulary_test.go`). The cases of the earlier vocabulary that these rules refuse are in the golden. The representation check's reading of
+  both vocabularies is compared with the Directory's (`representation-stages.json`, below).
+- The reader of the ECB pin chain (`publisher/source/pinchain/model.go`) still requires `1.0-draft` with `entities` and `properties`: it is not covered by this
+  change, and a model it pins by hash stays in the earlier vocabulary until that reader is changed.
 
 ### Reading the meaning file, against what a manifest can reach
 
@@ -395,10 +425,14 @@ with Directory preserves conservative JavaScript safe-integer and null-count
 refusals; Go retains exact integer tokens for native count associations. These
 expected differences do not constitute full canonical or runtime parity.
 
-Current canonical checker references: Directory `087067483686865b13cb76511ff86f7364ea47ff` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
-The checked `representation-stages.json` golden compares 26 cases across two
-independent native metadata fixtures at the landed Directory validator. Metadata
+The checked `representation-stages.json` golden compares 52 cases across two
+independent native metadata fixtures, each in the earlier ModelSpec vocabulary and
+in the current one (the `-current` fixtures of `publisher/representation/testdata`),
+at the landed Directory validator. Its `vocabulary` part has 132 further cases: 33 edits, each a list of string
+replacements in the target model or in the source schema of a current-vocabulary fixture, with the hash of the document it makes, so that Go makes the
+same document the Directory was asked about; 40 are accepted by both and 92 refused by both, and Go says why it refuses each. Metadata
 never reads source or native data; the separate byte stage includes 5MiB boundaries,
 raw BOM/invalid UTF8 bytes and reader/mode/hash refusals. Its result strength is
 explicitly structural metadata plus offline raw bytes, without canonical admission.

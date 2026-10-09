@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"unicode/utf16"
@@ -15,7 +16,7 @@ import (
 // exactKeys rejects aliases of the consumed protocol fields while permitting
 // unrelated canonical fields. Dynamic entity/property names are never folded.
 func exactKeys(object map[string]any, fields []string, closed bool) error {
-	for key := range object {
+	for _, key := range slices.Sorted(maps.Keys(object)) { // in order, so that the refusal of several keys says the same every time
 		if slices.Contains(fields, key) {
 			continue
 		}
@@ -31,39 +32,52 @@ func exactKeys(object map[string]any, fields []string, closed bool) error {
 	return nil
 }
 
+// exactModel checks a referenced ModelSpec JSON document and decodes it into out, whose types name the keys of the earlier vocabulary (entities,
+// properties): a document in the current vocabulary is decoded as the same document with those keys (asEarlier). Its identifier decides the vocabulary, and a
+// document whose keys disagree with it is refused (wordsAgree). The keys a contract consumes are exact in either vocabulary; the rest is unrelated.
 func exactModel(data []byte, out any, native bool) error {
 	var root map[string]any
 	if err := strictJSON(data, MaxArtifactBytes, &root); err != nil {
 		return err
 	}
-	if err := exactKeys(root, []string{"modelspec", "module", "entities"}, false); err != nil {
+	words, known := vocabularyOf(root)
+	if known {
+		if err := wordsAgree(root, words); err != nil {
+			return err
+		}
+	}
+	if err := exactKeys(root, []string{"modelspec", "module", words.records}, false); err != nil {
 		return err
 	}
 	module, _ := root["module"].(map[string]any)
 	if err := exactKeys(module, []string{"name"}, false); err != nil {
 		return err
 	}
-	entities, _ := root["entities"].(map[string]any)
-	for _, raw := range entities {
-		entity, _ := raw.(map[string]any)
-		entityFields := []string{"properties"}
+	// In order, so that a document with wrong keys in several record types or members is refused with the same words every time.
+	records, _ := root[words.records].(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(records)) {
+		record, _ := records[name].(map[string]any)
+		recordFields := []string{words.fields}
 		if native {
-			entityFields = append(entityFields, "key")
+			recordFields = append(recordFields, "key")
 		}
-		if err := exactKeys(entity, entityFields, false); err != nil {
+		if err := exactKeys(record, recordFields, false); err != nil {
 			return err
 		}
-		properties, _ := entity["properties"].(map[string]any)
-		for _, raw := range properties {
-			property, _ := raw.(map[string]any)
-			propertyFields := []string{"type"}
+		fields, _ := record[words.fields].(map[string]any)
+		for _, member := range slices.Sorted(maps.Keys(fields)) {
+			field, _ := fields[member].(map[string]any)
+			fieldKeys := []string{"type"}
 			if native {
-				propertyFields = append(propertyFields, "required")
+				fieldKeys = append(fieldKeys, "required")
 			}
-			if err := exactKeys(property, propertyFields, false); err != nil {
+			if err := exactKeys(field, fieldKeys, false); err != nil {
 				return err
 			}
 		}
+	}
+	if words == currentWords {
+		data, _ = json.Marshal(asEarlier(root)) // a value that was just decoded from JSON encodes
 	}
 	return json.Unmarshal(data, out)
 }

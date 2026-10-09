@@ -3,7 +3,7 @@
   "references": {
     "directory": {
       "repository": "openvaultdb/directory",
-      "commit": "087067483686865b13cb76511ff86f7364ea47ff"
+      "commit": "ec53d7539aafd23d006b4943acdd7a31f4eb9340"
     }
   },
   "strength": "structural-metadata-and-offline-raw-bytes-only",
@@ -189,6 +189,2086 @@
       "size": 5242881,
       "metadata": true,
       "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "none",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "missing-data-reader",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "wrong-data-head",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "wrong-data-hash",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "data-symlink",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "data-submodule",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "data-missing",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "metadata-symlink",
+      "size": 3,
+      "metadata": false,
+      "data": "outside_scope"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "raw-bom",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "raw-invalid-utf8",
+      "size": 1,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "four-mib-plus-one",
+      "size": 4194305,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "five-mib",
+      "size": 5242880,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "real-ror-current",
+      "mutation": "five-mib-plus-one",
+      "size": 5242881,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "none",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "missing-data-reader",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "wrong-data-head",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "wrong-data-hash",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "data-symlink",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "data-submodule",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "data-missing",
+      "size": 3,
+      "metadata": true,
+      "data": "refused"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "metadata-symlink",
+      "size": 3,
+      "metadata": false,
+      "data": "outside_scope"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "raw-bom",
+      "size": 3,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "raw-invalid-utf8",
+      "size": 1,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "four-mib-plus-one",
+      "size": 4194305,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "five-mib",
+      "size": 5242880,
+      "metadata": true,
+      "data": "checked"
+    },
+    {
+      "fixture": "native-geonames-current",
+      "mutation": "five-mib-plus-one",
+      "size": 5242881,
+      "metadata": true,
+      "data": "refused"
+    }
+  ],
+  "vocabulary": [
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "unrelated-key-is-kept",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"description\": \"unrelated\",\n"
+        ]
+      ],
+      "bytes": "da99a81d418337702343d44492f2b25beca19d8f955a88e0fdcc65b134276158",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "current-keys-under-the-earlier-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft\""
+        ]
+      ],
+      "bytes": "631ed5c01fe380b14899c65dadaf073158ed35c095569d25d417138229e11d77",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "earlier-keys-under-the-current-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-2\""
+        ]
+      ],
+      "bytes": "d514a8d1d13fdc91a40c38e28e8932f01b13e2f3c4d6e13feb24f473e2baae2c",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "current-keys-under-an-unknown-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "692550ce14b0139eaf69ba74b7c7b37fd91166ed9400b247c969407018ff17a5",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "earlier-keys-under-an-unknown-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "2ba809f3e041912550d1b242ef34507aa5dcfd9be09906a49c4f16e70d923b45",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "entities-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entities\": {},\n"
+        ]
+      ],
+      "bytes": "bfe3c28808110c4f41ad0d5afa43043dcddf8e120bc0aa5daed55bdced3e666a",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "records-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"records\": {},\n"
+        ]
+      ],
+      "bytes": "d83068c9fb41a40672033d61c49048cd54d9e25d9592d0def7e3fcf091b5cdbc",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "properties-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"properties\": {}, \"fields\": {"
+        ]
+      ],
+      "bytes": "fb01383104ebabcf49b6c4d799c69550785f3cef7ce7898eeef790cccf57f9e4",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "fields-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"fields\": {}, \"properties\": {"
+        ]
+      ],
+      "bytes": "baeba84bb2f22575b0d981e781b12704b84038df5c904e965bc50a90c8f80eb4",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "72ed06c8fea281d8374f7dd4af732de0c0798489272b8f9d1da3aae8e1ef449d",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "bcac3be4f7f1495e8559a2c627ddbb4b8f23a71402157260efe324efacf37e5c",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "collections-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"collections\": {},\n"
+        ]
+      ],
+      "bytes": "f23ad7e6dba0ebaade89fdbde5ff9296738a632aa2207b1055d72b954a502381",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "recordsets-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"recordsets\": {},\n"
+        ]
+      ],
+      "bytes": "44dcf12e1812d4079320da230a6bae553eaaff27b80bc86fcb063ff8dade238d",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "projections-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"projections\": {},\n"
+        ]
+      ],
+      "bytes": "8817279f17c6f8e9bbed5a3ddc7f931e8de8a669e0cdc2fd4ff78fe88d915107",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "migrations-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"migrations\": {},\n"
+        ]
+      ],
+      "bytes": "0690c69170e0d5656805b60bb5590546536303ad0518932f818aff6a07f39d1d",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "records-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\"",
+          "\"RECORDS\""
+        ]
+      ],
+      "bytes": "c31677c974a58b33e7f36cf1b7a8f7320780d676a9b0f7fde550cf5e54e7f4f1",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "identifier-key-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\"",
+          "\"MODELSPEC\""
+        ]
+      ],
+      "bytes": "8edc08832479fb4e92b864711352caff2161891d8ed5a8b58a063a4fe7319d96",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "module-is-another",
+      "from": "current",
+      "replace": [
+        [
+          "\"name\": \"",
+          "\"name\": \"other"
+        ]
+      ],
+      "bytes": "b840777c4af0ba607a666d94525560d38d8b95d597b6c5b746cfd2cbfe1080a7",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "records-only-under-Entities",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"Entities\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "5b407c918243ce5e832c7d02f740ad0e62f2cd64a5630d27fb995fbaaf84497f",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "records-only-under-ENTITIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"ENTITIES\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "a67e60096ad303b79f0de52f0a82b8bd316c9ad7b50d2f523ebd96208a690add",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "records-only-under-entitie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"entitieſ\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "2cebe3d24b1553b2931ade969f98e226b1110ad0735641887276d43c80656da2",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "fields-only-under-Properties",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": {"
+        ]
+      ],
+      "bytes": "17acbd01a359b1b6172530da1bf3045c9b102e4840fab9c57fbf507c883488b7",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "fields-only-under-PROPERTIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"PROPERTIES\": {"
+        ]
+      ],
+      "bytes": "72ff63211b192c507d16fac228a25ff88ba768a5ae3290343b13d77f9d603364",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "fields-only-under-propertie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": {"
+        ]
+      ],
+      "bytes": "27a316dab4b13632d1e8658027367eadbcb50e5e02e8757fa2fa5c8b6627294c",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "entitie-long-s-null-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entitieſ\": null,\n"
+        ]
+      ],
+      "bytes": "bd78c186d00d37b3d65934e95ace5c057ce3eacc400d426638aedb394b555b1d",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Entities-true-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": true,\n"
+        ]
+      ],
+      "bytes": "618eb3bb59aacba930d816196adfa006104ba157ef02f95dd56b9d9d9dbbe922",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Entities-list-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": [],\n"
+        ]
+      ],
+      "bytes": "4122c315140fe76d6f64e5274a27518890631b4491a79cb9b67eff3fcc3e1c32",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "propertie-long-s-null-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": null, \"fields\": {"
+        ]
+      ],
+      "bytes": "c2e44348ba7ba4942355353dbaa92551e04d1fa464fd6a6a3453a89308b0e3d5",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Properties-list-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": [], \"fields\": {"
+        ]
+      ],
+      "bytes": "21e1fed83515b2b709478399092e7fbb42d6148949d462a043eb5d0ccb688a5f",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "b29a108dbafe9f80f03eb37dc2a2fde9b99aa43af2dc4767491997af5d4b48f9",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Records-null-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Records\": null,\n"
+        ]
+      ],
+      "bytes": "4cfbbd7dfebdc5c9dbc907c345af302a64e153ddf14ff9ec56b16726970ae150",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Fields-list-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"Fields\": [], \"properties\": {"
+        ]
+      ],
+      "bytes": "fb26ab6ec37140e35377d13afd0da464a0333893d99aca9b13347ae83d43b484",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "target",
+      "edit": "Record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "9f6a683b2ead390e5e2c605a9a4b079eee730545a1eea4cabc2fecd099ebf96b",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "unrelated-key-is-kept",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"description\": \"unrelated\",\n"
+        ]
+      ],
+      "bytes": "4d7e02981d3040756c15fd2ff73e0898d72facdb1d9b385e1b444bf6a1b6c881",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "current-keys-under-the-earlier-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft\""
+        ]
+      ],
+      "bytes": "0aaadca0e5e8e320f0a90a6191c8a39c1292a8012e0f7fb722cfe7406b7ca383",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "earlier-keys-under-the-current-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-2\""
+        ]
+      ],
+      "bytes": "78accc5b5abeba4e5971ba378e2d77d9a9a9b1eff4fe381fbf5618c4d90e6d32",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "current-keys-under-an-unknown-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "a9b8a2a5a5c12153e310b02b202e3c0fec9498f74328304c008ea766f01c401f",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "earlier-keys-under-an-unknown-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "87a12ce4f0552efb96af8c3a60a50bc43ac627d17ce6941dd14f31a1d30bac67",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "entities-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entities\": {},\n"
+        ]
+      ],
+      "bytes": "aeca419f3912c85aee4e5fe36d1ab1fd48fe899ab55ac117627709b80d189a4c",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "records-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"records\": {},\n"
+        ]
+      ],
+      "bytes": "61ef572e8ccb92b6a0486edbf5243a3415a762de9fcf0191bd01db5818aa2c36",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "properties-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"properties\": {}, \"fields\": {"
+        ]
+      ],
+      "bytes": "935f291612e9423808ee22e0eee157c81668ee9f60880f17bd04b4d0ab0a0938",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "fields-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"fields\": {}, \"properties\": {"
+        ]
+      ],
+      "bytes": "62bcbdf6f8ce310c188258209be200ad9896a1219bd7df8e09433a9c6ca7926f",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "15bf375e3859016544724f684cbccddb761c3ecbea025e51f0f0e2d2d4f62888",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "e693389f93655f7f8e864a2c38fe6750f38f1dc5328d0729768c40f8db0b8692",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "collections-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"collections\": {},\n"
+        ]
+      ],
+      "bytes": "b89d87998f88d5e60b85928c62ca0224cb9ed25feaa051d857b2ae55f89a85d7",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "recordsets-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"recordsets\": {},\n"
+        ]
+      ],
+      "bytes": "2e0d88831b021d04a93c4336f71f51928c58ef1980bd7b3eee76b606809f7edc",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "projections-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"projections\": {},\n"
+        ]
+      ],
+      "bytes": "cb017f08a45d38e38446291df0bf0f6927a73b5e3ab1bfbfbbae8b9562fc5d08",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "migrations-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"migrations\": {},\n"
+        ]
+      ],
+      "bytes": "6b499636b06e0a56bad26e099375259f900ccf19c84b6614259697dc58f35f1d",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "records-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\"",
+          "\"RECORDS\""
+        ]
+      ],
+      "bytes": "8d807bb47e63f16f83140709f94f1cf46e364d4fe1bf9bc082bfe5db02d60d4e",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "identifier-key-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\"",
+          "\"MODELSPEC\""
+        ]
+      ],
+      "bytes": "0fa43d0f5c71a014b6996933ac72fdbdf0f3564c63774f24c30b97949cc98f98",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "module-is-another",
+      "from": "current",
+      "replace": [
+        [
+          "\"name\": \"",
+          "\"name\": \"other"
+        ]
+      ],
+      "bytes": "ba6517a36e4b59d823105ee8855da1f9ca8197398c6411bcb81050135e2b8391",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "records-only-under-Entities",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"Entities\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "01108f75cc3b4aac17331f58f018b82a3f72c2b7863cb70a1294dc44a7dce211",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "records-only-under-ENTITIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"ENTITIES\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "caaba6f247cb1ff26f7243be511069f9ba6f74d06921c0fcc7635e9e0e28a2af",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "records-only-under-entitie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"entitieſ\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "a4f97e1d71f763e4e3a2107387e8150337dd0175158a1657175ea0e3f89ecb39",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "fields-only-under-Properties",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": {"
+        ]
+      ],
+      "bytes": "7596fbb1a15ff2d3e6b0cbfc64b2773b521104de578e073116bc6a203c3d384e",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "fields-only-under-PROPERTIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"PROPERTIES\": {"
+        ]
+      ],
+      "bytes": "d8b3d819371a32d85556f209c47f375655e9fd2a257d8109b200b50a2ea1c2be",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "fields-only-under-propertie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": {"
+        ]
+      ],
+      "bytes": "6f4fe3e934ada46f73beb7840766b04230d491d5cd8412fb3152ac4e6c1dc6e3",
+      "metadata": false
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "entitie-long-s-null-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entitieſ\": null,\n"
+        ]
+      ],
+      "bytes": "d994ce96f453da64712659b324e18aaf1c2bccc7372803ef60f494df29423167",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Entities-true-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": true,\n"
+        ]
+      ],
+      "bytes": "3f6db99d109abb6094c7323e3d439a2b2a529efdc7d65bca914dd2febd1b1b69",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Entities-list-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": [],\n"
+        ]
+      ],
+      "bytes": "a490d6f948cb9fb97407c8474a1b8cf9220468af73e193a06b109377443e7cc6",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "propertie-long-s-null-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": null, \"fields\": {"
+        ]
+      ],
+      "bytes": "3681d0a1dfe1c2619f6fb9615aa9523e44bd55a1bf4bc4c0808439119c1f4110",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Properties-list-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": [], \"fields\": {"
+        ]
+      ],
+      "bytes": "b2817746262606cfe607891a4aa597d922b68941fef6d0177139fe18b611d723",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "123c411d36c3d24774ffb29895535a755cecb425b30f76ab837bd72882cf1819",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Records-null-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Records\": null,\n"
+        ]
+      ],
+      "bytes": "eb14c8d5b36d9b57d234a59b8762d8e5bf5b56cc550dd8af780dd32993475bd3",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Fields-list-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"Fields\": [], \"properties\": {"
+        ]
+      ],
+      "bytes": "c2693031a499fcb0029312847cad6d24fdeb72127ebe2f04a5687e82a5ff6939",
+      "metadata": true
+    },
+    {
+      "fixture": "real-ror-current",
+      "position": "source",
+      "edit": "Record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "0188c72c50e3fa57357027fa38efb1cdf4eed90cdad2e6e57b782ba11c77d675",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "unrelated-key-is-kept",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"description\": \"unrelated\",\n"
+        ]
+      ],
+      "bytes": "6367340f02c50035b2384ea28512f60ec7857e846e8f41e4fcbe1297076bc5d7",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "current-keys-under-the-earlier-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft\""
+        ]
+      ],
+      "bytes": "10e4737b2ceba392cc567457411c5736dcc191ba60721396a197250274f5cab2",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "earlier-keys-under-the-current-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-2\""
+        ]
+      ],
+      "bytes": "964278421993a41251a95101a3ea8d7b83c4fa53fdd63cfa8e2f440d85228bf0",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "current-keys-under-an-unknown-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "43d9dc16084dc732a160135c8d5386d45a9a828e596bd50f16b80a534d88f34e",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "earlier-keys-under-an-unknown-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "f5d0f4c7297ae3fd58c1fa41dfb24ffef2e08814bf66d20c4aa0d509961b68a3",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "entities-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entities\": {},\n"
+        ]
+      ],
+      "bytes": "77f7b11419a226222be95bce8862b727c854ffb7949c4ed1f411adb743c9e993",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "records-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"records\": {},\n"
+        ]
+      ],
+      "bytes": "3091351bcb2a2c59db06069dfd0129872b507bb9a3985d7f89e47edd50b08a58",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "properties-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"properties\": {}, \"fields\": {"
+        ]
+      ],
+      "bytes": "2057b76b8bc8bfefea0115093e07682657bd375309bcf56f488e56ca4a976e0c",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "fields-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"fields\": {}, \"properties\": {"
+        ]
+      ],
+      "bytes": "71be15ea76515aca6c3ece6e1e358804972e0e693cdde83415c7f4142e63d4aa",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "cac75580f7bf645ec872d383c76846a5b49311699449533b41b6dde8c8e295c7",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "ad346edd367e1c02b503363c52a6bd55d7b966133d6a709d53c63611b32377b4",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "collections-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"collections\": {},\n"
+        ]
+      ],
+      "bytes": "f0dafcd49fb3a64aea67b135a3eb2ca5a90b864a32693e4f45bbbf553432a707",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "recordsets-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"recordsets\": {},\n"
+        ]
+      ],
+      "bytes": "e843102d16ec8a48abb698546d667df4fe6b058ee49358bd6e40fa09fbf96d30",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "projections-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"projections\": {},\n"
+        ]
+      ],
+      "bytes": "4c189b9480648e0eb83f32d55de5bdb06db13ad3b7a8ba48832dabbbaff7384d",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "migrations-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"migrations\": {},\n"
+        ]
+      ],
+      "bytes": "b83cf5345503dce316eca6e422bbecfa10cd7270658254dce2d9df7cacf23af7",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "records-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\"",
+          "\"RECORDS\""
+        ]
+      ],
+      "bytes": "bffe999367b75e6469fa9daf07e56e1c1309c4a622c7be25bfd873b055feb05d",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "identifier-key-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\"",
+          "\"MODELSPEC\""
+        ]
+      ],
+      "bytes": "1080d1ff63f005d056ab61a426cf88dc95df117c946158c5cf0ba8d700f39e1c",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "module-is-another",
+      "from": "current",
+      "replace": [
+        [
+          "\"name\": \"",
+          "\"name\": \"other"
+        ]
+      ],
+      "bytes": "10b8cf89a226f6862521a8a18ae61f3fe205cbbb9286c2d882b993e5a94d8cc7",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "records-only-under-Entities",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"Entities\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "9902399d340725c5188a13343ec9f0b052a037e2b09f32bc0b21310337cfee17",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "records-only-under-ENTITIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"ENTITIES\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "9d869c6d87db11af3ba74a63ae4fc2fbb230ff35792126f8ba5d5eec14e440b4",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "records-only-under-entitie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"entitieſ\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "17a3fe01ed3c9c02025e514a0f31c2d7ed700c50948ccc72d2b7d132b826af35",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "fields-only-under-Properties",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": {"
+        ]
+      ],
+      "bytes": "42dd32b02d3497632c7e09d27776ffd3f3a5026cab124ce47047482efbb1121d",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "fields-only-under-PROPERTIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"PROPERTIES\": {"
+        ]
+      ],
+      "bytes": "8eae2260247e78ef0af5ecb50abc9052fbb3d074e8bba10d53b1238914e7acc3",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "fields-only-under-propertie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": {"
+        ]
+      ],
+      "bytes": "865ae0c79eea39b5de328cacf1cb92071a47e389c34c24bd956fc6864dcc3c92",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "entitie-long-s-null-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entitieſ\": null,\n"
+        ]
+      ],
+      "bytes": "cadae98cea43ab1585f0882e66fb197243b9b892a00c5d7be74982de8b2a0d8d",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Entities-true-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": true,\n"
+        ]
+      ],
+      "bytes": "e200c0800529e6c36dfb5939a0f39851a09a60d44ade57165e24761f00feffac",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Entities-list-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": [],\n"
+        ]
+      ],
+      "bytes": "4c394447c67dc5d744d0b5639ea75997f90ffbd1c9696ad0b894e40792a19647",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "propertie-long-s-null-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": null, \"fields\": {"
+        ]
+      ],
+      "bytes": "dd239b2d79770c5b3f429c28d86feab73ddb4ea0a88ecd68a8589af50f7c2174",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Properties-list-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": [], \"fields\": {"
+        ]
+      ],
+      "bytes": "0c90b927e24277f53006d4e3d1b9201ce3de86761a31d4d2f7509c8f344aaa97",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "36bad836b859f74efd15748a09f0d4bb7abf2c4d1c482af4fed7be165458f54b",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Records-null-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Records\": null,\n"
+        ]
+      ],
+      "bytes": "fcdeedda2e2fa28f13b419b679680be2fddc8efa813c903f7685394f8a124b16",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Fields-list-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"Fields\": [], \"properties\": {"
+        ]
+      ],
+      "bytes": "5d71af2af001d39986524dbd45041d93327df66f6a65c9900f1a984b9cfe7706",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "target",
+      "edit": "Record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "77a7d433f20d281039aea58505cce619bbfd091ccaaef554b57797ec4f559a37",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "unrelated-key-is-kept",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"description\": \"unrelated\",\n"
+        ]
+      ],
+      "bytes": "adadaad6d1616e666b9e292ad4333ca87c569585b7b0ac3babfef9715ceb95bb",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "current-keys-under-the-earlier-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft\""
+        ]
+      ],
+      "bytes": "82dcd248467549b53db5843f4b1a5557e81de1abcbf037d0c48ade8188239017",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "earlier-keys-under-the-current-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-2\""
+        ]
+      ],
+      "bytes": "d122d44c6458a85ef15822441b006c172a562580cda7ae784924caaae52563d7",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "current-keys-under-an-unknown-identifier",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft-2\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "903ce6242b128619a56b1176152d8729b8628fb751721c24209117e8c24968f8",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "earlier-keys-under-an-unknown-identifier",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"modelspec\": \"1.0-draft\"",
+          "\"modelspec\": \"1.0-draft-3\""
+        ]
+      ],
+      "bytes": "0bba67a6b5fa1c14898fc813f134c7d86a258ee8579668a3ed404e55bbb71714",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "entities-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entities\": {},\n"
+        ]
+      ],
+      "bytes": "018552c51c1e409729551bce893e701c29d66f7d85a88d93d4df720f2ee03484",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "records-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"records\": {},\n"
+        ]
+      ],
+      "bytes": "328f259b089a215b04182fa267fda1c9d112322570ab191115cf3d8c175afef1",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "properties-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"properties\": {}, \"fields\": {"
+        ]
+      ],
+      "bytes": "dc4ed6613555e2744283b8154135b17a7f043117df2c5dd104c3aa3ddb3d62eb",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "fields-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"fields\": {}, \"properties\": {"
+        ]
+      ],
+      "bytes": "f04acc9d337f4ceb90a43e64b1e1b80fc51cefdde22c288c0a8f2fc2bc6954cc",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "bd0e93bdf8b404f1bbbc733b770ff02d289fd11f157d8fe9178ef18e77806684",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "0cf5452f47cbd9091ee3b9c39c3436faca6479f4163796b1005e796b056e13ca",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "collections-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"collections\": {},\n"
+        ]
+      ],
+      "bytes": "9fe317fcdfed630bb2481ae6d20f5c57d37ce5a71d8fd103a58ef5e88c395f81",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "recordsets-under-the-current",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"recordsets\": {},\n"
+        ]
+      ],
+      "bytes": "ab4240075a23c3beed5ef32f3afd9958b0ceb02c9bdef4ce765af1fa379ab672",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "projections-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"projections\": {},\n"
+        ]
+      ],
+      "bytes": "e380541b76ffea3fb31af8267e4075b0e8dfdb740acd8102ac9a7364026d8470",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "migrations-under-the-earlier",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"migrations\": {},\n"
+        ]
+      ],
+      "bytes": "20b48c2e86522596add058871970fb374da4f11e324af828b0a8149578506df9",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "records-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\"",
+          "\"RECORDS\""
+        ]
+      ],
+      "bytes": "3e68f343088a830368194603bc29a690f285ae1a1cb83b5e4aca7776e53ca3a8",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "identifier-key-in-capitals",
+      "from": "current",
+      "replace": [
+        [
+          "\"modelspec\"",
+          "\"MODELSPEC\""
+        ]
+      ],
+      "bytes": "ba90719437b5b8d865ec99094261cb0a2416847e43cbd6a9827d4b0bf3e2c285",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "module-is-another",
+      "from": "current",
+      "replace": [
+        [
+          "\"name\": \"",
+          "\"name\": \"other"
+        ]
+      ],
+      "bytes": "43551e2632d402763b19006e12ed48dfdb3c0cb4326791cb8f7a10669d25ad39",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "records-only-under-Entities",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"Entities\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "5125e2969324d4c19a05f3be4e5d15e5339f5f47562b5e09a743eb126f9c433b",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "records-only-under-ENTITIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"ENTITIES\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "4db45ef8a9e3019e2103823dac1fcb7d029ded52cf76d0ed674ec23f325e7656",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "records-only-under-entitie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"records\": {",
+          "\"entitieſ\": {"
+        ],
+        [
+          "\"fields\": {",
+          "\"properties\": {"
+        ]
+      ],
+      "bytes": "fdea6e64360b51a08cd1510e54abf3899dcb5a0de96c18654cd1bd963a35f5c2",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "fields-only-under-Properties",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": {"
+        ]
+      ],
+      "bytes": "cfa6a739697843eee2995624b295b7e57ecc169654625ffc2595afc825826361",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "fields-only-under-PROPERTIES",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"PROPERTIES\": {"
+        ]
+      ],
+      "bytes": "a5e3a13e3ec72d8b2ac2fdd25285c44b9a0334b379d1329ea35a9092f10d45f6",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "fields-only-under-propertie-long-s",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": {"
+        ]
+      ],
+      "bytes": "260c3b479b50b224b610c460031a0ac30e5d83c818a630dafbd9aae5b70fa906",
+      "metadata": false
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "entitie-long-s-null-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"entitieſ\": null,\n"
+        ]
+      ],
+      "bytes": "c06f00547cdaebf7c8407299e08de9525e78426b8e963b38dd789094a8573524",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Entities-true-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": true,\n"
+        ]
+      ],
+      "bytes": "b42347aedfe86a9fe9c2810eda0ebbe9952de0be45f173ec4e78df9081f45417",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Entities-list-beside-records",
+      "from": "current",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Entities\": [],\n"
+        ]
+      ],
+      "bytes": "f6a738e16b3b44b5fb6704903ad2fa7995f5a83b16acbf55273f10b2580cbb64",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "propertie-long-s-null-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"propertieſ\": null, \"fields\": {"
+        ]
+      ],
+      "bytes": "e583660c0eea09b78b331e26c25d70ca5438b89c46fa2d4a07776e7b7ab795c2",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Properties-list-in-a-record-type",
+      "from": "current",
+      "replace": [
+        [
+          "\"fields\": {",
+          "\"Properties\": [], \"fields\": {"
+        ]
+      ],
+      "bytes": "a8c82c50b3207c503145c6f021a68e7cfc8f34b5ab50291d8431c6a537b04bcc",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Entity-on-a-field",
+      "from": "current",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Entity\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "f3829db3657f7ceeaa6ed901902896ebceafd8e8c8d3cbae3f3175985ea6acd3",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Records-null-beside-entities",
+      "from": "earlier",
+      "replace": [
+        [
+          "{\n",
+          "{\n  \"Records\": null,\n"
+        ]
+      ],
+      "bytes": "ad9a6c721d139d6ce0de7db095eb3c7cd6256f18186ddbc2d21ad27c02f2d0de",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Fields-list-in-an-entity",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"properties\": {",
+          "\"Fields\": [], \"properties\": {"
+        ]
+      ],
+      "bytes": "86ff7465f87c4b209ba6b1fd686a3f7db80f5bb125c893e4644069de823feca7",
+      "metadata": true
+    },
+    {
+      "fixture": "native-geonames-current",
+      "position": "source",
+      "edit": "Record-on-a-property",
+      "from": "earlier",
+      "replace": [
+        [
+          "\"type\": \"string\"",
+          "\"Record\": \"x\", \"type\": \"string\""
+        ]
+      ],
+      "bytes": "57cdfca9ffca44aab60601f92ab816766d9569a30f5dd085e31476b6ca294ecc",
+      "metadata": true
     }
   ]
 }

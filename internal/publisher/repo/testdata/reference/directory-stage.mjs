@@ -68,8 +68,8 @@ assertAnchors(source, 'scripts/lib/directory.mjs', pins.directory.commit, [
   'the recordset page of ${name}, ${url}, ${problem}',
 ]);
 assertAnchors(modelspecSource, 'scripts/lib/modelspec.mjs', pins.directory.commit, [
-  "problems.push('has no \"modelspec\" version')", "problems.push('has no module.name that is an identifier')", "problems.push('has no entities')",
-  'must be an identifier (letters, digits and _, not starting with a digit)', 'has no properties', 'which is not a type name', 'has neither a type nor an entity',
+  "problems.push('has no \"modelspec\" version')", "problems.push('has no module.name that is an identifier')", 'problems.push(`has no ${vocabulary.records}`)',
+  'must be an identifier (letters, digits and _, not starting with a digit)', 'has no ${vocabulary.fields}', 'which is not a type name', 'has neither a type nor ${',
   'which the ModelSpec does not have',
 ]);
 assertAnchors(meaningSource, 'scripts/lib/meaning.mjs', pins.directory.commit, [

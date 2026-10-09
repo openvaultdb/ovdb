@@ -1,6 +1,6 @@
 {
  "format": "ovdb-real-verdicts/1",
- "registry": "openvaultdb/directory@087067483686865b13cb76511ff86f7364ea47ff",
+ "registry": "openvaultdb/directory@ec53d7539aafd23d006b4943acdd7a31f4eb9340",
  "entries": [
   {
    "id": "adventureworks",

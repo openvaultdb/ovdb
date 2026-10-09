@@ -1,11 +1,11 @@
 {
- "manifest/testdata/reference/corpus.json": "1593245df67caef62dd8305b26cea19c7a123558b82aff0280865945a971c169",
- "manifest/testdata/reference/directory.verdicts.json": "4a9d9c777dd38c0dbff7cd57a88070a0d07b0c46aaf466ee6bba9adaf9c00633",
- "manifest/testdata/reference/directory.facts.json": "da1600a511626d2845d42837e89d1e1206a6d878dfbd96d520d26eb1d4516c54",
- "manifest/testdata/reference/publisher.verdicts.json": "6a67d2598bb389af8074792a8b32a12fa3ad7c89091c4bd59bc17f047b0c643c",
- "manifest/testdata/reference/publisher.facts.json": "8e599a55bdd4c40cc4757ddda2309338eb4cc7eb35f98ca6a3a28e45298ea59d",
- "manifest/testdata/reference/values.json": "affb453879adc94f0799ce780e41222b808a7623f373ff801392ca48414e32ad",
- "manifest/testdata/reference/drift.probes.json": "3d3c1bcb652aaa28cec83fc6ace49c87cf7c43ec10bb7015bdeb194d6ddb226b",
- "manifest/testdata/reference/descriptor.json": "1c7397e72e6d4987e7659d73368990af412789465cdb75191e8763e80bff2ac9",
- "rules/testdata/reference/matrix.golden.json": "9f0372e2b300b4f330fb696688b4a254c615c7b51f3a539083fcf7712ca05973"
+ "manifest/testdata/reference/corpus.json": "40abb8fc8032d6ac6a5b1f8df7e041e578b03189a6de5bf09643e95d0a17ba12",
+ "manifest/testdata/reference/directory.verdicts.json": "7d4b1e3a3324f8e5ad4b9db18d56d66e7d5398a7b87a192107765145be2939a0",
+ "manifest/testdata/reference/directory.facts.json": "a0142dcf51e2e7fd8efec0f683bc9a77bcdae8db2844a508d914692b55d3551b",
+ "manifest/testdata/reference/publisher.verdicts.json": "68de16532cb6c63370601c9bfb2e50e3db9259f044c2aae6d3aeb73cb6895bd8",
+ "manifest/testdata/reference/publisher.facts.json": "82f248dd96ab8c1c72041ace6277118faafadea316e7cdd35ae7e8eaf8fc1caa",
+ "manifest/testdata/reference/values.json": "c2890ae979dcf558161d393ca3f352d04eee09958835cf0ed369313abbb23939",
+ "manifest/testdata/reference/drift.probes.json": "4aaa565a64f946001fbd05221bb64b54932a115585afbe4d762d5bcecd9a109c",
+ "manifest/testdata/reference/descriptor.json": "2b9c28c3ff6fbd87608c8f648f30c0942123565aa85a12ffe1d082e3cd9e4b63",
+ "rules/testdata/reference/matrix.golden.json": "748532394cc14ebe41e12712295221f4b2c103c33d6bb81c1e253de1056389e2"
 }

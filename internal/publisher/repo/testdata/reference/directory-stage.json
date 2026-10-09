@@ -1,6 +1,6 @@
 {
  "format": "ovdb-directory-stage/1",
- "reference": "openvaultdb/directory@087067483686865b13cb76511ff86f7364ea47ff",
+ "reference": "openvaultdb/directory@ec53d7539aafd23d006b4943acdd7a31f4eb9340",
  "about": "The verdict of the Directory's own file stage (analyseDatabase, own form) on repositories made from the Directory's own fixtures; outcome is what Go is expected to do against it. See directory-stage.mjs.",
  "repository": "https://github.com/demo-db/chinook",
  "base": {
