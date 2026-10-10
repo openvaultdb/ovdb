@@ -1,11 +1,12 @@
 {
- "manifest/testdata/reference/corpus.json": "40abb8fc8032d6ac6a5b1f8df7e041e578b03189a6de5bf09643e95d0a17ba12",
- "manifest/testdata/reference/directory.verdicts.json": "7d4b1e3a3324f8e5ad4b9db18d56d66e7d5398a7b87a192107765145be2939a0",
- "manifest/testdata/reference/directory.facts.json": "a0142dcf51e2e7fd8efec0f683bc9a77bcdae8db2844a508d914692b55d3551b",
- "manifest/testdata/reference/publisher.verdicts.json": "68de16532cb6c63370601c9bfb2e50e3db9259f044c2aae6d3aeb73cb6895bd8",
- "manifest/testdata/reference/publisher.facts.json": "82f248dd96ab8c1c72041ace6277118faafadea316e7cdd35ae7e8eaf8fc1caa",
- "manifest/testdata/reference/values.json": "c2890ae979dcf558161d393ca3f352d04eee09958835cf0ed369313abbb23939",
- "manifest/testdata/reference/drift.probes.json": "4aaa565a64f946001fbd05221bb64b54932a115585afbe4d762d5bcecd9a109c",
- "manifest/testdata/reference/descriptor.json": "25025ce7d8f5792829457c65687c8f30463844445fc2263d12a633c5e6952670",
- "rules/testdata/reference/matrix.golden.json": "748532394cc14ebe41e12712295221f4b2c103c33d6bb81c1e253de1056389e2"
+ "manifest/testdata/reference/corpus.json": "525de5f63d280653e03b6b6faec5c479483c732e2f87b7d8d45c361e97a61f3e",
+ "manifest/testdata/reference/directory.verdicts.json": "1ebe2b6314b70eef0c1741344aef950e627a54a492461130c19915a85d76fd2f",
+ "manifest/testdata/reference/directory.facts.json": "1db24058432aff6b788ce90af5637f9ab858458c305d37b1a69c8062223cfb7f",
+ "manifest/testdata/reference/publisher.verdicts.json": "62c269ea6bfdf19e4c1b190d3f66c89f2ff39c665c8acc11247f1de111842e3b",
+ "manifest/testdata/reference/publisher.facts.json": "4316fc76fa82a0a78e057ef4983ed704ee698a565abdb87c7a791542f5e35c45",
+ "manifest/testdata/reference/values.json": "478c091de286d4a1c2755901a6cfc182ae0c9395976e67e84790f57a303fa19b",
+ "manifest/testdata/reference/drift.probes.json": "3f644295c341afdef3d17957e136e780a77426e206d3794ccbf91fa6b83a8e23",
+ "manifest/testdata/reference/descriptor.json": "60caa84d2fb7b4ff688ca9b51bb6634c5c7f67d61da006d6ce71721fd588ec0b",
+ "manifest/testdata/reference/manifest-conformance.json": "5a7b576cf5682c19e0d09f7f59843d78b59f0ae4d3beefc899db5570bb2602af",
+ "rules/testdata/reference/matrix.golden.json": "83b49432381802fd95c73eb5749f05df190d830bc89d2b325c695697be6c629c"
 }

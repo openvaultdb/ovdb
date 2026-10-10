@@ -39,6 +39,7 @@ const valuesPath = join(here, 'values.json');
 const probesPath = join(here, 'drift.probes.json');
 const digestsPath = join(here, 'digests.json');
 const descriptorPath = join(here, 'descriptor.json');
+const conformancePath = join(here, 'manifest-conformance.json');
 
 const pins = pinnedReferences; // internal/publisher/references.mjs: the one place that says where each reference is
 
@@ -67,10 +68,17 @@ const gitlib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/git.m
 const modelspec = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/modelspec.mjs')).href);
 const urlsLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/urls.mjs')).href);
 const meaningLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/meaning.mjs')).href);
+// How a manifest maps a recordset to a record type and a column to a field, in both formats (decision 0012): the file that the Directory and the Chinook pre-check
+// share, byte for byte, and the conformance cases that both run. The Go check reads the cases from the copy that this script makes (conformancePath).
+const mappingLib = await import(pathToFileURL(join(directoryRoot, 'scripts/lib/manifest-mapping.mjs')).href);
 const chinook = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/ovdb-manifest.mjs')).href);
 const { isolatedGitEnv } = await import(pathToFileURL(join(chinookRoot, 'scripts/lib/git-env.mjs')).href);
 const { parse: parseYaml, stringify: stringifyYaml } = createRequire(join(directoryRoot, 'package.json'))('yaml');
 const read = (root, file) => readFileSync(join(root, file), 'utf8');
+// The two files that the Directory and the pre-check keep as one: if they differ, the references do not agree on the mapping and nothing below means anything.
+for (const [inDirectory, inChinook] of [['scripts/lib/manifest-mapping.mjs', 'scripts/lib/manifest-mapping.mjs'], ['scripts/fixtures/manifest-conformance.json', 'scripts/testdata/manifest-conformance.json']]) {
+  if (read(directoryRoot, inDirectory) !== read(chinookRoot, inChinook)) throw new Error(`${inDirectory} of the Directory and ${inChinook} of the Chinook pre-check are not the same bytes`);
+}
 
 // The inline OVDB.md rules of analyseDatabase, and isText, are copied below: fail loudly if the pinned file differs.
 const directorySource = read(directoryRoot, 'scripts/lib/directory.mjs');
@@ -114,7 +122,7 @@ const isText = (value) => typeof value === 'string' && value.trim() !== '';
 //  - line 315, publisher.repository: written, it must equal, ignoring case, repositoryKey of the record's
 //    repository, which recordProblems has made a repository key. A value that repositoryKey refuses ('' and
 //    numbers and lists too) equals none, and any other value equals the record that has it.
-//  - checkRecordsets: a name listed twice.
+//  - checkRecordsets: a name listed twice (of the normalised mapping: a name of a map item too).
 //  - model.name (own form and shared): written, it must equal the module, which parseModelSpec makes an identifier.
 //  - analyseDatabase, "the recordset page of": every name of recordsets, written as one encoded path segment into deployment.recordset_page,
 //    makes a URL that publicHttpsProblem takes (with the segment allowed to hold escapes). The Directory judges it after the files are read; a
@@ -129,11 +137,12 @@ const recordStageProblems = (manifest) => {
   const problems = [];
   const written = manifest.publisher.repository;
   if (written !== undefined && gitlib.repositoryKey(written) === null) problems.push('publisher.repository');
-  if (new Set(manifest.recordsets).size !== manifest.recordsets.length) problems.push('recordsets twice');
+  // The names of the recordsets, whichever form the manifest is in (checkRecordsets lists the names of the normalised mapping).
+  const names = mappingLib.normalisedMapping(manifest).map(({ name }) => name);
+  if (new Set(names).size !== names.length) problems.push('recordsets twice');
   const page = manifest.deployment?.recordset_page;
-  if (page && Array.isArray(manifest.recordsets)) {
-    for (const recordset of manifest.recordsets) {
-      if (typeof recordset !== 'string') continue;
+  if (page) {
+    for (const recordset of names) {
       const encoded = urlsLib.encodePathSegment(recordset);
       if (urlsLib.publicHttpsProblem(page.replace('{name}', encoded), { encodedPathSegment: encoded.includes('%') ? encoded : undefined })) { problems.push('recordset page'); break; }
     }
@@ -164,6 +173,11 @@ const factsOf = (manifest) => {
   const at = (path) => path.split('.').reduce((value, key) => (value === undefined || value === null ? undefined : value[key]), manifest);
   const facts = {};
   for (const path of factFields) facts[path] = at(path) ?? null;
+  // `recordsets` is the list of the recordsets' own names in either format (a map item of the second format is its name); `mapping` is the normalised
+  // mapping the rest of the Directory reads: for each recordset its name, its record type and its columns as [column, field] pairs.
+  const mapping = mappingLib.normalisedMapping(manifest);
+  if (mappingLib.formatOf(manifest) === 'new') facts.recordsets = mapping.map(({ name }) => name);
+  facts.mapping = mapping.map(({ name, recordType, columns }) => ({ name, recordType, columns: [...columns] }));
   facts.form = directory.manifestForm(manifest);
   const model = at('model.address') === undefined ? null : modelspec.parseModelAddress(manifest.model.address);
   const meaning = at('meaning.address') === undefined ? null : meaningLib.parseGraphAddress(manifest.meaning.address);
@@ -188,7 +202,8 @@ const readingLines = (path) => {
   const segments = path.split('.');
   const parent = segments.slice(0, -1); const last = segments.at(-1);
   const patterns = path === 'form' ? [/manifestForm[ (]/]
-    : path.startsWith('model.address.') ? [/parseModelAddress\(/]
+    : path === 'mapping' ? [/normalisedMapping\(/]
+      : path.startsWith('model.address.') ? [/parseModelAddress\(/]
       : path.startsWith('meaning.address.') ? [/parseGraphAddress\(/]
         : [
           new RegExp(`manifest${chain(segments)}(?![A-Za-z0-9_])`),
@@ -197,7 +212,8 @@ const readingLines = (path) => {
         ];
   return directoryLines.flatMap((line, at) => (!/^\s*\/\//.test(line) && patterns.some((pattern) => pattern.test(line)) ? [at + 1] : []));
 };
-const reads = Object.fromEntries([...factFields, 'form', 'model.address.repository', 'model.address.module', 'model.address.ref', 'meaning.address.repository', 'meaning.address.ref'].map((path) => {
+const derivedFields = ['form', 'model.address.repository', 'model.address.module', 'model.address.ref', 'meaning.address.repository', 'meaning.address.ref', 'mapping'];
+const reads = Object.fromEntries([...factFields, ...derivedFields].map((path) => {
   const lines = readingLines(path);
   if (lines.length === 0) throw new Error(`directory.mjs at ${pins.directory.commit} reads ${path} nowhere: the table of fields of the README would be empty`);
   return [path, lines];
@@ -235,6 +251,23 @@ const mdVerdict = (buffer, path) => (mdDerive(buffer, path) === null ? 0 : 1);
 const goodMd = '---\novdb: 1\npublish: [./ovdb.yaml]\n---\n';
 const objectOf = (text) => { try { const value = parseYaml(text); return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null; } catch { return null; } };
 const filesFor = (held) => ({ problem: () => '', kind: (path) => (held.has(path) ? 'file' : 'missing'), read: (path) => held.get(path) });
+// The record types a model must declare to agree with a manifest's recordsets, each with the names of the fields its columns hold: the record type of each
+// recordset (the record_type: of a map item of the second format, the pair in recordset_entities of the first, else the name) and the first name of the
+// field or path of each column. A recordset that is not written as text, or as a map with a name, is not read: the manifest is refused anyway.
+const modelRecords = (manifest) => {
+  const items = Array.isArray(manifest.recordsets) ? manifest.recordsets : [];
+  const isMap = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (mappingLib.formatOf(manifest) === 'new') {
+    return items.flatMap((item) => {
+      if (typeof item === 'string') return [[item, []]];
+      if (!isMap(item) || typeof item.name !== 'string') return [];
+      const fields = isMap(item.columns) ? Object.values(item.columns).flatMap((column) => (isMap(column) && typeof column.field === 'string' ? [column.field.split('.')[0]] : [])) : [];
+      return [[typeof item.record_type === 'string' ? item.record_type : item.name, fields]];
+    });
+  }
+  const entities = isMap(manifest.recordset_entities) ? manifest.recordset_entities : {};
+  return items.filter((name) => typeof name === 'string').map((name) => [Object.hasOwn(entities, name) && typeof entities[name] === 'string' ? entities[name] : name, []]);
+};
 // The files named by a manifest. `consistent` agree with it; `wrong` are well formed and disagree (another module, other entities,
 // another graph id and licence, no models: entry); `broken` are not JSON and not a YAML mapping.
 const namedFiles = (manifest, kind) => {
@@ -244,9 +277,10 @@ const namedFiles = (manifest, kind) => {
   const address = modelspec.parseModelAddress(manifest.model?.address);
   const consistent = kind === 'consistent';
   const module = consistent ? (address?.module ?? string(manifest.model?.name) ?? 'chinook') : 'Hostile';
-  const entities = consistent && Array.isArray(manifest.recordsets) ? manifest.recordsets.filter((name) => typeof name === 'string') : ['Hostile_entity'];
+  const entities = consistent ? modelRecords(manifest) : [['Hostile_entity', []]];
   const modelFile = string(manifest.model?.modelspec); const hcl = string(manifest.model?.hcl); const meaningFile = string(manifest.meaning?.file);
-  if (modelFile !== undefined) held.set(modelFile, kind === 'broken' ? 'not json' : JSON.stringify({ module: { name: module }, entities: Object.fromEntries(entities.map((name) => [name, {}])) }));
+  const recordTypes = Object.fromEntries(entities.map(([name, fields]) => [name, fields.length === 0 ? {} : { properties: Object.fromEntries(fields.map((field) => [field, { type: 'string' }])) }]));
+  if (modelFile !== undefined) held.set(modelFile, kind === 'broken' ? 'not json' : JSON.stringify({ module: { name: module }, entities: recordTypes }));
   if (hcl !== undefined) held.set(hcl, 'module');
   if (meaningFile !== undefined) {
     const relative = hcl !== undefined ? posix.relative(posix.dirname(meaningFile), hcl) : 'x.modelspec.hcl';
@@ -301,7 +335,8 @@ const needsClasses = [
   ['model.name against the model file', /model\.name is .*, but .* is module/],
   ['model.address against the model file', /model\.address must be modelspec:\/\/.*, this repository plus the module name in/],
   ['the meaning file against the manifest', /meaning file's id|licences\.meaning is .* but the meaning file says|has no models: entry|models must name the ModelSpec module|but the meaning file's models: entry|is not valid YAML|is not a MeaningGraph file/],
-  ['recordsets against the model', /recordsets lacks ModelSpec entities|recordsets names things that are not ModelSpec entities/],
+  ['recordsets against the model', /recordsets lacks ModelSpec entities|recordsets names things that are not ModelSpec entities|recordsets lacks the record types of the model|recordsets names record types that are not in the model file/],
+  ['the columns against the model', /^ovdb\.yaml: recordsets ".*": column ".*" (holds ".*", but .* has no field|holds ".*": no reader of the model reads a component yet|is also the name of the field)/],
 ];
 const classOf = (problem) => needsClasses.find(([, pattern]) => pattern.test(problem))?.[0];
 // [verdict, needs]: the verdict of the consistent repository, and the classes of what the others refuse on top, or ''.
@@ -334,52 +369,53 @@ const chinookAllowedKeys = (() => {
 })();
 const publisherRules = [
   // [id, who decides, Go rule, snippet, lines]
-  ['unknown keys at every level of a manifest', 'documents', 'manifest-keys', 'const unknown = Object.keys(object)', [277, 280, 281]],
-  ['id is a lower-case id of at most 80 characters', 'documents', 'manifest-id', 'idPattern.test(manifest.id)', [286]],
-  ['deployment.discovery is on the origin of url, at /.well-known/openvaultdb', 'documents', 'manifest-discovery', 'discovery.pathname !== discoveryPath', [315, 316]],
-  ['deployment.recordset_page is on the origin of deployment.url', 'documents', 'manifest-url', 'expanded.origin !== deployed.origin', [321]],
-  ['publisher.url is https://github.com/<owner>', 'documents', 'manifest-publisher', 'publisher.url must be https://github.com/<owner>', [328]],
-  ['publisher.repository is required, a github.com repository, owned by the owner of publisher.url', 'documents', 'manifest-publisher', 'publisher.repository must belong to the owner in publisher.url', [331, 332, 334]],
-  ['model.address names a repository of github.com and a module that starts with a letter', 'documents', 'manifest-model', 'model.address must be modelspec://github.com', [82, 345, 346]],
-  ['model.name is a module name that starts with a letter', 'documents', 'manifest-model', 'model.name, when given, must be a ModelSpec module name', [348, 349]],
-  ['model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file)', 'documents', 'manifest-model', 'but model.address names module', [515, 516]],
-  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [359, 360, 514, 528]],
-  ['own form: model.hcl is required, model.modelspec ends in .modelspec.json', 'documents', 'manifest-required, manifest-model', 'model.hcl is required with local model files', [407, 416, 417]],
-  ['own form: model.address is this repository (publisher.repository), without a pin', 'documents', 'manifest-model', 'model.address must be ${expected}', [455, 456, 457, 458]],
-  ['meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)', 'documents', 'manifest-meaning', 'meaning.graph.id must be a MeaningGraph registry id', [466, 536]],
-  ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [505, 506, 507]],
-  ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [539, 540]],
-  ['licences are known SPDX atoms; data permits bounded conjunctions', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [385, 388]],
-  ['recordsets are names that look like ModelSpec entities', 'dropped', '', 'recordsets names must look like ModelSpec entity names', [554, 555]],
-  ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [557, 558, 559, 560]],
-  ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [223, 224]],
-  ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [241, 242]],
-  ['the repository can be read at HEAD (it is a git repository with a commit)', 'files', '', 'files.problem?.()', [211, 212]],
-  ['OVDB.md is a tracked regular file', 'files', '', 'OVDB.md must be a tracked regular file', [213, 214]],
-  ['OVDB.md can be read (and is not over 16 MB)', 'files', '', "problems: [`OVDB.md: ${error.message}`]", [219]],
-  ['every manifest that OVDB.md lists is a tracked regular file', 'files', '', 'must be a tracked regular file, but it is', [246, 247, 248]],
-  ['every manifest that OVDB.md lists can be read (and is not over 16 MB)', 'files', '', 'is not valid YAML', [269, 271]],
-  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [251]],
-  ['every file a manifest names is a tracked regular file', 'files', '', 'which must be a tracked regular file', [420, 421]],
-  ['every file a manifest names can be read (and is not over 16 MB)', 'files', '', 'bad(error.message)', [371, 373]],
-  ['the model file is JSON with a module name and entities', 'files', '', 'is not a ModelSpec JSON file', [437, 439, 442, 444]],
-  ['own form: model.name is the module of the model file', 'files', '', 'model.name !== moduleName', [449]],
-  ['own form: the module of model.address is the model file\'s', 'files', '', 'this repository plus the module name in', [456, 458]],
-  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [477, 480, 482, 484]],
-  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [488, 490, 496, 497]],
-  ['own form: recordsets are exactly the model\'s entities', 'files', '', 'recordsets lacks ModelSpec entities', [564, 567, 568]],
-  ['the optional attachment has a locally checked structural precheck; external closure remains partial', 'files', '', 'checked.problems.map', [573]],
-  ['a JSON database descriptor uses its separate pinned schema', 'files', '', 'invalid ${databaseFormat} descriptor', [587, 591, 597, 605, 607, 609]],
-  ['publisher.repository is the repository the check is run in (the --repository option)', 'input', '', 'the repository this manifest is in', [335]],
+  ['unknown keys at every level of a manifest', 'documents', 'manifest-keys', 'const unknown = Object.keys(object)', [283, 286, 287]],
+  ['id is a lower-case id of at most 80 characters', 'documents', 'manifest-id', 'idPattern.test(manifest.id)', [293]],
+  ['deployment.discovery is on the origin of url, at /.well-known/openvaultdb', 'documents', 'manifest-discovery', 'discovery.pathname !== discoveryPath', [322, 323]],
+  ['deployment.recordset_page is on the origin of deployment.url', 'documents', 'manifest-url', 'expanded.origin !== deployed.origin', [328]],
+  ['publisher.url is https://github.com/<owner>', 'documents', 'manifest-publisher', 'publisher.url must be https://github.com/<owner>', [335]],
+  ['publisher.repository is required, a github.com repository, owned by the owner of publisher.url', 'documents', 'manifest-publisher', 'publisher.repository must belong to the owner in publisher.url', [338, 339, 341]],
+  ['model.address names a repository of github.com and a module that starts with a letter', 'documents', 'manifest-model', 'model.address must be modelspec://github.com', [88, 352, 353]],
+  ['model.name is a module name that starts with a letter', 'documents', 'manifest-model', 'model.name, when given, must be a ModelSpec module name', [355, 356]],
+  ['model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file)', 'documents', 'manifest-model', 'but model.address names module', [530, 531]],
+  ['shared form: neither address is the publisher\'s own repository', 'documents', 'manifest-model, manifest-meaning', 'notOwn && spelled === ownRepository', [366, 367, 529, 543]],
+  ['own form: model.hcl is required, model.modelspec ends in .modelspec.json', 'documents', 'manifest-required, manifest-model', 'model.hcl is required with local model files', [415, 424, 425]],
+  ['own form: model.address is this repository (publisher.repository), without a pin', 'documents', 'manifest-model', 'model.address must be ${expected}', [470, 471, 472, 473]],
+  ['meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)', 'documents', 'manifest-meaning', 'meaning.graph.id must be a MeaningGraph registry id', [481, 551]],
+  ['own form: meaning.graph.address is publisher.repository as an address, in any case', 'documents', 'manifest-meaning', 'derived from publisher.repository', [520, 521, 522]],
+  ['shared form: meaning.graph.address, when given, is meaning.address without its pin', 'documents', 'manifest-meaning', 'leave meaning.graph.address out or make it the unpinned address', [554, 555]],
+  ['licences are known SPDX atoms; data permits bounded conjunctions', 'documents', 'manifest-licence', 'must be a known SPDX licence id', [392, 395]],
+  ['recordsets are names that look like ModelSpec entities', 'dropped', '', 'recordsets names must look like ModelSpec entity names', [595, 596]],
+  ['every recordset page the template makes is a public https URL', 'documents', 'manifest-recordsets', 'the recordset page of', [606, 607, 610, 611]],
+  ['OVDB.md has no key but ovdb and publish', 'documents', 'ovdbmd-keys', 'unknown frontmatter keys', [229, 230]],
+  ['publish lists each manifest once', 'documents', 'ovdbmd-duplicate', 'publish lists ${entry} twice', [247, 248]],
+  ['the repository can be read at HEAD (it is a git repository with a commit)', 'files', '', 'files.problem?.()', [217, 218]],
+  ['OVDB.md is a tracked regular file', 'files', '', 'OVDB.md must be a tracked regular file', [219, 220]],
+  ['OVDB.md can be read (and is not over 16 MB)', 'files', '', "problems: [`OVDB.md: ${error.message}`]", [225]],
+  ['every manifest that OVDB.md lists is a tracked regular file', 'files', '', 'must be a tracked regular file, but it is', [252, 253, 254]],
+  ['every manifest that OVDB.md lists can be read (and is not over 16 MB)', 'files', '', 'is not valid YAML', [275, 277]],
+  ['every manifest that OVDB.md lists is checked', 'files', '', 'analyseManifest(path, files', [257]],
+  ['every file a manifest names is a tracked regular file', 'files', '', 'which must be a tracked regular file', [428, 429]],
+  ['every file a manifest names can be read (and is not over 16 MB)', 'files', '', 'bad(error.message)', [378, 380]],
+  ['the model file is JSON with a module name and entities', 'files', '', 'is not a ModelSpec JSON file', [445, 447, 450, 455]],
+  ['own form: model.name is the module of the model file', 'files', '', 'model.name !== moduleName', [464]],
+  ['own form: the module of model.address is the model file\'s', 'files', '', 'this repository plus the module name in', [471, 473]],
+  ['the meaning file is YAML whose id and license are the manifest\'s', 'files', '', 'but the meaning file\'s id is', [492, 495, 497, 499]],
+  ['the meaning file\'s models: entry for the module is model.hcl', 'files', '', 'has no models: entry for module', [503, 505, 511, 512]],
+  ['own form: recordsets are exactly the model\'s entities', 'files', '', 'recordsets lacks ${earlierShape', [619, 621, 625]],
+  ['own form: the columns a draft-2 recordset lists hold fields of its record type', 'files', '', 'columnModelProblems(entry, entityFields.get(entry.recordType))', [628]],
+  ['the optional attachment has a locally checked structural precheck; external closure remains partial', 'files', '', 'checked.problems.map', [637]],
+  ['a JSON database descriptor uses its separate pinned schema', 'files', '', 'invalid ${databaseFormat} descriptor', [651, 655, 661, 669, 671, 673]],
+  ['publisher.repository is the repository the check is run in (the --repository option)', 'input', '', 'the repository this manifest is in', [342]],
 ];
 // What the Publisher profile shares with the Directory's: every other refusal of the checker is one the Directory's rules make as well
 // (the checker's directory-rules.mjs are copies of the Directory's), so it is a rule of the Directory profile.
 const sharedWithDirectory = [
-  [[222, 225, 227, 233, 238], 'the shape of OVDB.md: front matter, ovdb: 1, a non-empty publish list of ./ paths'],
-  [[252], 'the problems of a listed manifest, passed on'],
-  [[273, 284, 285, 291, 295, 299, 308, 312], 'the manifest is a mapping with its format, required texts, URLs, homepage and engine'],
-  [[346, 356, 454, 511, 513, 523, 525, 527], 'the addresses: spelled as the Directory does, pinned in the shared form and not in the own'],
-  [[385, 399, 401, 406, 408, 413, 532, 533, 538, 543, 550, 553], 'required fields, paths, the forms that never mix, recordsets listed once'],
+  [[228, 231, 233, 239, 244], 'the shape of OVDB.md: front matter, ovdb: 1, a non-empty publish list of ./ paths'],
+  [[258], 'the problems of a listed manifest, passed on'],
+  [[279, 291, 292, 298, 302, 306, 315, 319], 'the manifest is a mapping with its format, required texts, URLs, homepage and engine'],
+  [[353, 363, 469, 526, 528, 538, 540, 542], 'the addresses: spelled as the Directory does, pinned in the shared form and not in the own'],
+  [[392, 407, 409, 414, 416, 421, 547, 548, 553, 558, 588, 592, 601], 'required fields, paths, the forms that never mix, the shape of recordsets and of the mapping, recordsets listed once, the name rule of every recordset'],
 ];
 for (const [id, , , snippet, cited] of publisherRules) {
   if (!cited.some((line) => chinookLines[line - 1]?.includes(snippet))) throw new Error(`ovdb-manifest.mjs at ${pins.chinookdb.commit}: none of lines ${cited.join(', ')} holds \`${snippet}\`, which is where the table of generate.mjs says the checker makes "${id}"`);
@@ -411,7 +447,24 @@ const ownObject = parseYaml(bases[chinookYaml]);
 const jsonOf = (object) => `${JSON.stringify(object, null, 2)}\n`;
 const ownJson = addBase('own-json', jsonOf(ownObject));
 const sharedJson = addBase('shared-json', jsonOf(sharedObject));
-for (const name of [chinookYaml, fixtureYaml, hosterYaml, ownJson, sharedJson]) {
+// The two real manifests in the second format, with a recordset of each kind that it has (a name, a map with a record type and columns, a map with a name and no
+// columns): the bases of the mapping's documents.
+const mappingRecordsets = `recordsets:
+  - Album
+  - name: Order Lines
+    record_type: OrderLine
+    columns:
+      created:
+        field: CreatedAt
+      Unit Price:
+        field: UnitPrice
+  - name: Artist
+    columns: {}
+`;
+const mappingYaml = (name) => bases[name].replace('format: ovdb-manifest/draft-1', 'format: ovdb-manifest/draft-2').replace(/^recordsets:\n(  - .*\n)+/m, mappingRecordsets);
+const mappingOwnYaml = addBase('mapping-own-yaml', mappingYaml(chinookYaml));
+const mappingSharedYaml = addBase('mapping-shared-yaml', mappingYaml(hosterYaml));
+for (const name of [chinookYaml, fixtureYaml, hosterYaml, ownJson, sharedJson, mappingOwnYaml, mappingSharedYaml]) {
   if (manifestVerdict(bases[name]) !== 1) throw new Error(`the base ${name} is not accepted by the Directory`);
 }
 for (const name of [chinookMd, hosterMd, fixtureMd]) if (mdVerdict(bases[name], 'ovdb.yaml') !== 1) throw new Error(`the base ${name} is not accepted by the Directory`);
@@ -606,15 +659,72 @@ for (const entry of [...edits].sort()) {
   if (applied) appliedEdits += 1;
 }
 
+// ---- the mapping of ovdb-manifest/draft-2 (decision 0012) ----
+//
+// The conformance cases that the Directory and the pre-check both run (they replace a manifest's format, recordsets and recordset_entities), on the own and the
+// shared manifest, as JSON and, for the own one, as the block YAML a person writes; the good second-format manifest mutated at every node of its recordsets
+// (removed, renamed, of every other type, and its texts replaced); and the two formats against each other: every format line with every recordset_entities.
+const conformance = JSON.parse(read(directoryRoot, 'scripts/fixtures/manifest-conformance.json'));
+const withMapping = (object, keys) => {
+  const copy = {};
+  if ('format' in keys) copy.format = keys.format;
+  for (const [key, value] of Object.entries(object)) if (!['format', 'recordsets', 'recordset_entities'].includes(key)) copy[key] = clone(value);
+  if ('recordsets' in keys) copy.recordsets = clone(keys.recordsets);
+  if ('recordset_entities' in keys) copy.recordset_entities = clone(keys.recordset_entities);
+  return copy;
+};
+for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObject]]) {
+  for (const c of conformance.cases) addManifest('mapping: conformance', baseName, jsonOf(withMapping(object, c.manifest)));
+}
+for (const c of conformance.cases) addManifest('mapping: conformance (block)', chinookYaml, stringifyYaml(withMapping(ownObject, c.manifest), { lineWidth: 0 }));
+const second = 'ovdb-manifest/draft-2';
+const goodMapping = parseYaml(mappingRecordsets).recordsets;
+const deepPaths = (value, prefix = []) => (value !== null && typeof value === 'object' ? Object.entries(value).flatMap(([key, child]) => [[...prefix, key], ...deepPaths(child, [...prefix, key])]) : []);
+const walk = (root, path) => path.reduce((value, key) => value[key], root);
+for (const [baseName, object] of [[ownJson, ownObject], [sharedJson, sharedObject]]) {
+  const good = withMapping(object, { format: second, recordsets: goodMapping });
+  addManifest('mapping: base', baseName, jsonOf(good));
+  for (const path of deepPaths(good.recordsets).map((rest) => ['recordsets', ...rest])) {
+    const key = path.at(-1);
+    const inside = walk(good, path.slice(0, -1));
+    const mutate = (family, change) => { const copy = clone(good); change(copy, walk(copy, path.slice(0, -1))); addManifest(family, baseName, jsonOf(copy)); };
+    mutate('mapping: remove', (copy, parent) => { if (Array.isArray(parent)) parent.splice(Number(key), 1); else delete parent[key]; });
+    if (!Array.isArray(inside)) {
+      mutate('mapping: rename', (copy, parent) => {
+        const entries = Object.entries(parent).map(([k, v]) => [k === key ? `${key}x` : k, v]);
+        for (const k of Object.keys(parent)) delete parent[k];
+        Object.assign(parent, Object.fromEntries(entries));
+      });
+    }
+    for (const value of wrongTypes) mutate('mapping: type', (copy, parent) => { parent[key] = value; });
+    if (typeof walk(good, path) === 'string') {
+      for (const text of ['', ' ', '\t', 'a b', 'a.b', 'a/b', '1a', '_', 'é', 'x'.repeat(257), 'Album', 'Artist']) mutate('mapping: text', (copy, parent) => { parent[key] = text; });
+    }
+  }
+  const names = object.recordsets;
+  for (const format of [undefined, 'ovdb-manifest/draft-1', second, 'ovdb-manifest/draft-3']) {
+    for (const [shape, recordsets, entities] of [['names', names, {}], ['a map', goodMapping, {}], ['a native name', ['Album', 'Order Lines'], { 'Order Lines': 'OrderLine' }]]) {
+      for (const pairs of [undefined, {}, null, entities, { Album: 'Album' }]) {
+        const keys = { recordsets };
+        if (format !== undefined) keys.format = format;
+        if (pairs !== undefined) keys.recordset_entities = pairs;
+        addManifest(`mapping: formats (${shape})`, baseName, jsonOf(withMapping(object, keys)));
+      }
+    }
+  }
+}
+
 // ---- text-level mutants of the YAML documents ----
 
-for (const name of [chinookYaml, hosterYaml]) {
+// The lines of the second format's bases that its mutants are made of: the format line and the recordsets (the rest of those documents is the first format's).
+const inMapping = (row, at, rows) => row.startsWith('format:') || at >= rows.findIndex((r) => r.startsWith('recordsets:'));
+for (const [name, include] of [[chinookYaml, () => true], [hosterYaml, () => true], [mappingOwnYaml, inMapping], [mappingSharedYaml, inMapping]]) {
   const text = bases[name];
   const rows = lines(text).filter((_, at, all) => at < all.length - 1 || all[at] !== '');
   const total = rows.length;
   const join = (list) => `${list.join('\n')}\n`;
   for (let at = 0; at < total; at += 1) {
-    if (/^\s*(#|$)/.test(rows[at])) continue; // a comment or a blank line: nothing to mutate
+    if (/^\s*(#|$)/.test(rows[at]) || !include(rows[at], at, rows)) continue; // a comment or a blank line: nothing to mutate
     const copy = (change) => { const list = [...rows]; change(list, at); return join(list); };
     addManifest('line', name, copy((list, i) => { list.splice(i, 1); }));
     addManifest('line', name, copy((list, i) => { list.splice(i, 0, list[i]); }));
@@ -1160,11 +1270,12 @@ thrown = 0;
 const publisherManifest = manifestBuffers.map((buffer) => publisherVerdict(publisherManifestHeld(buffer)));
 const publisherMd = mdBuffers.map((buffer) => publisherVerdict(publisherMdHeld(buffer)));
 const publisherThrown = thrown;
-// What the frozen Chinook checker refuses each manifest for, in classes: D, the rule that recordset names look like ModelSpec entity names (the
-// Directory's native names, 1c7e126, made it a name rule of its own, so D0 drops it); K, recordset_entities as an unknown key (the Directory reads it
-// since 1c7e126 and the key list here has gained it); O, any other problem. A Go test requires that a manifest which Go accepts and the checker
-// refuses has only D and K among its classes.
-const chinookClassOf = (problem) => (/^ovdb\.yaml: recordsets names must look like ModelSpec entity names/.test(problem) ? 'D' : problem === 'ovdb.yaml: unknown keys: recordset_entities' ? 'K' : 'O');
+// What the Chinook checker refuses each manifest for, in classes: D, the rule that recordset names look like ModelSpec entity names (the Directory's native
+// names, 1c7e126, made it a name rule of its own, so D0 drops it); F, a rule that the checker makes with the model file read (the same record type on two
+// recordsets, a path through a component) and that Go makes in package repo, with the model file, and not when it judges the manifest alone; O, any other
+// problem. A Go test requires that a manifest which Go accepts and the checker refuses has only D and F among its classes.
+const chinookClassOf = (problem) => (/^ovdb\.yaml: recordsets names must look like ModelSpec entity names/.test(problem) ? 'D'
+  : /^ovdb\.yaml: (recordset_entities maps more than one native recordset to the same ModelSpec entity|recordsets ".*": column ".*" holds ".*": no reader of the model reads a component yet)/.test(problem) ? 'F' : 'O');
 const chinookClasses = manifestBuffers.map((buffer) => [...new Set(publisherProblems(publisherManifestHeld(buffer).consistent).map(chinookClassOf))].sort().join('')).join(',');
 // A sample of the cases again on real repositories: the in-memory repository must not change a verdict.
 let realChecked = 0;
@@ -1276,7 +1387,7 @@ const presenceDeltas = manifestCases.map(([base], at) => { const mask = presence
 const factsFile = {
   ...meta,
   profile: 'directory',
-  fields: [...factFields, 'form', 'model.address.repository', 'model.address.module', 'model.address.ref', 'meaning.address.repository', 'meaning.address.ref'],
+  fields: [...factFields, ...derivedFields],
   reads,
   bases: baseFacts,
   presenceBases: basePresence,
@@ -1591,6 +1702,8 @@ if (descriptorCases[0].reference !== 1) throw new Error('the base descriptor pai
 // generator is run again (the digests of the rules golden are read from the committed file, which its own
 // generator writes: run that one first when the rules change).
 const rulesGolden = join(here, '../../../rules/testdata/reference/matrix.golden.json');
+// The conformance cases of the mapping, as the Directory keeps them (and the pre-check, byte for byte: checked above): the Go tests run them.
+const conformanceText = read(directoryRoot, 'scripts/fixtures/manifest-conformance.json');
 const digestText = `${JSON.stringify({
   'manifest/testdata/reference/corpus.json': sha(corpusText),
   'manifest/testdata/reference/directory.verdicts.json': sha(verdictText),
@@ -1600,11 +1713,12 @@ const digestText = `${JSON.stringify({
   'manifest/testdata/reference/values.json': sha(valuesText),
   'manifest/testdata/reference/drift.probes.json': sha(probesText),
   'manifest/testdata/reference/descriptor.json': sha(descriptorText),
+  'manifest/testdata/reference/manifest-conformance.json': sha(conformanceText),
   'rules/testdata/reference/matrix.golden.json': sha(readFileSync(rulesGolden)),
 }, null, 1)}\n`;
 
 if (thrown > 0) console.error(`note: the reference threw on ${thrown} document(s); they are recorded as refused`);
-const targets = [[probesPath, probesText], [corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [valuesPath, valuesText], [descriptorPath, descriptorText], [digestsPath, digestText]];
+const targets = [[probesPath, probesText], [corpusPath, corpusText], [verdictsPath, verdictText], [factsPath, factsText], [publisherVerdictsPath, publisherVerdictText], [publisherFactsPath, publisherFactsText], [conformancePath, conformanceText], [valuesPath, valuesText], [descriptorPath, descriptorText], [digestsPath, digestText]];
 if (process.argv.includes('--check')) {
   if (targets.some(([path, text]) => readFileSync(path, 'utf8') !== text)) { console.error(`the goldens in ${here} are stale: run node ${process.argv[1]}`); process.exit(1); }
   console.log(`the goldens are up to date (${manifestCases.length} manifest and ${mdCases.length} OVDB.md documents)`);

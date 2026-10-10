@@ -5,11 +5,11 @@
  "references": {
   "directory": {
    "repository": "openvaultdb/directory",
-   "commit": "ec53d7539aafd23d006b4943acdd7a31f4eb9340"
+   "commit": "3f52255cbaaaa987b705079cf771eb2544faf3ae"
   },
   "chinookdb": {
    "repository": "demo-db/chinook",
-   "commit": "8b904298d0c3bba20c12dfbc29bb75bf5c37f683"
+   "commit": "88f080d72205034e1161bb80594acb7d77fc58ef"
   },
   "fixtures": {
    "repository": "datatug/chinookdb",
