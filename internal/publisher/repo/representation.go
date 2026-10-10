@@ -91,7 +91,8 @@ func (c *checker) representation(m manifest.Manifest, a representation.Reference
 				c.add(a.Path, RuleColumns, 0, "recordset %s lists columns, but a representation contract reads its columns by the model's names: remove columns", rules.Quote(name))
 			}
 		}
-		if contract.Execution != representation.NativeIdentifier && m.ListsColumns(contract.Bridge.Table) {
+		// A contract read by the native identifier has no bridge table (the schema rejects one), so its Table is empty and names no recordset.
+		if m.ListsColumns(contract.Bridge.Table) {
 			c.add(a.Path, RuleColumns, 0, "recordset %s lists columns, but a representation contract reads its columns by the model's names: remove columns", rules.Quote(contract.Bridge.Table))
 		}
 	}
