@@ -65,6 +65,7 @@ func (b *budget) notice(document string) []Finding {
 type collector struct {
 	document string
 	findings []Finding
+	notices  []Finding
 	budget   *budget
 }
 
@@ -80,11 +81,21 @@ func (c *collector) add(rule string, line int, format string, args ...any) {
 		return
 	}
 	c.budget.left--
-	message := fmt.Sprintf(format, args...)
+	c.findings = append(c.findings, Finding{Rule: rule, Severity: SeverityError, Document: c.document, Line: line, Message: bounded(fmt.Sprintf(format, args...))})
+}
+
+// bounded cuts a message to MaxMessageBytes.
+func bounded(message string) string {
 	if len(message) > MaxMessageBytes {
-		message = message[:MaxMessageBytes-3] + "..."
+		return message[:MaxMessageBytes-3] + "..."
 	}
-	c.findings = append(c.findings, Finding{Rule: rule, Severity: SeverityError, Document: c.document, Line: line, Message: message})
+	return message
+}
+
+// notice makes a notice: a finding of severity SeverityNotice, kept apart from the findings. It keeps to MaxMessageBytes, and is not counted in the budget of
+// findings, because it is not one and changes no verdict.
+func (c *collector) notice(rule string, line int, format string, args ...any) {
+	c.notices = append(c.notices, Finding{Rule: rule, Severity: SeverityNotice, Document: c.document, Line: line, Message: bounded(fmt.Sprintf(format, args...))})
 }
 
 // printable reports whether s is printable ASCII.

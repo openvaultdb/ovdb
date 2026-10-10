@@ -855,14 +855,15 @@ func TestFactsAgreeWithTheReference(t *testing.T) {
 		t.Errorf("README lists %d fields, the generator %d", len(rows), len(facts.Fields))
 	}
 	// Legacy fields are carried by reference rows. Opt-in rights and HTTP source
-	// extensions have independent tests and are absent from this frozen reference.
+	// extensions have independent tests and are absent from this frozen reference, and so are the mapping of ovdb-manifest/draft-2 (Mapping) and the
+	// notices (Notices): mapping_test.go holds them to the conformance cases of the format.
 	carried := map[string]bool{}
 	for _, name := range rows {
 		carried[strings.SplitN(name, ".", 2)[0]] = true
 	}
 	for _, typ := range []reflect.Type{reflect.TypeOf(Manifest{})} {
 		for i := 0; i < typ.NumField(); i++ {
-			if name := typ.Field(i).Name; name != "Read" && name != "DataDeclaration" && name != "DataRights" && name != "SourceRights" && name != "SourceDefinition" && name != "SourceDefinitionEvidence" && !carried[name] {
+			if name := typ.Field(i).Name; name != "Read" && name != "DataDeclaration" && name != "DataRights" && name != "SourceRights" && name != "SourceDefinition" && name != "SourceDefinitionEvidence" && name != "Mapping" && name != "Notices" && !carried[name] {
 				t.Errorf("Manifest.%s is in no row of the README table", name)
 			}
 		}

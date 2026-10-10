@@ -1583,7 +1583,7 @@ descriptorCase('a descriptor nested 60 levels deep in an unknown key', (m, d) =>
 descriptorCase('a manifest without a title', (m) => { delete m.title; });
 descriptorCase('a manifest without deployment.url', (m) => { delete m.deployment.url; });
 descriptorCase('a manifest without deployment.discovery', (m) => { delete m.deployment.discovery; });
-descriptorCase('a manifest with a bad format', (m) => { m.format = 'ovdb-manifest/draft-2'; });
+descriptorCase('a manifest with a bad format', (m) => { m.format = 'ovdb-manifest/draft-3'; });
 const descriptorText = `${JSON.stringify({ format: 'ovdb-publisher-descriptor-reference/1', generatedBy: meta.generatedBy, node: meta.node, references: meta.references, cases: descriptorCases }, null, 1)}\n`;
 if (descriptorCases[0].reference !== 1) throw new Error('the base descriptor pair must be accepted by the reference');
 

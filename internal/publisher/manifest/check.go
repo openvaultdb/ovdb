@@ -42,6 +42,9 @@ const MaxDocumentBytes = 256 << 10
 type Result struct {
 	Profile  Profile
 	Findings []Finding
+	// Notices are what the documents ask the publisher to change without being wrong (see SeverityNotice), in the order the manifests are judged. They are
+	// not findings: OK and the number of findings do not count them.
+	Notices  []Finding
 	OVDBMd   OVDBMd
 	Manifest Manifest
 	// Descriptors is how many of the entries of OVDBMd are database descriptors, which are not manifests (a repository check says; Check judges one manifest).
@@ -70,7 +73,7 @@ func Check(ovdbMd []byte, manifestPath string, manifest []byte, profile Profile)
 	}
 	m, more := checkManifest(manifest, manifestPath, b, profile, false)
 	findings = append(append(findings, more...), b.notice(manifestPath)...)
-	return Result{Profile: profile, Findings: findings, OVDBMd: md, Manifest: m}
+	return Result{Profile: profile, Findings: findings, Notices: m.Notices, OVDBMd: md, Manifest: m}
 }
 
 // listed names the first few entries, and how many more there are.

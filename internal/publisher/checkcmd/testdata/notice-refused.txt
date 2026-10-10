@@ -1,0 +1,10 @@
+ovdb.yaml:59  [repo-recordsets]
+  recordsets lacks the ModelSpec entities of "model/chinook.modelspec.json": "Track"
+
+ovdb.yaml:59  [repo-recordsets]
+  recordsets names things that are not ModelSpec entities of "model/chinook.modelspec.json": "Tracks"; if they are the database's own names, map each to its entity under recordset_entities (name: Entity)
+
+notice: ovdb.yaml:70  [manifest-deprecated]
+  recordset_entities is the earlier form of the mapping and is still read; under format: ovdb-manifest/draft-2 the same is one record_type: line under each recordset that recordset_entities lists (for example - name: Order Details, record_type: OrderDetails), and recordset_entities is removed; an empty recordset_entities can simply be removed
+
+Refused: 2 problems at commit 98ff05b4119c. Fix them, commit, and run the check again.

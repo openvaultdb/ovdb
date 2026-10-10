@@ -171,6 +171,35 @@ licences equal the meaning file's or the registries'; that the files exist and
 `model.hcl` is the meaning file's `models:` entry; the recordsets against the model's
 entities.
 
+## The mapping of recordsets: `ovdb-manifest/draft-1` and `ovdb-manifest/draft-2`
+
+A manifest says which ModelSpec record type each recordset has, and which field each column holds, in one of two forms (decision 0012 of
+`openvaultdb/openvaultdb`, approved on 2026-10-10). The `format` line decides which, and a manifest that mixes them is refused. Whichever form is written,
+the rest of the check reads `Manifest.Mapping`: for each recordset, in the order written, its name, its record type and the columns it lists. The reference
+is `scripts/lib/manifest-mapping.mjs`, the same file in `openvaultdb/directory` and in `demo-db/chinook`.
+
+| | `ovdb-manifest/draft-1` | `ovdb-manifest/draft-2` |
+| --- | --- | --- |
+| An item of `recordsets` | a name | a name, or a map with the keys `name`, `record_type` and `columns` (any other key is refused) |
+| The record type of a recordset | the pair for its name in `recordset_entities`, else the name | its `record_type`, else its name |
+| `recordset_entities` | read as it always was; a notice (`manifest-deprecated`) says how to write the mapping now, whatever it holds, an empty map too | not read, and refused when written, even where it says the same as a `record_type` and even when it is empty |
+| `columns` | none | a map from a column's name to a map whose one key is `field`; the value is a field of the record type, or names joined by single dots (a path into a component) |
+
+What the second form refuses, by the finding that says it:
+
+| Rule | Stage | Refused when |
+| --- | --- | --- |
+| `manifest-format` | manifest | the format is neither identifier (or none is written) |
+| `manifest-recordsets` | manifest | `recordsets` is not a non-empty list of names and maps; an item has no usable `name`, or a key besides the three; a `record_type` is not an identifier; a name is not a recordset name (the rule of the first form) or is listed twice; two recordsets have one record type; `recordset_entities` is written. In the first form: an item is a map (the message says the item is read under the second format) |
+| `manifest-columns` | manifest | `columns` is not a map; a column's name is not a recordset name; a column is not a map (a column written as text is refused: the map is the only form for now, decision 0012 N5); a column has a key besides `field` (N6); `field` is missing or not text, or is not a field name or a path of names joined by single dots; two columns hold one field; a manifest with `source_definition` lists a column |
+| `repo-recordsets` | file | the record types of the recordsets are not the model's record types, in both directions (own form only: the shared form has no file stage here) |
+| `repo-columns` | file | a column holds a field its record type does not have; holds a path (no reader of the model reads a component yet); has the name of a field of the record type that has no column of its own; or the recordset is one a representation contract names (its target, or its bridge table) |
+
+`columns: {}` lists no column: it is accepted, in every place that a column is refused. A column with the name of its own field is accepted, and so is a
+`record_type` equal to the `name` (decision 0012 N9). Names and field names are matched exactly (N13). The notice is told in `Manifest.Notices` and
+`Result.Notices`, kept apart from the findings: `OK` and the number of findings do not count it. Which of these the reference does and does not do, and
+the cases that both run, are in the proof below.
+
 ## Profiles
 
 A `Profile` says whose rules judge, and is an argument of every function, so that a

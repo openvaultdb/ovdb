@@ -121,7 +121,8 @@ and a path below a file or symlink do not):
 | `meaning-concept-duplicate` | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. | the Directory's, not the checker's |
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
-| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
+| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions; each has the record type its manifest maps it to (`recordset_entities` in `ovdb-manifest/draft-1`, `record_type:` in `ovdb-manifest/draft-2`) | 535-539 |
+| `repo-columns` | a column of a recordset (`ovdb-manifest/draft-2` only) holds a field its record type has, not a path through a component, and is not named like another field; a recordset that a representation contract names lists none | none: the chinook pre-check's `columnModelProblems` (`manifest-mapping.mjs`) |
 
 The order of these findings is not the Directory's: it reports the version, the module, the entities, then each entity and property in file order (integer-like names first), and this check reports the version first and then entities and properties by name; at most 1000 of them are kept for a file, because a check shows 101 findings at most and what is kept of a model file is held for every manifest that names it. The verdict is the same either way. `--json` consumers should not read `findings[0]` as the Directory's first problem.
 

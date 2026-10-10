@@ -326,6 +326,7 @@ func (c *checker) manifest(o Options, i int, path string, line int) {
 		}
 	}
 	m, attachment, findings := c.j.ManifestWithAttachment(doc, path)
+	c.res.Notices = append(c.res.Notices, m.Notices...)
 	if !m.SourceDefinition.Present {
 		c.dataRights(&m, path, doc, o.Dependencies)
 	}

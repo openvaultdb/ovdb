@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/openvaultdb/ovdb/internal/publisher/manifest"
+	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 	"github.com/openvaultdb/ovdb/publisher/representation"
 )
 
@@ -77,16 +78,21 @@ func (c *checker) representation(m manifest.Manifest, a representation.Reference
 		c.add(a.Path, "representation-contract", 0, "structural validation failed: %s", ascii(err.Error()))
 		return nil
 	}
-	// Targets name ModelSpec entities; bridge tables retain native recordset names.
-	entities := slices.Clone(m.Recordsets.Value)
-	for i, native := range entities {
-		if entity, mapped := m.RecordsetEntities.Value[native]; mapped {
-			entities[i] = entity
-		}
-	}
+	// Targets name ModelSpec record types; bridge tables retain native recordset names.
+	entities := m.RecordTypes()
 	for _, contract := range doc.Contracts {
 		if m.Form != manifest.FormOwn || !m.ModelSpec.Usable() || !m.MeaningFile.Usable() || contract.Target.Model.Path != m.ModelSpec.Value || contract.Target.Binding.Document.Path != m.MeaningFile.Value || (contract.Execution != representation.NativeIdentifier && !slices.Contains(m.Recordsets.Value, contract.Bridge.Table)) || !slices.Contains(entities, contract.Target.Entity) {
 			c.add(a.Path, "representation-manifest-link", 0, "target model/binding and native target/bridge recordsets must match this publisher manifest")
+		}
+		// A contract reads the columns of its target and of its bridge table by the model's names, so a recordset that it names lists none (decision 0012,
+		// N20; the reference's hasColumns: a recordset with `columns: {}` lists none).
+		for _, name := range m.RecordsetsOfType(contract.Target.Entity) {
+			if m.ListsColumns(name) {
+				c.add(a.Path, RuleColumns, 0, "recordset %s lists columns, but a representation contract reads its columns by the model's names: remove columns", rules.Quote(name))
+			}
+		}
+		if contract.Execution != representation.NativeIdentifier && m.ListsColumns(contract.Bridge.Table) {
+			c.add(a.Path, RuleColumns, 0, "recordset %s lists columns, but a representation contract reads its columns by the model's names: remove columns", rules.Quote(contract.Bridge.Table))
 		}
 	}
 
