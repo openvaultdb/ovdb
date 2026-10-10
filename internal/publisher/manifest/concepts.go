@@ -13,8 +13,29 @@ import (
 // 708-712 with bindings asked for), and the rule that a concept is declared once. The Chinook checker never reads the concepts. What the
 // bindings, extends and values-of of a concept say is another rule (the bindings against the model, the chains inside the graph).
 
-// bindingRoles are the roles a binding can have in meaning/draft-1 (meaning.mjs bindingRoles).
-var bindingRoles = []string{"entity", "identifier", "display-name", "foreign-key", "value"}
+// The two formats of a meaning file (meaninggraph/core, FORMAT.md and decisions 0001 to 0003), which decide how a binding names the member of a record type
+// that it holds: `property:` in meaning/draft-1 and `field:` in meaning/draft-2. A file whose format is anything else, or none, is read as meaning/draft-1
+// always was; the format itself is the business of the MeaningGraph checks and the registry, not of this one.
+const (
+	meaningDraft1 = "meaning/draft-1"
+	meaningDraft2 = "meaning/draft-2"
+)
+
+// bindingRoles are the roles a binding can have. `instances` and `reference` are the current names of `entity` and `foreign-key`, and both pairs are valid
+// in both formats: the current names are new spellings that no earlier file uses, so meaning/draft-1 gained them in place, and meaning/draft-2 accepts the
+// earlier names (FORMAT.md, "Bindings" and "How draft 1 differs"). A binding that holds a record type and no member has the role instances, or entity.
+var bindingRoles = []string{"entity", "instances", "identifier", "display-name", "foreign-key", "reference", "value"}
+
+// holdsRecordType says whether a role is the one of a binding that names a record type and no member of it.
+func holdsRecordType(role string) bool { return role == "entity" || role == "instances" }
+
+// memberOf is how a binding of a file of this format names the member of a record type that it holds, and what a finding calls it.
+func memberOf(draft2 bool) string {
+	if draft2 {
+		return "field"
+	}
+	return "property"
+}
 
 // isConceptID is the Directory's /^[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*$/ (meaning.mjs conceptId): lower-case words joined by single hyphens, each
 // starting with a letter.
@@ -76,7 +97,7 @@ func plainLabel(n *Node) bool {
 
 // concepts judges each concept of the list by its shape and holds the ids to being unique: a concept that has a shape problem is not counted, as the
 // Directory does not.
-func (c *collector) concepts(list *Node, w MeaningWants) {
+func (c *collector) concepts(list *Node, w MeaningWants, draft2 bool) {
 	seen := map[string]bool{}
 	var good []*Node // the concepts with a good shape, declared once, in the order of the file
 	var ids []string
@@ -92,20 +113,20 @@ func (c *collector) concepts(list *Node, w MeaningWants) {
 			continue
 		}
 		switch {
-		case c.conceptShape(concept, id):
+		case c.conceptShape(concept, id, draft2):
 		case seen[id]:
 			c.add("meaning-concept-duplicate", concept.Field("id").Line, "concept %s is declared twice", id)
 		default:
 			seen[id] = true
 			good, ids, byID[id] = append(good, concept), append(ids, id), concept
-			c.bindings(concept, id, w)
+			c.bindings(concept, id, w, draft2)
 		}
 	}
 	c.chains(good, ids, byID, w)
 }
 
 // conceptShape reports the shape problems of a concept whose id is good and says whether it found any.
-func (c *collector) conceptShape(concept *Node, id string) bool {
+func (c *collector) conceptShape(concept *Node, id string, draft2 bool) bool {
 	found := false
 	problem := func(line int, format string, args ...any) {
 		found = true
@@ -132,16 +153,30 @@ func (c *collector) conceptShape(concept *Node, id string) bool {
 		case bindings.Kind != kindSeq:
 			problem(bindings.Line, "bindings must be a list, got %s", describe(bindings))
 		case slices.ContainsFunc(bindings.Items, func(b *Node) bool { return b.Kind != kindMap }):
-			problem(bindings.Line, "every binding must be a mapping with model, role and property")
+			problem(bindings.Line, "every binding must be a mapping with model, role and %s", memberOf(draft2))
 		default:
 			for _, binding := range bindings.Items {
 				if role := binding.Field("role"); role == nil || role.Kind != kindString || !slices.Contains(bindingRoles, role.Text) {
 					problem(fieldLine(binding, "role"), "binding role %s must be one of %s", describe(role), strings.Join(bindingRoles, ", "))
 				}
+				// A file uses the word property in one sense only, and its format says which: a meaning/draft-2 file writes field.
+				if draft2 {
+					if word := binding.Field("property"); word != nil {
+						problem(word.Line, "binding has the key property, which belongs to %s; in %s it is written field", meaningDraft1, meaningDraft2)
+					}
+				}
 			}
 		}
 	}
 	return found
+}
+
+// aRecordType is how a finding calls a record type of the model: an entity in a meaning/draft-1 file, a record type in a meaning/draft-2 one.
+func aRecordType(draft2 bool) string {
+	if draft2 {
+		return "a record type"
+	}
+	return "an entity"
 }
 
 // modelRef is the Directory's parseModelRef (modelspec.mjs 14): modelspec://{host}/{org}/{repo}/{module}.{Entity}, with the repository and its slash left out for
@@ -151,7 +186,7 @@ var modelRef = regexp.MustCompile(`^modelspec://((?:[A-Za-z0-9.-]+(?:/[A-Za-z0-9
 // bindings holds the bindings of a concept to the model (directory.mjs 728-754): each names an entity of this database's own ModelSpec and, unless its role
 // is entity, a property of it. The concept has a good shape (every binding is a mapping with a role of the list). Nothing is held when the model file is
 // not one the Directory reads.
-func (c *collector) bindings(concept *Node, id string, w MeaningWants) {
+func (c *collector) bindings(concept *Node, id string, w MeaningWants, draft2 bool) {
 	list := concept.Field("bindings")
 	if list == nil || list.Kind != kindSeq || w.Model == nil || w.Module == "" {
 		return
@@ -178,17 +213,18 @@ func (c *collector) bindings(concept *Node, id string, w MeaningWants) {
 		}
 		properties, ok := w.Model.Entities[ref[3]]
 		if !ok {
-			problem(model.Line, "binding %s names an entity that is not in the ModelSpec", model.Text)
+			problem(model.Line, "binding %s names %s that is not in the ModelSpec", model.Text, aRecordType(draft2))
 			continue
 		}
-		property := binding.Field("property")
+		member := memberOf(draft2)
+		property := binding.Field(member)
 		role := binding.Field("role").Text
 		switch {
-		case property == nil && role != "entity":
-			problem(binding.Line, "binding %s with role %s must name a property", model.Text, role)
+		case property == nil && !holdsRecordType(role):
+			problem(binding.Line, "binding %s with role %s must name a %s", model.Text, role, member)
 		case property != nil:
 			if _, has := properties[property.Text]; property.Kind != kindString || !has {
-				problem(property.Line, "binding %s names property %s, which %s does not have in the ModelSpec", model.Text, describe(property), ref[3])
+				problem(property.Line, "binding %s names %s %s, which %s does not have in the ModelSpec", model.Text, member, describe(property), ref[3])
 			}
 		}
 	}

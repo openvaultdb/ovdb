@@ -200,6 +200,22 @@ What the second form refuses, by the finding that says it:
 `Result.Notices`, kept apart from the findings: `OK` and the number of findings do not count it. Which of these the reference does and does not do, and
 the cases that both run, are in the proof below.
 
+## The bindings of a concept: `meaning/draft-1` and `meaning/draft-2`
+
+The concepts of an own-form manifest's meaning file are judged for their shape and their bindings (`meaning-concept`, `meaning-binding`). Both formats of a
+meaning file are read (`meaninggraph/core`, `FORMAT.md` and decisions 0001 to 0003, approved on 2026-10-10); the `format` of the file decides one thing here:
+
+| | `format: meaning/draft-1`, any other value, or none | `format: meaning/draft-2` |
+| --- | --- | --- |
+| The roles | `entity`, `instances`, `identifier`, `display-name`, `foreign-key`, `reference`, `value` | the same seven |
+| The key that names the member of the record type | `property:` | `field:`; a `property:` is refused (`meaning-concept`: it is a word of `meaning/draft-1`) |
+| A binding with no member | the role `entity` or `instances` | the same |
+
+`instances` and `reference` are the current names of `entity` and `foreign-key`; the current names are new spellings that no earlier file uses, so
+`meaning/draft-1` gained them in place and `meaning/draft-2` accepts the earlier names. A file with another format, or none, is read as it always was (this
+check does not judge the `format` line: the MeaningGraph checks and the registry do). This check does not compute the links that `FORMAT.md` derives from
+the model, and reads no `kind`.
+
 ## Profiles
 
 A `Profile` says whose rules judge, and is an argument of every function, so that a
