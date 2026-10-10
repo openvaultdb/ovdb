@@ -245,7 +245,7 @@ through one reading (the same code at each level), and keeps what it reads out o
   schema that is ModelSpec JSON. It pins the file's bytes by sha256 (`contract.go`, `Hash`) and reads either vocabulary, the identifier deciding
   (`vocabulary.go`; `contract.go`, `property`; `strict.go`, `exactModel`; `native.go`), and it matches keys by their exact bytes, as the Directory's reader
   does. A case variant of `modelspec`, `module`, `name`, `type`, or of the group key or the members key of the document's own vocabulary (`RECORDS`, `Fields` in a
-  `1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
+  `1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. `modelspec` and `module` are looked at at the top of the document, `name` only inside `module`, and `type` only on a member of a record type: a key that is a case variant of `name` or `type` anywhere else (`Name` on a member, `Type` in the module, either one in a record type, at the top or in a component) is an unrelated key, and is not refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
   document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one). Decision 0011 of the
   OpenVaultDB specification records that a model or source schema that a contract refers to may be in either ModelSpec vocabulary, as an amendment
   of formats 1 to 3 on that one point, and this text follows it

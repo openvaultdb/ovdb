@@ -106,14 +106,21 @@ func holdToPinnedConstants(pinned modelFiles, pins modelDigests) error {
 func requirePinnedModel(t *testing.T) modelFiles {
 	t.Helper()
 	pinned, pins := pinnedModel(t)
-	if err := holdToPinnedConstants(pinned, pins); err != nil {
-		t.Fatal("publisher model artifact drift: ", err)
-	}
 	working := modelFiles{bytesAt(t, workingModelHCL), bytesAt(t, workingModelJSON)}
-	if _, err := acceptedModelState(pinned, working, pins); err != nil {
+	if err := modelDrift(pinned, pins, working); err != nil {
 		t.Fatal("publisher model artifact drift: ", err)
 	}
 	return pinned
+}
+
+// modelDrift says why the working files are not in an accepted state: the pins and the stored copies must be the named constants (holdToPinnedConstants),
+// and the working files must be the stored copies or exactly their rename (acceptedModelState).
+func modelDrift(pinned modelFiles, pins modelDigests, working modelFiles) error {
+	if err := holdToPinnedConstants(pinned, pins); err != nil {
+		return err
+	}
+	_, err := acceptedModelState(pinned, working, pins)
+	return err
 }
 
 func TestTheModelFilesInTheTreeAreAnAcceptedState(t *testing.T) {
@@ -228,5 +235,55 @@ func TestTheGuardRefusesEverythingElse(t *testing.T) {
 	notRenamable = modelFiles{hcl: pinned.hcl, json: []byte(`[]`)}
 	if _, err := acceptedModelState(notRenamable, notRenamable, modelDigests{pins.hcl, hash(notRenamable.json)}); err == nil {
 		t.Error("a JSON that cannot be renamed was accepted")
+	}
+}
+
+// One test for each of the two lines of the guard that no other test needed. Each builds a state that its line refuses, and asserts that line's message.
+const namedDigestsRefusal = "the chain's pins or the stored copies of the model are not the pinned digests named in the guard"
+
+// A manifest that pins the named digests, beside stored copies that are other bytes: in holdToPinnedConstants, only the comparison of the stored copies
+// with the constants refuses it. (The pair check, acceptedModelState, refuses the same state too, in its own words: "the stored copies are not the bytes
+// that the chain pins". The pair of TestTheGuardNamesTheDigestsThatTheChainPins that carries other stored bytes carries other pins too, so that the
+// comparison of the pins refuses it.)
+func TestTheGuardRefusesStoredCopiesThatAreNotTheNamedDigestsWhateverTheManifestPins(t *testing.T) {
+	pinned, pins := pinnedModel(t)
+	want := modelDigests{pinnedModelHCLSHA256, pinnedModelJSONSHA256}
+	if pins != want {
+		t.Fatalf("the manifest does not pin the named digests: %v", pins)
+	}
+	for name, stored := range map[string]modelFiles{
+		"the HCL":  {hcl: append(bytes.Clone(pinned.hcl), '\n'), json: pinned.json},
+		"the JSON": {hcl: pinned.hcl, json: append(bytes.Clone(pinned.json), '\n')},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := holdToPinnedConstants(stored, pins)
+			if err == nil || err.Error() != namedDigestsRefusal {
+				t.Fatalf("got %v", err)
+			}
+		})
+	}
+}
+
+// Stored copies whose HCL is already the renamed one, with the digest of that HCL as the pin: the pair check accepts them, because a rename of the
+// renamed HCL is itself and the digests agree, and the working files may be those copies. Only the holding of the pair to the named constants, which
+// requirePinnedModel makes through modelDrift, refuses the state.
+func TestTheGuardHoldsTheModelToTheNamedDigestsBeforeItAcceptsAState(t *testing.T) {
+	pinned, pins := pinnedModel(t)
+	renamedHCL, err := renameHCL(pinned.hcl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := modelFiles{hcl: renamedHCL, json: pinned.json}
+	storedPins := modelDigests{hash(renamedHCL), pins.json}
+	if state, err := acceptedModelState(stored, stored, storedPins); err != nil || state != "accepted" {
+		t.Fatalf("the pair check does not accept the state this test needs: %q, %v", state, err)
+	}
+	err = modelDrift(stored, storedPins, stored)
+	if err == nil || err.Error() != namedDigestsRefusal {
+		t.Fatalf("got %v", err)
+	}
+	// The pinned state itself has no drift.
+	if err := modelDrift(pinned, pins, pinned); err != nil {
+		t.Fatal(err)
 	}
 }

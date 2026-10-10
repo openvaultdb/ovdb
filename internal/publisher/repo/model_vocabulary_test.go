@@ -109,6 +109,10 @@ func TestReadModelVocabularies(t *testing.T) {
 			issues: []string{RuleModelVocabulary + `|it has "record", which`}},
 		"the current, a component member with both reference words": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"entity":"A","record":"A"}}}},"records":{}}`, group: "records", object: true,
 			issues: []string{RuleModelVocabulary + `|it has "entity", which`}},
+		"the earlier, a component member with both reference words the other way round": {in: `{"modelspec":"1.0-draft","components":{"C":{"fields":{"x":{"record":"A","entity":"A"}}}},"entities":{}}`, group: "entities", object: true,
+			issues: []string{RuleModelVocabulary + `|it has "record", which`}},
+		"the current, a component member with both reference words the other way round": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"record":"A","entity":"A"}}}},"records":{}}`, group: "records", object: true,
+			issues: []string{RuleModelVocabulary + `|it has "entity", which`}},
 
 		// A key is noticed in every occurrence of a repeated key, also in one that a later occurrence overwrites: the verdict is the safer one, and the reading is the last's.
 		"the earlier, a stray members key in a group that is repeated": {in: `{"modelspec":"1.0-draft","entities":{"A":{"fields":{}}},"entities":{"A":{"properties":{"id":{"type":"int"}}}}}`, group: "entities", names: []string{"A"}, object: true,

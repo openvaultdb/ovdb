@@ -170,6 +170,25 @@ func TestAKeyThatOnlyFoldsToAWordOfAnotherVocabularyIsIgnored(t *testing.T) {
 		"Record on a property":                    {true, once(`"type": "string"`, `"Record": "x", "type": "string"`), ""},
 		"the identifier key in capitals":          {false, once(`"modelspec"`, `"MODELSPEC"`), "non-exact JSON field"},
 		"the identifier key in capitals, earlier": {true, once(`"modelspec"`, `"MODELSPEC"`), "non-exact JSON field"},
+
+		// name and type are refused as a case variant only where the reader reads them: name in the module, type on a member of a record type. Elsewhere a
+		// key that folds to either is an unrelated key (README: "Keys of the model are matched by their exact bytes").
+		"Name in the module":                    {false, once(`"name": `, `"Name": `), "non-exact JSON field"},
+		"Name in the module, earlier":           {true, once(`"name": `, `"Name": `), "non-exact JSON field"},
+		"Type on a field":                       {false, once(`"type": "string"`, `"Type": "string"`), "non-exact JSON field"},
+		"Type on a property":                    {true, once(`"type": "string"`, `"Type": "string"`), "non-exact JSON field"},
+		"Name in a record type":                 {false, once(`"fields": {`, `"Name": "x", "fields": {`), ""},
+		"Type in a record type":                 {false, once(`"fields": {`, `"Type": "x", "fields": {`), ""},
+		"Name in an entity":                     {true, once(`"properties": {`, `"Name": "x", "properties": {`), ""},
+		"Type in an entity":                     {true, once(`"properties": {`, `"Type": "x", "properties": {`), ""},
+		"Name on a field":                       {false, once(`"type": "string"`, `"Name": "x", "type": "string"`), ""},
+		"Name on a property":                    {true, once(`"type": "string"`, `"Name": "x", "type": "string"`), ""},
+		"Type in the module":                    {false, once(`"name": `, `"Type": "x", "name": `), ""},
+		"Type in the module, earlier":           {true, once(`"name": `, `"Type": "x", "name": `), ""},
+		"Name and Type beside the records":      {false, func(text string) string { return withTop(text, `"Name": "x", "Type": "y"`) }, ""},
+		"Name and Type beside the entities":     {true, func(text string) string { return withTop(text, `"Name": "x", "Type": "y"`) }, ""},
+		"Name and Type in a component":          {false, func(text string) string { return withTop(text, `"components": {"C": {"Name": "x", "Type": "y"}}`) }, ""},
+		"Name and Type in a component, earlier": {true, func(text string) string { return withTop(text, `"components": {"C": {"Name": "x", "Type": "y"}}`) }, ""},
 	}
 	for name, tc := range cases {
 		for _, position := range []string{"source.modelspec.json", "target.modelspec.json"} {
