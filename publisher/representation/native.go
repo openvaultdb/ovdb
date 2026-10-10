@@ -3,6 +3,8 @@ package representation
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"unicode/utf8"
 )
 
@@ -161,8 +163,8 @@ func checkNativeProvenance(data []byte, c Contract, ctx Context, metadata []byte
 		}
 
 		outputs, _ := snapshot["outputs"].(map[string]any)
-		for _, raw := range outputs {
-			output, _ := raw.(map[string]any)
+		for _, name := range slices.Sorted(maps.Keys(outputs)) { // in order, so that outputs with wrong keys are refused with the same words every time
+			output, _ := outputs[name].(map[string]any)
 			if err := exactKeys(output, []string{"sha256"}, false); err != nil {
 				return err
 			}

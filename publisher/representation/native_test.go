@@ -291,6 +291,23 @@ func TestNativeReceiptAssociation(t *testing.T) {
 	}
 }
 
+// A receipt whose outputs misspell sha256 in different ways is refused with the first output in sorted order, on every run (the outputs are a JSON object,
+// which a map loop would visit in any order).
+func TestNativeReceiptRefusalNamesTheFirstOutputInOrder(t *testing.T) {
+	b, c := mutatedNativeReceipt(t, func(r map[string]any) {
+		outputs := r["snapshot"].(map[string]any)["outputs"].(map[string]any)
+		outputs["c.sqlite"] = map[string]any{"Sha256": "x"}
+		outputs["a.sqlite"] = map[string]any{"SHA256": "x"}
+		outputs["b.sqlite"] = map[string]any{"sha_256": "x"}
+	})
+	for i := 0; i < 200; i++ {
+		_, err := Check(b, c)
+		if err == nil || !strings.Contains(err.Error(), `non-exact JSON field "SHA256"`) {
+			t.Fatalf("run %d: want a refusal that names the field of a.sqlite, got %v", i, err)
+		}
+	}
+}
+
 func mutateNativeAsset(t *testing.T, which string, raw []byte) ([]byte, Context) {
 	t.Helper()
 	return mutateNativeAssetOf(t, "real-ror", which, raw)
