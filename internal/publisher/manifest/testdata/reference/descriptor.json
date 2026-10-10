@@ -5,11 +5,11 @@
  "references": {
   "directory": {
    "repository": "openvaultdb/directory",
-   "commit": "ec53d7539aafd23d006b4943acdd7a31f4eb9340"
+   "commit": "3f52255cbaaaa987b705079cf771eb2544faf3ae"
   },
   "chinookdb": {
    "repository": "demo-db/chinook",
-   "commit": "8b904298d0c3bba20c12dfbc29bb75bf5c37f683"
+   "commit": "88f080d72205034e1161bb80594acb7d77fc58ef"
   },
   "fixtures": {
    "repository": "datatug/chinookdb",
@@ -2127,7 +2127,7 @@
   },
   {
    "note": "a manifest with a bad format",
-   "manifest": "{\n  \"format\": \"ovdb-manifest/draft-2\",\n  \"id\": \"chinook\",\n  \"title\": \"Chinook music store\",\n  \"description\": \"The Chinook sample database: a digital music store with artists, albums, tracks, playlists, customers, employees and invoices. Read-only, served from a pinned copy of the upstream SQLite fixture.\",\n  \"homepage\": \"https://chinookdb.com/\",\n  \"url\": \"https://demodb.dev/chinook/\",\n  \"deployment\": {\n    \"url\": \"https://cloud.openvaultdb.com/ovdb/dbs/chinook\",\n    \"engine\": \"sqlite\",\n    \"discovery\": \"https://demodb.dev/.well-known/openvaultdb\",\n    \"recordset_page\": \"https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\"\n  },\n  \"model\": {\n    \"address\": \"modelspec://github.com/datatug/chinookdb/chinook\",\n    \"modelspec\": \"model/chinook.modelspec.json\",\n    \"hcl\": \"model/chinook.modelspec.hcl\"\n  },\n  \"meaning\": {\n    \"file\": \"model/chinook.meaning.yaml\",\n    \"graph\": {\n      \"id\": \"chinook\",\n      \"address\": \"meaning://github.com/datatug/chinookdb\"\n    }\n  },\n  \"publisher\": {\n    \"name\": \"DataTug\",\n    \"url\": \"https://github.com/datatug\",\n    \"repository\": \"https://github.com/datatug/chinookdb\"\n  },\n  \"licences\": {\n    \"data\": \"MIT\",\n    \"model\": \"MIT\",\n    \"meaning\": \"CC0-1.0\"\n  },\n  \"recordsets\": [\n    \"Album\",\n    \"Artist\",\n    \"Customer\",\n    \"Employee\",\n    \"Genre\",\n    \"Invoice\",\n    \"InvoiceLine\",\n    \"MediaType\",\n    \"Playlist\",\n    \"PlaylistTrack\",\n    \"Track\"\n  ]\n}\n",
+   "manifest": "{\n  \"format\": \"ovdb-manifest/draft-3\",\n  \"id\": \"chinook\",\n  \"title\": \"Chinook music store\",\n  \"description\": \"The Chinook sample database: a digital music store with artists, albums, tracks, playlists, customers, employees and invoices. Read-only, served from a pinned copy of the upstream SQLite fixture.\",\n  \"homepage\": \"https://chinookdb.com/\",\n  \"url\": \"https://demodb.dev/chinook/\",\n  \"deployment\": {\n    \"url\": \"https://cloud.openvaultdb.com/ovdb/dbs/chinook\",\n    \"engine\": \"sqlite\",\n    \"discovery\": \"https://demodb.dev/.well-known/openvaultdb\",\n    \"recordset_page\": \"https://cloud.openvaultdb.com/ovdb/dbs/chinook/collections/{name}\"\n  },\n  \"model\": {\n    \"address\": \"modelspec://github.com/datatug/chinookdb/chinook\",\n    \"modelspec\": \"model/chinook.modelspec.json\",\n    \"hcl\": \"model/chinook.modelspec.hcl\"\n  },\n  \"meaning\": {\n    \"file\": \"model/chinook.meaning.yaml\",\n    \"graph\": {\n      \"id\": \"chinook\",\n      \"address\": \"meaning://github.com/datatug/chinookdb\"\n    }\n  },\n  \"publisher\": {\n    \"name\": \"DataTug\",\n    \"url\": \"https://github.com/datatug\",\n    \"repository\": \"https://github.com/datatug/chinookdb\"\n  },\n  \"licences\": {\n    \"data\": \"MIT\",\n    \"model\": \"MIT\",\n    \"meaning\": \"CC0-1.0\"\n  },\n  \"recordsets\": [\n    \"Album\",\n    \"Artist\",\n    \"Customer\",\n    \"Employee\",\n    \"Genre\",\n    \"Invoice\",\n    \"InvoiceLine\",\n    \"MediaType\",\n    \"Playlist\",\n    \"PlaylistTrack\",\n    \"Track\"\n  ]\n}\n",
    "descriptor": "{\n  \"format\": \"ovdb-database/draft-1\",\n  \"id\": \"https://demodb.dev/chinook/\",\n  \"localId\": \"chinook\",\n  \"serverId\": \"https://demodb.dev/ovdb\",\n  \"serverDbBaseUrl\": \"https://demodb.dev/ovdb/db/chinook\",\n  \"apiUrl\": \"https://demodb.dev/ovdb/api\",\n  \"deployment\": {\n    \"discovery\": \"https://demodb.dev/.well-known/openvaultdb\"\n  }\n}\n",
    "reference": 0,
    "recognised": true

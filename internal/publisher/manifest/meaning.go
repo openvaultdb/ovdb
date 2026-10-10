@@ -52,7 +52,8 @@ func (j *Judge) Meaning(doc []byte, w MeaningWants) []Finding {
 	if concepts := root.Field("concepts"); concepts == nil || concepts.Kind != kindSeq {
 		c.add("meaning-concepts", fieldLine(root, "concepts"), "has no concepts list: a MeaningGraph file lists its concepts under concepts:, got %s", describe(concepts))
 	} else {
-		c.concepts(concepts, w)
+		format := root.Field("format")
+		c.concepts(concepts, w, format != nil && format.Kind == kindString && format.Text == meaningDraft2)
 	}
 	for _, same := range []struct {
 		key, label string

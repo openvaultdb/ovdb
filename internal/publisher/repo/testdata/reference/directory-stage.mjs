@@ -65,6 +65,7 @@ assertAnchors(source, 'scripts/lib/directory.mjs', pins.directory.commit, [
   'is not one of the meaning files the MeaningGraph registry lists for', 'is not registered in the MeaningGraph registry',
   'but the record\'s url is ${data.url}', 'but the ${descriptor ? \'descriptor localId\' : \'record id\'} is ${expectedManifestId}',
   'recordsets lacks ModelSpec entities', 'recordsets names things that do not map to ModelSpec entities', 'recordsets lists a name twice',
+  "newForm ? 'recordsets lacks the record types of the model'", 'recordsets names record types that are not in the model file: ${extra.map', 'columnModelProblems(entry, new Set(',
   'the recordset page of ${name}, ${url}, ${problem}',
 ]);
 assertAnchors(modelspecSource, 'scripts/lib/modelspec.mjs', pins.directory.commit, [
@@ -279,6 +280,25 @@ add('meaning-concepts-null', 'has', 'concepts is null', { [meaningPath]: edit('\
 add('model-file-missing', 'has', 'the model file is not in the repository', { [modelPath]: null }, /model\.modelspec model\/chinook\.modelspec\.json does not exist at commit/, 'agree');
 add('meaning-file-missing', 'has', 'the meaning file is not in the repository', { [meaningPath]: null }, /meaning\.file model\/chinook\.meaning\.yaml does not exist at commit/, 'agree');
 add('has-recordsets-mapping-twice', 'has', 'two recordsets are mapped to the same entity (line 470): the manifest stage cannot see it', { [manifestPath]: (text) => `${text.replace('  - Genre\n', '  - Genre\n  - Category\n')}\nrecordset_entities:\n  Category: Genre\n` }, /recordset_entities maps more than one native recordset to the same ModelSpec entity/, 'agree');
+// The mapping of ovdb-manifest/draft-2 (decision 0012): the file stage compares the record type of each recordset, and the fields that its columns hold, with the model.
+// The shape of the mapping is the manifest stage's (the reference's manifest-mapping.mjs, run against the same cases in the manifest slice's corpus); these are the
+// refusals that need the model file, and the shapes that a repository can show, so that the Directory profile's file stage is held to the Directory's.
+const second = (text) => edit('format: ovdb-manifest/draft-1', 'format: ovdb-manifest/draft-2')(text);
+const secondWith = (find, replace) => (text) => edit(find, replace)(second(text));
+add('map-names', 'mapping', 'the second format, every recordset a name', { [manifestPath]: second }, null, 'agree');
+add('map-record-type', 'mapping', 'the second format, a recordset with a name of its own and its record type', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genres\n    record_type: Genre\n') }, null, 'agree');
+add('map-column', 'mapping', 'a column that holds a field of its record type', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genre\n    columns:\n      genre_name:\n        field: Name\n') }, null, 'agree');
+add('map-columns-empty', 'mapping', 'an empty columns', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genre\n    columns: {}\n') }, null, 'agree');
+add('map-lack', 'mapping', 'a recordset fewer than the record types of the model', { [manifestPath]: secondWith('  - Genre\n', '') }, /recordsets lacks the record types of the model: Genre/, 'agree');
+add('map-extra', 'mapping', 'a recordset whose record type the model lacks', { [manifestPath]: secondWith('  - Genre\n', '  - Genre\n  - name: Nope\n') }, /recordsets names record types that are not in the model file: Nope \(record type Nope\)/, 'agree');
+add('map-column-lacks-field', 'mapping', 'a column that holds a field its record type lacks', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genre\n    columns:\n      x:\n        field: Nope\n') }, /recordsets "Genre": column "x" holds "Nope", but Genre has no field "Nope"/, 'agree');
+add('map-column-path', 'mapping', 'a column that holds a path through a field (no reader of the model reads a component)', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genre\n    columns:\n      x:\n        field: Name.Part\n') }, /column "x" holds "Name\.Part": no reader of the model reads a component yet, so "Part" cannot be read in Name/, 'agree');
+add('map-column-named-like-field', 'mapping', 'a column named like a field that has no column of its own', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genre\n    columns:\n      GenreId:\n        field: Name\n') }, /column "GenreId" is also the name of the field GenreId of Genre, which has no column of its own listed/, 'agree');
+add('map-record-type-twice', 'mapping', 'two recordsets with one record type (the second format: the manifest stage)', { [manifestPath]: secondWith('  - Genre\n', '  - Genre\n  - name: Category\n    record_type: Genre\n') }, /recordsets "Genre" and "Category" both have the record type Genre; mappings must be one-to-one/, 'agree');
+add('map-entities-key', 'mapping', 'recordset_entities under the second format', { [manifestPath]: (text) => `${second(text)}recordset_entities: {}\n` }, /recordset_entities is not read under format: ovdb-manifest\/draft-2/, 'agree');
+add('map-bare-column', 'mapping', 'a column written as text', { [manifestPath]: secondWith('  - Genre\n', '  - name: Genre\n    columns:\n      x: Name\n') }, /recordsets "Genre": column "x" must be a map with field/, 'agree');
+add('map-item-under-first', 'mapping', 'a map in the list of the first format', { [manifestPath]: edit('  - Genre\n', '  - name: Genres\n    record_type: Genre\n') }, /recordsets item 5 is a map, but ovdb-manifest\/draft-1 lists recordsets by name only/, 'agree');
+add('map-first-with-key', 'mapping', 'the first format with an empty recordset_entities, which is read as it always was (with a notice)', { [manifestPath]: (text) => `${text}recordset_entities: {}\n` }, null, 'agree');
 add('has-model-address-host', 'has', 'model.address names a host that is not a repository host (line 544)', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://example.com/demo-db/chinook/chinook\n  modelspec: model/chinook.modelspec.json\n') }, /must name a repository on github\.com/, 'agree');
 add('has-model-address-other-repository', 'has', 'model.address names another repository (line 546)', { [manifestPath]: edit('  modelspec: model/chinook.modelspec.json\n', '  address: modelspec://github.com/demo-db/other/chinook\n  modelspec: model/chinook.modelspec.json\n') }, /model\.address names github\.com\/demo-db\/other, but the model's files are in/, 'agree');
 add('has-publisher-repository', 'has', 'publisher.repository is not the record\'s repository (line 428; Go compares it with --repository)', { [manifestPath]: edit('  repository: https://github.com/demo-db/chinook', '  repository: https://github.com/demo-db/other') }, /publisher\.repository is https:\/\/github\.com\/demo-db\/other, but the record's repository is/, 'agree');
@@ -452,6 +472,15 @@ const goRules = {
   'model-file-missing': 'repo-file',
   'meaning-file-missing': 'repo-file',
   'has-recordsets-mapping-twice': 'repo-recordsets',
+  'map-lack': 'repo-recordsets',
+  'map-extra': 'repo-recordsets',
+  'map-column-lacks-field': 'repo-columns',
+  'map-column-path': 'repo-columns',
+  'map-column-named-like-field': 'repo-columns',
+  'map-record-type-twice': 'manifest-recordsets',
+  'map-entities-key': 'manifest-recordsets',
+  'map-bare-column': 'manifest-columns',
+  'map-item-under-first': 'manifest-recordsets',
   'has-model-address-host': 'manifest-model',
   'has-publisher-repository': 'repo-repository',
 };

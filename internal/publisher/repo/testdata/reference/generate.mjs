@@ -407,6 +407,28 @@ addCase('recordsets', 'a name twice', inManifest('  - Track\n', '  - Track\n  - 
 addCase('recordsets', 'the entities of a model without Track, and Track listed', asModel(modelText((m) => { delete m.entities.Track; })));
 addCase('recordsets', 'many more than the entities', inManifest('  - Track\n', `  - Track\n${Array.from({ length: 40 }, (_, i) => `  - More${i}\n`).join('')}`));
 
+// The mapping of ovdb-manifest/draft-2 (decision 0012) against the model file: the record type of each recordset and the fields that its columns hold. The
+// shape of the mapping is judged without the model, and the manifest slice's corpus holds it to the same references; these are the repositories.
+const inSecond = (ops = []) => [['edit', manifestPath, 'format: ovdb-manifest/draft-1', 'format: ovdb-manifest/draft-2'], ...ops];
+const inTrack = (lines) => inManifest('  - Track\n', lines);
+addCase('mapping', 'the second format, every recordset a name', inSecond());
+addCase('mapping', 'a recordset with a name of its own and its record type', inSecond(inTrack('  - name: Tracks\n    record_type: Track\n')));
+addCase('mapping', 'a column that holds a field of its record type', inSecond(inTrack('  - name: Track\n    columns:\n      title:\n        field: Name\n')));
+addCase('mapping', 'an empty columns', inSecond(inTrack('  - name: Track\n    columns: {}\n')));
+addCase('mapping', 'one fewer than the record types', inSecond(inTrack('')));
+addCase('mapping', 'a record type the model lacks', inSecond(inTrack('  - Track\n  - name: Extra\n')));
+addCase('mapping', 'a column that holds a field its record type lacks', inSecond(inTrack('  - name: Track\n    columns:\n      x:\n        field: Nope\n')));
+addCase('mapping', 'a column that holds a path through a field', inSecond(inTrack('  - name: Track\n    columns:\n      x:\n        field: Name.Part\n')));
+addCase('mapping', 'a column named like a field that has no column of its own', inSecond(inTrack('  - name: Track\n    columns:\n      Name:\n        field: Composer\n')));
+addCase('mapping', 'two columns that swap their fields', inSecond(inTrack('  - name: Track\n    columns:\n      Name:\n        field: Composer\n      Composer:\n        field: Name\n')));
+addCase('mapping', 'two recordsets with one record type', inSecond(inTrack('  - Track\n  - name: Songs\n    record_type: Track\n')));
+addCase('mapping', 'recordset_entities under the second format', inSecond(inTrack('  - Track\nrecordset_entities: {}\n')));
+addCase('mapping', 'a column written as text', inSecond(inTrack('  - name: Track\n    columns:\n      x: Name\n')));
+addCase('mapping', 'the first format with an empty recordset_entities', inTrack('  - Track\nrecordset_entities: {}\n'));
+addCase('mapping', 'the first format with a mapped name', inTrack('  - Songs\nrecordset_entities:\n  Songs: Track\n'));
+addCase('mapping', 'the first format with two names for one record type', inTrack('  - Track\n  - Songs\nrecordset_entities:\n  Songs: Track\n'));
+addCase('mapping', 'a map in the list of the first format', inTrack('  - name: Tracks\n    record_type: Track\n'));
+
 // What JSON.parse accepts and what Go's decoder would do: the repository's decisions, one case each.
 for (const [name, ops] of Object.entries({
   'a repeated module: the last is right': rawModel('"module":{"name":"Hostile"},'),
@@ -670,6 +692,18 @@ const expectations = [
   [/^recordsets: (one fewer than the entities|one fewer and one more|in another case)$/, /recordsets lacks/],
   [/^recordsets: (one more than the entities|the entities of a model without Track, and Track listed|many more than the entities)$/, /recordsets names things/],
   [/^recordsets: a name twice$/, /recordsets lists a name twice/],
+  // The mapping of ovdb-manifest/draft-2.
+  [/^mapping: (the second format, every recordset a name|a recordset with a name of its own and its record type|a column that holds a field of its record type|an empty columns|two columns that swap their fields|the first format with an empty recordset_entities|the first format with a mapped name)$/, null],
+  [/^mapping: one fewer than the record types$/, /recordsets lacks the record types of the model: Track/],
+  [/^mapping: a record type the model lacks$/, /recordsets names record types that are not in the model file: Extra \(record type Extra\)/],
+  [/^mapping: a column that holds a field its record type lacks$/, /recordsets "Track": column "x" holds "Nope", but Track has no field "Nope"/],
+  [/^mapping: a column that holds a path through a field$/, /column "x" holds "Name\.Part": no reader of the model reads a component yet/],
+  [/^mapping: a column named like a field that has no column of its own$/, /column "Name" is also the name of the field Name of Track/],
+  [/^mapping: two recordsets with one record type$/, /recordsets "Track" and "Songs" both have the record type Track; mappings must be one-to-one/],
+  [/^mapping: recordset_entities under the second format$/, /recordset_entities is not read under format: ovdb-manifest\/draft-2/],
+  [/^mapping: a column written as text$/, /recordsets "Track": column "x" must be a map with field/],
+  [/^mapping: the first format with two names for one record type$/, /recordset_entities maps more than one native recordset to the same ModelSpec entity/],
+  [/^mapping: a map in the list of the first format$/, /recordsets item 11 is a map, but ovdb-manifest\/draft-1 lists recordsets by name only/],
   // The meaning file.
   [/^meaning: (empty|only comments|only white space|a list|a string|a number|null)$/, /is not a MeaningGraph file: it must be a mapping/],
   [/^meaning: not YAML$/, /is not valid YAML: Flow sequence in block collection must be sufficiently indented and end with a \] at line 2/],

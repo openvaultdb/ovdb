@@ -377,8 +377,8 @@ ovdb publisher check --json                # a document for a CI job
 
 **What it checks.** The repository as it is *committed at `HEAD`* (what you changed and did not commit is not looked at,
 which is also what the Directory reads): `OVDB.md` and every manifest it lists (the fields, the URLs, the licences, the
-recordsets), the files an own-form manifest names (the ModelSpec JSON file, `model.hcl`, the MeaningGraph file) and that
-they agree with the manifest (model name and address, the recordsets against the entities of the model, the meaning
+recordsets, in either form of `ovdb-manifest/draft-1` or `ovdb-manifest/draft-2`: the record type each has and the fields its columns hold), the files an own-form manifest names (the ModelSpec JSON file, `model.hcl`, the MeaningGraph file) and that
+they agree with the manifest (model name and address, the record types of the recordsets against those of the model, the columns against the fields of their record types, the meaning
 file's id, licence and `models:` entry), and, with `--repository`, that every manifest says it is in that repository
 (`publisher.repository`). Manifests with `representation_contract` also require structural
 metadata associations and, for format 3, raw committed `source.data` byte proofs. Supply
@@ -504,7 +504,11 @@ manifests `OVDB.md` lists, and `descriptors` (present only when it is not zero, 
 is the only one), the `path` of the file it is about (`"repository"` when it is about the repository as a whole, `"OVDB.md"` for
 `OVDB.md`), the `line` (0 when there is none) and the `message`. `ok` is true when there are no findings. `summary.errors`
 counts the findings; `summary.capped` is true when the check left findings out, `summary.omitted` says how many, and the last
-finding is then the notice `findings-capped`, which is not counted. A new field may be added to this document without a new
+finding is then the notice `findings-capped`, which is not counted. `notices` (present only when there is one, so a document without one is as it
+was) lists what the check asks you to change without refusing the repository, each shaped like a finding with the `severity` `notice`: today one
+rule, `manifest-deprecated`, for a manifest in `ovdb-manifest/draft-1` that writes `recordset_entities`, empty or not, which is still read (under
+`format: ovdb-manifest/draft-2` the same is a `record_type:` line under each recordset). A notice changes neither `ok` nor the exit status, and the text
+form prints it as `notice: <file>:<line>  [<rule>]` after the findings. A new field may be added to this document without a new
 `schema`; a field is never removed or changed without one. The documents are pinned by golden files in
 `internal/publisher/checkcmd/testdata`, and a test holds the examples above to them.
 

@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/openvaultdb/openvaultdb-go/pkg/license"
@@ -11,8 +12,13 @@ import (
 	"github.com/openvaultdb/ovdb/publisher/source"
 )
 
-// ManifestFormat is the format a manifest declares.
-const ManifestFormat = "ovdb-manifest/draft-1"
+// The two formats of a manifest, which decide how recordsets is read (decision 0012 of openvaultdb/openvaultdb). In ManifestFormat an item of recordsets is
+// a name, and the optional recordset_entities pairs a name with a record type; in ManifestFormatDraft2 an item is a name or a map with name, record_type and
+// columns, and recordset_entities is not read.
+const (
+	ManifestFormat       = "ovdb-manifest/draft-1"
+	ManifestFormatDraft2 = "ovdb-manifest/draft-2"
+)
 
 // Form is the way a manifest names its model.
 type Form string
@@ -65,10 +71,18 @@ type Manifest struct {
 
 	PublisherName, PublisherURL, PublisherRepository Fact[string]
 
+	// Recordsets are the recordsets' own names, in the order written, whichever form the manifest is in.
 	Recordsets        Fact[[]string]
 	RecordsetsPartial Fact[bool]
-	// RecordsetEntities maps native recordset names to the ModelSpec entities they are (recordset_entities).
+	// RecordsetEntities maps native recordset names to the ModelSpec entities they are (recordset_entities, ovdb-manifest/draft-1 only: in draft-2 the
+	// key is refused and the fact is present and not usable).
 	RecordsetEntities Fact[map[string]string]
+	// Mapping is the mapping of the recordsets to record types and of their columns to fields, in the form both formats are read into: for each
+	// recordset, in the order written, its name, its record type and the columns it lists. It is present when recordsets is, and usable when recordsets
+	// is and nothing in the mapping is refused (recordset_entities, record_type and columns); the rest of the check reads it and not the two keys.
+	Mapping Fact[[]Recordset]
+	// Notices are what the manifest asks the publisher to change without making it wrong (see Notice). They change no verdict.
+	Notices []Finding
 }
 
 // isText is the references' isText: text that is not blank by JavaScript's trim().
@@ -93,6 +107,12 @@ type manifestChecker struct {
 	descriptorPaired bool
 	// The URLs that the checks of a profile compare, as parsed (the zero URL when the field is not usable).
 	canonical, deployed, discovery, page rules.URL
+	// format says how recordsets is read; the rest is what reading it left for the mapping.
+	format    formatKind
+	mapItem   bool        // ovdb-manifest/draft-1 with an item of recordsets that is a map
+	nameLines []int       // the line of each name in Recordsets
+	items     []Recordset // the recordsets as draft-2 reads them, when it reads them without a problem
+	columnsOK bool        // no column of any recordset is refused
 }
 
 // CheckManifest judges a manifest. path names it in the findings.
@@ -127,6 +147,7 @@ func checkManifestWithAttachment(doc []byte, path string, b *budget, profile Pro
 	k := &manifestChecker{c: c, m: root, profile: profile, descriptorPaired: paired}
 	k.out.Read = true
 	k.check()
+	k.out.Notices = c.notices
 	if n := root.Field("representation_contract"); n != nil {
 		ref, err := representation.ParseAttachment(doc)
 		attachment = found(n, err == nil, ref)
@@ -276,9 +297,12 @@ func canonicalURL(s string) (rules.URL, error) { return rules.ParseGlobalDatabas
 func (k *manifestChecker) check() {
 	m, out, c := k.m, &k.out, k.c
 	f := m.Field("format")
-	out.Format = found(f, f != nil && f.Kind == kindString && f.Text == ManifestFormat, ManifestFormat)
-	if !out.Format.Valid {
-		c.add("manifest-format", where(m, "format"), "format must be %s, got %s: write format: %s", ManifestFormat, describe(f), ManifestFormat)
+	k.format = formatOf(f)
+	out.Format = found(f, k.format != formatUnknown, "")
+	if out.Format.Valid {
+		out.Format.Value = f.Text
+	} else {
+		c.add("manifest-format", where(m, "format"), "format must be %s or %s, got %s: write format: %s (record_type: and columns: are read under it), or %s", ManifestFormat, ManifestFormatDraft2, describe(f), ManifestFormatDraft2, ManifestFormat)
 	}
 	somewhat := func(key string) Fact[string] {
 		return k.text(field{parent: m, key: key, label: key, required: true, hint: "write some text"})
@@ -327,6 +351,7 @@ func (k *manifestChecker) check() {
 	k.recordsets()
 	k.recordsetEntities()
 	k.recordsetNames()
+	k.mapping()
 	k.dataRights()
 	k.sourceDefinition()
 }
@@ -338,11 +363,10 @@ func (k *manifestChecker) recordsetNames() {
 	if !f.Usable() || !k.out.RecordsetPage.Usable() {
 		return
 	}
-	items := k.m.Field("recordsets").Items
 	refused := false
 	for i, name := range f.Value {
 		if err := rules.RecordsetPage(k.out.RecordsetPage.Value, name); err != nil {
-			k.c.add("manifest-recordsets", items[i].Line, "the recordset page of %s, %s", rules.Quote(name), err.Error())
+			k.c.add("manifest-recordsets", k.nameLines[i], "the recordset page of %s, %s", rules.Quote(name), err.Error())
 			refused = true
 		}
 	}
@@ -467,9 +491,13 @@ func (k *manifestChecker) sharedModel(model, meaning, graph, licences *Node) {
 	}
 }
 
-// recordsets judges the list of recordset names: a non-empty list of text, each
-// name once.
+// recordsets judges the list of recordsets by the format: in ovdb-manifest/draft-1 a non-empty list of names, each once; in ovdb-manifest/draft-2 a
+// non-empty list of names and maps (see recordsetsDraft2). Whichever it is, Recordsets holds the own names and nameLines their lines.
 func (k *manifestChecker) recordsets() {
+	if k.format == formatDraft2 {
+		k.recordsetsDraft2()
+		return
+	}
 	list := k.m.Field("recordsets")
 	good := list != nil && list.Kind == kindSeq && len(list.Items) > 0
 	if good {
@@ -478,14 +506,24 @@ func (k *manifestChecker) recordsets() {
 		}
 	}
 	if !good {
+		// An item that is a map is the draft-2 form under the draft-1 identifier: it gets a message of its own, the verdict is the same.
+		if k.format == formatDraft1 && list != nil && list.Kind == kindSeq {
+			if at := slices.IndexFunc(list.Items, func(item *Node) bool { return item.Kind == kindMap }); at >= 0 {
+				k.mapItem = true
+				k.c.add("manifest-recordsets", list.Items[at].Line, "recordsets item %d is a map, but %s lists recordsets by name only; record_type: and columns: are read under format: %s", at+1, ManifestFormat, ManifestFormatDraft2)
+				k.out.Recordsets = found(list, false, []string(nil))
+				return
+			}
+		}
 		k.c.add("manifest-recordsets", where(k.m, "recordsets"), "recordsets must be a non-empty list of names: write recordsets: with one name per line, each the name of a table or collection of the database (a ModelSpec entity, or a native name that recordset_entities maps to one)")
 		k.out.Recordsets = found(list, false, []string(nil))
 		return
 	}
 	names := make([]string, len(list.Items))
 	seen := map[string]bool{}
+	k.nameLines = make([]int, len(list.Items))
 	for i, item := range list.Items {
-		names[i] = item.Text
+		names[i], k.nameLines[i] = item.Text, item.Line
 		if err := rules.RecordsetName(item.Text); err != nil {
 			good = false
 			k.c.add("manifest-recordsets", item.Line, "recordsets name %s %s", rules.Quote(item.Text), err.Error())
@@ -515,6 +553,21 @@ func RepresentationAttachment(data []byte) (*representation.Reference, error) {
 func (k *manifestChecker) recordsetEntities() {
 	n := k.m.Field("recordset_entities")
 	if n == nil {
+		return
+	}
+	if k.format == formatDraft2 {
+		// The key is not read under ovdb-manifest/draft-2, whatever it holds, and a manifest states the mapping once.
+		k.out.RecordsetEntities = found(n, false, map[string]string(nil))
+		if list := k.m.Field("recordsets"); list != nil && list.Kind == kindSeq && slices.ContainsFunc(list.Items, func(item *Node) bool { return item.Kind == kindMap }) {
+			k.c.add("manifest-recordsets", n.Line, "recordset_entities and record_type both state the mapping, and a manifest states it once: move each pair of recordset_entities under its recordset as record_type: and remove recordset_entities (it is refused even where the two agree)")
+		} else {
+			k.c.add("manifest-recordsets", n.Line, "recordset_entities is not read under format: %s: remove it, and write each pair as an item of recordsets, \"Old Name: Type\" becoming \"- name: Old Name\" with \"record_type: Type\" under it (an empty recordset_entities is refused too)", ManifestFormatDraft2)
+		}
+		return
+	}
+	if k.mapItem {
+		// The map item has been reported; the pairs are not read against a list that was not read.
+		k.out.RecordsetEntities = found(n, false, map[string]string(nil))
 		return
 	}
 	if n.Kind != kindMap {

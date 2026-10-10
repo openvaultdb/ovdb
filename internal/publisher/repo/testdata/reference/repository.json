@@ -1,6 +1,6 @@
 {
  "format": "ovdb-publisher-repository/1",
- "reference": "demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683",
+ "reference": "demo-db/chinook@88f080d72205034e1161bb80594acb7d77fc58ef",
  "repository": "https://github.com/datatug/chinookdb",
  "base": {
   "OVDB.md": "---\novdb: 1\npublish: [./ovdb.yaml]\n---\n# OpenVaultDB publisher manifest\n\nThis repository publishes the Chinook sample database to the\n[OpenVaultDB](https://github.com/openvaultdb) Directory.\n\nThe list above names the manifest files the Directory may read. It is an\nexplicit list of paths relative to the repository root, never a glob, so only\nfiles named here are published.\n[`ovdb.yaml`](ovdb.yaml) describes one database: its canonical identity, the\nlive deployment, the ModelSpec model, the MeaningGraph meaning file, the\npublisher and the licences.\n\nAn optional top-level `homepage` is the publisher's own page for the database,\nan https URL of at most 200 characters; the Directory publishes it in its index, and its site may show it as \"Website\".\n\nA manifest names its ModelSpec model in one of two ways: by local files\n(`model.modelspec` and `model.hcl`), or, when the model lives in another\nrepository, by `model.address` pinned with `?ref=<40 hex>` and no local files\n(the Directory accepts both forms; see [`examples/hoster/`](examples/hoster/)).\nThis repository carries its own files and the model's address,\n`modelspec://github.com/datatug/chinookdb/chinook`, registered in the ModelSpec\nregistry, with no ref because the files are in the same repository. The\nmanifest format is a draft (`ovdb-manifest/draft-1`).\n",
@@ -11,9 +11,9 @@
   "hoster.yaml": "# EXAMPLE: the OpenVaultDB publisher manifest of someone who hosts their own copy of the Chinook sample\n# database. Copy this file and OVDB.md to the root of your own repository and replace every value marked\n# PLACEHOLDER; the rest is what makes the database a Chinook database and stays as it is. It must not be\n# listed in the Directory as it stands: the organisation `example_org` has an underscore, which no GitHub\n# account can have, and every host is on example.com, so the placeholders cannot be someone's real ones.\n#\n# This is the \"shared\" form of the manifest: there are no model files and no meaning file in your repository.\n# The model and the meaning graph are published in github.com/datatug/chinookdb, and are named by address,\n# each pinned with ?ref=<40 hex> to the commit that is read. Every hoster of Chinook points at the same two\n# addresses, so every one of them is a database of the same model.\n#\n# Offline check:   node scripts/check-ovdb-manifest.mjs --repository https://github.com/example_org/chinook-hosting <directory>\n# (it checks the shape only; the Directory checks the addresses against the ModelSpec and MeaningGraph registries.)\nformat: ovdb-manifest/draft-1\n\n# PLACEHOLDER: your id. Lower-case letters, digits and single hyphens; it names your Directory record.\nid: chinook-example\n# PLACEHOLDER: what the Directory shows.\ntitle: Chinook at Example Co\ndescription: >-\n  The Chinook sample database, hosted by Example Co.\n\n# PLACEHOLDER: optional. Your own page for the database, published in the Directory's index. An https URL of at most 200 characters, lower-case host, plain path (A-Z a-z 0-9 . _ ~ / -), no port.\nhomepage: https://example.com/chinook/\n\n# PLACEHOLDER: the canonical identity of your database, a public https URL with `ovdb` as a path segment or\n# as a subdomain. It stays the same if the deployment moves.\nurl: https://ovdb.example.com/dbs/chinook\n\ndeployment:\n  # PLACEHOLDER: where your database is live.\n  url: https://cloud.example.com/ovdb/dbs/chinook\n  # PLACEHOLDER: the engine your deployment runs.\n  engine: postgres\n  # PLACEHOLDER: the discovery document on the origin of the canonical url above, always at this path.\n  discovery: https://ovdb.example.com/.well-known/openvaultdb\n  # PLACEHOLDER: where a recordset's page is; {name} stands for the recordset's name.\n  recordset_page: https://cloud.example.com/ovdb/dbs/chinook/collections/{name}\n\n# The shared model, pinned. 8c9e62e is the commit of datatug/chinookdb that the ModelSpec registry, the\n# MeaningGraph registry and the Directory all pin today. No local model files, so no model.modelspec or\n# model.hcl; the registry says where the model's files are.\nmodel:\n  address: modelspec://github.com/datatug/chinookdb/chinook?ref=8c9e62ed6641c0a00faa3867167d928af4c44b06\n\nmeaning:\n  # The shared meaning graph, pinned the same way.\n  address: meaning://github.com/datatug/chinookdb?ref=8c9e62ed6641c0a00faa3867167d928af4c44b06\n  # A path in the graph's repository (datatug/chinookdb), not in yours: the meaning file that binds the model.\n  file: model/chinook.meaning.yaml\n  graph:\n    # The MeaningGraph registry's id for that graph.\n    id: chinook\n\n# PLACEHOLDER: you, the publisher. The repository is the one that carries this file, on github.com. (An\n# organisation name with an underscore is not a name GitHub can issue: replace it with yours.)\npublisher:\n  name: Example Co\n  url: https://github.com/example_org\n  repository: https://github.com/example_org/chinook-hosting\n\n# licences.data is the licence of the data you serve, and the one the Directory shows for your database. The\n# upstream Chinook data (Copyright (c) 2008-2024 Luis Rocha) is MIT; change it only if your copy is different.\n# licences.model and licences.meaning are left out: the registries say what the model and the meaning are\n# licensed under (if you write them, they must agree).\nlicences:\n  data: MIT\n\n# Exactly the entities of the Chinook model, which are also the collection names your deployment serves.\n# To serve a subset, list it and add `recordsets_partial: true` (a subset must also list every entity that a\n# listed entity references).\nrecordsets:\n  - Album\n  - Artist\n  - Customer\n  - Employee\n  - Genre\n  - Invoice\n  - InvoiceLine\n  - MediaType\n  - Playlist\n  - PlaylistTrack\n  - Track\n"
  },
  "counts": {
-  "cases": 359,
-  "accepted": 141,
-  "acceptedWithRepository": 132
+  "cases": 376,
+  "accepted": 148,
+  "acceptedWithRepository": 139
  },
  "cases": [
   {
@@ -2721,6 +2721,316 @@
      "ovdb.yaml",
      "  - Track\n",
      "  - Track\n  - More0\n  - More1\n  - More2\n  - More3\n  - More4\n  - More5\n  - More6\n  - More7\n  - More8\n  - More9\n  - More10\n  - More11\n  - More12\n  - More13\n  - More14\n  - More15\n  - More16\n  - More17\n  - More18\n  - More19\n  - More20\n  - More21\n  - More22\n  - More23\n  - More24\n  - More25\n  - More26\n  - More27\n  - More28\n  - More29\n  - More30\n  - More31\n  - More32\n  - More33\n  - More34\n  - More35\n  - More36\n  - More37\n  - More38\n  - More39\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "the second format, every recordset a name",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "a recordset with a name of its own and its record type",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Tracks\n    record_type: Track\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "a column that holds a field of its record type",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns:\n      title:\n        field: Name\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "an empty columns",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns: {}\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "one fewer than the record types",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     ""
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "a record type the model lacks",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - Track\n  - name: Extra\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "a column that holds a field its record type lacks",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns:\n      x:\n        field: Nope\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "a column that holds a path through a field",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns:\n      x:\n        field: Name.Part\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "a column named like a field that has no column of its own",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns:\n      Name:\n        field: Composer\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "two columns that swap their fields",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns:\n      Name:\n        field: Composer\n      Composer:\n        field: Name\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "two recordsets with one record type",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - Track\n  - name: Songs\n    record_type: Track\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "recordset_entities under the second format",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - Track\nrecordset_entities: {}\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "a column written as text",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "format: ovdb-manifest/draft-1",
+     "format: ovdb-manifest/draft-2"
+    ],
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Track\n    columns:\n      x: Name\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "the first format with an empty recordset_entities",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - Track\nrecordset_entities: {}\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "the first format with a mapped name",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - Songs\nrecordset_entities:\n  Songs: Track\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "11"
+  },
+  {
+   "group": "mapping",
+   "name": "the first format with two names for one record type",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - Track\n  - Songs\nrecordset_entities:\n  Songs: Track\n"
+    ]
+   ],
+   "repository": "https://github.com/datatug/chinookdb",
+   "verdict": "00"
+  },
+  {
+   "group": "mapping",
+   "name": "a map in the list of the first format",
+   "ops": [
+    [
+     "edit",
+     "ovdb.yaml",
+     "  - Track\n",
+     "  - name: Tracks\n    record_type: Track\n"
     ]
    ],
    "repository": "https://github.com/datatug/chinookdb",

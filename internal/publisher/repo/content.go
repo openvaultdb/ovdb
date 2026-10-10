@@ -25,6 +25,7 @@ const (
 	RuleModelName     = "repo-model-name"     // model.name is not the module of the model file
 	RuleModelAddress  = "repo-model-address"  // the module of model.address is not the model file's
 	RuleRecordsets    = "repo-recordsets"     // recordsets are not the entities of the model
+	RuleColumns       = "repo-columns"        // a column a draft-2 manifest lists holds a field that its record type does not have, or is named like another field
 	RuleAddress       = "repo-address"        // meaning.graph.address or model.address does not name the repository that publisher.repository names (the Directory profile)
 
 	RuleEntitiesLimit   = "repo-model-entities-limit" // the model file has more than MaxEntities entities
@@ -200,17 +201,12 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 	}
 	if recordsets := m.Recordsets; recordsets.Usable() && len(recordsets.Value) > MaxRecordsets {
 		c.add(path, RuleRecordsetsLimit, recordsets.Line, "recordsets lists %d names, which is more than the %d this check reads", len(recordsets.Value), MaxRecordsets)
-	} else if recordsets.Usable() && spec.hasEntities && (!m.RecordsetEntities.Present || m.RecordsetEntities.Valid) {
-		// A recordset_entities that is itself wrong has been reported once by the manifest; judging the names against a mapping that was thrown away
-		// would add findings about names that the mapping covers.
-		// Each recordset is the entity that recordset_entities says, or the entity of its own name.
-		mapped := make([]string, len(recordsets.Value))
-		for i, r := range recordsets.Value {
-			mapped[i] = r
-			if entity, ok := m.RecordsetEntities.Value[r]; ok {
-				mapped[i] = entity
-			}
-		}
+	} else if m.Mapping.Usable() && spec.hasEntities {
+		// A mapping that is itself wrong (recordset_entities, or a record type or a column of draft-2) has been reported once by the manifest; judging the
+		// names against a mapping that was thrown away would add findings about names that the mapping covers.
+		// Each recordset is the record type that the mapping says: the pair of recordset_entities, the record_type of a draft-2 item, or the name itself.
+		draft2 := m.Draft2()
+		mapped := m.RecordTypes()
 		listed := make(map[string]bool, len(mapped))
 		duplicate := false
 		for _, e := range mapped {
@@ -221,24 +217,87 @@ func (c *checker) model(path string, m manifest.Manifest, data []byte) (string, 
 		var extra []string
 		for i, e := range mapped {
 			if _, ok := spec.set[e]; !ok {
-				extra = append(extra, recordsets.Value[i])
+				extra = append(extra, m.Mapping.Value[i].Name)
 			}
 		}
 		slices.Sort(extra)
+		line := m.Mapping.Line
 		if len(missing) > 0 {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordsets lacks the ModelSpec %s of %s: %s", spec.spelling.kinds, rules.Quote(file), names(missing))
+			c.add(path, RuleRecordsets, line, "recordsets lacks the ModelSpec %s of %s: %s", spec.kindsFor(draft2), rules.Quote(file), names(missing))
 		}
 		if len(extra) > 0 {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordsets names things that are not ModelSpec %s of %s: %s; if they are the database's own names, map each to its %s under recordset_entities (name: Entity)", spec.spelling.kinds, rules.Quote(file), names(extra), spec.spelling.record)
+			if draft2 {
+				c.add(path, RuleRecordsets, line, "recordsets names record types that are not in the model file %s: %s; give each a record_type: that the model has", rules.Quote(file), namesWithTypes(extra, m.Mapping.Value))
+			} else {
+				c.add(path, RuleRecordsets, line, "recordsets names things that are not ModelSpec %s of %s: %s; if they are the database's own names, map each to its %s under recordset_entities (name: Entity)", spec.spelling.kinds, rules.Quote(file), names(extra), spec.spelling.record)
+			}
 		}
 		if duplicate {
-			c.add(path, RuleRecordsets, recordsets.Line, "recordset_entities maps more than one native recordset to the same ModelSpec entity; mappings must be one-to-one")
+			c.add(path, RuleRecordsets, line, "recordset_entities maps more than one native recordset to the same ModelSpec entity; mappings must be one-to-one")
+		}
+		if draft2 && len(spec.issues) == 0 {
+			c.columns(path, m, spec)
 		}
 	}
 	if spec.module == "" || !spec.hasEntities || len(spec.issues) > 0 {
 		return spec.module, nil
 	}
 	return spec.module, &manifest.ModelFacts{Entities: spec.properties}
+}
+
+// kindsFor is how a finding calls the record types of the model: as the manifest's format does, so that a draft-2 manifest says record types of a model in
+// either vocabulary.
+func (s modelSpec) kindsFor(draft2 bool) string {
+	if draft2 {
+		return current.kinds
+	}
+	return s.spelling.kinds
+}
+
+// namesWithTypes lists the first few of the recordsets named, each with its record type.
+func namesWithTypes(list []string, mapping []manifest.Recordset) string {
+	types := make(map[string]string, len(mapping))
+	for _, r := range mapping {
+		types[r.Name] = r.RecordType
+	}
+	shown := make([]string, 0, 5)
+	for _, name := range list[:min(len(list), 5)] {
+		shown = append(shown, rules.Quote(name)+" (record type "+rules.Quote(types[name])+")")
+	}
+	out := strings.Join(shown, ", ")
+	if len(list) > 5 {
+		out += fmt.Sprintf(" and %d more", len(list)-5)
+	}
+	return out
+}
+
+// columns holds the columns a draft-2 manifest lists to the fields of the record type of their recordset (the reference's columnModelProblems): a column
+// holds a field of the record type, or a path into a component, and no reader of the model reads a component yet, so a path of more than one name is refused
+// whatever the field holds. A column named like a field that no other column holds would make two fields claim the one column name.
+func (c *checker) columns(path string, m manifest.Manifest, spec modelSpec) {
+	for _, r := range m.Mapping.Value {
+		fields, ok := spec.properties[r.RecordType]
+		if !ok || len(r.Columns) == 0 {
+			continue // a record type that the model lacks is reported with the recordsets
+		}
+		held := make(map[string]bool, len(r.Columns))
+		for _, column := range r.Columns {
+			held[column.Field] = true
+		}
+		of := "recordsets " + rules.Quote(r.Name)
+		for _, column := range r.Columns {
+			first, rest, dotted := strings.Cut(column.Field, ".")
+			second, _, _ := strings.Cut(rest, ".")
+			if _, has := fields[first]; !has {
+				c.add(path, RuleColumns, column.Line, "%s: column %s holds %s, but %s has no field %s", of, rules.Quote(column.Name), rules.Quote(column.Field), r.RecordType, rules.Quote(first))
+			} else if dotted {
+				c.add(path, RuleColumns, column.Line, "%s: column %s holds %s: no reader of the model reads a component yet, so %s cannot be read in %s", of, rules.Quote(column.Name), rules.Quote(column.Field), rules.Quote(second), first)
+			}
+			if _, has := fields[column.Name]; has && column.Name != column.Field && !held[column.Name] {
+				c.add(path, RuleColumns, column.Line, "%s: column %s is also the name of the field %s of %s, which has no column of its own listed, so two fields would claim the column %s", of, rules.Quote(column.Name), column.Name, r.RecordType, column.Name)
+			}
+		}
+	}
 }
 
 // endsEarly reports whether err says that the data ended before the JSON value did: the decoder says it in three ways (EOF, unexpected EOF, and a syntax

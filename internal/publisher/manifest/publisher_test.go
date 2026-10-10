@@ -239,10 +239,10 @@ func TestAllowListsAreTheCheckers(t *testing.T) {
 		where := strings.Join(set.path, ".")
 		seen[where] = true
 		want, ok := golden.AllowLists.Keys[where]
-		// Legacy reference keys stay unchanged; recordset_entities and the separately
-		// versioned rights/HTTP source extensions are additive and independently tested.
+		// The keys of the checker are Go's, but for the separately versioned rights/HTTP source extensions, which are additive and independently tested. (The
+		// checker has allowed recordset_entities since it read both formats of the mapping; it was Go's additive key before.)
 		if where == "" {
-			want = slices.Sorted(slices.Values(append(slices.Clone(want), "recordset_entities", "data_rights", "source_definition")))
+			want = slices.Sorted(slices.Values(append(slices.Clone(want), "data_rights", "source_definition")))
 		}
 		if got := slices.Sorted(slices.Values(set.keys)); !ok || !slices.Equal(got, want) {
 			t.Errorf("keys of %q: Go has %v, the checker %v", where, got, want)

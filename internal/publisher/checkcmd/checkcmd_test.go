@@ -138,14 +138,27 @@ func renamedRecordset(t testing.TB) *repo.Memory {
 	return m
 }
 
+// withEarlierKey is the Chinook repository whose manifest writes the earlier form of the mapping, an empty recordset_entities, which is still read and draws a
+// notice (decision 0012 of openvaultdb/openvaultdb); with renamed it also has the renamed recordset, so that the repository is refused as well.
+func withEarlierKey(t testing.TB, renamed bool) *repo.Memory {
+	m := chinook(t)
+	if renamed {
+		m = renamedRecordset(t)
+	}
+	m.Nodes["ovdb.yaml"] = repo.Node{Kind: repo.File, Content: append(m.Nodes["ovdb.yaml"].Content, []byte("recordset_entities: {}\n")...)}
+	return m
+}
+
 // The text form is pinned too: the README shows these two files (TestTheREADMEShowsTheGoldenFiles).
 func TestTheTextFormIsPinnedByGoldenFiles(t *testing.T) {
 	for name, c := range map[string]struct {
 		reader repo.Reader
 		code   int
 	}{
-		"accepted": {pinnedMemory{chinook(t)}, 0},
-		"refused":  {commitMemory{renamedRecordset(t), refusedCommit}, 1},
+		"accepted":       {pinnedMemory{chinook(t)}, 0},
+		"refused":        {commitMemory{renamedRecordset(t), refusedCommit}, 1},
+		"notice":         {pinnedMemory{withEarlierKey(t, false)}, 0},
+		"notice-refused": {commitMemory{withEarlierKey(t, true), refusedCommit}, 1},
 	} {
 		out, err := execute(t, deps(c.reader), "check", "repo")
 		if exitCode(err) != c.code {
@@ -195,11 +208,13 @@ func TestTheDocumentsArePinnedByGoldenFiles(t *testing.T) {
 		args   []string
 		code   int
 	}{
-		"accepted":     {good, []string{"check", "repo", "--json"}, 0},
-		"accepted-url": {good, []string{"check", "repo", "--json", "--repository", "https://github.com/datatug/chinookdb"}, 0},
-		"refused":      {commitMemory{refused, refusedCommit}, []string{"check", "repo", "--json"}, 1},
-		"hostile":      {pinnedMemory{hostile}, []string{"check", "repo", "--json"}, 1},
-		"no-commit":    {&repo.Memory{Err: repo.ErrNoCommit}, []string{"check", "repo", "--json"}, 1},
+		"accepted":       {good, []string{"check", "repo", "--json"}, 0},
+		"accepted-url":   {good, []string{"check", "repo", "--json", "--repository", "https://github.com/datatug/chinookdb"}, 0},
+		"refused":        {commitMemory{refused, refusedCommit}, []string{"check", "repo", "--json"}, 1},
+		"notice":         {pinnedMemory{withEarlierKey(t, false)}, []string{"check", "repo", "--json"}, 0},
+		"notice-refused": {commitMemory{withEarlierKey(t, true), refusedCommit}, []string{"check", "repo", "--json"}, 1},
+		"hostile":        {pinnedMemory{hostile}, []string{"check", "repo", "--json"}, 1},
+		"no-commit":      {&repo.Memory{Err: repo.ErrNoCommit}, []string{"check", "repo", "--json"}, 1},
 	} {
 		out, err := execute(t, deps(c.reader), c.args...)
 		if exitCode(err) != c.code {

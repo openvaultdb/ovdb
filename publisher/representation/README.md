@@ -151,8 +151,8 @@ unknown versions and unresolved dependencies. Legacy manifests remain compatible
 ## Canonical companion boundaries
 
 The default activation follows landed companions: Directory at
-`ec53d7539aafd23d006b4943acdd7a31f4eb9340` and `demo-db/chinook` at
-`8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. Reference generators execute those
+`3f52255cbaaaa987b705079cf771eb2544faf3ae` and `demo-db/chinook` at
+`88f080d72205034e1161bb80594acb7d77fc58ef`. Reference generators execute those
 exact validators. The old `datatug/chinookdb` commit
 `79e7bb0b1d6f0666dce465874990dec64348331f` supplies frozen input documents and
 mined test literals only. Their provenance is recorded separately from validator

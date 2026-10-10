@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 export const references = {
-  directory: { repository: 'openvaultdb/directory', commit: 'ec53d7539aafd23d006b4943acdd7a31f4eb9340' },
-  chinookdb: { repository: 'demo-db/chinook', commit: '8b904298d0c3bba20c12dfbc29bb75bf5c37f683' },
+  directory: { repository: 'openvaultdb/directory', commit: '3f52255cbaaaa987b705079cf771eb2544faf3ae' },
+  chinookdb: { repository: 'demo-db/chinook', commit: '88f080d72205034e1161bb80594acb7d77fc58ef' },
   fixtures: { repository: 'datatug/chinookdb', commit: '79e7bb0b1d6f0666dce465874990dec64348331f' },
 };
 
