@@ -238,12 +238,13 @@ func TestTheGuardRefusesEverythingElse(t *testing.T) {
 	}
 }
 
-// The two refusals of the guard that only one line of it makes. Each test builds the state that its line alone refuses, and asserts that line's message.
+// One test for each of the two lines of the guard that no other test needed. Each builds a state that its line refuses, and asserts that line's message.
 const namedDigestsRefusal = "the chain's pins or the stored copies of the model are not the pinned digests named in the guard"
 
-// A manifest that pins the named digests, beside stored copies that are other bytes: only the comparison of the stored copies with the constants refuses it.
-// (The pairs of TestTheGuardNamesTheDigestsThatTheChainPins that carry other stored bytes carry other pins too, so that the comparison of the pins
-// refuses them.)
+// A manifest that pins the named digests, beside stored copies that are other bytes: in holdToPinnedConstants, only the comparison of the stored copies
+// with the constants refuses it. (The pair check, acceptedModelState, refuses the same state too, in its own words: "the stored copies are not the bytes
+// that the chain pins". The pair of TestTheGuardNamesTheDigestsThatTheChainPins that carries other stored bytes carries other pins too, so that the
+// comparison of the pins refuses it.)
 func TestTheGuardRefusesStoredCopiesThatAreNotTheNamedDigestsWhateverTheManifestPins(t *testing.T) {
 	pinned, pins := pinnedModel(t)
 	want := modelDigests{pinnedModelHCLSHA256, pinnedModelJSONSHA256}
