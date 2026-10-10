@@ -20,7 +20,7 @@ amendment of formats 1 to 3 on that one point
 (https://github.com/openvaultdb/openvaultdb/blob/main/spec/decisions/0011-representation-contracts-may-point-at-a-model-in-either-modelspec-vocabulary.md).
 The contract formats, their schemas and their keys are as published: a contract's `entity` names a record type and its `property` a field of it.
 Keys of the model are matched by their exact bytes. A case variant of `modelspec`, `module`, `name`, `type`, or of the group key or the members key of the document's own vocabulary (`RECORDS`, `Fields` in a
-`1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
+`1.0-draft-2` document; `Entities`, `PROPERTIES` in a `1.0-draft` one) is refused. `modelspec` and `module` are looked at at the top of the document, `name` only inside `module`, and `type` only on a member of a record type: a key that is a case variant of `name` or `type` anywhere else (`Name` on a member, `Type` in the module, either one in a record type, at the top or in a component) is an unrelated key, and is not refused. A case variant of the reference key on a member (`Record` in a `1.0-draft-2`
 document, `Entity` in a `1.0-draft` one) is not read, and is ignored; so is a case variant of a word of the other vocabulary (`Entities` in a `1.0-draft-2` one).
 Releases up to v0.42.0 read only `1.0-draft` here. Separately, and not part of that amendment: a referenced model is refused when it carries a key of the other vocabulary (at the top level, on a record type or
 on a member) or a removed top-level key (`collections`, `recordsets`), and, by ModelSpec's specification (`spec/json-format.md`), also when it carries a reserved
