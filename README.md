@@ -10,11 +10,9 @@ instance: user-owned, portable databases with pluggable storage engines
 The reference implementation and Go libraries backing this CLI live at
 [`github.com/openvaultdb/openvaultdb-go`](https://github.com/openvaultdb/openvaultdb-go).
 
-## Flagship ecosystem product
+## OpenVaultDB Go in DataTug session storage
 
-The OpenVaultDB session-storage architecture for DataTug is under development, with the Go implementation as the current engine in that exploration.
-
-DataTug is the flagship ecosystem product. [Explore DataTug](https://datatug.app), and read [how we built its development tools](https://datatug.app/en/under-the-hood/tools-we-built/) for the open-source tools and standards behind it.
+[DataTug](https://datatug.app)’s in-progress OpenVaultDB session-storage exploration currently centers on the Go implementation behind this CLI. Read [how DataTug’s development tools were built](https://datatug.app/en/under-the-hood/tools-we-built/).
 
 ## Install
 
