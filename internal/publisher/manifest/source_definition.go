@@ -17,7 +17,7 @@ func (k *manifestChecker) sourceDefinition() {
 	}
 	d, err := source.Parse(nodeJSON(n))
 	if err == nil {
-		err = d.Matches(k.out.Recordsets.Value, k.out.RecordsetEntities.Value)
+		err = d.Matches(k.out.Recordsets.Value, k.recordTypesByName())
 	}
 	if err == nil {
 		err = d.MatchesTerms(k.out.DataDeclaration.Value)
@@ -26,6 +26,10 @@ func (k *manifestChecker) sourceDefinition() {
 	if err != nil {
 		k.c.add("manifest-source-definition", n.Line, "source_definition: %s", plain(err.Error()))
 	}
+	// An HTTP source maps its fields with fieldMapping, so a column of a recordset it describes would map them twice (decision 0012, N20).
+	if k.refuseColumnsWithSource(n.Line) {
+		demote(&k.out.Mapping)
+	}
 	// Pinned input/representation contracts must never relabel a mutable read
 	// as publisher-verified immutable data or authorize retained copies.
 	for _, key := range []string{"data_rights", "representation_contract"} {
@@ -33,6 +37,22 @@ func (k *manifestChecker) sourceDefinition() {
 			k.c.add("manifest-source-definition", n.Line, "source_definition cannot use the immutable-input %s profile", key)
 		}
 	}
+}
+
+// recordTypesByName are the record types of the recordsets that the manifest pairs with a name, for the HTTP source definition, which names the record type
+// of each recordset it describes: the pairs of recordset_entities in draft-1, and every recordset in draft-2 (a name alone is its own record type).
+func (k *manifestChecker) recordTypesByName() map[string]string {
+	if k.format != formatDraft2 {
+		return k.out.RecordsetEntities.Value
+	}
+	if !k.out.Mapping.Usable() {
+		return nil
+	}
+	types := make(map[string]string, len(k.out.Mapping.Value))
+	for _, r := range k.out.Mapping.Value {
+		types[r.Name] = r.RecordType
+	}
+	return types
 }
 
 // HasSourceDefinition includes invalid declarations, preventing a replacement

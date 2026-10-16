@@ -4,7 +4,7 @@ Judges a repository: the presence of files and what they say, for `ovdb publishe
 (package `internal/publisher/checkcmd`, which the shipped binary links). It reads one commit, at HEAD,
 as committed and never the working tree, through a `Reader`, and hands OVDB.md and
 the manifests to package `manifest`. The reference is the Chinook checker
-(`demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`,
+(`demo-db/chinook@88f080d72205034e1161bb80594acb7d77fc58ef`,
 `scripts/lib/ovdb-manifest.mjs`): Go never accepts a repository that it refuses, and
 every repository that Go refuses and it accepts is a recorded kind below, with cases.
 
@@ -121,7 +121,8 @@ and a path below a file or symlink do not):
 | `meaning-concept-duplicate` | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. | the Directory's, not the checker's |
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
-| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
+| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions; each has the record type its manifest maps it to (`recordset_entities` in `ovdb-manifest/draft-1`, `record_type:` in `ovdb-manifest/draft-2`) | 535-539 |
+| `repo-columns` | a column of a recordset (`ovdb-manifest/draft-2` only) holds a field its record type has, not a path through a component, and is not named like another field; a recordset that a representation contract names lists none | none: the chinook pre-check's `columnModelProblems` (`manifest-mapping.mjs`) |
 
 The order of these findings is not the Directory's: it reports the version, the module, the entities, then each entity and property in file order (integer-like names first), and this check reports the version first and then entities and properties by name; at most 1000 of them are kept for a file, because a check shows 101 findings at most and what is kept of a model file is held for every manifest that names it. The verdict is the same either way. `--json` consumers should not read `findings[0]` as the Directory's first problem.
 
@@ -137,13 +138,13 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 126 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 140 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
-its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
+its name states (14 of the cases, group `mapping`, are the record types and columns of `ovdb-manifest/draft-2` against the model file). `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 104 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
+| outcome: agree | 118 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
 | outcome: out-of-reach:history | 1 | the Directory refuses by what the repository's earlier commits say: a reference by address to the repository's own graph with a well-formed pin is read at that commit, which must be in the history of the default branch and have the concept (neither the record nor a registry; the fix is a repository that has the commit) |
 | outcome: out-of-reach:registry | 6 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
@@ -167,7 +168,7 @@ record or registry could lift is not out of reach: `meaning.graph.address` must 
 check is offline once `publisher.repository` is written, and that is F7.
 
 The looser cases are listed in `drift.json` (`goLooser`, `fileProbes`) with their slice, and a test holds the list to the golden both ways, as `TestDrift` does for
-the manifest stage: each implemented slice removes its entries in its own pull request. With F2–F7 implemented, `goLooser` is empty for this 126-case own-form
+the manifest stage: each implemented slice removes its entries in its own pull request. With F2–F7 implemented, `goLooser` is empty for this 140-case own-form
 file-stage corpus. The record, history and registry outcomes, and the stricter kinds above, remain; shared-form checks are outside this corpus.
 
 ### Every refusal of the Directory's file stage, own form
@@ -329,10 +330,10 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-359 cases: 141 accepted by the checker, 132 accepted with `--repository`; 293 agree with Go, 66
+376 cases: 148 accepted by the checker, 139 accepted with `--repository`; 310 agree with Go, 66
 are stricter in Go, in 34 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
 (5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 48 model files, 45 JSON
-differences, 70 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+differences, 70 meaning files, 30 YAML reader cases, 17 documents, 17 for the mapping of `ovdb-manifest/draft-2` (record types and columns against the model file; the 14 that the Directory's file stage also judges are in its own golden), 15 listed manifests, 10 tree names and sizes, 10 repository
 states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
 
@@ -428,7 +429,7 @@ with Directory preserves conservative JavaScript safe-integer and null-count
 refusals; Go retains exact integer tokens for native count associations. These
 expected differences do not constitute full canonical or runtime parity.
 
-Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+Current canonical checker references: Directory `3f52255cbaaaa987b705079cf771eb2544faf3ae` and demo-db/chinook `88f080d72205034e1161bb80594acb7d77fc58ef`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
 The checked `representation-stages.json` golden compares 52 cases across two
 independent native metadata fixtures, each in the earlier ModelSpec vocabulary and
