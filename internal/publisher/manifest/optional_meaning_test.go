@@ -88,7 +88,7 @@ func optionalMeaningReferenceCase(c referenceCase, bases map[string]string, prof
 	if c.Base != "own-json" && c.Base != "shared-json" {
 		return false
 	}
-	if c.Family != "remove" && !(c.Family == "rename" && profile == Directory) {
+	if c.Family != "remove" && (c.Family != "rename" || profile != Directory) {
 		return false
 	}
 	var original, current map[string]any

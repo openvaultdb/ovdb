@@ -25,7 +25,7 @@ func ModelLabel(name string) string {
 	if name != "" && len(name) <= 40 {
 		simple := true
 		for _, c := range name {
-			if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
 				simple = false
 				break
 			}

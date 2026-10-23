@@ -82,9 +82,6 @@ func (s *modelSpec) judgeSource() {
 		for _, name := range sortedDeclarations(group.declarations) {
 			info := group.declarations[name]
 			s.size += len(name) + 96
-			if info == nil {
-				continue
-			}
 			if prior, exists := seen[name]; exists {
 				s.issue(RuleModelEntity, "concept "+rules.Quote(name)+" is declared as both "+prior+" and "+group.kind)
 			}
@@ -168,9 +165,6 @@ func (s *modelSpec) composeFields() {
 	fieldWork := 0
 	for _, record := range s.entities {
 		info := s.records[record]
-		if info == nil {
-			continue
-		}
 		fields := info.names
 		if len(info.use) == 0 {
 			s.properties[record] = fields
@@ -312,10 +306,7 @@ func (s modelSpec) recordReferenceClosure(record string) (targets, unavailable [
 			}
 			references = map[string]propInfo{}
 			for field := range s.properties[last.name] {
-				origin, ok := s.fieldOrigin(last.name, field)
-				if !ok {
-					continue
-				}
+				origin, _ := s.fieldOrigin(last.name, field)
 				source := s.records[origin.Declaration]
 				if origin.Kind == "component" {
 					source = s.components[origin.Declaration]
