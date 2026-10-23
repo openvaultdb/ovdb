@@ -1,0 +1,81 @@
+{
+  "format": "ovdb-http-source/1",
+  "provider": {
+    "id": "ecb",
+    "name": "European Central Bank",
+    "url": "https://www.ecb.europa.eu/"
+  },
+  "resources": {
+    "daily": {
+      "url": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+      "method": "GET",
+      "contentType": "text/xml",
+      "timeoutMs": 10000,
+      "maxBytes": 2097152,
+      "mode": "live",
+      "retention": "none",
+      "cache": "no-store",
+      "redirect": "error",
+      "browserAccess": "unverified"
+    }
+  },
+  "recordsets": {
+    "FxReferenceQuote": {
+      "providerSourceId": "provider:ecb/FxReferenceQuote",
+      "resource": "daily",
+      "decoder": "ecb-eurofxref/1",
+      "entity": "FxReferenceQuote",
+      "keyFields": [
+        "time",
+        "currency"
+      ],
+      "fieldMapping": {
+        "time": "time",
+        "currency": "currency",
+        "rate": "rate"
+      },
+      "context": {
+        "baseCurrency": "EUR",
+        "rateKind": "indicative-reference"
+      }
+    }
+  },
+  "rights": {
+    "declaration": {
+      "name": "ECB reuse conditions",
+      "url": "https://www.ecb.europa.eu/services/using-our-site/disclaimer/html/index.en.html"
+    },
+    "terms": [
+      {
+        "text": "ECB reuse conditions",
+        "url": "https://www.ecb.europa.eu/services/using-our-site/disclaimer/html/index.en.html"
+      }
+    ],
+    "attribution": {
+      "text": "Source: European Central Bank (ECB).",
+      "url": "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html"
+    },
+    "freeSource": {
+      "text": "The original ECB rates are available free of charge from the ECB website.",
+      "url": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
+    },
+    "transformations": [
+      "ECB XML has been restructured into rows; EUR base context has been made explicit. Source rates and reference dates are preserved."
+    ]
+  },
+  "readEvidence": {
+    "format": "ovdb-provider-read/1",
+    "classification": "executor-observed",
+    "inputVerification": "dynamic-unpinned"
+  },
+  "admission": {
+    "status": "blocked",
+    "executionEnabled": false,
+    "gates": {
+      "runtime": "blocked",
+      "semantic": "blocked",
+      "rights": "blocked",
+      "paid": "blocked"
+    }
+  }
+}

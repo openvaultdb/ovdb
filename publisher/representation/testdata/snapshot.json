@@ -1,0 +1,17 @@
+{
+  "source_release": "test-only",
+  "generator": {
+    "repository": "https://github.com/example/provider",
+    "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "artifacts": [
+    {
+      "path": "bridge.json",
+      "sha256": "fd225cf26ca051471e983c770e4af49edd8bdce8d429729e53b4722d677a5bc9"
+    },
+    {
+      "path": "keys.json",
+      "sha256": "5aa000ef1e2c824aa4dd6315256e5e181ba0a334ed94b43aca252d17434f222e"
+    }
+  ]
+}

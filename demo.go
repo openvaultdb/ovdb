@@ -65,14 +65,6 @@ func defaultDemoDependencies() demoDependencies {
 	}
 }
 
-func newDemoCmd() *cobra.Command { return newDemoCmdWithDependencies(defaultDemoDependencies()) }
-
-func newDemoCmdWithDependencies(deps demoDependencies) *cobra.Command {
-	cmd := &cobra.Command{Use: "demo", Short: "Run bounded OpenVaultDB application demos"}
-	cmd.AddCommand(newDemoServeCmd(deps))
-	return cmd
-}
-
 func newDemoServeCmd(deps demoDependencies) *cobra.Command {
 	var app, dir, addr, host string
 	var noOpen, insecure bool

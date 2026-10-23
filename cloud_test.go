@@ -537,3 +537,17 @@ func writeTestJSON(t *testing.T, w http.ResponseWriter, value any) {
 func serverURL(r *http.Request) string {
 	return fmt.Sprintf("http://%s", r.Host)
 }
+
+// `ovdb cloud login` opens the browser through the device-login library's own
+// opener, a second way to the person's real browser besides internal/browser:
+// a test binary must not reach it either.
+func TestCloudLoginOpenerCannotRunInATestBinary(t *testing.T) {
+	defer func() {
+		message, _ := recover().(string)
+		if !strings.Contains(message, "a test reached the real browser opener for http://x.test/device") {
+			t.Errorf("recovered %q, want the guard's panic", message)
+		}
+	}()
+	_ = productionCloudDependencies().openBrowser("http://x.test/device")
+	t.Error("the real cloud login opener ran in a test binary")
+}

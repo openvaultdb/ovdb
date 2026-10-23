@@ -1,0 +1,269 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/datapath"
+	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
+)
+
+func testLocal(t *testing.T) (*Local, *bytes.Buffer) {
+	base := t.TempDir()
+	var notices bytes.Buffer
+	return &Local{
+		Dirs:    paths.Dirs{Home: filepath.Join(base, "home"), Runtime: filepath.Join(base, "run"), Data: filepath.Join(base, "data")},
+		Version: "1.0.0", Port: 6832, Notices: &notices,
+	}, &notices
+}
+
+func TestPureReadsWithoutServer(t *testing.T) {
+	t.Parallel()
+	l, _ := testLocal(t)
+	ctx := context.Background()
+	for name, read := range map[string]func(context.Context) ([]byte, error){"server": l.Server, "status": l.Status, "config": l.Config, "home": l.Home} {
+		body, err := read(ctx)
+		if err != nil || !strings.HasPrefix(string(body), `{"schema":1,`) {
+			t.Errorf("%s = %s, %v", name, body, err)
+		}
+	}
+	if _, err := os.Stat(l.Dirs.Runtime); !os.IsNotExist(err) {
+		t.Errorf("a pure read created the runtime directory: %v", err)
+	}
+}
+
+func TestConnectWithoutServer(t *testing.T) {
+	t.Parallel()
+	l, _ := testLocal(t)
+	l.Command = func(int) *exec.Cmd {
+		t.Fatal("--no-start started the server")
+		return nil
+	}
+	_, err := l.Connect(context.Background(), true)
+	if e := envelope.As(err); e == nil || e.Code != envelope.ServerNotRunning || e.Next[0].Command != "ovdb server start" {
+		t.Errorf("--no-start: %v", err)
+	}
+}
+
+func TestUnreadableRecordIsANotice(t *testing.T) {
+	t.Parallel()
+	l, notices := testLocal(t)
+	if _, err := runtime.PrepareDirs(l.Dirs, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(l.Dirs.Runtime, runtime.RecordFile), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, err := l.Server(context.Background())
+	if err != nil || !strings.Contains(string(body), `"not_running"`) || !strings.Contains(notices.String(), "Ignoring server.json") {
+		t.Errorf("Server = %s, %v; notices %q", body, err, notices.String())
+	}
+}
+
+func TestVersionNotice(t *testing.T) {
+	t.Parallel()
+	got := VersionNotice("0.7.0", "0.8.0")
+	if want := "OVDB server is running version 0.7.0; restart it to use version 0.8.0: ovdb server restart"; got != want {
+		t.Errorf("VersionNotice = %q", got)
+	}
+}
+
+// REQ:version-mismatch-notice: an older server without an endpoint is
+// server_version_mismatch with the restart command, not "nothing here";
+// the same server's own not_found (a missing database) stays not_found.
+func TestUnknownEndpointOnOtherVersionIsVersionMismatch(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/databases/gone") {
+			envelope.Write(w, envelope.New(envelope.NotFound, "Couldn't remove the database"))
+			return
+		}
+		envelope.Write(w, envelope.New(envelope.NotFound, uicopy.T("api.not_found", nil)))
+	}))
+	defer server.Close()
+	port, _ := strconv.Atoi(server.URL[strings.LastIndex(server.URL, ":")+1:])
+	l, _ := testLocal(t)
+	for _, tc := range []struct {
+		serverVersion, path string
+		want                envelope.Code
+	}{
+		{"0.9.0", DatabasesPath, envelope.ServerVersionMismatch},
+		{"1.0.0", DatabasesPath, envelope.NotFound},
+		{"0.9.0", DatabasesPath + "/gone", envelope.NotFound},
+	} {
+		c := l.newClient(runtime.State{Running: true, Record: &runtime.Record{Port: port}, Secret: "s", Whoami: &runtime.Whoami{Version: tc.serverVersion}})
+		response, err := c.Do(context.Background(), http.MethodGet, tc.path, nil)
+		e := envelope.As(err)
+		if e == nil || e.Code != tc.want {
+			t.Errorf("%s on %s = %v", tc.path, tc.serverVersion, err)
+			continue
+		}
+		if tc.want == envelope.ServerVersionMismatch {
+			if e.Next[0].Command != "ovdb server restart" || envelope.Decode(response.Body).Code != envelope.ServerVersionMismatch {
+				t.Errorf("mismatch = %+v body %s", e, response.Body)
+			}
+		}
+	}
+}
+
+// A running server from before adoption existed refuses the install request's
+// "adopt" field as unknown; the person is told to restart it, the same
+// server_version_mismatch as for a missing endpoint, and a request that does not
+// ask for adoption is not sent the field at all.
+func TestAdoptOnAnOlderServerIsVersionMismatch(t *testing.T) {
+	t.Parallel()
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(data))
+		if strings.Contains(string(data), `"adopt"`) {
+			envelope.Write(w, envelope.New(envelope.InvalidArgument, "Bad request").WithReason(`json: unknown field "adopt"`))
+			return
+		}
+		envelope.WriteJSON(w, http.StatusOK, map[string]any{"schema": 1})
+	}))
+	defer server.Close()
+	port, _ := strconv.Atoi(server.URL[strings.LastIndex(server.URL, ":")+1:])
+	l, _ := testLocal(t)
+	c := l.newClient(runtime.State{Running: true, Record: &runtime.Record{Port: port}, Secret: "s", Whoami: &runtime.Whoami{Version: "0.21.0"}})
+
+	_, err := l.postInstall(context.Background(), c, skills.InstallRequest{Skill: skills.Storage, Adopt: true})
+	if e := envelope.As(err); e == nil || e.Code != envelope.ServerVersionMismatch || e.Next[0].Command != "ovdb server restart" {
+		t.Errorf("adopt on an older server = %v", err)
+	}
+	if _, err := l.postInstall(context.Background(), c, skills.InstallRequest{Skill: skills.Storage}); err != nil {
+		t.Errorf("a request without adopt = %v", err)
+	}
+	if len(bodies) != 2 || strings.Contains(bodies[1], "adopt") {
+		t.Errorf("bodies = %q", bodies)
+	}
+}
+
+// A record's path prefers the server's full nested key (openvaultdb-go
+// v0.6.2+) and still composes it from an older server's short key.
+func TestRecordPath(t *testing.T) {
+	t.Parallel()
+	items, _ := datapath.Parse("/lists/to-buy/items")
+	for key, want := range map[string]string{
+		"lists/to-buy/items/milk":  "/lists/to-buy/items/milk",
+		"items/milk":               "/lists/to-buy/items/milk",
+		"lists/to-buy/items/a%2Fb": "/lists/to-buy/items/a%2Fb",
+		"items/a%2Fb":              "/lists/to-buy/items/a%2Fb",
+	} {
+		if got := RecordPath(items, key).String(); got != want {
+			t.Errorf("RecordPath(%q) = %q, want %q", key, got, want)
+		}
+	}
+	root, _ := datapath.Parse("/notes")
+	if got := RecordPath(root, "notes/x").String(); got != "/notes/x" {
+		t.Errorf("root collection = %q", got)
+	}
+}
+
+// The v0.6.2 invalid_key /v1 code is invalid_argument with what to do.
+func TestMapV1InvalidKey(t *testing.T) {
+	t.Parallel()
+	path, _ := datapath.Parse("/lists/to-buy/items/x")
+	e := MapV1(http.StatusBadRequest, []byte(`{"error":{"code":"invalid_key","message":"invalid key segment \"..\""}}`),
+		DataOp{Verb: "get", Database: "todo", Path: path, Suffix: " --db todo"}).Envelope
+	if e.Code != envelope.InvalidArgument || !strings.Contains(e.Reason, "invalid key segment") || len(e.Next) != 2 ||
+		e.Next[1].Command != "ovdb list /lists/to-buy/items --db todo" {
+		t.Errorf("invalid_key = %+v", e)
+	}
+}
+
+// openvaultdb-go v0.11.8 and later answer a write (or read) of a collection the manifest
+// does not declare with 404 not_found before the adapter, where v0.9.0 answered
+// 422 "no schema declared". Both mean the same to a person: describe the
+// collection in the manifest and reload; listing records of it helps nothing.
+func TestMapV1UndeclaredCollectionPointsToTheManifest(t *testing.T) {
+	t.Parallel()
+	path, _ := datapath.Parse("/orders/a")
+	body := []byte(`{"error":{"code":"not_found","message":"op 0 (set): record not found: collection \"orders\" is not declared by this database"}}`)
+	e := MapV1(http.StatusNotFound, body, DataOp{Verb: "set", Database: "shop", Path: path, Suffix: " --db shop"}).Envelope
+	if e.Code != envelope.SchemaRequired || len(e.Next) != 2 || e.Next[0].Command != "ovdb databases reload shop" ||
+		!strings.Contains(e.Next[0].Label, "Describe the orders collection in the manifest of shop") {
+		t.Errorf("undeclared collection = %+v", e)
+	}
+	// Any other not_found still lists what is there.
+	other := MapV1(http.StatusNotFound, []byte(`{"error":{"code":"not_found","message":"record not found"}}`),
+		DataOp{Verb: "get", Database: "shop", Path: path, Suffix: " --db shop"}).Envelope
+	if other.Code != envelope.NotFound || len(other.Next) != 1 || other.Next[0].Command != "ovdb list /orders --db shop" {
+		t.Errorf("plain not_found = %+v", other)
+	}
+}
+
+// openvaultdb-go v0.11.8 and later refuse a structured query on a mount whose
+// engine is not cleared for queries (a PostgreSQL mount with the preview
+// switch off, every MySQL mount) with 501 query_unsupported. v0.9.0 answered
+// such a query, so `ovdb list` listed records there. The refusal is by design:
+// it is an unsupported operation, not a fault of the server, and key reads
+// still work.
+func TestMapV1QueryUnsupportedIsAnUnsupportedOperationNotAServerFault(t *testing.T) {
+	t.Parallel()
+	path, _ := datapath.Parse("/customers")
+	op := DataOp{Verb: "list", Database: "ledger", Path: path, Suffix: " --db ledger"}
+	postgres := []byte(`{"error":{"code":"query_unsupported","message":"the \"postgres\" storage engine is not yet supported for queries: structured queries (/query, /dtql) are refused on it; key reads and writes still work"}}`)
+	e := MapV1(http.StatusNotImplemented, postgres, op).Envelope
+	if e.Code != envelope.Unsupported || e.Code.HTTPStatus() != http.StatusNotImplemented {
+		t.Fatalf("code = %s, want %s: %+v", e.Code, envelope.Unsupported, e)
+	}
+	if len(e.Next) != 2 || e.Next[0].Command != "ovdb get /customers/<key> --db ledger" ||
+		!strings.Contains(e.Next[0].Label, "read a record by its key") ||
+		e.Next[1].Command != "" || !strings.Contains(e.Next[1].Label, "OVDB_PREVIEW_POSTGRES_QUERIES=1") {
+		t.Errorf("postgres next steps = %+v", e.Next)
+	}
+	for _, next := range e.Next {
+		if strings.Contains(next.Command, "server status") {
+			t.Errorf("a refusal by design must not send the person to the server's status: %+v", e.Next)
+		}
+	}
+	if !strings.Contains(e.Reason, "not yet supported for queries") {
+		t.Errorf("reason = %q, want the library's sentence", e.Reason)
+	}
+
+	// MySQL has no switch: only the key-read step is true.
+	mysql := []byte(`{"error":{"code":"query_unsupported","message":"the \"mysql\" storage engine is not yet supported for queries"}}`)
+	e = MapV1(http.StatusNotImplemented, mysql, op).Envelope
+	if e.Code != envelope.Unsupported || len(e.Next) != 1 || e.Next[0].Command != "ovdb get /customers/<key> --db ledger" {
+		t.Errorf("mysql = %+v", e)
+	}
+
+	// The adapter's own refusal (422) is also an unsupported operation, and
+	// has no switch to point at.
+	adapter := []byte(`{"error":{"code":"query_unsupported","message":"the storage engine cannot run this query"}}`)
+	e = MapV1(http.StatusUnprocessableEntity, adapter, op).Envelope
+	if e.Code != envelope.Unsupported || len(e.Next) != 1 {
+		t.Errorf("adapter refusal = %+v", e)
+	}
+}
+
+// Review F10: a path typed with a leading ~ (the TUI and web have no shell
+// to expand it) means the home folder.
+func TestConnectExpandsHome(t *testing.T) {
+	t.Parallel()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home folder")
+	}
+	local := &Local{Dirs: paths.Dirs{Home: t.TempDir(), Runtime: t.TempDir(), Data: t.TempDir()}}
+	_, err = local.ConnectDatabase(context.Background(), setup.ConnectRequest{ID: "bad name", Engine: setup.EngineInGitDB, Path: "~/notes"}, true)
+	e := envelope.As(err)
+	if e == nil || !strings.Contains(e.Next[0].Command, filepath.Join(home, "notes")) {
+		t.Errorf("connect ~/notes = %v %+v", err, e)
+	}
+}

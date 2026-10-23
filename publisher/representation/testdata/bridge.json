@@ -1,0 +1,13 @@
+{
+  "table": "CustomerCountries",
+  "rows": [
+    {
+      "raw_label": "USA",
+      "target_key": "US"
+    },
+    {
+      "raw_label": "United Kingdom",
+      "target_key": "GB"
+    }
+  ]
+}

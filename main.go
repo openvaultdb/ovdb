@@ -6,12 +6,17 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 
 	"charm.land/fang/v2"
 	"github.com/spf13/cobra"
 	"github.com/strongo/buildinfo"
 	"github.com/strongo/buildinfo/fangcmd"
+
+	"github.com/openvaultdb/ovdb/internal/cli"
+	"github.com/openvaultdb/ovdb/internal/preview"
+	"github.com/openvaultdb/ovdb/internal/publisher/checkcmd"
 )
 
 // appVersion is this build's bare semver, resolved once in main() from
@@ -45,11 +50,44 @@ func main() {
 	// set the process exit code.
 	fangOpts := fangcmd.Wire(root, info)
 
-	addRootCommands(root, info.Version)
+	app := addRootCommands(root, info.Version)
 
-	if err := fang.Execute(context.Background(), root, fangOpts...); err != nil {
-		os.Exit(commandExitCode(err))
+	// Agent-facing commands fail with the shared error envelope, printed by
+	// cli.Render; every other error keeps fang's output.
+	fangOpts = append(fangOpts, fang.WithErrorHandler(func(w io.Writer, styles fang.Styles, err error) {
+		// A refused repository is already reported by `publisher check`'s own output; only the exit code (1) is left to say.
+		if errors.Is(err, checkcmd.ErrRefused) {
+			return
+		}
+		if !cli.Render(err, os.Args[1:], os.Stdout, w) {
+			fang.DefaultErrorHandler(w, styles, err)
+		}
+	}))
+
+	if code := executeRoot(root, app.FlushTelemetry, fangOpts...); code != 0 {
+		os.Exit(code)
 	}
+}
+
+// executeRoot is the executable's command/cleanup/telemetry/exit boundary.
+// Only an error that owns pending cleanup can hold the process here; ordinary
+// errors retain their existing bounded telemetry flush and immediate exit.
+func executeRoot(root *cobra.Command, flush func(context.Context), opts ...fang.Option) int {
+	err := fang.Execute(context.Background(), root, opts...)
+	var owner interface{ WaitForCleanup() }
+	if errors.As(err, &owner) {
+		// Fang has already reported the bounded-drain failure. Keep the
+		// process alive until its resource owner settles and cleans up.
+		// A permanently non-cooperative handler can keep shutdown pending.
+		owner.WaitForCleanup()
+	}
+	// After the command's output, whatever its outcome: at most 2 s, silent
+	// (telemetry-consent#REQ:bounded-synchronous-sender).
+	flush(context.Background())
+	if err != nil {
+		return commandExitCode(err)
+	}
+	return 0
 }
 
 // commandExitCode preserves an external command's nonzero process status when
@@ -67,15 +105,31 @@ func commandExitCode(err error) int {
 	return 1
 }
 
-func addRootCommands(root *cobra.Command, currentVersion string) {
+func addRootCommands(root *cobra.Command, currentVersion string) *cli.App {
+	app := &cli.App{Version: currentVersion}
 	root.AddCommand(
 		newCloudCmd(),
-		newDemoCmd(),
 		newServeCmd(),
 		newInitCmd(),
-		newStatusCmd(),
-		newDatabasesCmd(),
-		newTokenCmd(),
+		newStatusCmd(app),
+		newDatabasesCmd(app),
+		newTokenCmd(app),
 		newSelfUpdateCmd(currentVersion),
+		newInstallCmd(),
+		newUpgradeCmd(currentVersion),
+		newPublisherCmd(),
 	)
+	app.AddCommands(root)
+	// `ovdb demo` is the TODO demo (install, open, status). The bounded
+	// Listus session joins it as `ovdb demo serve` rather than a second
+	// top-level command of the same name.
+	if demo, _, err := root.Find([]string{"demo"}); err == nil && demo != root {
+		demo.AddCommand(newDemoServeCmd(defaultDemoDependencies()))
+	}
+	// Only the unfinished bare-command TUI remains behind the preview gate.
+	// Named user-facing commands and their help are always public.
+	if preview.On() {
+		root.RunE = app.RootRunE
+	}
+	return app
 }

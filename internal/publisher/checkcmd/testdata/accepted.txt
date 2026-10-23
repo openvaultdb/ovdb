@@ -1,0 +1,2 @@
+OK: commit 79e7bb0b1d6f, 1 manifest listed in OVDB.md, no problems.
+This applies the OVDB Directory's rules for OVDB.md and the manifests, and the stricter rules a publisher's own check uses. The Directory also reads your hosted repository, so a pass here is not its acceptance.

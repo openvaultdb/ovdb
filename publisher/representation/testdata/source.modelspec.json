@@ -1,0 +1,18 @@
+{
+  "modelspec": "1.0-draft",
+  "module": {
+    "name": "sample"
+  },
+  "entities": {
+    "Customer": {
+      "properties": {
+        "Country": {
+          "type": "string"
+        },
+        "BillingCountry": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

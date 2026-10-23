@@ -1,0 +1,64 @@
+[
+  {
+    "reference": {
+      "path": "model/geonames.modelspec.json",
+      "sha256": "affd113f8ec5d20dcc4af38556e263528af71dc0e8410099fdbc3422461b18c2"
+    },
+    "file": "0.json"
+  },
+  {
+    "reference": {
+      "path": "model/geonames.meaning.yaml",
+      "sha256": "21bb35aecf1f1214908f245cfeb2d0c5e7c6caf3915a5ffd604254642b3b4b57"
+    },
+    "file": "1.yaml"
+  },
+  {
+    "reference": {
+      "path": "country-keys.json",
+      "sha256": "c57b21174d0f0d2badd575cf1c2605840bc862e6cebd52064ceffd9c266ee9c8"
+    },
+    "file": "2.json"
+  },
+  {
+    "reference": {
+      "path": "snapshot.json",
+      "sha256": "429c5fef047601e6ab50e04e5e3842df2f0214a9388625e95f32d29756c31340"
+    },
+    "file": "3.json"
+  },
+  {
+    "reference": {
+      "path": "bridges/geonames_chinook_customer_country.json",
+      "sha256": "8ad135c902b84ddfd32ccca029a81c5c76ef84e71c3ee793d57feae2c6e92ded"
+    },
+    "file": "4.json"
+  },
+  {
+    "reference": {
+      "path": "model/chinook.modelspec.json",
+      "sha256": "19be3e0f575e14aa999769da79ba3ecb7fe3cb7e6a7dee151399dcbebfc56a7b",
+      "repository": "https://github.com/demo-db/chinook",
+      "revision": "26e852cca00101f53a84ef8ee1f1ae389067f5cf"
+    },
+    "file": "5.json"
+  },
+  {
+    "reference": {
+      "path": "spec/research/public-data-fabric/assertions/$records/d1-edge-chinook-country.json",
+      "sha256": "f995ad2febb3545611c18a26bd12ee6ca7c1aa8e22d677364729de62a3e39bfe",
+      "repository": "https://github.com/datatug/datatug",
+      "revision": "2694ed58c8bb82277324030cf82a596ee1695db5"
+    },
+    "file": "6.json"
+  },
+  {
+    "reference": {
+      "path": "geo.meaning.yaml",
+      "sha256": "ee6eeea2e8038e016433a72dd15d45b6eaf89d3ae6e45893d4e5eeb7be61f4e9",
+      "repository": "https://github.com/meaninggraph/core",
+      "revision": "982916d73f0a35ff2558b0062f58aa3ac4f24d97"
+    },
+    "file": "7.yaml"
+  }
+]

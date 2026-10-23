@@ -1,0 +1,1123 @@
+// Package skills is the AI agent skills service (spec/features/ai-agent-skills,
+// capabilities 20 and 21): the two Agent Skills embedded from skills/, where
+// each AI agent (harness) keeps them, and installing one skill with
+// github.com/strongo/cli-helpers/skillsync.
+//
+// Each skill is its own skillsync bundle, PluginIdentity{openvaultdb, <skill>},
+// under the shared CLI Identity{openvaultdb, ovdb}, so installing one never
+// changes the other or skills other tools own (REQ:install-with-skillsync).
+// Harness names, directories and discovery are cobracmd.DefaultHarnesses.
+//
+// Nothing here decides consent: callers write only after a person chose a
+// skill and its targets (REQ:explicit-consent-to-install). Directories are
+// resolved by whoever runs the interface — the CLI and TUI from their own
+// environment, the server for the web console — and a server checks what a
+// client sent with CheckTarget (REQ:install-targets-restricted).
+package skills
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"runtime/debug"
+	"slices"
+	"strings"
+
+	"github.com/strongo/cli-helpers/skillsync"
+	"github.com/strongo/cli-helpers/skillsync/cobracmd"
+
+	uicopy "github.com/openvaultdb/ovdb/copy"
+	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/redact"
+	embedded "github.com/openvaultdb/ovdb/skills"
+)
+
+// Skill ids, as `ovdb skills install <id>` names them.
+const (
+	Storage = "openvaultdb"
+	Todo    = "todo-demo"
+)
+
+// Next actions presentations act on in place (envelope.Next.Action).
+const (
+	// ActionInstall opens the consent step for the skill whose id ends the
+	// entry's command.
+	ActionInstall = "install_skill"
+	// ActionSkills opens AI agent skills.
+	ActionSkills = "skills"
+)
+
+// content is the embedded skills; tests swap in an older release.
+var content fs.FS = embedded.FS
+
+// Target states: how an installed skill compares with this build's.
+const (
+	StateNotInstalled    = "not_installed"
+	StateInstalled       = "installed"
+	StateUpdateAvailable = "update_available"
+	// StateChanged is an OVDB-installed copy the person edited since.
+	StateChanged = "changed"
+	// StateNotOVDB is a folder of the same name OVDB didn't install and
+	// can't take over: it isn't this skill, or holds files the skill doesn't.
+	StateNotOVDB = "not_ovdb"
+	// StateAdoptable is a folder of the same name OVDB didn't install that is
+	// this skill already (its SKILL.md names it, and it holds nothing the
+	// skill doesn't): installing takes it over, keeping a backup of it.
+	StateAdoptable = "adoptable"
+	// StateRecoveryPending is a skills folder where an earlier install was
+	// interrupted and left its recovery journal: skillsync cannot plan
+	// anything there until a real install has finished or undone it, so what
+	// would happen to this skill is not known (and it is not "not installed",
+	// "another skill" or "not adoptable"). Installing finishes the recovery
+	// first, and takes over nothing the person did not agree to.
+	StateRecoveryPending = "recovery_pending"
+	// StateRecordUnusable is a skills folder whose record of what OVDB (or
+	// another tool) installed cannot be used: the file does not parse, or a newer
+	// tool wrote a schema this build does not know. Nothing about this skill can
+	// be said, and it is not "another skill with this name".
+	StateRecordUnusable = "record_unusable"
+)
+
+// Publisher is the skillsync publisher of the CLI and of every bundle.
+const Publisher = "openvaultdb"
+
+// CLI is the skillsync identity of ovdb, recorded as each bundle's supplier.
+var CLI = skillsync.Identity{Publisher: Publisher, Name: "ovdb"}
+
+// Definition is one embedded skill.
+type Definition struct {
+	ID string
+	// Dir is the skill's directory, in skills/ and in a harness's skills
+	// directory.
+	Dir        string
+	nameKey    string
+	purposeKey string
+	exampleKey string
+}
+
+// Definitions are the skills, in the order interfaces list them.
+var Definitions = []Definition{
+	{ID: Storage, Dir: "openvaultdb", nameKey: "skills.storage.name", purposeKey: "skills.storage.purpose", exampleKey: "skills.storage.example"},
+	{ID: Todo, Dir: "openvaultdb-todo-demo", nameKey: "skills.todo.name", purposeKey: "skills.todo.purpose", exampleKey: "skills.todo.example"},
+}
+
+// Find is the definition for id.
+func Find(id string) (Definition, bool) {
+	for _, d := range Definitions {
+		if d.ID == id {
+			return d, true
+		}
+	}
+	return Definition{}, false
+}
+
+// Plugin is the skill's own skillsync identity.
+func (d Definition) Plugin() skillsync.PluginIdentity {
+	return skillsync.PluginIdentity{Publisher: Publisher, Name: d.ID}
+}
+
+// harnessNames are the people-facing names of cobracmd.DefaultHarnesses.
+var harnessNames = map[string]string{
+	"claude": "Claude Code", "cursor": "Cursor", "codex": "Codex", "deepseek": "DeepSeek",
+	"agents": "Shared agents folder", "copilot": "GitHub Copilot", "gemini": "Gemini CLI",
+	"antigravity": "Antigravity", "opencode": "OpenCode", "cline": "Cline", "roo": "Roo Code",
+	"kiro": "Kiro", "windsurf": "Windsurf", "junie": "Junie",
+}
+
+// alwaysListed harnesses are shown even when not found, so a person sees
+// where the common agents would get the skill (the example copy in
+// REQ:skills-offered-at-the-right-moment); other harnesses appear once found.
+var alwaysListed = []string{"claude", "codex"}
+
+// HarnessName is harness id's people-facing name.
+func HarnessName(id string) string {
+	if name, ok := harnessNames[id]; ok {
+		return name
+	}
+	return id
+}
+
+// Env is where one interface resolves harness directories: the person's home
+// and environment variables of the process that runs the interface
+// (local-server-and-web-console#REQ:client-values-and-mismatch).
+type Env struct {
+	Home   string
+	Getenv func(string) string
+}
+
+// EnvFrom resolves the home from getenv (HOME, or USERPROFILE on Windows),
+// falling back to os.UserHomeDir.
+func EnvFrom(getenv func(string) string) (Env, error) {
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	home := getenv("HOME")
+	if goruntime.GOOS == "windows" {
+		home = getenv("USERPROFILE")
+	}
+	if home == "" {
+		var err error
+		if home, err = os.UserHomeDir(); err != nil {
+			return Env{}, err
+		}
+	}
+	home, err := filepath.Abs(home)
+	return Env{Home: Canonical(home), Getenv: getenv}, err
+}
+
+// Target is one place a skill can be installed: a harness's skills directory,
+// or, for the CLI's --dir, any directory under the home.
+type Target struct {
+	Harness string `json:"harness,omitempty"`
+	Name    string `json:"name"`
+	// SkillsDir is the harness's skills directory.
+	SkillsDir string `json:"skills_dir"`
+	// Dir is where this skill is, or would be, installed.
+	Dir       string `json:"dir"`
+	Detected  bool   `json:"detected"`
+	Installed bool   `json:"installed"`
+	// State is one of the State constants.
+	State string `json:"state"`
+	// StateReason is skillsync's own reason for the state where it says more
+	// than the state does: for another's folder what was found in it (a stray
+	// ".DS_Store" in a copy of this skill), for a pending recovery what is
+	// wrong. Empty for every other state, and left out of documents for
+	// clients that predate it (see Document.ForClient).
+	StateReason string `json:"state_reason,omitempty"`
+}
+
+// Skill is one skill in the skills document.
+type Skill struct {
+	ID      string `json:"id"`
+	Dir     string `json:"dir"`
+	Name    string `json:"name"`
+	Purpose string `json:"purpose"`
+	Example string `json:"example"`
+	// Command installs it; interfaces show it next to Install.
+	Command string   `json:"command"`
+	Targets []Target `json:"targets"`
+	// InstalledFor lists the harnesses it is installed for.
+	InstalledFor []string `json:"installed_for"`
+}
+
+// Document is the body of GET /api/local/v1/skills and `ovdb skills list
+// --json`.
+type Document struct {
+	Schema int             `json:"schema"`
+	Skills []Skill         `json:"skills"`
+	Next   []envelope.Next `json:"next"`
+}
+
+// AdoptableParam is the query parameter of GET /api/local/v1/skills with which
+// a client says it understands the state "adoptable". Without it the server
+// reports such a target as not_ovdb, the state every version before adoption
+// knows for a folder OVDB did not install: a client built before adoption
+// existed has no text for the new state.
+const AdoptableParam = "adoptable"
+
+// RecoveryParam is the query parameter of GET /api/local/v1/skills with which a
+// client says it understands the state "recovery_pending" and the target field
+// "state_reason". Without it the client is told what every version before this
+// told it for such a folder: not_ovdb (see Document.WithoutRecoveryPending).
+// The listing is never replaced by an error because one folder has an
+// interrupted install.
+const RecoveryParam = "recovery"
+
+// WithoutRecoveryPending is d as a client that does not know the states
+// "recovery_pending" and "record_unusable" is told them: a folder with an
+// interrupted install, or whose record cannot be used, is another's folder, as
+// it was before those states existed.
+func (d Document) WithoutRecoveryPending() Document {
+	d.Skills = slices.Clone(d.Skills)
+	for i := range d.Skills {
+		targets := slices.Clone(d.Skills[i].Targets)
+		for j := range targets {
+			if targets[j].State == StateRecoveryPending || targets[j].State == StateRecordUnusable {
+				targets[j].State = StateNotOVDB
+			}
+		}
+		d.Skills[i].Targets = targets
+	}
+	return d
+}
+
+// WithoutStateReasons is d without the target field "state_reason", as a
+// client that predates it is sent the document.
+func (d Document) WithoutStateReasons() Document {
+	d.Skills = slices.Clone(d.Skills)
+	for i := range d.Skills {
+		targets := slices.Clone(d.Skills[i].Targets)
+		for j := range targets {
+			targets[j].StateReason = ""
+		}
+		d.Skills[i].Targets = targets
+	}
+	return d
+}
+
+// WithoutAdoptable is d as a client that does not know the state "adoptable"
+// is told it: an adoptable target is another's folder.
+func (d Document) WithoutAdoptable() Document {
+	for i := range d.Skills {
+		for j := range d.Skills[i].Targets {
+			if d.Skills[i].Targets[j].State == StateAdoptable {
+				d.Skills[i].Targets[j].State = StateNotOVDB
+			}
+		}
+	}
+	return d
+}
+
+// Harness is the cobracmd harness named by id or one of its aliases.
+func Harness(id string) (cobracmd.Harness, bool) { return harnessByID(id) }
+
+func harnessByID(id string) (cobracmd.Harness, bool) {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, h := range cobracmd.DefaultHarnesses {
+		if h.ID == id || slices.Contains(h.Aliases, id) {
+			return h, true
+		}
+	}
+	return cobracmd.Harness{}, false
+}
+
+func (e Env) target(h cobracmd.Harness, d Definition) Target {
+	dir := h.SkillsDir(e.Home, e.Getenv)
+	t := Target{Harness: h.ID, Name: HarnessName(h.ID), SkillsDir: dir, Dir: filepath.Join(dir, d.Dir),
+		Detected: h.Present(e.Home, e.Getenv)}
+	t.setInspected(inspect(dir, d))
+	return t
+}
+
+func (t *Target) setState(state string) {
+	t.State = state
+	t.Installed = state == StateInstalled || state == StateUpdateAvailable || state == StateChanged
+}
+
+func (t *Target) setInspected(i inspected) {
+	t.setState(i.state)
+	t.StateReason = i.reason
+}
+
+// syncSkills is skillsync.Sync; tests replace it to inject what a library
+// failure looks like.
+var syncSkills = skillsync.Sync
+
+// inspected is what is known of one skill in one skills directory.
+type inspected struct {
+	state string
+	// reason is skillsync's own words for StateNotOVDB, and ovdb's for
+	// StateRecoveryPending (the library's tell a person to rerun a sync ovdb
+	// has no command for); "" otherwise.
+	reason string
+}
+
+// stateOf is the state of d in skillsDir.
+func stateOf(skillsDir string, d Definition) string { return inspect(skillsDir, d).state }
+
+// inspect compares d in skillsDir with this build's copy through a skillsync
+// dry run that does not adopt, which reads and never writes. A folder that
+// would be adopted shows as such because the library says so
+// (Change.Adoptable), not because ovdb classifies the folder a second time. A
+// pending recovery journal makes the dry run fail before it plans anything;
+// that is its own state, never "not installed" or "not adoptable".
+func inspect(skillsDir string, d Definition) inspected {
+	if _, err := os.Lstat(filepath.Join(skillsDir, d.Dir)); err != nil {
+		return inspected{state: StateNotInstalled}
+	}
+	cfg, err := Build{}.config(d)
+	if err != nil {
+		return inspected{state: StateNotOVDB}
+	}
+	report, err := syncSkills(context.Background(), cfg, skillsync.Options{Dir: skillsDir, DryRun: true, NoAdopt: true})
+	if err != nil {
+		// What is on disk decides, not the library's words: a journal that is
+		// there is an interrupted install (whatever the library refused), and a
+		// record that cannot be read, with no journal, is an unusable record.
+		facts := factsAt(skillsDir)
+		switch {
+		case errors.Is(err, skillsync.ErrRecoveryPending), facts.journal && errors.Is(err, skillsync.ErrStateCorrupt):
+			return inspected{state: StateRecoveryPending, reason: uicopy.T("skills.state_reason.recovery_pending", nil)}
+		case errors.Is(err, skillsync.ErrStateCorrupt) && facts.recordUnreadable:
+			return inspected{state: StateRecordUnusable, reason: redact.String(err.Error())}
+		}
+		return inspected{state: StateNotOVDB, reason: redact.String(err.Error())}
+	}
+	for _, change := range report.Changes {
+		if change.Name == d.Dir {
+			state := stateFor(change)
+			result := inspected{state: state}
+			if state == StateNotOVDB && change.Action == skillsync.Conflict {
+				result.reason = redact.String(change.Reason)
+			}
+			return result
+		}
+	}
+	return inspected{state: StateNotOVDB}
+}
+
+// stateFor is the state of a skill from what skillsync would do to it.
+// Every skillsync action is named here, so a new one is a decision made in
+// this switch (and in copy/en.json's skills.result.<action>), not a fall
+// through; TestEverySkillsyncActionIsHandled holds the list to the library.
+// Anything not named is StateNotOVDB, which never installs over it.
+func stateFor(change skillsync.Change) string {
+	switch change.Action {
+	case skillsync.Updated:
+		return StateUpdateAvailable
+	case skillsync.Unchanged:
+		return StateInstalled
+	case skillsync.Added:
+		return StateNotInstalled
+	case skillsync.Adopted:
+		return StateAdoptable
+	case skillsync.Conflict:
+		if change.Reason == modifiedTarget {
+			return StateChanged
+		}
+		// A refusal NoAdopt caused: the folder is this skill and a call
+		// without NoAdopt would take it over. The reason alone
+		// ("unmanaged target") says only that it is another's.
+		if change.Adoptable {
+			return StateAdoptable
+		}
+	case skillsync.Removed:
+		// Never planned for an embedded bundle that lists the skill.
+	}
+	return StateNotOVDB
+}
+
+// modifiedTarget is skillsync's conflict reason for an owned skill whose
+// files changed since it installed them.
+const modifiedTarget = "modified target"
+
+// Targets are the harnesses shown for d: every one found, plus Claude Code and
+// Codex, in cobracmd.DefaultHarnesses order.
+func (e Env) Targets(d Definition) []Target {
+	var targets []Target
+	for _, h := range cobracmd.DefaultHarnesses {
+		t := e.target(h, d)
+		if t.Detected || t.Installed || slices.Contains(alwaysListed, h.ID) {
+			targets = append(targets, t)
+		}
+	}
+	return targets
+}
+
+// Describe is skill d with its targets.
+func (e Env) Describe(d Definition) Skill {
+	skill := Skill{ID: d.ID, Dir: d.Dir, Name: uicopy.T(d.nameKey, nil), Purpose: uicopy.T(d.purposeKey, nil),
+		Example: uicopy.T(d.exampleKey, nil), Command: "ovdb skills install " + d.ID, Targets: e.Targets(d), InstalledFor: []string{}}
+	for _, t := range skill.Targets {
+		if t.Installed {
+			skill.InstalledFor = append(skill.InstalledFor, t.Harness)
+		}
+	}
+	return skill
+}
+
+// Inspect is the skills document for e (capability 20). It only reads.
+func Inspect(e Env) Document {
+	doc := Document{Schema: envelope.Schema, Next: []envelope.Next{}}
+	for _, d := range Definitions {
+		skill := e.Describe(d)
+		doc.Skills = append(doc.Skills, skill)
+		if len(skill.InstalledFor) == 0 {
+			doc.Next = append(doc.Next, envelope.Next{Label: uicopy.T(installLabelKey(d.ID), nil), Command: skill.Command, Action: ActionInstall})
+		}
+	}
+	return doc
+}
+
+func installLabelKey(id string) string {
+	if id == Todo {
+		return "skills.next.install_todo"
+	}
+	return "skills.next.install_storage"
+}
+
+// InstallNext is the next entry that offers installing skill id, for the
+// Results of other actions (todo-demo#REQ:demo-next-actions).
+func InstallNext(id string) envelope.Next {
+	return envelope.Next{Label: uicopy.T(installLabelKey(id), nil), Command: "ovdb skills install " + id, Action: ActionInstall}
+}
+
+// Installed is the status document's skills field group: each skill with the
+// harnesses it is installed for (first-run-onboarding#REQ:status-command).
+type Installed struct {
+	ID           string   `json:"id"`
+	InstalledFor []string `json:"installed_for"`
+	// UpdateAvailableFor lists the harnesses whose copy an older ovdb
+	// installed; `ovdb skills install <id>` updates it.
+	UpdateAvailableFor []string `json:"update_available_for"`
+	// ChangedFor lists the harnesses whose copy the person edited.
+	ChangedFor []string `json:"changed_for"`
+}
+
+// Status lists every skill and where it is installed, reading only
+// skillsync's markers.
+func Status(e Env) []Installed {
+	out := []Installed{}
+	for _, d := range Definitions {
+		entry := Installed{ID: d.ID, InstalledFor: []string{}, UpdateAvailableFor: []string{}, ChangedFor: []string{}}
+		for _, h := range cobracmd.DefaultHarnesses {
+			switch stateOf(h.SkillsDir(e.Home, e.Getenv), d) {
+			case StateUpdateAvailable:
+				entry.UpdateAvailableFor = append(entry.UpdateAvailableFor, h.ID)
+				entry.InstalledFor = append(entry.InstalledFor, h.ID)
+			case StateChanged:
+				entry.ChangedFor = append(entry.ChangedFor, h.ID)
+				entry.InstalledFor = append(entry.InstalledFor, h.ID)
+			case StateInstalled:
+				entry.InstalledFor = append(entry.InstalledFor, h.ID)
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// RequestTarget is one target an install request names: a harness id with the
+// skills directory the client resolved, or, from the CLI's --dir, a directory
+// alone.
+type RequestTarget struct {
+	Harness   string `json:"harness,omitempty"`
+	SkillsDir string `json:"skills_dir"`
+}
+
+// InstallRequest is the body of POST /api/local/v1/skills/install. The web
+// console sends Harnesses, which the server resolves itself; the CLI and TUI
+// send Targets they resolved. A console session may not name a directory.
+type InstallRequest struct {
+	Skill     string          `json:"skill"`
+	Harnesses []string        `json:"harnesses,omitempty"`
+	Targets   []RequestTarget `json:"targets,omitempty"`
+	DryRun    bool            `json:"dry_run,omitempty"`
+	// ReplaceChanged replaces a copy the person edited since OVDB installed
+	// it; only after they agreed to lose those edits.
+	ReplaceChanged bool `json:"replace_changed,omitempty"`
+	// Adopt takes over, in every target, a folder that was already there and
+	// already is this skill, keeping a backup of it; only after the person
+	// agreed to that. It is what clients from v0.22.0 to v0.28.x send. Without
+	// it (and without AdoptDirs and AdoptHarnesses) such a folder is refused
+	// and left untouched, which is what every client built before adoption
+	// existed (v0.21.0) expects: the server never sends one a state or result
+	// it did not ask for.
+	Adopt bool `json:"adopt,omitempty"`
+	// AdoptDirs are the skill folders (Target.Dir) the person was shown as
+	// already there and agreed to have taken over. A folder that became
+	// adoptable after they were shown the list is not among them, so it is
+	// refused. The CLI and TUI send it instead of Adopt.
+	AdoptDirs []string `json:"adopt_dirs,omitempty"`
+	// AdoptHarnesses is AdoptDirs for the web console, which names harnesses
+	// and never a directory.
+	AdoptHarnesses []string `json:"adopt_harnesses,omitempty"`
+}
+
+// Consent is the folders a person agreed to have taken over, as a request says
+// it.
+func (r InstallRequest) Consent() Consent {
+	return Consent{All: r.Adopt, Dirs: r.AdoptDirs, Harnesses: r.AdoptHarnesses}
+}
+
+// Consent says which target folders an install may take over. The zero value
+// is none, the answer every client that does not know adoption expects.
+type Consent struct {
+	// All is a person's yes for every target (the request field "adopt").
+	All       bool
+	Dirs      []string
+	Harnesses []string
+}
+
+// covers reports whether the person agreed to have d's folder in target
+// taken over.
+func (c Consent) covers(d Definition, t RequestTarget) bool {
+	return c.All || slices.Contains(c.Dirs, filepath.Join(t.SkillsDir, d.Dir)) ||
+		(t.Harness != "" && slices.Contains(c.Harnesses, t.Harness))
+}
+
+// Outcome is what installing did in one target.
+type Outcome struct {
+	Target
+	// Result is one of skillsync's actions: added, updated, unchanged,
+	// adopted, conflict (removed is never planned for an install).
+	Result string `json:"result"`
+	Reason string `json:"reason,omitempty"`
+	// BackupPath is where the copy that was already there is kept after
+	// Result adopted; empty for every other result and for a dry run.
+	BackupPath string `json:"backup_path,omitempty"`
+}
+
+// InstallDocument is the body of POST /api/local/v1/skills/install and the
+// --json output of `ovdb skills install`.
+type InstallDocument struct {
+	Schema int    `json:"schema"`
+	Skill  string `json:"skill"`
+	Dir    string `json:"dir"`
+	Name   string `json:"name"`
+	DryRun bool   `json:"dry_run,omitempty"`
+	// AlreadyUpToDate is set when no target changed.
+	AlreadyUpToDate bool            `json:"already_up_to_date"`
+	Outcomes        []Outcome       `json:"targets"`
+	Next            []envelope.Next `json:"next"`
+}
+
+func installFailed(d Definition) string {
+	return uicopy.T("skills.install.failed", map[string]string{"name": uicopy.T(d.nameKey, nil)})
+}
+
+// Resolve checks request's skill and turns what it names into targets:
+// Targets as sent, Harnesses resolved in e. Without either it is every
+// harness found, or Claude Code when none is (cobracmd's discovery).
+func (e Env) Resolve(request InstallRequest) (Definition, []RequestTarget, error) {
+	d, ok := Find(request.Skill)
+	if !ok {
+		return d, nil, UnknownSkill(request.Skill)
+	}
+	targets := slices.Clone(request.Targets)
+	for _, raw := range request.Harnesses {
+		for _, name := range strings.Split(raw, ",") {
+			if strings.EqualFold(strings.TrimSpace(name), "all") {
+				for _, h := range cobracmd.DefaultHarnesses {
+					targets = append(targets, RequestTarget{Harness: h.ID, SkillsDir: h.SkillsDir(e.Home, e.Getenv)})
+				}
+				continue
+			}
+			h, ok := harnessByID(name)
+			if !ok {
+				return d, nil, unknownHarness(d, name)
+			}
+			targets = append(targets, RequestTarget{Harness: h.ID, SkillsDir: h.SkillsDir(e.Home, e.Getenv)})
+		}
+	}
+	if len(request.Targets) == 0 && len(request.Harnesses) == 0 {
+		for _, h := range cobracmd.DefaultHarnesses {
+			if h.Present(e.Home, e.Getenv) {
+				targets = append(targets, RequestTarget{Harness: h.ID, SkillsDir: h.SkillsDir(e.Home, e.Getenv)})
+			}
+		}
+		if len(targets) == 0 {
+			h := cobracmd.DefaultHarnesses[0]
+			targets = append(targets, RequestTarget{Harness: h.ID, SkillsDir: h.SkillsDir(e.Home, e.Getenv)})
+		}
+	}
+	// One target per directory, keeping the first.
+	seen := map[string]bool{}
+	return d, slices.DeleteFunc(targets, func(t RequestTarget) bool {
+		key := filepath.Clean(t.SkillsDir)
+		if seen[key] {
+			return true
+		}
+		seen[key] = true
+		return false
+	}), nil
+}
+
+// UnknownSkill is the invalid_argument for a skill id that doesn't exist.
+func UnknownSkill(id string) *envelope.Error {
+	return envelope.New(envelope.InvalidArgument, uicopy.T("skills.install.failed_generic", nil)).
+		WithReason(uicopy.T("skills.unknown", map[string]string{"skill": id})).
+		WithNext(envelope.Next{Label: uicopy.T("skills.next.install_storage", nil), Command: "ovdb skills install " + Storage},
+			envelope.Next{Label: uicopy.T("skills.next.install_todo", nil), Command: "ovdb skills install " + Todo})
+}
+
+func unknownHarness(d Definition, name string) *envelope.Error {
+	ids := make([]string, len(cobracmd.DefaultHarnesses))
+	for i, h := range cobracmd.DefaultHarnesses {
+		ids[i] = h.ID
+	}
+	return envelope.New(envelope.InvalidArgument, installFailed(d)).
+		WithReason(uicopy.T("skills.unknown_harness", map[string]string{"harness": name, "harnesses": strings.Join(ids, ", ")})).
+		WithNext(envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
+}
+
+// CheckTarget is the server's check of a target a client resolved
+// (REQ:install-targets-restricted): a harness target must match that
+// harness's layout (<root>/<config folder>/skills, or <root>/skills for a
+// harness whose config root a variable can move); a target without a harness,
+// the CLI's --dir, must be under home.
+func CheckTarget(d Definition, home string, t RequestTarget) error {
+	dir := t.SkillsDir
+	if dir == "" || !filepath.IsAbs(dir) || filepath.Clean(dir) != dir {
+		return outsideLayout(d, dir)
+	}
+	if t.Harness == "" {
+		return CheckUnderHome(d, home, dir)
+	}
+	h, ok := harnessByID(t.Harness)
+	if !ok {
+		return unknownHarness(d, t.Harness)
+	}
+	if filepath.Base(dir) != "skills" {
+		return outsideLayout(d, dir)
+	}
+	root := filepath.Dir(dir)
+	if h.ConfigEnv != "" || strings.HasSuffix(root, string(filepath.Separator)+h.ConfigRel) {
+		return nil
+	}
+	return outsideLayout(d, dir)
+}
+
+func outsideLayout(d Definition, dir string) *envelope.Error {
+	return envelope.New(envelope.InvalidArgument, installFailed(d)).
+		WithReason(uicopy.T("skills.dir_not_harness", map[string]string{"path": dir})).
+		WithNext(envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
+}
+
+// CheckUnderHome refuses a --dir that is not a directory inside home, so an
+// install never writes to system or other people's folders.
+func CheckUnderHome(d Definition, home, dir string) error {
+	next := envelope.Next{Label: uicopy.T("skills.next.harness", nil), Command: "ovdb skills install " + d.ID + " --harness claude"}
+	refused := envelope.New(envelope.InvalidArgument, installFailed(d)).
+		WithReason(uicopy.T("skills.dir_outside_home", map[string]string{"path": dir, "home": home})).
+		WithNext(next)
+	if !filepath.IsAbs(dir) || home == "" {
+		return refused
+	}
+	throughLink := envelope.New(envelope.InvalidArgument, installFailed(d)).
+		WithReason(uicopy.T("skills.dir_through_symlink", map[string]string{"path": dir})).
+		WithNext(next)
+	realHome := Canonical(home)
+	realDir := Canonical(dir)
+	if !under(realHome, realDir) {
+		// Inside the home by name (an ancestor resolves into it), elsewhere
+		// through a link.
+		for ancestor := filepath.Dir(filepath.Clean(dir)); ; ancestor = filepath.Dir(ancestor) {
+			if real := Canonical(ancestor); real == realHome || under(realHome, real) {
+				return throughLink
+			}
+			if filepath.Dir(ancestor) == ancestor {
+				return refused
+			}
+		}
+	}
+	if _, err := skillsync.ValidateTarget(realDir); err != nil {
+		return throughLink
+	}
+	return nil
+}
+
+// under reports whether path is strictly inside dir.
+func under(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// Canonical is path with the symbolic links of its deepest existing
+// ancestor resolved, so a home reached through a link is used by its real
+// path (skillsync refuses symlinked ancestors).
+func Canonical(path string) string {
+	path = filepath.Clean(path)
+	rest := ""
+	for current := path; ; current = filepath.Dir(current) {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return path
+		}
+		rest = filepath.Join(filepath.Base(current), rest)
+	}
+}
+
+// describeRequest is the target t in e, for plans and results.
+func (e Env) describeRequest(d Definition, t RequestTarget) Target {
+	target := Target{Harness: t.Harness, Name: HarnessName(t.Harness), SkillsDir: t.SkillsDir, Dir: filepath.Join(t.SkillsDir, d.Dir)}
+	target.setState(stateOf(t.SkillsDir, d))
+	if t.Harness == "" {
+		target.Name = t.SkillsDir
+	}
+	if info, err := os.Stat(filepath.Dir(t.SkillsDir)); err == nil && info.IsDir() {
+		target.Detected = true
+	}
+	return target
+}
+
+// Plan describes targets for d without writing: what an interface shows
+// before the person decides.
+func (e Env) Plan(d Definition, targets []RequestTarget) []Target {
+	out := make([]Target, len(targets))
+	for i, t := range targets {
+		out[i] = e.describeRequest(d, t)
+	}
+	return out
+}
+
+// Build is the ovdb build installing: its version and VCS revision.
+type Build struct {
+	Version  string
+	Revision string
+}
+
+const unknownRevision = "0000000000000000000000000000000000000000"
+
+func (b Build) config(d Definition) (skillsync.Config, error) {
+	bundle, err := oneSkill(content, d.Dir)
+	if err != nil {
+		return skillsync.Config{}, err
+	}
+	digest, err := skillsync.Digest(bundle)
+	if err != nil {
+		return skillsync.Config{}, err
+	}
+	revision := b.Revision
+	if revision == "" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				if setting.Key == "vcs.revision" {
+					revision = setting.Value
+				}
+			}
+		}
+	}
+	if len(revision) != 40 {
+		revision = unknownRevision
+	}
+	version := strings.TrimPrefix(b.Version, "v")
+	if _, err := skillsync.CompareVersions(version, version); err != nil {
+		version = "0.0.0"
+	}
+	current := b.Version
+	if _, err := skillsync.CompareVersions(current, current); err != nil {
+		current = "dev"
+	}
+	embeddedBundle, err := skillsync.EmbeddedBundle(skillsync.BundleDescriptor{
+		Plugin: d.Plugin(),
+		Source: skillsync.Source{Repository: "github.com/openvaultdb/ovdb", Path: "skills/" + d.Dir, Revision: revision, Version: version, Digest: digest},
+	}, bundle)
+	if err != nil {
+		return skillsync.Config{}, err
+	}
+	return skillsync.Config{CLI: CLI, CurrentVersion: current, Bundles: []skillsync.Bundle{embeddedBundle}}, nil
+}
+
+// Install installs skill d into each target with one skillsync.Sync per
+// target and only d's bundle (capability 21). Targets must already be checked.
+// Every target is attempted; a failure in any makes the whole install fail,
+// naming each outcome.
+func (b Build) Install(ctx context.Context, e Env, d Definition, targets []RequestTarget, dryRun, replaceChanged bool, consent Consent) (InstallDocument, error) {
+	doc := InstallDocument{Schema: envelope.Schema, Skill: d.ID, Dir: d.Dir, Name: uicopy.T(d.nameKey, nil), DryRun: dryRun, AlreadyUpToDate: true}
+	cfg, err := b.config(d)
+	if err != nil {
+		return doc, envelope.New(envelope.Internal, installFailed(d)).WithReason(redact.String(err.Error()))
+	}
+	var failures []string
+	conflictsOnly, changed := true, false
+	for _, t := range targets {
+		outcome := Outcome{Target: e.describeRequest(d, t)}
+		if replaceChanged && !dryRun && outcome.State == StateChanged {
+			// Owned by this skill's plugin and edited since: the person agreed
+			// to replace it, so it goes and a fresh copy is installed.
+			if err := os.RemoveAll(outcome.Dir); err != nil {
+				failure := envelope.New(envelope.StorageUnavailable, installFailed(d)).
+					WithReason(uicopy.T("skills.install.target_failed", map[string]string{"path": outcome.Dir, "reason": redact.String(err.Error())}))
+				return withOutcomes(doc, d, failure, nil, dryRun, consent)
+			}
+		}
+		// Whether this folder may be taken over is decided by the library,
+		// inside its lock after it has recovered any interrupted install, from
+		// NoAdopt: a request that did not name this folder gets the refusal
+		// every version before adoption answers, with no check made here that
+		// could go stale before the write.
+		outcome.StateReason = ""
+		report, err := syncSkills(ctx, cfg, skillsync.Options{Dir: t.SkillsDir, DryRun: dryRun, NoAdopt: !consent.covers(d, t)})
+		switch {
+		case err != nil:
+			advice := syncFailureAdvice(t.SkillsDir, d, err)
+			outcome.Result, outcome.Reason = string(skillsync.Conflict), advice.reason
+			conflictsOnly = false
+			failures = append(failures, advice.failure(outcome.Dir))
+		default:
+			outcome.Result = string(skillsync.Unchanged)
+			for _, change := range report.Changes {
+				if change.Name == d.Dir {
+					outcome.Result, outcome.Reason, outcome.BackupPath = string(change.Action), change.Reason, change.BackupPath
+				}
+			}
+			switch {
+			case outcome.Result == string(skillsync.Conflict) && outcome.Reason == modifiedTarget:
+				changed = true
+				failures = append(failures, uicopy.T("skills.install.target_changed", map[string]string{"path": outcome.Dir}))
+			case outcome.Result == string(skillsync.Conflict):
+				failures = append(failures, uicopy.T("skills.install.target_conflict", map[string]string{"path": outcome.Dir}))
+			}
+		}
+		if outcome.Result != string(skillsync.Unchanged) {
+			doc.AlreadyUpToDate = false
+		}
+		if !dryRun {
+			outcome.setState(stateOf(t.SkillsDir, d))
+		}
+		outcome.StateReason = ""
+		doc.Outcomes = append(doc.Outcomes, outcome)
+	}
+	if len(failures) > 0 {
+		code := envelope.StorageUnavailable
+		if conflictsOnly {
+			code = envelope.AlreadyExists
+		}
+		var next []envelope.Next
+		if changed {
+			next = append(next, envelope.Next{Label: uicopy.T("skills.next.replace_changed", nil), Command: "ovdb skills install " + d.ID + " --replace-changed"})
+		}
+		next = append(next, envelope.Next{Label: uicopy.T("skills.next.list", nil), Command: "ovdb skills list"})
+		return withOutcomes(doc, d, envelope.New(code, installFailed(d)).WithNext(next...), failures, dryRun, consent)
+	}
+	if dryRun {
+		// Nothing was installed: the next step is the install it previewed.
+		command := "ovdb skills install " + d.ID
+		for _, t := range targets {
+			if t.Harness != "" {
+				command += " --harness " + t.Harness
+			} else {
+				command += " --dir " + t.SkillsDir
+			}
+		}
+		if replaceChanged {
+			command += " --replace-changed"
+		}
+		doc.Next = []envelope.Next{{Label: uicopy.T("skills.next.install_previewed", nil), Command: command}}
+		return withOutcomes(doc, d, nil, nil, dryRun, consent)
+	}
+	doc.Next = installedNext(d)
+	return withOutcomes(doc, d, nil, nil, dryRun, consent)
+}
+
+// withOutcomes finishes an install: a client that did not agree to a folder
+// being taken over is never shown that folder in the state "adoptable"; and a
+// failure that left some targets changed (or, in a dry run, would) says which,
+// in its reason and in its targets, since the person is otherwise told only
+// that the install failed. failure is nil for a success, which is returned
+// with doc unchanged but for that state.
+func withOutcomes(doc InstallDocument, d Definition, failure *envelope.Error, failures []string, dryRun bool, consent Consent) (InstallDocument, error) {
+	for i := range doc.Outcomes {
+		o := doc.Outcomes[i]
+		if o.State == StateAdoptable && !consent.covers(d, RequestTarget{Harness: o.Harness, SkillsDir: o.SkillsDir}) {
+			doc.Outcomes[i].State = StateNotOVDB
+		}
+	}
+	if failure == nil {
+		return doc, nil
+	}
+	notes := changeNotes(doc.Outcomes, dryRun)
+	if failure.Reason != "" {
+		failures = append([]string{failure.Reason}, failures...)
+	}
+	failure.Reason = strings.Join(append(failures, notes...), " ")
+	if len(notes) > 0 {
+		_ = failure.WithTargets(doc.Outcomes)
+	}
+	return doc, failure
+}
+
+// changeNotes says, for each target a failed install did change (or would,
+// in a dry run), what happened to it and, for an adopted folder, where the
+// copy that was there is kept.
+func changeNotes(outcomes []Outcome, dryRun bool) []string {
+	var notes []string
+	for _, o := range outcomes {
+		switch o.Result {
+		case string(skillsync.Added), string(skillsync.Updated), string(skillsync.Removed), string(skillsync.Adopted):
+		default:
+			continue
+		}
+		key := "skills.install.partial_done"
+		if dryRun {
+			key = "skills.install.partial_planned"
+		}
+		note := uicopy.T(key, map[string]string{"name": o.Name, "path": o.Dir, "result": ResultTextFor(o.Result, dryRun)})
+		if o.Result == string(skillsync.Adopted) {
+			note += " " + AdoptedBackupText(dryRun, o)
+		}
+		notes = append(notes, note)
+	}
+	return notes
+}
+
+func installedNext(d Definition) []envelope.Next {
+	if d.ID == Todo {
+		return []envelope.Next{
+			{Label: uicopy.T("skills.next.try_todo", nil)},
+			{Label: uicopy.T("demo.next.open_app", nil), Command: "ovdb demo open", Action: "open_app"},
+			{Label: uicopy.T("next.done", nil), Action: "done"},
+		}
+	}
+	return []envelope.Next{
+		{Label: uicopy.T("skills.next.try_storage", nil)},
+		{Label: uicopy.T("skills.next.see_skills", nil), Command: "ovdb skills list", Action: ActionSkills},
+		{Label: uicopy.T("next.done", nil), Action: "done"},
+	}
+}
+
+// oneSkill is root with only directory name visible, so a bundle holds
+// exactly one skill.
+func oneSkill(root fs.FS, name string) (fs.FS, error) {
+	if _, err := fs.Stat(root, name+"/SKILL.md"); err != nil {
+		return nil, fmt.Errorf("embedded skill %s: %w", name, err)
+	}
+	return onlyDir{root: root, name: name}, nil
+}
+
+type onlyDir struct {
+	root fs.FS
+	name string
+}
+
+func (o onlyDir) visible(name string) bool {
+	return name == "." || name == o.name || strings.HasPrefix(name, o.name+"/")
+}
+
+func (o onlyDir) Open(name string) (fs.File, error) {
+	if !fs.ValidPath(name) || !o.visible(name) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+	if name != "." {
+		return o.root.Open(name)
+	}
+	file, err := o.root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &rootDir{File: file, o: o}, nil
+}
+
+func (o onlyDir) ReadDir(name string) ([]fs.DirEntry, error) {
+	if !fs.ValidPath(name) || !o.visible(name) {
+		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
+	}
+	entries, err := fs.ReadDir(o.root, name)
+	if err != nil || name != "." {
+		return entries, err
+	}
+	return slices.DeleteFunc(entries, func(e fs.DirEntry) bool { return e.Name() != o.name }), nil
+}
+
+// rootDir is the root directory of an onlyDir, listing only its skill.
+type rootDir struct {
+	fs.File
+	o    onlyDir
+	read bool
+}
+
+func (r *rootDir) ReadDir(n int) ([]fs.DirEntry, error) {
+	if r.read {
+		if n > 0 {
+			return nil, io.EOF
+		}
+		return nil, nil
+	}
+	r.read = true
+	return r.o.ReadDir(".")
+}
+
+// adoptedBackupDirName is where skillsync keeps the copy of a folder it
+// adopted, beside the folder (skillsync's own name for it).
+const adoptedBackupDirName = ".cli-helpers-skills-adopted-backup"
+
+// advised is a failed sync said as a person can act on it.
+type advised struct {
+	reason string
+	// whole is the failure as one sentence; otherwise the reason goes into
+	// "Couldn't write to {path}: {reason}."
+	whole bool
+}
+
+func (a advised) failure(path string) string {
+	if a.whole {
+		return a.reason
+	}
+	return uicopy.T("skills.install.target_failed", map[string]string{"path": path, "reason": a.reason})
+}
+
+// recoveryJournal is skillsync's file of an install in progress.
+const recoveryJournal = ".cli-helpers-skills-recovery.json"
+
+// diskFacts are what a skills folder shows, which is what decides what a person
+// is told when the library reports a corrupt state: the library returns that one
+// error for about forty conditions.
+type diskFacts struct {
+	// journal: the recovery journal of an install is in the folder.
+	journal bool
+	// recordUnreadable: the record file (.cli-helpers-skills-sync.json) cannot
+	// be read by the library (it does not parse, a newer schema, a symlink).
+	recordUnreadable bool
+}
+
+func factsAt(skillsDir string) diskFacts {
+	var facts diskFacts
+	if _, err := os.Lstat(filepath.Join(skillsDir, recoveryJournal)); err == nil {
+		facts.journal = true
+	}
+	if _, err := skillsync.ReadStatus(skillsDir); errors.Is(err, skillsync.ErrStateCorrupt) {
+		facts.recordUnreadable = true
+	}
+	return facts
+}
+
+// syncFailureAdvice words a failed sync of d in skillsDir. A pending recovery
+// (a dry run met an interrupted install) says how to finish it. For a corrupt
+// state the facts on disk decide, never the words of the error:
+//
+//   - a journal is there and the record reads: an earlier install was
+//     interrupted and the library cannot finish or undo it (strongo/cli-helpers#45
+//     is one such case): where the person's copy is kept, that the problem is
+//     known, and to move the journal and the transaction folder out;
+//   - a journal is there and the record cannot be read either: the library reads
+//     the record first, so that file is moved first, then the journal's advice;
+//   - no journal, the record cannot be read: what the file is, that another tool
+//     may have written it, and to move it out;
+//   - neither: the library stopped a running install; nothing is recorded, run
+//     it again.
+//
+// Anything that is not a corrupt state is the library's own words.
+func syncFailureAdvice(skillsDir string, d Definition, err error) advised {
+	if errors.Is(err, skillsync.ErrRecoveryPending) {
+		return advised{whole: true, reason: uicopy.T("skills.install.recovery_pending", map[string]string{"path": skillsDir})}
+	}
+	if !errors.Is(err, skillsync.ErrStateCorrupt) {
+		return advised{reason: redact.String(err.Error())}
+	}
+	facts := factsAt(skillsDir)
+	params := map[string]string{"path": skillsDir, "reason": redact.String(err.Error())}
+	switch {
+	case facts.journal && facts.recordUnreadable:
+		key := "skills.install.recovery_and_record"
+		if backup := adoptionBackupOf(skillsDir, d); backup != "" {
+			key, params["backup"] = "skills.install.recovery_and_record_backup", backup
+		}
+		return advised{whole: true, reason: uicopy.T(key, params)}
+	case facts.journal:
+		key := "skills.install.recovery_stuck"
+		if backup := adoptionBackupOf(skillsDir, d); backup != "" {
+			key, params["backup"] = "skills.install.recovery_stuck_backup", backup
+		}
+		return advised{whole: true, reason: uicopy.T(key, params)}
+	case facts.recordUnreadable:
+		return advised{whole: true, reason: uicopy.T("skills.install.state_corrupt", params)}
+	}
+	return advised{whole: true, reason: uicopy.T("skills.install.stopped", params)}
+}
+
+// adoptionBackupOf is the newest backup of d's folder skillsync kept in
+// skillsDir, or "" when there is none.
+func adoptionBackupOf(skillsDir string, d Definition) string {
+	root := filepath.Join(skillsDir, adoptedBackupDirName)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		if path := filepath.Join(root, entries[i].Name(), d.Dir); entries[i].IsDir() {
+			if _, err := os.Lstat(path); err == nil {
+				return path
+			}
+		}
+	}
+	return ""
+}

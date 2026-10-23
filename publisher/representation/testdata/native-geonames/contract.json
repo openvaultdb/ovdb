@@ -1,0 +1,79 @@
+{
+  "format": "ovdb-representation-contract/2",
+  "contracts": [
+    {
+      "execution": "native-identifier",
+      "source": {
+        "schema": {
+          "path": "source/fixture.modelspec.json",
+          "sha256": "f4f5ac05fd666045db57ab6128980597bb85d2cc472e27f5f953a1f643eb30d7",
+          "repository": "https://github.com/example/native-geonames-fixture",
+          "revision": "ffffffffffffffffffffffffffffffffffffffff"
+        },
+        "module": "fixture",
+        "entity": "Input",
+        "property": "country_iso",
+        "datatype": "string",
+        "namespace": "GeoNames:countryInfoISO2"
+      },
+      "target": {
+        "model": {
+          "path": "model/geonames.modelspec.json",
+          "sha256": "609fe73e07b84db65bdb1a904b9f84dd5c43bcbbc75eeb2d75f9a69ed3e8af81"
+        },
+        "snapshot": {
+          "path": "source/artifact-snapshot.json",
+          "sha256": "5bb94bc67a326da337bd1a8be978dd5a384095e60d47b2669afc579ad86d396e"
+        },
+        "module": "geonames",
+        "entity": "geonames_countries",
+        "property": "iso",
+        "datatype": "string",
+        "namespace": "GeoNames:countryInfoISO2",
+        "binding": {
+          "document": {
+            "path": "model/geonames.meaning.yaml",
+            "sha256": "21bb35aecf1f1214908f245cfeb2d0c5e7c6caf3915a5ffd604254642b3b4b57"
+          },
+          "concept": "geonames-country",
+          "role": "identifier",
+          "meaning": {
+            "document": {
+              "path": "geo.meaning.yaml",
+              "sha256": "ee6eeea2e8038e016433a72dd15d45b6eaf89d3ae6e45893d4e5eeb7be61f4e9",
+              "repository": "https://github.com/meaninggraph/core",
+              "revision": "982916d73f0a35ff2558b0062f58aa3ac4f24d97"
+            },
+            "concept": "country"
+          }
+        }
+      },
+      "native": {
+        "dataset": {
+          "path": "geonames.sqlite",
+          "sha256": "cb53af14c67daadfc20ecbfe304d631d651022179793a77aa11413244d2f456d"
+        },
+        "provenance": {
+          "path": "source/native/geonames_countries.json",
+          "sha256": "4f52bf1f9bbb417fc3ca1a67b0fc96e0af9d8baf271fd66cfe9eaaaa5b8e4412"
+        }
+      },
+      "policy": {
+        "transform": "identity",
+        "equality": "utf8-byte-exact",
+        "cardinality": "zero-or-one",
+        "unmatched": "exception",
+        "collision": "ineligible"
+      },
+      "decision": {
+        "document": {
+          "path": "source/fixture-decision.md",
+          "sha256": "907e4a295b9d7ac4471709d959f6d6db0992f5b30426a69e28edf31dfbc935f3",
+          "repository": "https://github.com/example/native-geonames-fixture",
+          "revision": "ffffffffffffffffffffffffffffffffffffffff"
+        },
+        "scope": "fixture-only-native-geonames-country"
+      }
+    }
+  ]
+}

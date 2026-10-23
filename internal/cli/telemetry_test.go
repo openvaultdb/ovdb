@@ -1,0 +1,399 @@
+package cli_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/openvaultdb/ovdb/internal/client"
+	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/preview"
+	"github.com/openvaultdb/ovdb/internal/telemetry"
+)
+
+// posthog is a recording PostHog stand-in.
+type posthog struct {
+	mu     sync.Mutex
+	events []map[string]any // properties plus "event"
+}
+
+func newPosthog(t *testing.T) (*posthog, string) {
+	p := &posthog{}
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		var body struct {
+			Batch []struct {
+				Event      string         `json:"event"`
+				Properties map[string]any `json:"properties"`
+			} `json:"batch"`
+		}
+		_ = json.Unmarshal(data, &body)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		for _, e := range body.Batch {
+			e.Properties["event"] = e.Event
+			p.events = append(p.events, e.Properties)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return p, server.URL
+}
+
+func (p *posthog) received() []map[string]any {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]map[string]any(nil), p.events...)
+}
+
+// telemetryEnv is newEnv with a build key and a recording endpoint.
+func telemetryEnv(t *testing.T, endpoint string) *env {
+	e := previewEnv(t)
+	e.app.TelemetryKey, e.app.TelemetryEndpoint = "phc_test", endpoint
+	e.app.Environ = func() []string { return nil }
+	return e
+}
+
+// runCommand is one ovdb process: the command, then main's flush.
+func (e *env) runCommand(args ...string) result {
+	e.t.Helper()
+	r := e.run(args...)
+	e.app.FlushTelemetry(context.Background())
+	return r
+}
+
+func (e *env) telemetryStatus() telemetry.Document {
+	e.t.Helper()
+	r := e.run("telemetry", "status", "--json")
+	var document telemetry.Document
+	if r.code != 0 || json.Unmarshal([]byte(r.stdout), &document) != nil {
+		e.t.Fatalf("telemetry status: %+v", r)
+	}
+	return document
+}
+
+// AC:nothing-sent-by-default.
+func TestTelemetryNothingSentByDefault(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	for _, args := range [][]string{{"demo", "install", "--yes"}, {"databases", "create", "notes"}, {"server", "start"}} {
+		if r := e.runCommand(args...); r.code != 0 {
+			t.Fatalf("%v: %+v", args, r)
+		}
+	}
+	if got := recorder.received(); len(got) != 0 {
+		t.Fatalf("sent before consent: %v", got)
+	}
+	status := e.telemetryStatus().Telemetry
+	if status.State != telemetry.StateNotAsked || status.HasInstallID || status.Sending || len(status.Collected) != 4 {
+		t.Fatalf("status = %+v", status)
+	}
+}
+
+// AC:non-tty-enable-needs-confirmation, AC:channel-derived (CLI half),
+// AC:events-delivered-within-bound (first half) and disable removing the
+// install id.
+func TestTelemetryEnableNeedsAPersonThenDelivers(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	refused := e.runCommand("telemetry", "enable")
+	if refused.code != 1 || !strings.Contains(refused.stdout, "What's collected") || !strings.Contains(refused.stderr, "--confirmed-by-user") {
+		t.Fatalf("enable without a terminal: %+v", refused)
+	}
+	_ = decodeError(t, e.runCommand("telemetry", "enable", "--json"), envelope.ConfirmationRequired)
+	if state := e.telemetryStatus().Telemetry.State; state != telemetry.StateNotAsked {
+		t.Fatalf("state after refusal = %s", state)
+	}
+	e.vars["CLAUDECODE"] = "1"
+	enabled := e.runCommand("telemetry", "enable", "--confirmed-by-user", "--json")
+	var document telemetry.Document
+	if enabled.code != 0 || json.Unmarshal([]byte(enabled.stdout), &document) != nil ||
+		document.Telemetry.State != telemetry.StateEnabled || document.Telemetry.Channel != "agent" || !document.Telemetry.HasInstallID {
+		t.Fatalf("enable --confirmed-by-user: %+v", enabled)
+	}
+	if r := e.runCommand("databases", "create", "notes", "--json"); r.code != 0 {
+		t.Fatalf("create: %+v", r)
+	}
+	got := recorder.received()
+	names := []string{}
+	for _, event := range got {
+		names = append(names, event["event"].(string))
+		if event["channel"] != "agent" || !telemetry.ValidInstallID(event["install_id"].(string)) {
+			t.Errorf("event %v", event)
+		}
+		for _, secret := range []string{"notes", e.dirs.Home, e.dirs.Data} {
+			if data, _ := json.Marshal(event); strings.Contains(string(data), secret) {
+				t.Errorf("event carries %q: %s", secret, data)
+			}
+		}
+	}
+	// server_started is the auto-start's: the process started the server.
+	if strings.Join(names, ",") != "telemetry_consent_changed,database_created" {
+		t.Fatalf("events = %v", names)
+	}
+	if got[1]["engine"] != "ingitdb" || got[1]["success"] != true {
+		t.Fatalf("database_created = %v", got[1])
+	}
+	disabled := e.runCommand("telemetry", "disable")
+	if disabled.code != 0 {
+		t.Fatalf("disable: %+v", disabled)
+	}
+	status := e.telemetryStatus().Telemetry
+	config, _ := os.ReadFile(filepath.Join(e.dirs.Home, "config.yaml"))
+	if status.State != telemetry.StateDisabled || status.HasInstallID || strings.Contains(string(config), "install_id") {
+		t.Fatalf("after disable: %+v\n%s", status, config)
+	}
+}
+
+// AC:client-env-wins: an enabled home and a server started without
+// DO_NOT_TRACK; the CLI's own DO_NOT_TRACK stops its events and is named.
+func TestTelemetryClientDoNotTrackWins(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	if r := e.runCommand("server", "start"); r.code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	if r := e.runCommand("telemetry", "enable", "--confirmed-by-user"); r.code != 0 {
+		t.Fatalf("enable: %+v", r)
+	}
+	before := len(recorder.received())
+	e.vars["DO_NOT_TRACK"] = "1"
+	if r := e.runCommand("demo", "install", "--yes"); r.code != 0 {
+		t.Fatalf("demo install: %+v", r)
+	}
+	if got := recorder.received(); len(got) != before {
+		t.Fatalf("sent with DO_NOT_TRACK: %v", got[before:])
+	}
+	status := e.telemetryStatus().Telemetry
+	if status.State != telemetry.StateEnabled || status.Reason != "DO_NOT_TRACK" || status.Sending {
+		t.Fatalf("status = %+v", status)
+	}
+	human := e.run("telemetry", "status")
+	if !strings.Contains(human.stdout, "DO_NOT_TRACK") {
+		t.Fatalf("human status does not name DO_NOT_TRACK:\n%s", human.stdout)
+	}
+}
+
+// AC:events-delivered-within-bound, second half: an endpoint that never
+// answers adds at most 2 s and changes neither output nor exit code.
+func TestTelemetryUnresponsiveEndpointIsBounded(t *testing.T) {
+	release := make(chan struct{})
+	silent := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	t.Cleanup(func() { close(release); silent.Close() })
+	e := telemetryEnv(t, silent.URL)
+	if r := e.run("telemetry", "enable", "--confirmed-by-user"); r.code != 0 {
+		t.Fatalf("enable: %+v", r)
+	}
+	e.app.FlushTelemetry(context.Background())
+	r := e.run("databases", "create", "notes", "--no-start", "--json")
+	start := time.Now()
+	e.app.FlushTelemetry(context.Background())
+	if elapsed := time.Since(start); elapsed > telemetry.Timeout+500*time.Millisecond {
+		t.Fatalf("flush took %s", elapsed)
+	}
+	_ = decodeError(t, r, envelope.ServerNotRunning)
+}
+
+// Review F1, the reviewer's repro across processes: a TUI buffers
+// demo_installed while not_asked, an agent in another process enables
+// telemetry with --confirmed-by-user, and the TUI exits without its own Turn
+// on: nothing the TUI buffered is sent.
+func TestTUIBufferDroppedWhenAnotherProcessEnables(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	tui := e.app.TUIRecorder(e.dirs.Home)
+	tui.Record(telemetry.NewOnboardingStarted(), telemetry.NewOptionSelected("demo"), telemetry.NewDemoInstalled(true, false))
+
+	agent := exec.Command(os.Args[0], "telemetry", "enable", "--confirmed-by-user")
+	agent.Env = append(os.Environ(), childEnv+"=1", "CLAUDECODE=1", preview.EnvVar+"=1")
+	for key, value := range e.vars {
+		agent.Env = append(agent.Env, key+"="+value)
+	}
+	if out, err := agent.CombinedOutput(); err != nil {
+		t.Fatalf("agent enable: %v\n%s", err, out)
+	}
+	if state := e.telemetryStatus().Telemetry; state.State != telemetry.StateEnabled || state.Channel != "agent" {
+		t.Fatalf("after agent enable: %+v", state)
+	}
+	tui.Exit(context.Background())
+	if got := recorder.received(); len(got) != 0 {
+		t.Fatalf("TUI buffer sent after another process enabled: %v", got)
+	}
+}
+
+// Review F6: human output points people at the prompting command; the
+// relay flag appears only in agent-directed JSON, stating it may be passed
+// only after the person said yes, and never as a runnable next command.
+func TestTelemetryRelayFlagOnlyInAgentGuidance(t *testing.T) {
+	e := telemetryEnv(t, "http://127.0.0.1:9")
+	const flag = "--confirmed-by-user"
+	human := e.run("telemetry", "status")
+	if strings.Contains(human.stdout+human.stderr, flag) || !strings.Contains(human.stdout, "ovdb telemetry enable") {
+		t.Errorf("human status advertises the flag or lacks the command:\n%s", human.stdout)
+	}
+	// Review L2: a refusal (no terminal, or an agent) says to ask the person
+	// and then pass the flag, and never offers the command that just failed.
+	refused := e.run("telemetry", "enable")
+	if !strings.Contains(refused.stderr, "ask the person") || !strings.Contains(refused.stderr, flag) ||
+		strings.Contains(refused.stderr, "What you can do") {
+		t.Errorf("refusal:\n%s", refused.stderr)
+	}
+	document := e.telemetryStatus()
+	if g := document.Telemetry.AgentGuidance; !strings.Contains(g, flag) || !strings.Contains(g, "only after") {
+		t.Errorf("status --json agent guidance = %q", g)
+	}
+	failure := decodeError(t, e.run("telemetry", "enable", "--json"), envelope.ConfirmationRequired)
+	if !strings.Contains(failure.Reason, flag) || !strings.Contains(failure.Reason, "only after") || len(failure.Next) != 0 {
+		t.Errorf("--json refusal = %+v", failure)
+	}
+	for _, next := range append(document.Next, failure.Next...) {
+		if strings.Contains(next.Command, flag) {
+			t.Errorf("next offers %q", next.Command)
+		}
+	}
+}
+
+// Review F7: disable always works. An unreadable config.yaml is backed up
+// byte for byte, the disabled state is written, and a readable remainder
+// (here the server section) is kept.
+func TestTelemetryDisableWithUnreadableConfig(t *testing.T) {
+	for name, content := range map[string]string{
+		"yaml syntax":          "server:\n  port: [oops\n",
+		"bad telemetry":        "server:\n  port: 7001\ntelemetry: [enabled, yes]\n",
+		"unrelated bad values": "server:\n  port: not-a-port\ntelemetry:\n  state: enabled\n  install_id: 9c1b0a2e-2d1f-4c7a-8b1e-0f2a3b4c5d6e\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := telemetryEnv(t, "http://127.0.0.1:9")
+			if err := os.MkdirAll(e.dirs.Home, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(e.dirs.Home, "config.yaml")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r := e.run("telemetry", "disable", "--json")
+			var document telemetry.Document
+			if r.code != 0 || json.Unmarshal([]byte(r.stdout), &document) != nil || document.Telemetry.State != telemetry.StateDisabled || document.Backup == "" {
+				t.Fatalf("disable: %+v", r)
+			}
+			backup, err := os.ReadFile(document.Backup)
+			if err != nil || string(backup) != content {
+				t.Fatalf("backup %s = %q, %v", document.Backup, backup, err)
+			}
+			consent, err := telemetry.LoadConsent(e.dirs.Home)
+			if err != nil || consent.State != telemetry.StateDisabled || consent.InstallID != "" {
+				t.Fatalf("consent after disable = %+v, %v", consent, err)
+			}
+			if data, _ := os.ReadFile(path); name == "unrelated bad values" && !strings.Contains(string(data), "not-a-port") {
+				t.Errorf("unrelated content lost:\n%s", data)
+			}
+		})
+	}
+}
+
+// skill_installed carries the skill and the harness id, never the
+// directory.
+func TestTelemetrySkillInstalled(t *testing.T) {
+	recorder, endpoint := newPosthog(t)
+	e := telemetryEnv(t, endpoint)
+	if err := os.MkdirAll(filepath.Join(e.userHome(), ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if r := e.runCommand("telemetry", "enable", "--confirmed-by-user"); r.code != 0 {
+		t.Fatalf("enable: %+v", r)
+	}
+	if r := e.runCommand("skills", "install", "todo-demo", "--harness", "claude", "--yes"); r.code != 0 {
+		t.Fatalf("install: %+v", r)
+	}
+	var skill map[string]any
+	for _, event := range recorder.received() {
+		if event["event"] == "skill_installed" {
+			skill = event
+		}
+		if data, _ := json.Marshal(event); strings.Contains(string(data), e.userHome()) || strings.Contains(string(data), ".claude") {
+			t.Errorf("event carries a directory: %s", data)
+		}
+	}
+	if skill == nil || skill["skill"] != "todo-demo" || skill["harness"] != "claude" || skill["success"] != true {
+		t.Fatalf("skill_installed = %v (all %v)", skill, recorder.received())
+	}
+}
+
+// Review M1: with the server running, the stored deciding channel is the
+// deciding process's: agent under an agent harness, tui from the TUI.
+func TestTelemetryDecisionChannelWithServerRunning(t *testing.T) {
+	e := telemetryEnv(t, "http://127.0.0.1:9")
+	if r := e.run("server", "start"); r.code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	e.vars["CLAUDECODE"] = "1"
+	if r := e.run("telemetry", "enable", "--confirmed-by-user"); r.code != 0 {
+		t.Fatalf("agent enable: %+v", r)
+	}
+	if status := e.telemetryStatus().Telemetry; status.State != telemetry.StateEnabled || status.Channel != "agent" {
+		t.Fatalf("agent decision = %+v", status)
+	}
+	delete(e.vars, "CLAUDECODE")
+	tui := &client.Local{Dirs: e.dirs, Version: testVersion, Port: e.port(), Getenv: func(key string) string { return e.vars[key] },
+		Telemetry: e.app.TUIRecorder(e.dirs.Home)}
+	if _, err := tui.SetTelemetry(context.Background(), telemetry.Change{State: telemetry.StateDisabled}); err != nil {
+		t.Fatal(err)
+	}
+	if status := e.telemetryStatus().Telemetry; status.State != telemetry.StateDisabled || status.Channel != "tui" {
+		t.Fatalf("tui decision = %+v", status)
+	}
+}
+
+// Review M2: `ovdb status` carries the telemetry state and reason,
+// evaluated in the process that prints it, and --json still equals the API
+// body when both processes' environments agree.
+func TestStatusIncludesTelemetry(t *testing.T) {
+	e := previewEnv(t)
+	statusOf := func(jsonOut bool) string {
+		var out bytes.Buffer
+		cmd := &cobra.Command{Use: "status"}
+		cmd.SetOut(&out)
+		cmd.SetContext(context.Background())
+		if err := e.app.Status(cmd, jsonOut); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	var document struct {
+		Telemetry struct {
+			State, Reason string
+			ReasonText    string `json:"reason_text"`
+		} `json:"telemetry"`
+	}
+	if err := json.Unmarshal([]byte(statusOf(true)), &document); err != nil || document.Telemetry.State != "not_asked" {
+		t.Fatalf("status --json telemetry = %+v (%v)", document.Telemetry, err)
+	}
+	if human := statusOf(false); !strings.Contains(human, "Usage statistics: Off (you haven't decided yet)") {
+		t.Errorf("human status:\n%s", human)
+	}
+	if r := e.run("server", "start"); r.code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	if got, want := statusOf(true), e.api(http.MethodGet, "/api/local/v1/status"); got != want || !strings.Contains(want, `"telemetry":{"state":"not_asked"`) {
+		t.Errorf("status --json\n got %s\nwant %s", got, want)
+	}
+	e.vars["DO_NOT_TRACK"] = "1"
+	_ = json.Unmarshal([]byte(statusOf(true)), &document)
+	if document.Telemetry.Reason != "DO_NOT_TRACK" || document.Telemetry.ReasonText == "" {
+		t.Errorf("client DO_NOT_TRACK not named: %+v", document.Telemetry)
+	}
+	if human := statusOf(false); !strings.Contains(human, "DO_NOT_TRACK is set") {
+		t.Errorf("human status lacks the reason:\n%s", human)
+	}
+}

@@ -1,0 +1,658 @@
+package localserver
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/openvaultdb/openvaultdb-go/pkg/auth"
+
+	"github.com/openvaultdb/ovdb/internal/envelope"
+	"github.com/openvaultdb/ovdb/internal/paths"
+	"github.com/openvaultdb/ovdb/internal/runtime"
+	"github.com/openvaultdb/ovdb/internal/setup"
+	"github.com/openvaultdb/ovdb/internal/setup/explore"
+	"github.com/openvaultdb/ovdb/internal/setup/skills"
+)
+
+const (
+	testPort   = 6832
+	testSecret = "instance-secret"
+	testHost   = "127.0.0.1:6832"
+)
+
+type fixture struct {
+	handler   *Handler
+	dirs      paths.Dirs
+	token     string // a valid scoped token from auth.json
+	shutdowns int
+	now       time.Time
+	options   func(*Options) // adjusts Options before each (re)start
+	userHome  string         // HOME in the server's environment
+}
+
+// consoleStub stands in for the embedded console so tests see which
+// requests reached it.
+var consoleStub = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = io.WriteString(w, "console:"+r.URL.Path)
+})
+
+func newFixture(t *testing.T, options ...func(*Options)) *fixture {
+	t.Helper()
+	base := t.TempDir()
+	dirs := paths.Dirs{Home: filepath.Join(base, "home"), Runtime: filepath.Join(base, "run"), Data: filepath.Join(base, "data")}
+	for _, dir := range []string{dirs.Home, dirs.Runtime} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := auth.OpenStore(filepath.Join(dirs.Home, AuthStoreFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fixture{dirs: dirs, token: "ovdb_scoped_token", userHome: filepath.Join(base, "user")}
+	// Claude Code is "installed" for the server's user.
+	if err := os.MkdirAll(filepath.Join(f.userHome, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateGrant(&auth.Grant{DatabaseID: "todo", Capabilities: []auth.Capability{{Action: "read"}}}, f.token); err != nil {
+		t.Fatal(err)
+	}
+	f.now = time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	f.options = func(o *Options) {
+		for _, option := range options {
+			option(o)
+		}
+	}
+	f.restart(t)
+	return f
+}
+
+// getenv is the server's environment: only the user's home is set.
+func (f *fixture) getenv(key string) string {
+	if key == "HOME" || key == "USERPROFILE" {
+		return f.userHome
+	}
+	return ""
+}
+
+func (f *fixture) installedSkills() []skills.Installed {
+	env, _ := skills.EnvFrom(f.getenv)
+	return skills.Status(env)
+}
+
+// restart builds a new handler over the same directories, as a server
+// restart does.
+func (f *fixture) restart(t *testing.T) {
+	t.Helper()
+	started := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	opts := Options{
+		Dirs: f.dirs,
+		Record: runtime.Record{
+			Schema: 1, InstanceID: "instance-1", Home: f.dirs.Home, PID: 42, ProcessIdentity: "id",
+			Port: testPort, Version: "1.2.3", StartedAt: started,
+		},
+		Secret:          testSecret,
+		RequestShutdown: func() { f.shutdowns++ },
+		Now:             func() time.Time { return f.now },
+		Console:         consoleStub,
+		Getenv:          f.getenv,
+	}
+	f.options(&opts)
+	handler, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.handler = handler
+}
+
+type request struct {
+	method, path, host, bearer, contentType, body string
+	cookie                                        string            // session cookie value
+	header                                        map[string]string // extra headers
+}
+
+func (f *fixture) do(t *testing.T, r request) *httptest.ResponseRecorder {
+	t.Helper()
+	if r.method == "" {
+		r.method = http.MethodGet
+	}
+	var body io.Reader
+	if r.body != "" {
+		body = strings.NewReader(r.body)
+	}
+	req := httptest.NewRequest(r.method, r.path, body)
+	req.Host = testHost
+	if r.host != "" {
+		req.Host = r.host
+	}
+	if r.bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+r.bearer)
+	}
+	if r.cookie != "" {
+		req.AddCookie(&http.Cookie{Name: SessionCookieName(testPort), Value: r.cookie})
+	}
+	for name, value := range r.header {
+		req.Header.Set(name, value)
+	}
+	if r.contentType != "" {
+		req.Header.Set("Content-Type", r.contentType)
+	} else if r.method != http.MethodGet {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	rec := httptest.NewRecorder()
+	f.handler.ServeHTTP(rec, req)
+	return rec
+}
+
+func assertSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	for header, want := range map[string]string{
+		"X-Content-Type-Options":  "nosniff",
+		"Referrer-Policy":         "no-referrer",
+		"Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+		"X-Frame-Options":         "DENY",
+	} {
+		if got := rec.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+}
+
+func assertEnvelope(t *testing.T, rec *httptest.ResponseRecorder, status int, code envelope.Code) {
+	t.Helper()
+	if rec.Code != status {
+		t.Errorf("status = %d, want %d (body %s)", rec.Code, status, rec.Body)
+	}
+	e := envelope.Decode(rec.Body.Bytes())
+	if e == nil || e.Code != code {
+		t.Errorf("body = %s, want envelope %s", rec.Body, code)
+	}
+}
+
+func TestReadOnlyBlocksLocalDatabaseMutations(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if _, err := setup.ApplyConfigChange(f.dirs, setup.ConfigChange{Key: setup.KeyServerReadOnly, Value: "true"}, false); err != nil {
+		t.Fatal(err)
+	}
+	f.restart(t)
+	for _, tc := range []request{
+		{method: http.MethodPost, path: "/api/local/v1/databases", bearer: testSecret, body: `{"id":"blocked"}`},
+		{method: http.MethodPost, path: "/api/local/v1/databases/connect", bearer: testSecret, body: `{}`},
+		{method: http.MethodPost, path: "/api/local/v1/databases/blocked/reload", bearer: testSecret, body: `{}`},
+		{method: http.MethodPost, path: "/api/local/v1/databases/reload", bearer: testSecret, body: `{}`},
+		{method: http.MethodDelete, path: "/api/local/v1/databases/blocked", bearer: testSecret},
+		{method: http.MethodPost, path: "/api/local/v1/demo/install", bearer: testSecret, body: `{}`},
+	} {
+		assertEnvelope(t, f.do(t, tc), http.StatusForbidden, envelope.Forbidden)
+	}
+	// Configuration stays operable so the owner can turn the mode off and
+	// restart; it does not mutate database data.
+	if rec := f.do(t, request{method: http.MethodPut, path: "/api/local/v1/config", bearer: testSecret, body: `{"key":"server.read_only","value":"false"}`}); rec.Code != http.StatusOK {
+		t.Errorf("config remains operable: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// The credential table of REQ:credentials, for the 1a routes, and
+// AC:endpoints-authenticated.
+func TestCredentialTable(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	type cell struct {
+		status int
+		code   envelope.Code
+	}
+	ok := cell{status: http.StatusOK}
+	unauthorized := cell{http.StatusUnauthorized, envelope.Unauthorized}
+	forbidden := cell{http.StatusForbidden, envelope.Forbidden}
+
+	for _, endpoint := range endpoints {
+		path, body := endpointRequest(f, endpoint)
+		for _, tc := range []struct {
+			name, bearer string
+			want         cell
+		}{
+			{"no credential", "", unauthorized},
+			{"invalid bearer", "wrong", unauthorized},
+			{"scoped token", f.token, forbidden},
+			{"instance secret", testSecret, ok},
+		} {
+			t.Run(endpoint.method+" "+endpoint.path+"/"+tc.name, func(t *testing.T) {
+				rec := f.do(t, request{method: endpoint.method, path: path, bearer: tc.bearer, body: body})
+				assertSecurityHeaders(t, rec)
+				if tc.want.code == "" {
+					created := tc.want.status == http.StatusOK && rec.Code == http.StatusCreated
+					if rec.Code != tc.want.status && !created {
+						t.Errorf("status = %d, want %d (body %s)", rec.Code, tc.want.status, rec.Body)
+					}
+					return
+				}
+				assertEnvelope(t, rec, tc.want.status, tc.want.code)
+				if tc.want.status == http.StatusUnauthorized && rec.Header().Get("WWW-Authenticate") == "" {
+					t.Error("401 without WWW-Authenticate")
+				}
+			})
+		}
+	}
+
+	// The /v1 data API is openvaultdb-go's, with the secret as owner token.
+	for _, tc := range []struct {
+		bearer string
+		status int
+	}{{"", 401}, {"wrong", 401}, {testSecret, 200}} {
+		rec := f.do(t, request{path: "/v1/databases", bearer: tc.bearer})
+		if rec.Code != tc.status {
+			t.Errorf("GET /v1/databases bearer %q = %d, want %d", tc.bearer, rec.Code, tc.status)
+		}
+		assertSecurityHeaders(t, rec)
+	}
+	// Unknown local API paths and methods reveal nothing without credentials.
+	assertEnvelope(t, f.do(t, request{path: "/api/local/v1/nope"}), http.StatusUnauthorized, envelope.Unauthorized)
+	assertEnvelope(t, f.do(t, request{path: "/api/local/v1/nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
+	assertEnvelope(t, f.do(t, request{method: http.MethodDelete, path: "/api/local/v1/status", bearer: testSecret}),
+		http.StatusMethodNotAllowed, envelope.InvalidArgument)
+}
+
+// endpointRequest is a valid request path and body for endpoint: a new
+// database to create, then the same one to remove.
+func endpointRequest(f *fixture, e endpoint) (path, body string) {
+	path = strings.ReplaceAll(e.path, "{id}", "credentials")
+	switch {
+	case e.path == "/api/local/v1/config":
+		body = `{"key":"server.port","value":"7000"}`
+	case e.path == "/api/local/v1/telemetry":
+		body = `{"state":"disabled"}`
+	case e.path == "/api/local/v1/telemetry/events":
+		body = `{"events":[{"event":"onboarding_started"}]}`
+	case e.method == http.MethodPut && e.path == "/api/local/v1/context":
+		body = `{"scope":"global","clear":true}`
+	case e.method == http.MethodPost && e.path == "/api/local/v1/databases":
+		data, _ := json.Marshal(setup.CreateRequest{ID: "credentials", Path: filepath.Join(f.dirs.Data, "credentials")})
+		body = string(data)
+	case e.path == "/api/local/v1/databases/connect":
+		existing := filepath.Join(f.dirs.Data, "existing")
+		_ = os.MkdirAll(filepath.Join(existing, setup.InGitDBDir), 0o755)
+		data, _ := json.Marshal(setup.ConnectRequest{ID: "credentials-connect", Path: existing})
+		body = string(data)
+	case e.path == "/api/local/v1/demo/install":
+		body = `{"id":"credentials-demo"}`
+	case e.path == "/api/local/v1/skills/install":
+		body = `{"skill":"openvaultdb","harnesses":["claude"],"dry_run":true}`
+	case e.path == "/api/local/v1/explore/datatug":
+		// "credentials" itself is removed by the DELETE endpoint's own
+		// subtest earlier in the table; "credentials-connect" is not.
+		// &collection= names one explicitly: "credentials-connect" is an
+		// empty inGitDB folder with no root collections to default from
+		// (F5).
+		path += "?db=credentials-connect&collection=items"
+	}
+	return path, body
+}
+
+// AC:dns-rebinding-blocked.
+func TestHostAllowlist(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	for _, host := range []string{"ovdb.localhost:6832", "OVDB.LOCALHOST:6832", "localhost:6832", "127.0.0.1:6832", "[::1]:6832"} {
+		if rec := f.do(t, request{path: "/", host: host}); rec.Code != http.StatusOK {
+			t.Errorf("Host %s = %d", host, rec.Code)
+		}
+	}
+	for _, host := range []string{
+		"attacker.example:6832", "localhost.:6832", "ovdb.localhost.:6832", "localhost", "127.0.0.1:6833",
+		"127.0.0.1", "evil.localhost:6832", "127.0.0.1:6832.evil.example",
+	} {
+		for _, path := range []string{"/", "/api/local/v1/whoami", "/v1/databases"} {
+			rec := f.do(t, request{path: path, host: host, bearer: testSecret})
+			assertEnvelope(t, rec, http.StatusForbidden, envelope.Forbidden)
+			assertSecurityHeaders(t, rec)
+		}
+	}
+}
+
+// REQ:landing-page: no session means the landing page, with no data.
+func TestLandingPage(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	rec := f.do(t, request{path: "/settings", host: "ovdb.localhost:6832"})
+	assertSecurityHeaders(t, rec)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("landing = %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{"Open the console from OVDB", "ovdb open", "AI assistant"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("landing lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "127.0.0.1 link") {
+		t.Error("fallback hint shown on ovdb.localhost")
+	}
+	if fallback := f.do(t, request{path: "/"}).Body.String(); !strings.Contains(fallback, "If ovdb.localhost didn&#39;t open") {
+		t.Errorf("fallback host lacks the hint: %s", fallback)
+	}
+	if strings.Contains(body, "instance-1") || strings.Contains(body, f.dirs.Home) {
+		t.Error("landing exposes server data")
+	}
+	if strings.Contains(body, "ovdb demo open") {
+		t.Error("console landing names the TODO app")
+	}
+	// The TODO app's landing page leads back to the lists first (review F7).
+	app := f.do(t, request{path: "/apps/todo/", host: "ovdb.localhost:6832"}).Body.String()
+	if i, j := strings.Index(app, "ovdb demo open"), strings.Index(app, "ovdb open"); i < 0 || j < i || !strings.Contains(app, "To open your TODO lists again, run:") {
+		t.Errorf("TODO app landing:\n%s", app)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/"}); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST / = %d", rec.Code)
+	}
+}
+
+func TestLocalAPIDocuments(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	owner := func(r request) *httptest.ResponseRecorder {
+		r.bearer = testSecret
+		return f.do(t, r)
+	}
+
+	rec := owner(request{path: runtime.WhoamiPath})
+	if want := `{"schema":1,"instance_id":"instance-1","version":"1.2.3"}` + "\n"; rec.Body.String() != want {
+		t.Errorf("whoami = %s", rec.Body)
+	}
+
+	server := setup.RunningServer(&runtime.Record{Port: testPort, Version: "1.2.3", PID: 42,
+		StartedAt: time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)}, f.dirs)
+	if got, want := owner(request{path: "/api/local/v1/server"}).Body.String(), string(envelope.Marshal(setup.NewServerDocument(server))); got != want {
+		t.Errorf("server = %s, want %s", got, want)
+	}
+	status := setup.NewStatus("1.2.3", f.dirs, server, nil, nil, f.installedSkills())
+	status.SetTelemetry(f.handler.server.opts.Telemetry.Decide(), f.handler.server.opts.Telemetry.Available())
+	if got, want := owner(request{path: "/api/local/v1/status"}).Body.String(), string(envelope.Marshal(status)); got != want {
+		t.Errorf("status = %s, want %s", got, want)
+	}
+
+	// Config: read, reject bad input, write, read back.
+	if got := owner(request{path: "/api/local/v1/config"}).Body.String(); got != `{"schema":1,"config":{"server":{}},"next":[]}`+"\n" {
+		t.Errorf("empty config = %s", got)
+	}
+	assertEnvelope(t, owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"99999"}`}),
+		http.StatusBadRequest, envelope.InvalidArgument)
+	assertEnvelope(t, owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"nope","value":"1"}`}),
+		http.StatusBadRequest, envelope.InvalidArgument)
+	assertEnvelope(t, owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{`}),
+		http.StatusBadRequest, envelope.InvalidArgument)
+	assertEnvelope(t, owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"7000"}`, contentType: "text/plain"}),
+		http.StatusUnsupportedMediaType, envelope.InvalidArgument)
+	rec = owner(request{method: http.MethodPut, path: "/api/local/v1/config", body: `{"key":"server.port","value":"7000"}`})
+	if want := `{"schema":1,"config":{"server":{"port":7000}},"changed":true,"next":[{"label":"Restart the OVDB server to use it","command":"ovdb server restart"}]}` + "\n"; rec.Body.String() != want {
+		t.Errorf("PUT config = %s", rec.Body)
+	}
+	if config, _ := setup.LoadConfig(f.dirs.Home); config.Server.Port != 7000 {
+		t.Errorf("config.yaml port = %d", config.Server.Port)
+	}
+
+	// Shutdown answers first, then asks the process to stop.
+	rec = owner(request{method: http.MethodPost, path: "/api/local/v1/server/shutdown", body: `{}`})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"state":"stopping"`) || f.shutdowns != 1 {
+		t.Errorf("shutdown = %d %s, shutdowns %d", rec.Code, rec.Body, f.shutdowns)
+	}
+}
+
+func TestLoginLinks(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/login-links", bearer: testSecret})
+	var link LoginLink
+	if err := json.Unmarshal(rec.Body.Bytes(), &link); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("login link = %d %s", rec.Code, rec.Body)
+	}
+	primary, fallback := strings.TrimPrefix(link.URL, "http://ovdb.localhost:6832/login?code="),
+		strings.TrimPrefix(link.FallbackURL, "http://127.0.0.1:6832/login?code=")
+	if primary == link.URL || primary != fallback || len(primary) < 40 {
+		t.Errorf("links %q and %q do not share one code", link.URL, link.FallbackURL)
+	}
+	if want := time.Date(2026, 9, 17, 10, 10, 0, 0, time.UTC); !link.ExpiresAt.Equal(want) {
+		t.Errorf("expires_at = %s, want %s", link.ExpiresAt, want)
+	}
+	second := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/login-links", bearer: testSecret, body: `{"next":"/apps/todo/"}`})
+	if !strings.Contains(second.Body.String(), "next=%2Fapps%2Ftodo%2F") || strings.Contains(second.Body.String(), primary) {
+		t.Errorf("second link = %s", second.Body)
+	}
+	for _, next := range []string{"//evil.example", "https://evil.example/", `/\evil.example`, "relative"} {
+		body, _ := json.Marshal(LoginLinkRequest{Next: next})
+		assertEnvelope(t, f.do(t, request{method: http.MethodPost, path: "/api/local/v1/login-links", bearer: testSecret, body: string(body)}),
+			http.StatusBadRequest, envelope.InvalidArgument)
+	}
+}
+
+func TestPanicIsRecoveredRedacted(t *testing.T) {
+	t.Parallel()
+	var logged strings.Builder
+	h := securityHeaders(recoverPanics(&logged)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("mount failed: postgres://u:s3cret@db/x")
+	})))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/databases", nil))
+	assertEnvelope(t, rec, http.StatusInternalServerError, envelope.Internal)
+	assertSecurityHeaders(t, rec)
+	if strings.Contains(rec.Body.String(), "s3cret") || strings.Contains(logged.String(), "s3cret") || !strings.Contains(logged.String(), "panic serving GET /v1/databases") {
+		t.Errorf("body %s, log %s", rec.Body, logged.String())
+	}
+}
+
+func TestWellKnownNamesConnectEndpoints(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	rec := f.do(t, request{path: "/.well-known/openvaultdb"})
+	if want := `{"authEnabled":true,"authorizeEndpoint":"/authorize","name":"OpenVaultDB","protocol":"openvaultdb/0.1","tokenEndpoint":"/token","version":"1.2.3"}` + "\n"; rec.Code != 200 || rec.Body.String() != want {
+		t.Errorf("well-known = %d %s", rec.Code, rec.Body)
+	}
+}
+
+// TestExploreDataTug is explore-data-handoff#AC:descriptor-and-command and
+// AC:datatug-missing (capability row 22): the descriptor has exactly four
+// keys and no token, the printed command always carries --no-policies
+// (spike S4), and datatug missing shows install commands instead.
+func TestExploreDataTug(t *testing.T) {
+	t.Parallel()
+	onPath := true
+	f := newFixture(t, func(o *Options) {
+		o.DataTugLookPath = func(string) (string, error) {
+			if onPath {
+				return "/usr/bin/datatug", nil
+			}
+			return "", os.ErrNotExist
+		}
+	})
+	data, err := json.Marshal(setup.CreateRequest{ID: "notes", Path: filepath.Join(f.dirs.Data, "notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
+	}
+
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	var document struct {
+		OnPath         bool              `json:"on_path"`
+		Collection     string            `json:"collection"`
+		DescriptorPath string            `json:"descriptor_path"`
+		Descriptor     map[string]string `json:"descriptor"`
+		EnvLines       []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"env_lines"`
+		TokenCommand    string   `json:"token_command"`
+		QueryCommand    string   `json:"query_command"`
+		InstallCommands []string `json:"install_commands"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("explore datatug = %d %s (%v)", rec.Code, rec.Body, err)
+	}
+	if !document.OnPath || len(document.InstallCommands) != 0 {
+		t.Errorf("on path result = %+v", document)
+	}
+	if document.Collection != "items" {
+		t.Errorf("collection = %q", document.Collection)
+	}
+	if len(document.Descriptor) != 4 {
+		t.Fatalf("descriptor has %d keys, want 4: %v", len(document.Descriptor), document.Descriptor)
+	}
+	if document.Descriptor["baseUrl"] != "http://127.0.0.1:6832" || document.Descriptor["databaseId"] != "notes" ||
+		document.Descriptor["tokenEnv"] != "OVDB_DATATUG_TOKEN" || document.Descriptor["principalId"] != "local-owner" {
+		t.Errorf("descriptor = %v", document.Descriptor)
+	}
+	if _, hasToken := document.Descriptor["token"]; hasToken {
+		t.Error("descriptor carries a token key")
+	}
+	if !strings.Contains(document.QueryCommand, "--no-policies") {
+		t.Errorf("query command lacks --no-policies: %q", document.QueryCommand)
+	}
+	if document.TokenCommand != "ovdb token create --db notes --scope read-only" {
+		t.Errorf("token command = %q", document.TokenCommand)
+	}
+	written, err := os.ReadFile(document.DescriptorPath)
+	if err != nil {
+		t.Fatalf("descriptor not written: %v", err)
+	}
+	if strings.Contains(string(written), "token") == false || strings.Contains(string(written), "ovdb_") {
+		t.Errorf("written descriptor = %s", written)
+	}
+
+	// datatug missing (AC:datatug-missing): install commands shown, and the
+	// prepared command still printed for afterwards.
+	onPath = false
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	document.InstallCommands = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("explore datatug missing = %d %s", rec.Code, rec.Body)
+	}
+	if document.OnPath || len(document.InstallCommands) != 2 || document.QueryCommand == "" {
+		t.Errorf("datatug missing result = %+v", document)
+	}
+
+	// An unregistered database is a clean not_found, naming ovdb databases.
+	assertEnvelope(t, f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=nope", bearer: testSecret}), http.StatusNotFound, envelope.NotFound)
+}
+
+// TestExploreDataTugCollectionResolution is review-inc-7.md F5: the demo
+// always defaults to "lists"; any other database with exactly one root
+// collection defaults to it; with several, --collection is required and the
+// choices are named; a value naming a path, not a root collection, is
+// refused (datatug-cli reads root collections only — datatug-cli#256).
+func TestExploreDataTugCollectionResolution(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	create := func(id string) {
+		data, err := json.Marshal(setup.CreateRequest{ID: id, Path: filepath.Join(f.dirs.Data, id)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d %s", id, rec.Code, rec.Body)
+		}
+	}
+	insert := func(db, key string) {
+		body := `{"message":"seed","ops":[{"op":"insert","key":"` + key + `","data":{}}]}`
+		if rec := f.do(t, request{method: http.MethodPost, path: "/v1/databases/" + db + "/batch", body: body, bearer: testSecret}); rec.Code >= 300 {
+			t.Fatalf("insert %s/%s = %d %s", db, key, rec.Code, rec.Body)
+		}
+	}
+
+	// Exactly one root collection: it is the default.
+	create("sole")
+	insert("sole", "customers/a")
+	rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=sole", bearer: testSecret})
+	var document explore.DataTugCLI
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("sole collection = %d %s", rec.Code, rec.Body)
+	}
+	if document.Collection != "customers" {
+		t.Errorf("sole collection default = %q, want customers", document.Collection)
+	}
+
+	// Several root collections: --collection is required, naming both.
+	create("several")
+	insert("several", "customers/a")
+	insert("several", "orders/a")
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several", bearer: testSecret})
+	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
+	body := rec.Body.String()
+	for _, name := range []string{"customers", "orders"} {
+		if !strings.Contains(body, name) {
+			t.Errorf("ambiguous-collection body lacks %q: %s", name, body)
+		}
+	}
+	// An explicit, valid choice among several works.
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several&collection=orders", bearer: testSecret})
+	if err := json.Unmarshal(rec.Body.Bytes(), &document); rec.Code != http.StatusOK || err != nil || document.Collection != "orders" {
+		t.Errorf("explicit choice = %d %s", rec.Code, rec.Body)
+	}
+
+	// A path, not a root collection name, is refused — not silently sent
+	// through to come back empty (spike S4; datatug-cli#256).
+	rec = f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=several&collection=customers/a", bearer: testSecret})
+	assertEnvelope(t, rec, http.StatusBadRequest, envelope.InvalidArgument)
+	if body := rec.Body.String(); !strings.Contains(body, "root collections only") {
+		t.Errorf("nested-collection body = %s, want it to say root collections only", body)
+	}
+}
+
+// TestExploreDataTugIsAPostNotAGet is review-inc-7.md F9: a cross-site
+// top-level GET navigation (safe under http.CrossOriginProtection, sent
+// with the session cookie by any link) must not be able to write the
+// descriptor; only an explicit POST, the action of actually choosing
+// DataTug CLI, may.
+func TestExploreDataTugIsAPostNotAGet(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	data, err := json.Marshal(setup.CreateRequest{ID: "notes", Path: filepath.Join(f.dirs.Data, "notes")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/databases", body: string(data), bearer: testSecret}); rec.Code != http.StatusCreated {
+		t.Fatalf("create notes = %d %s", rec.Code, rec.Body)
+	}
+
+	// A GET no longer prepares (or even reaches) the endpoint.
+	get := f.do(t, request{method: http.MethodGet, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	if get.Code == http.StatusOK {
+		t.Errorf("GET explore/datatug = %d, want it refused", get.Code)
+	}
+	if _, err := os.Stat(filepath.Join(f.dirs.Home, "explore", "datatug", "notes.json")); !os.IsNotExist(err) {
+		t.Errorf("a GET wrote the descriptor: %v", err)
+	}
+
+	// The POST — choosing DataTug CLI — does prepare it.
+	post := f.do(t, request{method: http.MethodPost, path: "/api/local/v1/explore/datatug?db=notes&collection=items", bearer: testSecret})
+	if post.Code != http.StatusOK {
+		t.Fatalf("POST explore/datatug = %d %s", post.Code, post.Body)
+	}
+	if _, err := os.Stat(filepath.Join(f.dirs.Home, "explore", "datatug", "notes.json")); err != nil {
+		t.Errorf("POST did not write the descriptor: %v", err)
+	}
+}
+
+func TestDatabaseOf(t *testing.T) {
+	t.Parallel()
+	for path, want := range map[string]string{
+		"/v1/databases/todo":                      "todo",
+		"/v1/databases/todo/records/lists/to-buy": "todo",
+		"/v1/databases/my%20db/query":             "my db",
+		"/v1/databases/":                          "",
+		"/v1/databases":                           "",
+		"/v1/status":                              "",
+	} {
+		if got, ok := databaseOf(path); got != want || ok != (want != "") {
+			t.Errorf("databaseOf(%q) = %q, %v", path, got, ok)
+		}
+	}
+}

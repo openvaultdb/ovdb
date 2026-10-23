@@ -1,0 +1,84 @@
+{
+  "counts": {
+    "locations": 141722,
+    "null_location_ids": 0,
+    "organizations": 141528,
+    "organizations_with_multiple_locations": 138,
+    "organizations_without_locations": 0,
+    "relationship_targets_absent": 0,
+    "relationships": 72747,
+    "unique_geonames_ids": 19729
+  },
+  "outputs": {
+    "DATA-LICENSE.md": {
+      "bytes": 1116,
+      "sha256": "39d8853e3c9f9a7a96ea77edd1afe52ad25902f34a30855ad53c2c1aed62443b"
+    },
+    "ror-geonames-ids.txt": {
+      "bytes": 156565,
+      "sha256": "04c27970c5e70c8d3bbd470e18d022d0477dbd63257da3e9c8427043f66081e9"
+    },
+    "ror.sqlite": {
+      "bytes": 238563328,
+      "sha256": "afdf978130ee9899fedb698f0e9d18399efdea40ea92f01f26d6055ef1ed5d38"
+    }
+  },
+  "parser_sha256": "4c9b507975c0c8dd2f5f36ac2cf5009f819bd3b736ee83a8a87590b24c1c4903",
+  "projection": {
+    "array_ordinals": "zero-based original order",
+    "geonames_ids": "numeric sorted distinct positive native IDs, LF",
+    "logical_recordset": "ROR organizations",
+    "physical_tables": [
+      "organizations",
+      "locations",
+      "relationships"
+    ],
+    "raw_json": "complete source record, canonical JSON serialization; no field loss",
+    "status_policy": "all statuses",
+    "user_contract": "pending dedicated acceptance"
+  },
+  "source": {
+    "archive_bytes": 37540961,
+    "archive_md5": "a935217de21e7983b977f5419f1a6b20",
+    "archive_sha256": "476988542f1bdd185f779386f90149371f58cb4ebdba326db3b7b428a468d4a5",
+    "bootstrap_commit": "156fa46e53b04f4d0b8aa54e31cca2d86af63038",
+    "embedded_geonames_license": "CC-BY-4.0",
+    "fetch_time": "2026-10-05T01:04:26.439988+00:00",
+    "member": "v2.13-2026-09-22-ror-data.json",
+    "member_bytes": 317796669,
+    "member_sha256": "6d032ff473f771e015da0837fe28b881a8f85822ee7815effefe11dc49c4346c",
+    "metadata_license": "CC0-1.0",
+    "organizations": 141528,
+    "release": "v2.13",
+    "release_date": "2026-09-22",
+    "source_record_url": "https://zenodo.org/records/22902037",
+    "source_url": "https://zenodo.org/records/22902037/files/v2.13-2026-09-22-ror-data.zip"
+  },
+  "statuses": {
+    "active": 138289,
+    "inactive": 1809,
+    "withdrawn": 1430
+  },
+  "generator": {
+    "repository": "https://github.com/ingitdb/ror-ingitdb",
+    "revision": "bbbec903248680caea04e68f94b9a957b6efc55b"
+  },
+  "artifacts": [
+    {
+      "path": "ror.sqlite",
+      "sha256": "afdf978130ee9899fedb698f0e9d18399efdea40ea92f01f26d6055ef1ed5d38"
+    },
+    {
+      "path": "model/ror.modelspec.json",
+      "sha256": "318cb63f7dfa7c69c46c457b0deae309f518ba9523e2c8d586951cd78688f907"
+    },
+    {
+      "path": "model/ror.meaning.yaml",
+      "sha256": "70e54d63b0d564edc73149154f84374cdff30a17b8631c56ecab06dd93d452e9"
+    },
+    {
+      "path": "source/validation.json",
+      "sha256": "9e98ff6d121e3018874dbfb429ece3759c4c1bd09f4754765a4bc1f47a2a7d75"
+    }
+  ]
+}

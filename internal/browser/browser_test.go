@@ -1,0 +1,75 @@
+package browser
+
+import (
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestCommandPerPlatform(t *testing.T) {
+	t.Parallel()
+	const url = "http://ovdb.localhost:6832/login?code=a&next=%2F"
+	for goos, want := range map[string][]string{
+		"linux":   {"xdg-open", url},
+		"freebsd": {"xdg-open", url},
+		"darwin":  {"open", url},
+		"windows": {"rundll32", "url.dll,FileProtocolHandler", url},
+	} {
+		name, args := Command(goos, url)
+		if got := append([]string{name}, args...); !slices.Equal(got, want) {
+			t.Errorf("%s: %v, want %v", goos, got, want)
+		}
+	}
+}
+
+func TestOpen(t *testing.T) {
+	t.Parallel()
+	env := func(vars map[string]string) func(string) string { return func(key string) string { return vars[key] } }
+	found := func(string) (string, error) { return "/usr/bin/opener", nil }
+	missing := func(string) (string, error) { return "", errors.New("not found") }
+	for _, tc := range []struct {
+		name     string
+		opener   Opener
+		want     error
+		launched bool
+	}{
+		{"linux with a display", Opener{GOOS: "linux", Getenv: env(map[string]string{"DISPLAY": ":0"}), LookPath: found}, nil, true},
+		{"linux on wayland", Opener{GOOS: "linux", Getenv: env(map[string]string{"WAYLAND_DISPLAY": "wayland-0"}), LookPath: found}, nil, true},
+		{"linux over ssh", Opener{GOOS: "linux", Getenv: env(nil), LookPath: found}, ErrUnavailable, false},
+		{"linux without xdg-open", Opener{GOOS: "linux", Getenv: env(map[string]string{"DISPLAY": ":0"}), LookPath: missing}, ErrUnavailable, false},
+		{"macOS", Opener{GOOS: "darwin", Getenv: env(nil), LookPath: found}, nil, true},
+		{"windows", Opener{GOOS: "windows", Getenv: env(nil), LookPath: found}, nil, true},
+	} {
+		launched := false
+		tc.opener.Start = func(string, ...string) error { launched = true; return nil }
+		if err := tc.opener.Open("http://127.0.0.1:6832/"); !errors.Is(err, tc.want) || launched != tc.launched {
+			t.Errorf("%s: err %v launched %t", tc.name, err, launched)
+		}
+	}
+	failing := Opener{GOOS: "darwin", LookPath: found, Start: func(string, ...string) error { return errors.New("boom") }}
+	if err := failing.Open("http://x"); err == nil || errors.Is(err, ErrUnavailable) {
+		t.Errorf("start failure = %v", err)
+	}
+}
+
+// A test binary that reaches the real opener fails, on every operating system
+// and whether or not a display exists: on a desktop the real one opens the
+// person's browser at a test server. With a fake Start the opener is the
+// ordinary one.
+func TestTestBinaryCannotReachTheRealOpener(t *testing.T) {
+	t.Parallel()
+	func() {
+		defer func() {
+			message, _ := recover().(string)
+			if !strings.Contains(message, "a test reached the real browser opener for http://x.test/") {
+				t.Errorf("recovered %q, want the guard's panic", message)
+			}
+		}()
+		_ = Opener{GOOS: "linux", Getenv: func(string) string { return "" }}.Open("http://x.test/")
+		t.Error("the real opener ran in a test binary")
+	}()
+	if err := (Opener{GOOS: "darwin", LookPath: func(string) (string, error) { return "open", nil }, Start: func(string, ...string) error { return nil }}).Open("http://x.test/"); err != nil {
+		t.Errorf("an opener with a fake Start = %v", err)
+	}
+}

@@ -1,0 +1,16 @@
+{
+  "format": "meaning/draft-1",
+  "concepts": [
+    {
+      "id": "native-country",
+      "extends": "meaning://github.com/example/source/country?ref=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "bindings": [
+        {
+          "model": "modelspec:///geo.Countries",
+          "property": "iso",
+          "role": "identifier"
+        }
+      ]
+    }
+  ]
+}

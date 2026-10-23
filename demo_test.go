@@ -45,8 +45,13 @@ func (c *demoFakeClient) CreateSession(_ context.Context, _ string, r demo.Creat
 }
 func (c *demoFakeClient) EndSession(context.Context, string, string) error { c.ended++; return nil }
 
+// demoConnectorHelperArg is the first argument of the re-execed test binary
+// that stands in for cloudflared. TestMain recognizes it and skips the ovdb
+// build, which cannot run in that child's PATH-only environment.
+const demoConnectorHelperArg = "-test.run=TestDemoConnectorHelper"
+
 func TestDemoConnectorHelper(t *testing.T) {
-	if len(os.Args) < 2 || os.Args[1] != "-test.run=TestDemoConnectorHelper" {
+	if len(os.Args) < 2 || os.Args[1] != demoConnectorHelperArg {
 		return
 	}
 	var metrics string
@@ -98,7 +103,7 @@ func TestRunListusDemoHarness(t *testing.T) {
 	deps.client = func(string, ...demo.Option) (demoSessionClient, error) { return client, nil }
 	deps.execLookPath = func(string) (string, error) { return "cloudflared", nil }
 	deps.execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		captured = exec.CommandContext(ctx, os.Args[0], "-test.run=TestDemoConnectorHelper", "--")
+		captured = exec.CommandContext(ctx, os.Args[0], demoConnectorHelperArg, "--")
 		captured.Args = append(captured.Args, args...)
 		return captured
 	}
@@ -198,7 +203,7 @@ func TestRunListusDemoExpiresWhileConnectorIsNotReady(t *testing.T) {
 	deps.execLookPath = func(string) (string, error) { return "cloudflared", nil }
 	var connector *exec.Cmd
 	deps.execCommand = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
-		connector = exec.CommandContext(ctx, os.Args[0], "-test.run=TestDemoConnectorHelper", "--", "--demo-test-not-ready")
+		connector = exec.CommandContext(ctx, os.Args[0], demoConnectorHelperArg, "--", "--demo-test-not-ready")
 		connector.Args = append(connector.Args, args...)
 		return connector
 	}
@@ -247,7 +252,7 @@ func TestRunListusDemoReturnsNilAtNormalExpiry(t *testing.T) {
 	deps.client = func(string, ...demo.Option) (demoSessionClient, error) { return client, nil }
 	deps.execLookPath = func(string) (string, error) { return "cloudflared", nil }
 	deps.execCommand = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
-		connector := exec.CommandContext(ctx, os.Args[0], "-test.run=TestDemoConnectorHelper", "--")
+		connector := exec.CommandContext(ctx, os.Args[0], demoConnectorHelperArg, "--")
 		connector.Args = append(connector.Args, args...)
 		return connector
 	}

@@ -1,0 +1,28 @@
+{
+  "modelspec": "1.0-draft",
+  "module": {
+    "name": "geo"
+  },
+  "entities": {
+    "Countries": {
+      "properties": {
+        "iso": {
+          "type": "string"
+        }
+      }
+    },
+    "CustomerCountries": {
+      "properties": {
+        "raw_label": {
+          "type": "string"
+        },
+        "target_key": {
+          "type": "string"
+        },
+        "serving_id": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

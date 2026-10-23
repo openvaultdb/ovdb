@@ -1,0 +1,245 @@
+{
+  "decision_id": "w1-ror-user-native-url",
+  "disposition": "accepted",
+  "scope": "Exact committed hypothetical fixture and field; native ROR URL snapshot-reference lookup only. Independent adversarial review and root landing remain required.",
+  "source": {
+    "repository": "https://github.com/datatug/datatug-apps",
+    "revision": "e7362033ec79c6663d7dbe0483b62fab01f7b9cd",
+    "schema_path": "libs/datatug/main/src/lib/queries/fixtures/public-data-fabric/affiliations.modelspec.json",
+    "schema_sha256": "cfe958f12d9a70bb7533499b76bf01c9447f81f0862852e460b095bb75e1b9cf",
+    "data_path": "libs/datatug/main/src/lib/queries/fixtures/public-data-fabric/affiliations.json",
+    "data_sha256": "44a30dd260c74f43b2138934cca0bccd493c7b804e124c5ecbded3c41226e543",
+    "declaration_path": "libs/datatug/main/src/lib/queries/fixtures/public-data-fabric/README.md",
+    "declaration_sha256": "ee5dd5d06a9e6db3848e3fc3db71afe2567f6e3e56b7bf8f9477eda5bca54575",
+    "module": "affiliations",
+    "module_id": "github.com/datatug/datatug-apps/affiliations",
+    "entity": "Affiliation",
+    "property": "ror_id",
+    "datatype": "string",
+    "required": false,
+    "null_policy": "Retain NULL as a separate no-reference exception; optional schema does not make NULL an identifier.",
+    "identifier_namespace": "ROR:URL",
+    "role": "organization-reference value on an affiliation row; not affiliation identity or proof of affiliation"
+  },
+  "target": {
+    "repository": "https://github.com/ingitdb/ror-ingitdb",
+    "revision": "bbbec903248680caea04e68f94b9a957b6efc55b",
+    "schema_path": "model/ror.modelspec.json",
+    "module": "ror",
+    "module_id": "github.com/ingitdb/ror-ingitdb/model/ror",
+    "entity": "organizations",
+    "property": "id",
+    "datatype": "string",
+    "identifier_namespace": "ROR:URL",
+    "role": "native organization identifier",
+    "binding_path": "model/ror.meaning.yaml",
+    "concept": "research-organization",
+    "core_parent": "meaning://github.com/meaninggraph/core/organization?ref=982916d73f0a35ff2558b0062f58aa3ac4f24d97",
+    "files_sha256": {
+      "model/ror.modelspec.json": "9694a0b6d7aba0bd26be22e8ee3501cf944463617839623e6b5b15d8068fd0ae",
+      "model/ror.modelspec.hcl": "e0bac3b33bbc710adade33732224169643a5ba3a37d5110a8f6140a3bcccbbda",
+      "model/ror.meaning.yaml": "70e54d63b0d564edc73149154f84374cdff30a17b8631c56ecab06dd93d452e9",
+      "source/ror-v2.13.json": "492f57ee01f5410852f1118e19d94698258e7494cc72a1e6f4a30e5f9da5caea",
+      "source/validation.json": "227a3da5cdd9762dd5e8149904a5e68705216f85acbfdd0128dc29dacadf7aeb"
+    },
+    "sqlite_sha256": "afdf978130ee9899fedb698f0e9d18399efdea40ea92f01f26d6055ef1ed5d38",
+    "native_identity_distinct_from_serving_id": true
+  },
+  "policy": {
+    "allowed_transform": "identity",
+    "equality": "UTF-8 byte-exact; case-and-space-sensitive",
+    "validity": "Exact https://ror.org/ prefix, lowercase Crockford nine-character token and MOD97-10 checksum; format/checksum never proves issued membership. Match only exact native IDs in the pinned full snapshot.",
+    "per_input_cardinality": "zero-or-one organization reference; duplicate target keys fail closed as ambiguous",
+    "status": "Retain active/inactive/withdrawn on every match. Inactive is historical reference context; withdrawn is an erroneous/duplicate/out-of-scope record reference and must be visibly flagged, not certified as a valid organization.",
+    "time": "Metadata and status describe ROR release v2.13 dated 2026-09-22 only. No user affiliation date exists; no current/historical affiliation truth or validity interval is inferred. Refresh or changed source/schema/revision requires a new reviewed pin.",
+    "multiplicity": "affiliation_id defines input grain; repeated ror_id values remain distinct affiliations. Locations are ordered child details, never independent affiliations or extra unique organizations.",
+    "exceptions": [
+      "null",
+      "empty",
+      "invalid",
+      "unmatched",
+      "ambiguous"
+    ],
+    "no_implicit_transforms": [
+      "trim",
+      "case-fold",
+      "bare-ID expansion",
+      "URL rewriting",
+      "successor substitution",
+      "name matching",
+      "serving-ID substitution"
+    ],
+    "not_accepted": [
+      "affiliation truth, employment, membership or temporal validity",
+      "legal-entity or LEI equivalence",
+      "native ROR fields in any of the six demos",
+      "new source fields/revisions by name similarity",
+      "production eligibility or runtime success"
+    ]
+  },
+  "source_release": {
+    "release": "v2.13",
+    "date": "2026-09-22",
+    "archive_sha256": "476988542f1bdd185f779386f90149371f58cb4ebdba326db3b7b428a468d4a5",
+    "member_sha256": "6d032ff473f771e015da0837fe28b881a8f85822ee7815effefe11dc49c4346c"
+  },
+  "measurement": {
+    "source_rows": 8,
+    "counts": {
+      "matched": 3,
+      "null": 1,
+      "empty": 1,
+      "invalid": 3,
+      "unmatched": 0,
+      "ambiguous": 0
+    },
+    "distinct_matched_organizations": 2,
+    "target_organizations": 141528,
+    "target_statuses": {
+      "active": 138289,
+      "inactive": 1809,
+      "withdrawn": 1430
+    },
+    "results": [
+      {
+        "affiliation_id": "a1",
+        "raw": "https://ror.org/000025p04",
+        "state": "matched",
+        "native_id": "https://ror.org/000025p04",
+        "status": "active",
+        "locations": [
+          [
+            0,
+            1609350
+          ]
+        ]
+      },
+      {
+        "affiliation_id": "a2",
+        "raw": "https://ror.org/00002d369",
+        "state": "matched",
+        "native_id": "https://ror.org/00002d369",
+        "status": "active",
+        "locations": [
+          [
+            0,
+            3073699
+          ]
+        ]
+      },
+      {
+        "affiliation_id": "a3",
+        "raw": "https://ror.org/000025p04",
+        "state": "matched",
+        "native_id": "https://ror.org/000025p04",
+        "status": "active",
+        "locations": [
+          [
+            0,
+            1609350
+          ]
+        ]
+      },
+      {
+        "affiliation_id": "null",
+        "raw": null,
+        "state": "null"
+      },
+      {
+        "affiliation_id": "empty",
+        "raw": "",
+        "state": "empty"
+      },
+      {
+        "affiliation_id": "space",
+        "raw": " https://ror.org/000025p04",
+        "state": "invalid"
+      },
+      {
+        "affiliation_id": "case",
+        "raw": "https://ROR.org/000025p04",
+        "state": "invalid"
+      },
+      {
+        "affiliation_id": "synthetic",
+        "raw": "Synthetic organization",
+        "state": "invalid"
+      }
+    ]
+  },
+  "counterexamples": {
+    "invalid_representations": 6,
+    "valid_but_absent": "https://ror.org/000000098",
+    "status_examples": {
+      "active": {
+        "state": "matched",
+        "native_id": "https://ror.org/000025p04",
+        "status": "active",
+        "locations": [
+          [
+            0,
+            1609350
+          ]
+        ]
+      },
+      "inactive": {
+        "state": "matched",
+        "native_id": "https://ror.org/00067tc54",
+        "status": "inactive",
+        "locations": [
+          [
+            0,
+            2147714
+          ]
+        ]
+      },
+      "withdrawn": {
+        "state": "matched",
+        "native_id": "https://ror.org/0006jh821",
+        "status": "withdrawn",
+        "locations": [
+          [
+            0,
+            2078025
+          ]
+        ]
+      }
+    },
+    "multiple_location_example": {
+      "state": "matched",
+      "native_id": "https://ror.org/0042xzm63",
+      "status": "active",
+      "locations": [
+        [
+          0,
+          4369596
+        ],
+        [
+          1,
+          4431780
+        ]
+      ]
+    },
+    "repeated_affiliations_with_multiple_locations": {
+      "input_affiliations": 2,
+      "distinct_organizations": 1,
+      "flat_location_rows": 4,
+      "locations_per_reference": 2,
+      "warning": "flat_location_rows is not an affiliation count"
+    },
+    "source_organizations_with_multiple_locations": 138,
+    "duplicate_target": "ambiguous; no target selected"
+  },
+  "authority": [
+    "https://ror.readme.io/docs/identifier",
+    "https://ror.readme.io/docs/ror-data-structure",
+    "https://github.com/ror-community/ror-api/blob/bd040a0d2558a478c06a89118a29eeb9b6142710/rorapi/management/commands/generaterorid.py"
+  ],
+  "open_dependencies": [
+    "independent review and root landing of this decision",
+    "landed canonical provider model/meaning registrations and reviewed native-identity attachment",
+    "source-faithful native-id runtime and Directory publication",
+    "bounded app integration and independent real browser journey",
+    "B1 and programme phases4/5/6 remain open"
+  ]
+}

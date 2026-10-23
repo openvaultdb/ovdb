@@ -1,0 +1,64 @@
+[
+  {
+    "reference": {
+      "path": "model/geonames.modelspec.json",
+      "sha256": "609fe73e07b84db65bdb1a904b9f84dd5c43bcbbc75eeb2d75f9a69ed3e8af81"
+    },
+    "file": "0.json"
+  },
+  {
+    "reference": {
+      "path": "model/geonames.meaning.yaml",
+      "sha256": "21bb35aecf1f1214908f245cfeb2d0c5e7c6caf3915a5ffd604254642b3b4b57"
+    },
+    "file": "1.yaml"
+  },
+  {
+    "reference": {
+      "path": "source/native/geonames_countries.json",
+      "sha256": "4f52bf1f9bbb417fc3ca1a67b0fc96e0af9d8baf271fd66cfe9eaaaa5b8e4412"
+    },
+    "file": "2.json"
+  },
+  {
+    "reference": {
+      "path": "source/artifact-snapshot.json",
+      "sha256": "5bb94bc67a326da337bd1a8be978dd5a384095e60d47b2669afc579ad86d396e"
+    },
+    "file": "3.json"
+  },
+  {
+    "reference": {
+      "path": "source/generation-snapshot.json",
+      "sha256": "d564721b80809537424d17b2bf2276697593a3cb380ea020f33c070e1ff0e7ab"
+    },
+    "file": "4.json"
+  },
+  {
+    "reference": {
+      "path": "geo.meaning.yaml",
+      "sha256": "ee6eeea2e8038e016433a72dd15d45b6eaf89d3ae6e45893d4e5eeb7be61f4e9",
+      "repository": "https://github.com/meaninggraph/core",
+      "revision": "982916d73f0a35ff2558b0062f58aa3ac4f24d97"
+    },
+    "file": "5.yaml"
+  },
+  {
+    "reference": {
+      "path": "source/fixture.modelspec.json",
+      "sha256": "f4f5ac05fd666045db57ab6128980597bb85d2cc472e27f5f953a1f643eb30d7",
+      "repository": "https://github.com/example/native-geonames-fixture",
+      "revision": "ffffffffffffffffffffffffffffffffffffffff"
+    },
+    "file": "6.json"
+  },
+  {
+    "reference": {
+      "path": "source/fixture-decision.md",
+      "sha256": "907e4a295b9d7ac4471709d959f6d6db0992f5b30426a69e28edf31dfbc935f3",
+      "repository": "https://github.com/example/native-geonames-fixture",
+      "revision": "ffffffffffffffffffffffffffffffffffffffff"
+    },
+    "file": "7.json"
+  }
+]

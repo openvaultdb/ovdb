@@ -1,0 +1,15 @@
+{
+  "modelspec": "1.0-draft",
+  "module": {
+    "name": "fixture"
+  },
+  "entities": {
+    "Input": {
+      "properties": {
+        "country_iso": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

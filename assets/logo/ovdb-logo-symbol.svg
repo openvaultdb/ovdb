@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="825 545 220 270">
+  <!-- The branch symbol on the door badge. It is drawn flat (circles are circles) and
+       put into the door's plane by one matrix, so it can be re-placed on the 1254 px master. -->
+  <g transform="matrix(0.8113 -0.1907 0 1 932 678)">
+    <g fill="none" stroke="#061b3c" stroke-width="16" stroke-linecap="round">
+      <path d="M-22 -74 L-22 80 M-22 38 C12 36 56 24 56 -26"/>
+    </g>
+    <g stroke="#061b3c" stroke-width="12">
+      <circle cx="-22" cy="-74" r="24" fill="#079dff"/>
+      <circle cx="-22" cy="80" r="24" fill="#079dff"/>
+      <circle cx="56" cy="-26" r="24" fill="#1fe0b7"/>
+    </g>
+  </g>
+</svg>

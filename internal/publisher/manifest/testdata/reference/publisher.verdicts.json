@@ -1,0 +1,471 @@
+{
+ "format": "ovdb-publisher-manifest-reference/2",
+ "generatedBy": "internal/publisher/manifest/testdata/reference/generate.mjs",
+ "node": "v24.19.0",
+ "references": {
+  "directory": {
+   "repository": "openvaultdb/directory",
+   "commit": "ec53d7539aafd23d006b4943acdd7a31f4eb9340"
+  },
+  "chinookdb": {
+   "repository": "demo-db/chinook",
+   "commit": "8b904298d0c3bba20c12dfbc29bb75bf5c37f683"
+  },
+  "fixtures": {
+   "repository": "datatug/chinookdb",
+   "commit": "79e7bb0b1d6f0666dce465874990dec64348331f"
+  }
+ },
+ "profile": "publisher",
+ "thrown": 0,
+ "realChecked": 370,
+ "manifest": {
+  "accepted": 1389,
+  "refused": 6012,
+  "verdicts": "111111111111111111110000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011111111110000000000000000000000111111111100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001100000000000000000000000000000000000000000000000000000000111100100010010011000010101110110000000000001110000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111100100010010011000010101110110000000000001110000000000000000000000000000000000000000000000000000000000000001110000000000000000111000000000000111000010000000000000000100000000000000000000000000000000001000001001000000100101000000100100101010100101010100000000000010000000000000010000000000000000000000000001010000000000000000000000000000000000000000000000000000000000000000000001000010000110000100000000110000000010000000000001100000000000000000000000000001100110000010100101101000000000000000100000000010000000000000001111111100111111110000111100001100100000000011001111000000110111110110101110000000000000110111110110101110001000000000110111110111111110001001000000110111110000001110000000001101001111110111111111111110111110001001110001001000110111110110101110000000000000110111110110101110000000000000111110000001101111001101011100000000000000001101111001101011100010000000000001101111001101011100000000001000001101111001101011100000000000000111111000001101111001101011100000000000000001101111001101011100000000000000001101111001101011100000000000000111110000001101111001101011100010000000000001111100000001101111001100011100010000000000001101111001100011100000000000000111110000001101111001111111100010010000000001101111001101011100000000000000001101111001101011100000000000000111110000001101111001101111100000000000000001101111001101111100000000000000001101111001101011100000000000000111111000001101000001101000001101000001101000001101000001101000001101000001101000001101000001101000001101101111000001100000111111100001101111101101011100000000000001101111101101011100010000000001101111101111111100010010000001101111100000011111111100001110010010001101111101101011100000000000001101111101101011100000000000001111100000011011110011010111000000000000000011011110011010111000100000000000011011110011010111000000000010000011011110011010111000000000000001111100110011011110011010111000000000000001111100000011011110011010111000000000000000011011110011010111000100000000000011111000110011011110011000111000100000000001111100000011011110011111111000100100000000011011110011010111000000000000000011011110011010111000000000000001111100110011011110011011111000000000000001111110000011010000011010000011010000011010000011010000011010000011010000011010000011010000011010000011011011110000011000001111111110011000000000000000000000000000000000110101011100010111000000000000000000000000000000000000011110001011100000000011000000000000000100110001100000000000000000110011100000101001110000000000000000011001110000010100111100001000001000001000001000000000100001000010000010000010000100000000010000100000100000100001000000000000000000100001000000000010000010000010000100001000010000010000010000100000000010000100000100000100001000000000000000000100001000001000001000001000001000010000000010000010000010000100000000010000100000100000100001000000000000000000111100000000000000000000000000000000000000000000000000001010101010000000000000000001000000001110000000000000100101100011000000000000000001010101010010101010101001010101010000000000000010100101010101010101010010101010100000000000000101010101010100101010100101010101000000000000001111000000000000000000000000000000000000000000000000000000101010101000000000000000000000000001110000000000000010010110001100000000000000000001100000000001100000100000000000110011000000000000000000000000000000000100000001000011000000000000000000000000000010000000000000000000000000000000010111100000000000100000000000000100001100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000111000111111111111111000000001111110010101110100010101010101010101010101000000000110011111111001100110000101010100000000000000000000011000011111010101010101010000010101010101010100000000000000000000000000000000010101010101010100000101010100000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010101100101011001010110000000000000000000000000000000000000000000010101100001010110000101011000000000000000000000000101010101010101010101010000011110011111100001100000000111111110000000000000000000000000000000000000000000000000000000000000000000000000001100001100000000000000000000000000000000000000000000000000000000000000111111000000111111010111111111100000000000000000000000000000000000000000000000000000000000000010001000100010000000000000001000100010000000100010001000000010001000100010001000100000001000100010001000100010001000100010001000100010001000000000000000000000000000100000000000000000000000000000000000000000010001000100010000000000000001000100010000000100010001000000010001000100010001000100000001000100010001000100010001000100010001000100010001000000000000000000000000000100000",
+  "chinookClasses": ",,,,,,,,,,,,,,,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,O,O,,O,O,O,,O,O,,O,O,,,O,O,O,O,,O,,O,,,,O,,,O,O,O,O,O,O,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,,O,O,O,,O,O,,O,O,,,O,O,O,O,,O,,O,,,,O,,,O,O,O,O,O,O,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,,,,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,,O,O,,O,O,O,O,O,O,,O,O,,O,,O,O,O,O,O,O,,O,O,,O,O,,O,,O,,O,,O,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,,,O,O,O,O,,O,O,O,O,O,O,O,O,,,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,,,D,D,O,O,O,,O,,O,O,,O,,,O,,DK,DKO,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,,,O,O,,,,,,,,,O,O,O,O,,,,,O,O,O,O,,,O,O,,O,O,O,O,O,O,O,O,O,,,O,O,,,,,O,O,O,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,,,O,,,,,,O,,,,,,,,,O,O,O,,O,O,,O,O,O,O,O,O,,,O,,,,,,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,O,O,,,O,,O,O,,,,,,,O,,,,,,,,,,,,,,,O,,,,,,O,O,O,,O,O,,,,O,O,O,,O,O,,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,O,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,O,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,,,,,,,O,O,O,,O,O,,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,O,O,D,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,,O,,,,,O,O,O,O,O,,,O,O,O,O,O,,,,,,,,O,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,,,O,,,,,,O,,,,,,,,,O,O,O,,O,O,,O,O,O,O,O,O,,,O,,,,,,O,O,O,O,O,O,,,,,,,,,,O,O,O,O,,,,O,O,,O,O,,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,,,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,,,O,O,,,O,,,,,O,O,,,O,O,O,,,,O,O,O,,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,O,O,O,O,,,O,,,,,O,O,,,,,,,,,O,O,O,,O,O,,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,,,,O,O,,,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,O,O,,,O,O,,,O,,,,,O,O,,,O,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,O,O,D,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,O,D,O,O,O,,,O,,,O,,,,,O,O,O,O,O,,,O,O,O,O,O,,,,,,,,,,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,,O,,O,,,,O,O,O,,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,O,O,O,,O,,,,O,O,O,O,O,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,,,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,,,,O,O,O,O,O,,O,,O,O,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,,,,O,O,O,O,O,,O,,O,O,,,,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,,O,O,O,O,O,,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,D,D,D,O,D,D,,D,D,,D,,,D,D,D,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,O,,O,,O,,O,,O,,O,,O,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,,O,,O,O,,O,,O,,O,,O,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,O,O,O,O,O,O,O,O,D,D,D,O,D,D,,D,D,,D,,,D,D,D,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,,,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,,,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,,,,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,D,D,D,D,D,D,D,D,D,D,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,D,D,D,D,D,D,D,D,D,D,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,,,,O,O,O,,,,,,,,,,,,,,,,O,O,O,O,O,O,O,O,,,,,,,O,O,,O,,O,,,,O,,O,O,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,,,O,O,,,,,,,,,O,O,,,O,O,,,O,O,O,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,D,D,O,O,,,D,D,O,O,,,,,,O,,O,,O,,O,,O,,O,,O,,O,O,O,O,O,,O,,O,,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,,O,,O,,O,O,O,O,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,,O,O,,O,,O,,,O,O,,O,,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,,O,O,O,O,,O,,O,,,O,O,O,O,,O,,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,,O,O,O,O,O,,,,,O,O,,,,,,,O,O,O,O,,,O,O,O,O,O,O,O,O,,,,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,O,O,O,O,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,,,,,,O,O,O,O,O,O,,,,,,,O,,O,,,,,,,,,,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,O,,O,O,O,O,O"
+ },
+ "md": {
+  "accepted": 130,
+  "refused": 528,
+  "verdicts": "1100111111001111110011110000000000000000000000001100101010000000000000001111111111111100000000000000000000000000000000000000000000000000000011000000111111111111111100111111110100000001100000001100101000111110100000001100000001100101000111110100000001100000001100101000111110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001001110011100111001111111111000000100100000010100100000000000000000000000000000000000000000000000000000000111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "needsFiles": {
+  "manifest": {
+   "a tracked regular file": 753,
+   "model.address against the model file": 743,
+   "model.name against the model file": 5,
+   "recordsets against the model": 753,
+   "the meaning file against the manifest": 753,
+   "the model file: JSON, module and entities": 753
+  },
+  "md": {
+   "a tracked regular file": 130,
+   "model.address against the model file": 130,
+   "recordsets against the model": 130,
+   "the meaning file against the manifest": 130,
+   "the model file: JSON, module and entities": 130
+  }
+ },
+ "allowLists": {
+  "licences": [
+   "0BSD",
+   "AGPL-3.0-only",
+   "Apache-2.0",
+   "BSD-2-Clause",
+   "BSD-3-Clause",
+   "CC-BY-4.0",
+   "CC-BY-SA-4.0",
+   "CC0-1.0",
+   "GPL-2.0-only",
+   "GPL-3.0-only",
+   "ISC",
+   "LGPL-3.0-only",
+   "MIT",
+   "MPL-2.0",
+   "ODC-By-1.0",
+   "ODbL-1.0",
+   "PDDL-1.0",
+   "Unlicense"
+  ],
+  "keys": {
+   "": [
+    "deployment",
+    "description",
+    "format",
+    "homepage",
+    "id",
+    "licences",
+    "meaning",
+    "model",
+    "publisher",
+    "recordsets",
+    "recordsets_partial",
+    "representation_contract",
+    "title",
+    "url"
+   ],
+   "deployment": [
+    "discovery",
+    "engine",
+    "recordset_page",
+    "url"
+   ],
+   "model": [
+    "address",
+    "hcl",
+    "modelspec",
+    "name"
+   ],
+   "meaning": [
+    "address",
+    "file",
+    "graph"
+   ],
+   "meaning.graph": [
+    "address",
+    "id"
+   ],
+   "publisher": [
+    "name",
+    "repository",
+    "url"
+   ],
+   "licences": [
+    "data",
+    "meaning",
+    "model"
+   ]
+  }
+ },
+ "rules": [
+  {
+   "id": "unknown keys at every level of a manifest",
+   "who": "documents",
+   "go": "manifest-keys",
+   "lines": [
+    277,
+    280,
+    281
+   ]
+  },
+  {
+   "id": "id is a lower-case id of at most 80 characters",
+   "who": "documents",
+   "go": "manifest-id",
+   "lines": [
+    286
+   ]
+  },
+  {
+   "id": "deployment.discovery is on the origin of url, at /.well-known/openvaultdb",
+   "who": "documents",
+   "go": "manifest-discovery",
+   "lines": [
+    315,
+    316
+   ]
+  },
+  {
+   "id": "deployment.recordset_page is on the origin of deployment.url",
+   "who": "documents",
+   "go": "manifest-url",
+   "lines": [
+    321
+   ]
+  },
+  {
+   "id": "publisher.url is https://github.com/<owner>",
+   "who": "documents",
+   "go": "manifest-publisher",
+   "lines": [
+    328
+   ]
+  },
+  {
+   "id": "publisher.repository is required, a github.com repository, owned by the owner of publisher.url",
+   "who": "documents",
+   "go": "manifest-publisher",
+   "lines": [
+    331,
+    332,
+    334
+   ]
+  },
+  {
+   "id": "model.address names a repository of github.com and a module that starts with a letter",
+   "who": "documents",
+   "go": "manifest-model",
+   "lines": [
+    82,
+    345,
+    346
+   ]
+  },
+  {
+   "id": "model.name is a module name that starts with a letter",
+   "who": "documents",
+   "go": "manifest-model",
+   "lines": [
+    348,
+    349
+   ]
+  },
+  {
+   "id": "model.name is the module of model.address (shared form; in the own form the checker gets the same through the model file)",
+   "who": "documents",
+   "go": "manifest-model",
+   "lines": [
+    515,
+    516
+   ]
+  },
+  {
+   "id": "shared form: neither address is the publisher's own repository",
+   "who": "documents",
+   "go": "manifest-model, manifest-meaning",
+   "lines": [
+    359,
+    360,
+    514,
+    528
+   ]
+  },
+  {
+   "id": "own form: model.hcl is required, model.modelspec ends in .modelspec.json",
+   "who": "documents",
+   "go": "manifest-required, manifest-model",
+   "lines": [
+    407,
+    416,
+    417
+   ]
+  },
+  {
+   "id": "own form: model.address is this repository (publisher.repository), without a pin",
+   "who": "documents",
+   "go": "manifest-model",
+   "lines": [
+    455,
+    456,
+    457,
+    458
+   ]
+  },
+  {
+   "id": "meaning.graph.id is a registry id (lower-case letters, digits, single hyphens)",
+   "who": "documents",
+   "go": "manifest-meaning",
+   "lines": [
+    466,
+    536
+   ]
+  },
+  {
+   "id": "own form: meaning.graph.address is publisher.repository as an address, in any case",
+   "who": "documents",
+   "go": "manifest-meaning",
+   "lines": [
+    505,
+    506,
+    507
+   ]
+  },
+  {
+   "id": "shared form: meaning.graph.address, when given, is meaning.address without its pin",
+   "who": "documents",
+   "go": "manifest-meaning",
+   "lines": [
+    539,
+    540
+   ]
+  },
+  {
+   "id": "licences are known SPDX atoms; data permits bounded conjunctions",
+   "who": "documents",
+   "go": "manifest-licence",
+   "lines": [
+    385,
+    388
+   ]
+  },
+  {
+   "id": "recordsets are names that look like ModelSpec entities",
+   "who": "dropped",
+   "go": "",
+   "lines": [
+    554,
+    555
+   ]
+  },
+  {
+   "id": "every recordset page the template makes is a public https URL",
+   "who": "documents",
+   "go": "manifest-recordsets",
+   "lines": [
+    557,
+    558,
+    559,
+    560
+   ]
+  },
+  {
+   "id": "OVDB.md has no key but ovdb and publish",
+   "who": "documents",
+   "go": "ovdbmd-keys",
+   "lines": [
+    223,
+    224
+   ]
+  },
+  {
+   "id": "publish lists each manifest once",
+   "who": "documents",
+   "go": "ovdbmd-duplicate",
+   "lines": [
+    241,
+    242
+   ]
+  },
+  {
+   "id": "the repository can be read at HEAD (it is a git repository with a commit)",
+   "who": "files",
+   "go": "",
+   "lines": [
+    211,
+    212
+   ]
+  },
+  {
+   "id": "OVDB.md is a tracked regular file",
+   "who": "files",
+   "go": "",
+   "lines": [
+    213,
+    214
+   ]
+  },
+  {
+   "id": "OVDB.md can be read (and is not over 16 MB)",
+   "who": "files",
+   "go": "",
+   "lines": [
+    219
+   ]
+  },
+  {
+   "id": "every manifest that OVDB.md lists is a tracked regular file",
+   "who": "files",
+   "go": "",
+   "lines": [
+    246,
+    247,
+    248
+   ]
+  },
+  {
+   "id": "every manifest that OVDB.md lists can be read (and is not over 16 MB)",
+   "who": "files",
+   "go": "",
+   "lines": [
+    269,
+    271
+   ]
+  },
+  {
+   "id": "every manifest that OVDB.md lists is checked",
+   "who": "files",
+   "go": "",
+   "lines": [
+    251
+   ]
+  },
+  {
+   "id": "every file a manifest names is a tracked regular file",
+   "who": "files",
+   "go": "",
+   "lines": [
+    420,
+    421
+   ]
+  },
+  {
+   "id": "every file a manifest names can be read (and is not over 16 MB)",
+   "who": "files",
+   "go": "",
+   "lines": [
+    371,
+    373
+   ]
+  },
+  {
+   "id": "the model file is JSON with a module name and entities",
+   "who": "files",
+   "go": "",
+   "lines": [
+    437,
+    439,
+    442,
+    444
+   ]
+  },
+  {
+   "id": "own form: model.name is the module of the model file",
+   "who": "files",
+   "go": "",
+   "lines": [
+    449
+   ]
+  },
+  {
+   "id": "own form: the module of model.address is the model file's",
+   "who": "files",
+   "go": "",
+   "lines": [
+    456,
+    458
+   ]
+  },
+  {
+   "id": "the meaning file is YAML whose id and license are the manifest's",
+   "who": "files",
+   "go": "",
+   "lines": [
+    477,
+    480,
+    482,
+    484
+   ]
+  },
+  {
+   "id": "the meaning file's models: entry for the module is model.hcl",
+   "who": "files",
+   "go": "",
+   "lines": [
+    488,
+    490,
+    496,
+    497
+   ]
+  },
+  {
+   "id": "own form: recordsets are exactly the model's entities",
+   "who": "files",
+   "go": "",
+   "lines": [
+    564,
+    567,
+    568
+   ]
+  },
+  {
+   "id": "the optional attachment has a locally checked structural precheck; external closure remains partial",
+   "who": "files",
+   "go": "",
+   "lines": [
+    573
+   ]
+  },
+  {
+   "id": "a JSON database descriptor uses its separate pinned schema",
+   "who": "files",
+   "go": "",
+   "lines": [
+    587,
+    591,
+    597,
+    605,
+    607,
+    609
+   ]
+  },
+  {
+   "id": "publisher.repository is the repository the check is run in (the --repository option)",
+   "who": "input",
+   "go": "",
+   "lines": [
+    335
+   ]
+  }
+ ]
+}

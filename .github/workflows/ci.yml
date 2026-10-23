@@ -4,20 +4,15 @@ on:
   push:
     branches:
       - main
-    paths:
-      - '.github/workflows/**.yml'
-      - '**/go.*'
-      - '**/*.go'
-      - '**.md'
   pull_request:
     branches:
       - '**'
-    paths:
-      - '.github/workflows/**.yml'
-      - '**/go.*'
-      - '**/*.go'
-      - '**.md'
 
+# Every job of this file has a hard timeout, several times its normal time (from the runs of 4 and 5 October 2026: web 3.6 to 4.1 minutes, lifecycle 1.4 on
+# Linux, 1.7 to 2.5 on macOS, 4.9 to 6.5 on Windows, go.mod 0.3 to 0.5, exact coverage 1.4 to 2.2, goldens 3.8 to 3.9), so that a hung test or process fails the
+# job with a log instead of blocking the release workflow for as long as GitHub lets a job run (six hours). TestEveryJobOfCIHasATimeout holds the file to it.
+# The job that calls the shared strongo workflow (`strongo_workflow` below) cannot have one here: a job that calls a reusable workflow may not set
+# timeout-minutes, and v1.14.17 of that workflow has no input for it.
 jobs:
 
   strongo_workflow:
@@ -51,3 +46,255 @@ jobs:
       # datatug-cli/.github/workflows/golangci.yml's own note about
       # toolchain-driven coverage-counting swings) — better to add a real
       # floor once test coverage is deliberately built out.
+
+  # Proves S3 (spec/features/configuration-parity#REQ:increment-zero-spikes):
+  # the web console and TODO app build with pnpm and actually end up embedded
+  # in the ovdb binary. A red run here means a release would ship the
+  # "web console isn't built" fallback instead of the real console.
+  web:
+    name: Web build, test, embed and browser tests
+    runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # No corepack: web/package.json's packageManager field pins the exact
+      # pnpm version, and this action reads it, same pin the release hook in
+      # .goreleaser.yaml uses.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: pnpm install
+        run: pnpm -C web install --frozen-lockfile
+
+      - name: pnpm lint (text-only rendering, vue/no-v-html)
+        run: pnpm -C web lint
+
+      - name: pnpm build
+        run: pnpm -C web build
+
+      - name: pnpm test
+        run: pnpm -C web test -- --maxWorkers=1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.0'
+          cache: true
+
+      # single-target keeps this to one build (the runner's own OS/arch)
+      # rather than GoReleaser's full release matrix — this job exists to
+      # prove the embed, not to reproduce release-targets.
+      - name: goreleaser build --snapshot (proves the embed)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: build --snapshot --clean --single-target
+
+      # spec/features/configuration-parity#REQ:ci-matrix: Playwright
+      # (Chromium) journeys on Linux, against a real ovdb binary with the
+      # console embedded, started in an isolated temporary OVDB home by
+      # web/e2e/global-setup.ts.
+      - name: Build ovdb for the browser tests
+        run: go build -o "$RUNNER_TEMP/ovdb" .
+
+      - name: Install Chromium for Playwright
+        run: pnpm -C web exec playwright install --with-deps chromium
+
+      - name: Playwright (smoke and screens)
+        run: pnpm -C web e2e --workers=1
+        env:
+          OVDB_E2E_BIN: ${{ runner.temp }}/ovdb
+
+      - name: Upload Playwright traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            web/test-results/
+            web/e2e/screenshots/
+          retention-days: 7
+
+  # spec/features/configuration-parity#REQ:ci-matrix: lifecycle and path
+  # tests on every OS the local server supports. They start real detached
+  # servers, bind loopback ports and check owner-only files, so a green Linux
+  # run proves nothing about Windows job objects, ACLs or macOS SO_REUSEADDR.
+  go-os-matrix:
+    name: Lifecycle and paths (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.0'
+          cache: true
+      # Project contexts (symlinks, Windows drive letters and case, Git
+      # worktrees) and data paths join the matrix in increment 3.
+      # The TODO demo service writes inGitDB records, which work on Windows
+      # since ingitdb/dalgo2ingitdb v0.6.1 (increment 4).
+      # AI agent skills are installed into harness folders with skillsync's
+      # locks, atomic renames and ownership marker on every OS (increment 8).
+      - name: go test (runtime, paths, context, demo, skills, cli)
+        run: go test -count=1 -timeout 10m ./internal/runtime/... ./internal/paths/... ./internal/setup/dbcontext/... ./internal/setup/demo/... ./internal/setup/skills/... ./internal/datapath/... ./internal/cli/...
+      # Connecting existing storage reads Git repositories and SQLite files
+      # through OS paths (a file: URI on Windows) and must leave them as they
+      # are on every OS (increment 5).
+      - name: go test (connect existing storage)
+        run: go test -count=1 -timeout 10m -run 'TestConnect' ./internal/setup/ && go test -count=1 -timeout 10m -run 'TestWriteWithoutGitIdentity' ./internal/localserver/
+      - name: go test (serve HTTP and shutdown)
+        run: go test -count=1 -timeout 2m -run 'TestServeHTTP|TestServeTerms|TestServeShutdown|TestServeUntil|TestServeMountFailure' .
+      # auth.json is made owner-only by the server itself (increment 6):
+      # openvaultdb-go's 0600 means nothing on Windows, where the file would
+      # otherwise inherit whatever the OVDB home's ACL allows.
+      - name: go test (scoped tokens and auth.json ACL)
+        run: go test -count=1 -timeout 10m -run 'TestAuthStoreOwnerOnlyInASharedHome|TestScopedTokenAgainstLocalServer' ./internal/localserver/
+
+  # Fail fast on go.mod/go.sum drift.
+  #
+  # This is the signal that would have caught datatug-cli's v0.13.2 before it
+  # shipped: two renovate pull requests for the same major bump interleaved and
+  # left go.mod requiring a version nothing imported. Build-and-test caught the
+  # stale imports only after both had merged; an untidy go.mod is visible on the
+  # FIRST of the pair, on its own pull request.
+  #
+  # `-diff` only reports; it never rewrites go.mod, so unlike a mutating
+  # `go mod tidy` it cannot mask the drift it is meant to find. This job belongs
+  # to the workflow named by release.yml's `require_workflow_success`, so drift
+  # also blocks the release, not just the merge.
+  go-mod-tidy:
+    name: go.mod is tidy
+    runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= this repo's go.mod `go` directive.
+          go-version: '1.27.0'
+          cache: true
+      - name: go mod tidy -diff
+        run: go mod tidy -diff
+
+  # Exact statement coverage, on the packages of the publisher check only
+  # (`ovdb publisher check`, added in small steps: the rules, the readers, the
+  # command). The module as a whole cannot be gated this way: some of its
+  # packages have a TestMain and some have files for one operating system, and
+  # the gate refuses both. So the gate takes a list of packages, and passes
+  # only when every statement of exactly those is covered, each of them is in
+  # the cover profile, and none of them has a TestMain or a build-constrained
+  # file (internal/covergate). A test of that package keeps this list equal to
+  # the packages under internal/publisher plus the gate itself, so a package
+  # added there cannot escape it. The rest of the module is tested by the jobs
+  # above, as before.
+  publisher-coverage:
+    name: Exact coverage (publisher check packages)
+    runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= this repo's go.mod `go` directive.
+          go-version: '1.27.0'
+          cache: true
+      - name: go test with coverage (publisher check packages)
+        run: go test -p 1 -race -covermode=atomic -coverprofile="$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/... ./publisher/representation ./publisher/source/... ./internal/covergate/... ./cmd/covergate/...
+      - name: Every statement of exactly those packages is covered
+        run: go run ./cmd/covergate "$RUNNER_TEMP/publisher-cover.out" ./internal/publisher/exitcode ./internal/publisher/datarights ./internal/publisher/manifest ./internal/publisher/repo ./internal/publisher/rules ./internal/publisher/checkcmd ./publisher/representation ./publisher/source ./publisher/source/pinchain ./publisher/source/pinchain/cmd/ecb-pin-check ./publisher/source/preflight ./publisher/source/preflight/cmd/ecb-preflight ./internal/covergate ./cmd/covergate
+
+  # The goldens that the parity tests of the publisher check read (testdata/reference of
+  # internal/publisher/rules, manifest and repo) are made by three generators
+  # from the JavaScript of the references at pinned commits, and `go test` only reads
+  # them, so nothing else notices when one is stale, or when the generators go wrong.
+  # This job runs all three with --check, which fails if a golden is not what its generator
+  # writes now, and the test of the rule that keeps a reference checkout as committed
+  # (references.mjs). Each reference is fetched fresh, by its commit, into a directory
+  # of this run (no cache is kept). Its network use is the two reference repositories on
+  # github.com and the registry for `yaml` (npm ci from the Directory's lock file), and
+  # nothing else. The goldens record the Node that made them (node-version below is
+  # that version, exactly; a test of internal/covergate holds the two together), so a
+  # new Node is a change of this line and a regeneration, together.
+  publisher-goldens:
+    name: Parity goldens are current (publisher check packages)
+    runs-on: ubuntu-latest
+    # Normal time: see the comment above `jobs:`. A hang fails here, with a log, and does not block a release for hours.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.19.0'
+      - name: The reference checkout rule
+        run: node --test internal/publisher/references.test.mjs
+      - name: The goldens of package rules are current
+        run: node internal/publisher/rules/testdata/reference/generate.mjs --check
+      - name: The goldens of package manifest are current
+        run: node internal/publisher/manifest/testdata/reference/generate.mjs --check
+      - name: The goldens of package repo are current
+        run: node internal/publisher/repo/testdata/reference/generate.mjs --check
+      - name: The Directory's file stage verdicts are current
+        run: node internal/publisher/repo/testdata/reference/directory-stage.mjs --check
+      # The slower test of package repo: repositories built at test time, read by the real git
+      # through the real Reader, and compared with the in-memory one (go test skips it).
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.0'
+          cache: true
+      - name: Package repo reads real repositories as the in-memory reader does
+        run: OVDB_REAL_GIT=1 go test -count=1 -v -run RealGit ./internal/publisher/repo/
+      # `ovdb publisher check` through the built binary, against real repositories made at test
+      # time and the real ChinookDB repository at the pinned commit (fetched by git from
+      # github.com: the same repository the goldens above are made from; the command itself
+      # uses no network).
+      - name: ovdb publisher check, end to end
+        run: OVDB_REAL_GIT=1 go test -count=1 -v -run PublisherCheckEndToEnd .
+
+  # The databases registered in the OVDB Directory at the commit the references pin (internal/publisher/references.mjs), checked as registered: each
+  # repository fetched at the commit its record names, and what the check says of it compared with
+  # internal/publisher/repo/testdata/directory/verdicts.json. The verdicts are explained, finding by finding, by internal/publisher/manifest/
+  # testdata/reference/drift.json (a default test holds the two together). This job needs the network (the Directory and six repositories on github.com), which
+  # is why it is not part of `go test`; it never reads a moving branch, only commits named in the files it checks.
+  # If it turns red because a pinned commit became unreachable (a force-push and garbage collection) or a repository was deleted or renamed, it also stops
+  # releases (release.yml requires this workflow to succeed): the remedy is a pin slice, which moves the entries and verdicts to the Directory's current
+  # commit, never a retry or a skipped job.
+  publisher-real-entries:
+    name: The Directory's registered databases, as registered (publisher check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.0'
+          cache: true
+      - name: entries.json is what the Directory registers at the pinned commit
+        run: node internal/publisher/repo/testdata/directory/entries.mjs --check
+      - name: The verdicts on the registered repositories are the recorded ones
+        # The test passes when the pattern matches nothing and when it skips, so the log must show it passed: a rename or a missing variable fails the job.
+        run: |
+          set -o pipefail
+          OVDB_REAL_DIRECTORY=1 go test -count=1 -v -run TestRealDirectoryEntries ./internal/publisher/repo/ | tee "$RUNNER_TEMP/real-entries.log"
+          grep -q -- '^--- PASS: TestRealDirectoryEntries ' "$RUNNER_TEMP/real-entries.log"

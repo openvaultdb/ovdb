@@ -1,0 +1,39 @@
+{
+  "name": "@openvaultdb/ovdb-web",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "The embedded OVDB console and TODO app, built with pnpm and embedded into the ovdb binary by embed.go.",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "vue-tsc --noEmit",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "e2e": "playwright test",
+    "lint": "eslint src apps tests e2e"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/node": "^22.10.2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "@vue/tsconfig": "^0.7.0",
+    "eslint": "^10.10.0",
+    "eslint-plugin-vue": "^10.11.0",
+    "jsdom": "^25.0.1",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.70.0",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8",
+    "vue-eslint-parser": "^10.4.1",
+    "vue-tsc": "^2.2.0"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "format": "ovdb-representation-contract/1",
+  "contracts": [
+    {
+      "source": {
+        "schema": {
+          "path": "source.modelspec.json",
+          "sha256": "7043520817a957c3c3e175fc09877238c320eae236f1ebbb5e80957024551905",
+          "repository": "https://github.com/example/source",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "module": "sample",
+        "entity": "Customer",
+        "property": "Country",
+        "datatype": "string",
+        "namespace": "sample-country-labels"
+      },
+      "target": {
+        "snapshot": {
+          "path": "snapshot.json",
+          "sha256": "6f4ec14c1ba7adad094ec6d95d889c1387a570eb110d86f15c005af7ad8cf447"
+        },
+        "keys": {
+          "path": "keys.json",
+          "sha256": "5aa000ef1e2c824aa4dd6315256e5e181ba0a334ed94b43aca252d17434f222e"
+        },
+        "model": {
+          "path": "target.modelspec.json",
+          "sha256": "aa5b9ea22bf18fb6f81b3ab537431c05a99a54384f1773edc4a890ff17bd410d"
+        },
+        "module": "geo",
+        "entity": "Countries",
+        "property": "iso",
+        "datatype": "string",
+        "namespace": "iso-3166-1-alpha-2",
+        "binding": {
+          "document": {
+            "path": "target.meaning.json",
+            "sha256": "a447619f70c4de82848091c7eed913b54fd6bbc0264ff65c15568a9a27d1d954"
+          },
+          "concept": "native-country",
+          "role": "identifier",
+          "meaning": {
+            "document": {
+              "path": "core.meaning.json",
+              "sha256": "af890560ed133e6a4aaa40d22c82027fc329e7e9f9cf8da2886b5415650292a2",
+              "repository": "https://github.com/example/source",
+              "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "concept": "country"
+          }
+        }
+      },
+      "bridge": {
+        "artifact": {
+          "path": "bridge.json",
+          "sha256": "fd225cf26ca051471e983c770e4af49edd8bdce8d429729e53b4722d677a5bc9"
+        },
+        "table": "CustomerCountries",
+        "raw_label_column": "raw_label",
+        "target_key_column": "target_key",
+        "serving_identity_column": "serving_id"
+      },
+      "policy": {
+        "transform": "identity",
+        "equality": "utf8-byte-exact",
+        "cardinality": "zero-or-one",
+        "unmatched": "exception",
+        "collision": "ineligible"
+      },
+      "decision": {
+        "document": {
+          "path": "decision.md",
+          "sha256": "ad838e4f5321fdc424a2ae16a4f3288a1e901e11a2968a697c539df2e2ac0f66",
+          "repository": "https://github.com/example/source",
+          "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "scope": "fixture-only/Customer.Country"
+      }
+    }
+  ]
+}

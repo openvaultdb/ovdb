@@ -1,0 +1,115 @@
+{
+  "format": "ovdb-ecb-metadata-pins/1",
+  "decoderVersion": "ecb-eurofxref/1",
+  "decoderModuleVersion": "v0.3.0",
+  "artifacts": [
+    {
+      "role": "modelspec-registry",
+      "repository": "modelspec-org/registry",
+      "commit": "36343c6293cfe96ade53bbdd3baf980562f00604",
+      "path": "models/$records/ecb-daily.yaml",
+      "blob": "6be0ef63be99ec324a98a7dc3bef079af27057ec",
+      "sha256": "b5c2e1c116ce8b136182ce5e34ba6b4ce6d8c8d74dbc96b985ce29d2c73c54f4",
+      "bytes": 990
+    },
+    {
+      "role": "meaning-registry",
+      "repository": "meaninggraph/registry",
+      "commit": "a5eea9aa50a82bf8e95244ad32f1976a1ac9cb43",
+      "path": "graphs/$records/ecb-daily.yaml",
+      "blob": "f228bf9abd8d427d3736a90ea54c8b5e51b86bdb",
+      "sha256": "76eb496a7c76ccf78ada55de40532bfeb51485db60e25d8adb638d462fc61c66",
+      "bytes": 1054
+    },
+    {
+      "role": "model-hcl",
+      "repository": "openvaultdb/ovdb",
+      "commit": "6751a14ae12bfeadbcc9a7c6aa6174c81d697e20",
+      "path": "publisher/source/model/ecb-daily.modelspec.hcl",
+      "blob": "440a1a0023065bf46cbcbf70b30c6538be97f385",
+      "sha256": "937a7f0836d13c849dd8d68ed48df196fb7e61c11fd97bd10ed314d6e27961bd",
+      "bytes": 1238
+    },
+    {
+      "role": "model-json",
+      "repository": "openvaultdb/ovdb",
+      "commit": "6751a14ae12bfeadbcc9a7c6aa6174c81d697e20",
+      "path": "publisher/source/model/ecb-daily.modelspec.json",
+      "blob": "6d79a43bb0184d50e3bb8ec0c7d45b4ea44ce507",
+      "sha256": "d284028a72070865347134715f0bab04e22e1c33fa71ef9bef645d57a8cc703c",
+      "bytes": 633
+    },
+    {
+      "role": "meaning",
+      "repository": "openvaultdb/ovdb",
+      "commit": "6751a14ae12bfeadbcc9a7c6aa6174c81d697e20",
+      "path": "publisher/source/model/ecb-daily.meaning.yaml",
+      "blob": "93357cfbd2d279cd2d52b2c1a2060cbe08a1e0be",
+      "sha256": "5d7396ae51bca2650319d4fcf0ddfbf5cab8479924706b6bee7ee7bbd39a2485",
+      "bytes": 4390
+    },
+    {
+      "role": "descriptor",
+      "repository": "openvaultdb/ovdb",
+      "commit": "6751a14ae12bfeadbcc9a7c6aa6174c81d697e20",
+      "path": "publisher/source/ecb-daily.example.json",
+      "blob": "3eeded860ff994d3997cea58101d0d210b53ef85",
+      "sha256": "9a9cca5bffc1f4b398fc711d17d727f03f7edbddce65992b46b592f9d5bdb1c0",
+      "bytes": 2292
+    },
+    {
+      "role": "decoder",
+      "repository": "dal-go/dalgo2http",
+      "commit": "3c73adb7b395e1b180c674ab57f67cca8cba8de4",
+      "path": "ecb_xml.go",
+      "blob": "16696409c08074c50f1e91ab8fd278c395234a9f",
+      "sha256": "20477d567705fe7cf8115caf696848b9ea1db2e1a165b977a4f54bd610955b49",
+      "bytes": 4915
+    },
+    {
+      "role": "decoder-contract",
+      "repository": "dal-go/dalgo2http",
+      "commit": "3c73adb7b395e1b180c674ab57f67cca8cba8de4",
+      "path": "decoder.go",
+      "blob": "f2e359b76970f9165476430c3f93d36425498827",
+      "sha256": "e869ed2dc1865b7ee4dab6f5301fdad03a9940bf4f15269bed542cf733de5088",
+      "bytes": 1416
+    },
+    {
+      "role": "decoder-tests",
+      "repository": "dal-go/dalgo2http",
+      "commit": "3c73adb7b395e1b180c674ab57f67cca8cba8de4",
+      "path": "ecb_xml_test.go",
+      "blob": "faff9caf40b32801b3966511c3c8134d9b6bcc03",
+      "sha256": "5e23803fab1683bc8682a035e93c0136283a6d5942d348aaace8c814e4aceb0b",
+      "bytes": 10512
+    },
+    {
+      "role": "decoder-module",
+      "repository": "dal-go/dalgo2http",
+      "commit": "3c73adb7b395e1b180c674ab57f67cca8cba8de4",
+      "path": "go.mod",
+      "blob": "6d0c3c0a600f9321ac70459989415f9965bb41fd",
+      "sha256": "25179e03d734a57691afd15c49aefda12d10ce0fade3bba2d84d4403e89cc3bc",
+      "bytes": 404
+    },
+    {
+      "role": "core",
+      "repository": "meaninggraph/core",
+      "commit": "1de4de09a449b9978a6155f226669e02986cb7d9",
+      "path": "assets.meaning.yaml",
+      "blob": "e161b67f1c173b3aace2b9fcb2d2632779e0effc",
+      "sha256": "00985239718d4d29f01a42a712138ce817bf81f18493fb2ac4c3984ff0c3a027",
+      "bytes": 4429
+    },
+    {
+      "role": "directory",
+      "repository": "openvaultdb/directory",
+      "commit": "16fb6acd67ed4cecaa528c5526ab6cdd1208d38b",
+      "path": "sources/$records/ecb-daily.yaml",
+      "blob": "1006f8d317d4e5e926021c43cf238376681d19ef",
+      "sha256": "be16af1e670e43ca69e6ee24a158c63d61d03d5995b757b4f3787ece14c6c1ed",
+      "bytes": 2829
+    }
+  ]
+}
