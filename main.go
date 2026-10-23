@@ -120,6 +120,12 @@ func addRootCommands(root *cobra.Command, currentVersion string) *cli.App {
 		newPublisherCmd(),
 	)
 	app.AddCommands(root)
+	// `ovdb demo` is the TODO demo (install, open, status). The bounded
+	// Listus session joins it as `ovdb demo serve` rather than a second
+	// top-level command of the same name.
+	if demo, _, err := root.Find([]string{"demo"}); err == nil && demo != root {
+		demo.AddCommand(newDemoServeCmd(defaultDemoDependencies()))
+	}
 	// Only the unfinished bare-command TUI remains behind the preview gate.
 	// Named user-facing commands and their help are always public.
 	if preview.On() {
