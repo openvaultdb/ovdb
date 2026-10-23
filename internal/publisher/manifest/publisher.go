@@ -199,7 +199,7 @@ func (k *manifestChecker) grammar(f *Fact[Address], label, own string, notOwn bo
 func (k *manifestChecker) ownForm(own string) {
 	out, c := &k.out, k.c
 	if out.ModelHCL.Absent() {
-		c.add("manifest-required", where(k.m.Field("model"), "hcl"), "model.hcl is required with local model files: it is the model's source file, and must be the path in the meaning file's models: entry")
+		c.add("manifest-required", where(k.m.Field("model"), "hcl"), "model.hcl is required with local model files: it is the model's source file; when meanings are supplied, it must be the path in the meaning file's models: entry")
 	}
 	if out.ModelSpec.Usable() && !strings.HasSuffix(out.ModelSpec.Value, ".modelspec.json") {
 		c.add("manifest-model", out.ModelSpec.Line, "model.modelspec %s must be a path ending in .modelspec.json", rules.Quote(out.ModelSpec.Value))

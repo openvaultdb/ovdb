@@ -254,7 +254,11 @@ type Document struct {
 	// Descriptors is how many database descriptors OVDB.md lists beside the manifests; it is left out when there is none.
 	Descriptors int       `json:"descriptors,omitempty"`
 	Findings    []Finding `json:"findings"`
-	Summary     Summary   `json:"summary"`
+	// Notices are what the check asks the publisher to change without the repository being refused (severity "notice"): a manifest in the earlier form of
+	// its mapping that is still read. They are shaped like findings, change neither ok nor the exit status, and are left out when there are none, so a
+	// document without one is as it was.
+	Notices []Finding `json:"notices,omitempty"`
+	Summary Summary   `json:"summary"`
 }
 
 // Finding is one finding: Path is the file the finding is about, "repository" when it is about the repository as a whole.
@@ -292,6 +296,9 @@ func newDocument(commit string, r manifest.Result) Document {
 			doc.Summary.Errors++
 		}
 	}
+	for _, n := range r.Notices {
+		doc.Notices = append(doc.Notices, Finding{Rule: n.Rule, Severity: string(n.Severity), Path: n.Document, Line: n.Line, Message: n.Message})
+	}
 	return doc
 }
 
@@ -312,6 +319,17 @@ func (c command) writeHuman(w io.Writer, doc Document) {
 		}
 		say(w, where+"  ["+safe(f.Rule)+"]")
 		say(w, "  "+message)
+		say(w, "")
+	}
+	// A notice is told after the findings and before the summary, in the shape of a finding with the word notice before it, so a person sees it is not a
+	// problem: it changes neither the verdict nor the exit status.
+	for _, n := range doc.Notices {
+		where := safe(n.Path)
+		if n.Line > 0 {
+			where += ":" + strconv.Itoa(n.Line)
+		}
+		say(w, "notice: "+where+"  ["+safe(n.Rule)+"]")
+		say(w, "  "+safeN(n.Message, manifest.MaxMessageBytes))
 		say(w, "")
 	}
 	params := map[string]string{"commit": shortCommit(doc.Commit), "count": strconv.Itoa(doc.Summary.Errors), "manifests": strconv.Itoa(doc.Manifests), "descriptors": strconv.Itoa(doc.Descriptors),

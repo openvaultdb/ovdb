@@ -75,7 +75,6 @@ var stageStricterKinds = map[string]string{
 	"yaml-documents":                "the reader refuses a document end marker and a second document; the Directory's library reads the first document",
 	"yaml-unsupported":              "the reader refuses a quoted value written over more than one line; the Directory's library reads it",
 	"model-hcl-required":            "model.hcl is required by the manifest rules of the Publisher profile; the Directory reads it only when it is written, and takes the model file from the meaning file's models: entry (A0w)",
-	"module-name-underscore":        "module.name must start with a letter (the checker's pattern); the Directory's identifier pattern also allows _",
 	"meaning-license-required":      "the meaning file's license must be text and equal to licences.meaning; the Directory compares it only when the file has a text license",
 	"meaning-id-compared":           "the meaning file's id must be meaning.graph.id; the Directory does not read the id of the file in the file stage (the registry holds the graph's id)",
 }
@@ -100,6 +99,10 @@ func TestEveryCaseOfTheDirectoryStageIsInTheRelationItsOutcomeSays(t *testing.T)
 	g := readStageGolden(t)
 	counts := map[string]int{}
 	for _, c := range g.Cases {
+		wantOutcome, wantGo := c.Outcome, c.Go
+		if outcome, first, matched := sourceStageExpectation(t, g, c); matched {
+			wantOutcome, wantGo = outcome, first
+		}
 		directory := stageVerdict(t, g, c, manifest.Directory)
 		publisher := stageVerdict(t, g, c, manifest.Publisher)
 		if !directory.OK() && publisher.OK() {
@@ -116,30 +119,30 @@ func TestEveryCaseOfTheDirectoryStageIsInTheRelationItsOutcomeSays(t *testing.T)
 		}
 		switch relation {
 		case "agree":
-			if c.Outcome != "agree" {
-				t.Errorf("%s: Go and the Directory agree, and the golden says %q", c.ID, c.Outcome)
+			if wantOutcome != "agree" {
+				t.Errorf("%s: Go and the Directory agree, and the golden says %q", c.ID, wantOutcome)
 			}
 		case "looser":
-			if !strings.HasPrefix(c.Outcome, "looser:") && !strings.HasPrefix(c.Outcome, "out-of-reach:") {
-				t.Errorf("%s: Go accepts what the Directory refuses (%s), and the golden says %q", c.ID, c.Problem, c.Outcome)
+			if !strings.HasPrefix(wantOutcome, "looser:") && !strings.HasPrefix(wantOutcome, "out-of-reach:") {
+				t.Errorf("%s: Go accepts what the Directory refuses (%s), and the golden says %q", c.ID, c.Problem, wantOutcome)
 			}
 		case "stricter":
-			kind, ok := strings.CutPrefix(c.Outcome, "stricter:")
+			kind, ok := strings.CutPrefix(wantOutcome, "stricter:")
 			if _, known := stageStricterKinds[kind]; !ok || !known {
-				t.Errorf("%s: Go refuses what the Directory accepts, and the golden says %q", c.ID, c.Outcome)
+				t.Errorf("%s: Go refuses what the Directory accepts, and the golden says %q", c.ID, wantOutcome)
 			}
 		}
-		if first := firstRule(directory); c.Directory == "refuses" && c.Outcome == "agree" {
-			if c.Go == "" || c.Go != first {
-				t.Errorf("%s: Go refuses it as %q (%s profile), and the golden says it should be %q: a case agrees only through the rule that is meant", c.ID, first, "Directory", c.Go)
+		if first := firstRule(directory); c.Directory == "refuses" && wantOutcome == "agree" {
+			if wantGo == "" || wantGo != first {
+				t.Errorf("%s: Go refuses it as %q (%s profile), and the golden says it should be %q: a case agrees only through the rule that is meant", c.ID, first, "Directory", wantGo)
 			}
-		} else if c.Go != "" {
-			t.Errorf("%s: the golden names the rule %q of Go for a case that is not a refusal both make", c.ID, c.Go)
+		} else if wantGo != "" {
+			t.Errorf("%s: the golden names the rule %q of Go for a case that is not a refusal both make", c.ID, wantGo)
 		}
-		if strings.HasPrefix(c.Outcome, "out-of-reach:") && c.AcceptedWhen == "" {
+		if strings.HasPrefix(wantOutcome, "out-of-reach:") && c.AcceptedWhen == "" {
 			t.Errorf("%s: an out-of-reach case says under which record or registry the Directory accepts the same files", c.ID)
 		}
-		counts[c.Outcome]++
+		counts[wantOutcome]++
 	}
 	for kind := range stageStricterKinds {
 		if counts["stricter:"+kind] == 0 {
@@ -204,7 +207,11 @@ func TestReadmeCountsTheOutcomesOfTheDirectoryStage(t *testing.T) {
 	g := readStageGolden(t)
 	counts := map[string]int{}
 	for _, c := range g.Cases {
-		counts[c.Outcome]++
+		outcome := c.Outcome
+		if current, _, matched := sourceStageExpectation(t, g, c); matched {
+			outcome = current
+		}
+		counts[outcome]++
 	}
 	readme, err := os.ReadFile("README.md")
 	if err != nil {

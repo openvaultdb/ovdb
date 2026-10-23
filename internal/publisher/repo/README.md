@@ -4,7 +4,7 @@ Judges a repository: the presence of files and what they say, for `ovdb publishe
 (package `internal/publisher/checkcmd`, which the shipped binary links). It reads one commit, at HEAD,
 as committed and never the working tree, through a `Reader`, and hands OVDB.md and
 the manifests to package `manifest`. The reference is the Chinook checker
-(`demo-db/chinook@8b904298d0c3bba20c12dfbc29bb75bf5c37f683`,
+(`demo-db/chinook@88f080d72205034e1161bb80594acb7d77fc58ef`,
 `scripts/lib/ovdb-manifest.mjs`): Go never accepts a repository that it refuses, and
 every repository that Go refuses and it accepts is a recorded kind below, with cases.
 
@@ -108,8 +108,8 @@ and a path below a file or symlink do not):
 | `repo-repository` | `publisher.repository` equals `--repository` exactly (compared only when the manifest rules accept `publisher.repository`; when they do not their finding says so) | 309 |
 | `document-size` | OVDB.md and each manifest of at most 262144 bytes | 194, 244-246 |
 | `repo-model-json` | the model file is JSON that `JSON.parse` reads (no more than one value, no byte order mark, no trailing text), and an object | 405-410 |
-| `repo-model-module`, `repo-model-entities` | it has `module.name`, a letter and then letters, digits and `_`, and an `entities` object (or, in the current vocabulary of the JSON form, a `records` object: see below) | 412-416 |
-| `repo-model-version`, `repo-model-entity`, `repo-model-property` | the rules of the Directory's `parseModelSpec` (modelspec.mjs 92-118) that the checker never reads: a text `"modelspec"` version; each entity's name is an identifier and it has at least one property; each property's name is an identifier, its type is a type name or it names an entity (a text `entity`) that the model has, and a property that is neither is refused. A repeated key is the last, as in `JSON.parse`. Stricter kinds against the checker, below | the Directory's, not the checker's |
+| `repo-model-module`, `repo-model-entities` | the dataset check has a nonblank source `module.name` and an `entities` object (or, in the current vocabulary of the JSON form, a `records` object: see below) | 412-416 |
+| `repo-model-version`, `repo-model-entity`, `repo-model-property` | source shape and names, both vocabularies, component/enum references and top-level record uses, checked independently of traversal. Source records may be empty. The original bytes and declaration origins remain intact beside finite field proofs. A repeated JSON key is the last, with the existing vocabulary-presence guard. Historical comparator differences are counted separately below | the Directory's, not the checker's |
 | `repo-model-vocabulary`, `repo-model-removed` | the model file keeps to the vocabulary its `"modelspec"` identifier names (`1.0-draft`: entities, properties, entity; `1.0-draft-2`: records, fields, record) and has none of the removed or reserved top-level keys `collections`, `recordsets`, `projections`, `migrations`. Stricter kinds against the checker, below | ModelSpec's own reader, not the checker's |
 | `repo-model-name` | `model.name`, when written, is that module | 420 |
 | `repo-model-address` | the module of `model.address` is that module (the owner and repository of the address are the manifest's, a rule of package manifest) | 426-429 |
@@ -121,7 +121,8 @@ and a path below a file or symlink do not):
 | `meaning-concept-duplicate` | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. | the Directory's, not the checker's |
 | `meaning-concepts` | it has a `concepts:` list (the Directory's rule, `parseMeaningFile`, directory.mjs 487; not the checker's) | |
 | `meaning-models`, `meaning-hcl` | its `models:` entry for the module is text spelled as the Directory spells a path, stays inside the repository when joined to the directory of the meaning file, and is `model.hcl` | 459-468 |
-| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions | 535-539 |
+| `repo-recordsets` | the recordsets are exactly the entities of the model file, in both directions; each has the record type its manifest maps it to (`recordset_entities` in `ovdb-manifest/draft-1`, `record_type:` in `ovdb-manifest/draft-2`) | 535-539 |
+| `repo-columns` | a column of a recordset (`ovdb-manifest/draft-2` only) holds a field its record type has, not a path through a component, and is not named like another field; a recordset that a representation contract names lists none | none: the chinook pre-check's `columnModelProblems` (`manifest-mapping.mjs`) |
 
 The order of these findings is not the Directory's: it reports the version, the module, the entities, then each entity and property in file order (integer-like names first), and this check reports the version first and then entities and properties by name; at most 1000 of them are kept for a file, because a check shows 101 findings at most and what is kept of a model file is held for every manifest that names it. The verdict is the same either way. `--json` consumers should not read `findings[0]` as the Directory's first problem.
 
@@ -137,17 +138,16 @@ only, and exit 0 of `publisher check` has meant that the files agree with each o
 The missing `concepts:` list (#63) was found by reading, not by a test, which is the gap this section closes.
 
 `testdata/reference/directory-stage.mjs` runs `analyseDatabase` itself (the way the Directory's own `scripts/test.mjs` does: a local git repository served through
-`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 126 repositories of the own form, one rule each, and writes
+`urlFor`, the Directory's own `chinookdb` and `core` fixtures as the base, in-memory registries) on 140 repositories of the own form, one rule each, and writes
 `directory-stage.json`. The generator stops when the pinned file no longer holds a message it walks (`assertAnchors`) and when a case's verdict is not the reason
-its name states. `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
+its name states (14 of the cases, group `mapping`, are the record types and columns of `ovdb-manifest/draft-2` against the model file). `directory_stage_test.go` replays each case in memory with both profiles and `--repository`, and holds Go to the **outcome** the golden declares:
 
 | Outcome | Cases | What it is |
 | --- | --- | --- |
-| outcome: agree | 104 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
+| outcome: agree | 119 | Go and the Directory give the same verdict (the controls, and the rules Go has); a case that both refuse names the rule of Go that refuses it (`go`), and the test holds the first finding to it, so a case cannot agree through an unrelated rule |
 | outcome: out-of-reach:record | 3 | the Directory refuses by what the database's registry record says (its id, its url, its `meaning_graph`); a repository alone cannot |
 | outcome: out-of-reach:history | 1 | the Directory refuses by what the repository's earlier commits say: a reference by address to the repository's own graph with a well-formed pin is read at that commit, which must be in the history of the default branch and have the concept (neither the record nor a registry; the fix is a repository that has the commit) |
 | outcome: out-of-reach:registry | 6 | the Directory refuses by what a registry says (the graph is registered, for this repository, lists this file; the core graph is registered; an address is registered) |
-| outcome: stricter:module-name-underscore | 1 | Go refuses a `module.name` that starts with `_` (the checker's pattern); the Directory's identifier pattern allows it |
 | outcome: stricter:publisher-repository-required | 1 | Go (the Publisher profile) refuses a manifest that does not write `publisher.repository`; the Directory takes the record's repository |
 | outcome: stricter:model-hcl-required | 1 | Go refuses a manifest that does not write `model.hcl`; the Directory accepts it |
 | outcome: stricter:meaning-license-required | 2 | Go refuses a meaning file with no text `license`; the Directory compares it only when it is text |
@@ -167,7 +167,7 @@ record or registry could lift is not out of reach: `meaning.graph.address` must 
 check is offline once `publisher.repository` is written, and that is F7.
 
 The looser cases are listed in `drift.json` (`goLooser`, `fileProbes`) with their slice, and a test holds the list to the golden both ways, as `TestDrift` does for
-the manifest stage: each implemented slice removes its entries in its own pull request. With F2–F7 implemented, `goLooser` is empty for this 126-case own-form
+the manifest stage: each implemented slice removes its entries in its own pull request. With F2–F7 implemented, `goLooser` is empty for this 140-case own-form
 file-stage corpus. The record, history and registry outcomes, and the stricter kinds above, remain; shared-form checks are outside this corpus.
 
 ### Every refusal of the Directory's file stage, own form
@@ -329,10 +329,10 @@ The slower test (`TestRealGit...`, run by the `publisher-goldens` job with `OVDB
 builds each case as a real repository and requires that the real git, read through `Git` and
 `ExecRunner`, finds exactly what `Memory` finds. `digests.json` holds the digest of the golden.
 
-359 cases: 141 accepted by the checker, 132 accepted with `--repository`; 293 agree with Go, 66
-are stricter in Go, in 34 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
+376 cases: 148 accepted by the checker, 139 accepted with `--repository`; 310 agree with Go, 66
+are stricter in Go, in 33 kinds, 0 accepted by Go that the checker refuses. By group: 53 where a file is wrong
 (5 files, each placed 10 or 11 ways), 36 where an object cannot be read, 48 model files, 45 JSON
-differences, 70 meaning files, 30 YAML reader cases, 17 documents, 15 listed manifests, 10 tree names and sizes, 10 repository
+differences, 70 meaning files, 30 YAML reader cases, 17 documents, 17 for the mapping of `ovdb-manifest/draft-2` (record types and columns against the model file; the 14 that the Directory's file stage also judges are in its own golden), 15 listed manifests, 10 tree names and sizes, 10 repository
 states, 7 recordsets, 7 `--repository`, 4 limits (what one check may cost), 3 working tree, 3 fixtures (the Directory's `chinookdb` fixture, with and without
 `--repository`, and the hoster example alone), 1 unchanged (the real Chinook repository's files).
 
@@ -359,14 +359,13 @@ at once, and 32 manifests of 10,000 recordsets against a model of 10,000 entitie
 
 | Rule | Cases | Difference from the Chinook checker |
 | --- | --- | --- |
-| `meaning-binding` | 2 | A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts. |
+| `meaning-binding` | 3 | A binding of a concept names a model that is not this repository's, another module, an entity or a property that the model lacks, or has a role other than entity and no property: the Directory refuses it (directory.mjs 728-754); the checker never reads the concepts. |
 | `meaning-chain` | 2 | The extends chain or the values-of of a concept of the meaning file, inside its own graph, returns to a concept already in the chain, is longer than 50 concepts, or names a concept the graph does not have: the Directory refuses it (meaning.mjs 195-226); the checker never reads the concepts. |
 | `meaning-concept` | 3 | A concept of the meaning file has a shape the Directory refuses (validateConcept, meaning.mjs): no text id, an id that is not lower-case words joined by single hyphens, labels that are not short plain strings, extends or values-of that is not text, bindings that are not a list of mappings with a role from the list; the checker never reads the concepts. |
 | `meaning-concept-duplicate` | 1 | A concept id is declared twice in the meaning file: the Directory refuses it; the checker never reads the concepts. |
 | `document-size` | 3 | OVDB.md or a manifest of more than 262144 bytes is refused before it is read; the checker reads files of up to 16 MiB. |
 | `meaning-concepts` | 4 | The meaning file has no concepts list (the key is missing, or is null, a mapping or text): the Directory refuses it (directory.mjs, parseMeaningFile) and the Chinook checker never reads the concepts. |
-| `repo-model-entity` | 1 | An entity of the model file has a name that is not an identifier, or no properties: the Directory refuses it (parseModelSpec); the checker reads only the names of the entities. |
-| `repo-model-property` | 1 | A property of the model file has a name that is not an identifier, a type that is not a type name, neither a type nor an entity, or references an entity the model lacks: the Directory refuses it (parseModelSpec); the checker never reads the properties. |
+| `repo-model-property` | 1 | A source field has a blank name, invalid shape or type, or a missing local record/component/enum reference: the source reader refuses it independently of dataset traversal; the frozen checker never reads field declarations. |
 | `repo-model-vocabulary` | 3 | The model file has the identifier 1.0-draft and a key of the current vocabulary (records, fields, record), or the identifier 1.0-draft-2 and a key of the earlier (entities, properties, entity): ModelSpec's own reader refuses it; the checker and the Directory read the earlier keys only and never look for the others. |
 | `repo-model-removed` | 4 | The model file has a top-level collections, recordsets, projections or migrations, which ModelSpec removed or reserved with no content: ModelSpec's own reader refuses it, whichever identifier the file has; the checker and the Directory never read those keys. |
 | `repo-model-version` | 2 | The model file has no "modelspec" version that is text: the Directory refuses it (parseModelSpec, modelspec.mjs); the checker reads only the module and the names of the entities. Or it has an identifier that is neither 1.0-draft nor 1.0-draft-2 and a key of the current vocabulary (records, fields, record): the checker and the Directory take any text as the identifier and read the earlier keys only. |
@@ -428,7 +427,7 @@ with Directory preserves conservative JavaScript safe-integer and null-count
 refusals; Go retains exact integer tokens for native count associations. These
 expected differences do not constitute full canonical or runtime parity.
 
-Current canonical checker references: Directory `ec53d7539aafd23d006b4943acdd7a31f4eb9340` and demo-db/chinook `8b904298d0c3bba20c12dfbc29bb75bf5c37f683`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
+Current canonical checker references: Directory `3f52255cbaaaa987b705079cf771eb2544faf3ae` and demo-db/chinook `88f080d72205034e1161bb80594acb7d77fc58ef`. The prior exact datatug/chinookdb `79e7bb0b1d6f0666dce465874990dec64348331f` supplies only frozen corpus documents and mined literal inputs; its code is not imported as a reference validator.
 
 The checked `representation-stages.json` golden compares 52 cases across two
 independent native metadata fixtures, each in the earlier ModelSpec vocabulary and
@@ -471,3 +470,66 @@ caches; no legacy manifest association or metadata contributes to its proofs.
 The metadata-only helper pins original provider objects before mode or byte reads
 and also selects original dependency objects.
 Caller-supplied non-Git readers remain trusted immutable-reader seams.
+
+
+## Model-only manifests
+
+An own or shared manifest in either supported format may omit `meaning`. Own model JSON and Publisher
+HCL files remain tracked regular files; model identity, licences and full native
+recordset coverage still run. An omitted meaning section names no semantic file
+and establishes no graph identity or semantic admission. Supplied meanings retain
+all existing file and binding checks. Null or malformed sections are errors.
+
+The legacy shared path validates its required model address and exact pin without
+opening external metadata unless a representation attachment is supplied. The
+current attachment path still requires an own model and a meaning binding; shared
+and model-only manifests do not acquire attachment eligibility. These checks do
+not execute queries or deploy a database.
+
+The exact-byte `testdata/chinook-current` fixture comes from
+`demo-db/chinook@bbb0ff328199377f17d3f29aba9bf8d2a6565833`, with paths and SHA256
+in `provenance.json`. It tests the real publisher pair, descriptor, ModelSpec
+`1.0-draft-2` model and supplied meaning metadata under both manifest identifiers,
+plus model-only and native-name/column variants. This metadata check does not
+resolve foreign model closure or implement the complete ModelSpec language.
+
+## Source-faithful model reading and requested proofs
+
+The model reader retains exact JSON bytes, raw reference and use spelling, and
+record/component/enum declaration origins. Both source vocabularies use Go
+`strings.TrimSpace` only as a blank test: source names are never normalized.
+Records may be empty or keyless. Local and self-qualified references resolve
+exactly; malformed references, missing local targets, kind collisions and invalid
+unused declarations fail independently of record traversal. Named and inline enums
+are retained; broader model admission semantics remain the producer's responsibility.
+
+A finite record field proof combines own declarations with top-level component
+uses. Own fields override inherited fields; repeated aliases of the same component
+coalesce one origin, while different unoverridden origins remain ambiguous.
+Component-valued fields remain one field. Recursive reference closure walks source
+declaration identities once. Unknown foreign uses, ambiguity and the bounded
+100,000-step component-field view limit leave capability unavailable; they never
+manufacture an empty field set or foreign closure.
+
+This CLI emits no dataset field summary. Full record-list-only checks may therefore
+accept unavailable field capability. Columns require a complete field set and
+report `repo-model-capability` otherwise. Supplied semantic field bindings use
+complete fields, certain own declarations, or unique inherited fields whose local origins were all inspected; an uncertain field reports
+`meaning-capability`, never false absence. Existing binding URI/path grammar and
+representation eligibility/proof rules are preserved.
+
+The actual paired HCL/JSON source-language fixtures were independently accepted by
+ModelSpec Go v0.3.0 ProfileDefault, with earlier spelling in pinned-import context;
+`testdata/source-language/provenance.json` records their digests. The current
+Chinook plus inherited `Extra.Inherited` regression is included.
+
+The frozen comparator remains exact. `sourceStageExpectation` derives five whole
+source transformations from its immutable base: broader module/record/property
+names and an empty record. Four still fail unchanged supplied bindings; their first
+rule moves from a source-shape refusal to `meaning-binding`. The underscore module
+now agrees on acceptance. Stage totals are 119 agreement; the other original
+history/record/registry/strictness limitations remain. A7/B14a/B23a move to file-stage
+refusals against unchanged models, never dataset acceptance. The 376-case Chinook
+corpus remains 310 agreement/66 stricter cases, now in 33 kinds: one former
+`repo-model-entity` difference is an actual missing-field binding difference.
+No generated expected verdict, fixture, pin or digest is rewritten.

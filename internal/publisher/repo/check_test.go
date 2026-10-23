@@ -620,39 +620,36 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 		line  int
 		text  string
 	}{
-		"empty":                         {"", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"cut short":                     {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": {`, RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"cut short in a value":          {"{\n\"a\":", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"cut short in a string":         {"{\n\"a\":\"x", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"cut short after a number":      {"{\"a\":1", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"cut short in a list":           {"{\"a\":[1,2\n", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
-		"not JSON":                      {"{\n  \"module\": x\n}", RuleModelJSON, 2, "is not a ModelSpec JSON file: invalid character 'x'"},
-		"a byte order mark":             {"\xef\xbb\xbf" + goodModel, RuleModelJSON, 1, "is not a ModelSpec JSON file"},
-		"a list":                        {`[]`, RuleModelJSON, 0, "is not a ModelSpec JSON file: it must be a JSON object"},
-		"text after the value":          {goodModel + "\n{}", RuleModelJSON, 0, "text after the JSON value"},
-		"nested too deep":               {`{"x":` + strings.Repeat("[", 100) + strings.Repeat("]", 100) + "}", RuleModelDepth, 0, "is nested more than 100 levels deep"},
-		"too many entities":             {manyEntities(MaxEntities + 1), RuleEntitiesLimit, 0, "has an entities object of more than 10000 entities, which is more than this check reads"},
-		"no module":                     {`{"modelspec": "1.0-draft", "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`, RuleModelModule, 0, "has no module.name that is a ModelSpec module name"},
-		"a module name that is not one": {`{"modelspec": "1.0-draft", "module": {"name": "_x"}, "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`, RuleModelModule, 0, "has no module.name"},
-		"no entities":                   {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}}`, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)"},
-		"entities a list":               {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": []}`, RuleModelEntities, 0, "has no entities"},
+		"empty":                    {"", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short":                {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": {`, RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short in a value":     {"{\n\"a\":", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short in a string":    {"{\n\"a\":\"x", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short after a number": {"{\"a\":1", RuleModelJSON, 1, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"cut short in a list":      {"{\"a\":[1,2\n", RuleModelJSON, 2, "is not a ModelSpec JSON file: it is empty or ends before the JSON value does"},
+		"not JSON":                 {"{\n  \"module\": x\n}", RuleModelJSON, 2, "is not a ModelSpec JSON file: invalid character 'x'"},
+		"a byte order mark":        {"\xef\xbb\xbf" + goodModel, RuleModelJSON, 1, "is not a ModelSpec JSON file"},
+		"a list":                   {`[]`, RuleModelJSON, 0, "is not a ModelSpec JSON file: it must be a JSON object"},
+		"text after the value":     {goodModel + "\n{}", RuleModelJSON, 0, "text after the JSON value"},
+		"nested too deep":          {`{"x":` + strings.Repeat("[", 100) + strings.Repeat("]", 100) + "}", RuleModelDepth, 0, "is nested more than 100 levels deep"},
+		"too many entities":        {manyEntities(MaxEntities + 1), RuleEntitiesLimit, 0, "has an entities object of more than 10000 entities, which is more than this check reads"},
+		"no module":                {`{"modelspec": "1.0-draft", "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`, RuleModelModule, 0, "has no module.name that is a nonblank string"},
+		"a Go-blank source module": {`{"modelspec": "1.0-draft", "module": {"name": "\u0085"}, "entities": {"Album": {"properties": {"Id": {"type": "int"}}}, "Artist": {"properties": {"Id": {"type": "int"}}}}}`, RuleModelModule, 0, "has no module.name"},
+		"no entities":              {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}}`, RuleModelEntities, 0, "has no entities (an object of ModelSpec entities)"},
+		"entities a list":          {`{"modelspec": "1.0-draft", "module": {"name": "chinook"}, "entities": []}`, RuleModelEntities, 0, "has no entities"},
 		// The Directory's parseModelSpec (modelspec.mjs 92-118): what the model file says beyond its module and the names of its entities.
-		"no version":                                {strings.Replace(goodModel, `"modelspec": "1.0-draft", `, "", 1), RuleModelVersion, 0, `has no "modelspec" version`},
-		"a version that is a number":                {strings.Replace(goodModel, `"1.0-draft"`, "1", 1), RuleModelVersion, 0, `has no "modelspec" version`},
-		"an entity with no properties":              {modelWith(`"Artist": {"properties": {}}`), RuleModelEntity, 0, "entity Artist has no properties"},
-		"an entity that is null":                    {modelWith(`"Artist": null`), RuleModelEntity, 0, "entity Artist has no properties"},
-		"an entity that is a list":                  {modelWith(`"Artist": []`), RuleModelEntity, 0, "entity Artist has no properties"},
-		"properties that are a list":                {modelWith(`"Artist": {"properties": []}`), RuleModelEntity, 0, "entity Artist has no properties"},
-		"properties repeated, the last is empty":    {modelWith(`"Artist": {"properties": {"Id": {"type": "int"}}, "properties": {}}`), RuleModelEntity, 0, "entity Artist has no properties"},
-		"a property name that is not an identifier": {modelWith(`"Artist": {"properties": {"Na-me": {"type": "int"}}}`), RuleModelProperty, 0, `property name "Artist.Na-me" must be an identifier`},
-		"a type that is not a type name":            {modelWith(`"Artist": {"properties": {"Name": {"type": "not a type"}}}`), RuleModelProperty, 0, `Artist.Name has type "not a type", which is not a type name`},
-		"a list of lists":                           {modelWith(`"Artist": {"properties": {"Name": {"type": "int[][]"}}}`), RuleModelProperty, 0, `has type "int[][]"`},
-		"a property with no type and no entity":     {modelWith(`"Artist": {"properties": {"Name": {}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
-		"a property that is a number":               {modelWith(`"Artist": {"properties": {"Name": 5}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
-		"a property that is a list":                 {modelWith(`"Artist": {"properties": {"Name": [{"type": "int"}]}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
-		"a type that is a number":                   {modelWith(`"Artist": {"properties": {"Name": {"type": 5}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
-		"a reference to an entity the model lacks":  {modelWith(`"Artist": {"properties": {"Name": {"entity": "Nope"}}}`), RuleModelProperty, 0, "Artist.Name references entity Nope, which the model does not have"},
-		"a reference that is a number":              {modelWith(`"Artist": {"properties": {"Name": {"entity": 5}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"no version":                               {strings.Replace(goodModel, `"modelspec": "1.0-draft", `, "", 1), RuleModelVersion, 0, `has no "modelspec" version`},
+		"a version that is a number":               {strings.Replace(goodModel, `"1.0-draft"`, "1", 1), RuleModelVersion, 0, `has no "modelspec" version`},
+		"an entity that is null":                   {modelWith(`"Artist": null`), RuleModelEntity, 0, "entity \"Artist\" must be an object"},
+		"an entity that is a list":                 {modelWith(`"Artist": []`), RuleModelEntity, 0, "entity \"Artist\" must be an object"},
+		"properties that are a list":               {modelWith(`"Artist": {"properties": []}`), RuleModelEntity, 0, "properties must be an object"},
+		"a type that is not a type name":           {modelWith(`"Artist": {"properties": {"Name": {"type": "not a type"}}}`), RuleModelProperty, 0, `Artist.Name has type "not a type", which is not a type name`},
+		"a list of lists":                          {modelWith(`"Artist": {"properties": {"Name": {"type": "int[][]"}}}`), RuleModelProperty, 0, `has type "int[][]"`},
+		"a property with no type and no entity":    {modelWith(`"Artist": {"properties": {"Name": {}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a property that is a number":              {modelWith(`"Artist": {"properties": {"Name": 5}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a property that is a list":                {modelWith(`"Artist": {"properties": {"Name": [{"type": "int"}]}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a type that is a number":                  {modelWith(`"Artist": {"properties": {"Name": {"type": 5}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
+		"a reference to an entity the model lacks": {modelWith(`"Artist": {"properties": {"Name": {"entity": "Nope"}}}`), RuleModelProperty, 0, "Artist.Name references entity Nope, which the model does not have"},
+		"a reference that is a number":             {modelWith(`"Artist": {"properties": {"Name": {"entity": 5}}}`), RuleModelProperty, 0, "Artist.Name has neither a type nor an entity"},
 	} {
 		m := goodRepository()
 		m.Nodes[modelPath] = Node{Kind: File, Content: []byte(c.model)}
@@ -662,10 +659,10 @@ func TestTheModelFileMustBeAModelSpec(t *testing.T) {
 			t.Errorf("%s: line %d", name, c.line)
 		}
 	}
-	// An entity whose name is not an identifier is refused as the Directory refuses it, and the recordsets, which list Artist, no longer match the entities.
+	// A broader source name remains valid; the unchanged physical mapping must still name it explicitly.
 	m0 := goodRepository()
 	m0.Nodes[modelPath] = Node{Kind: File, Content: []byte(strings.Replace(goodModel, `"Artist"`, `"Art-ist"`, 1))}
-	if r := Check(m0, publisher()); !slices.Equal(rulesOf(r), []string{RuleModelEntity, RuleRecordsets, RuleRecordsets}) || !strings.Contains(r.Findings[0].Message, `entity name "Art-ist" must be an identifier`) {
+	if r := Check(m0, publisher()); !slices.Equal(rulesOf(r), []string{RuleRecordsets, RuleRecordsets}) || !strings.Contains(r.Findings[0].Message, `"Art-ist"`) {
 		t.Errorf("findings %v", r.Findings)
 	}
 	// A model with neither: two findings, in the order of the checker's lines.

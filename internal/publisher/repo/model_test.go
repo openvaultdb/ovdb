@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/openvaultdb/ovdb/internal/publisher/rules"
 )
 
 func TestReadModel(t *testing.T) {
@@ -37,8 +39,8 @@ func TestReadModel(t *testing.T) {
 		"__proto__ as an entity":                   {in: `{"entities":{"__proto__":{}}}`, entities: []string{"__proto__"}},
 		"a key with an escape":                     {in: `{"module":{"name":"a"},"entities":{}}`, module: "a", entities: []string{}},
 		"a name with an escape":                    {in: `{"module":{"name":"ab"}}`, module: "ab"},
-		"a name that is not a module name":         {in: `{"module":{"name":"1a"}}`},
-		"a name with a line break":                 {in: `{"module":{"name":"a\n"}}`},
+		"a name that is not a module name":         {in: `{"module":{"name":"1a"}}`, module: "1a"},
+		"a name with a line break":                 {in: `{"module":{"name":"a\n"}}`, module: "a\n"},
 		"a lone surrogate":                         {in: `{"x":"\ud800","module":{"name":"a"}}`, module: "a"},
 		"bytes that are not UTF-8":                 {in: "{\"x\":\"a\xffb\",\"module\":{\"name\":\"a\"}}", module: "a"},
 		"a number too big for a double":            {in: `{"x":1e999,"y":-0,"z":123456789012345678901234567890,"module":{"name":"a"}}`, module: "a"},
@@ -164,7 +166,7 @@ func FuzzReadModel(f *testing.F) {
 		if json.Unmarshal(data, &top) != nil {
 			t.Fatalf("accepted what is not an object: %q", data)
 		}
-		if spec.module != "" && !isModulePattern(spec.module) || !slices.IsSorted(spec.entities) || (!spec.hasEntities && len(spec.entities) > 0) {
+		if spec.module != "" && !rules.ModelSourceName(spec.module) || !slices.IsSorted(spec.entities) || (!spec.hasEntities && len(spec.entities) > 0) {
 			t.Fatalf("spec %+v", spec)
 		}
 	})
@@ -191,12 +193,12 @@ func TestReadModelProperties(t *testing.T) {
 	}
 }
 
-// A binding of a concept is held to the model file only when the Directory reads the model file: with an entity that has no property, it does not.
+// Empty declarations remain known; a supplied binding to a missing property is refused.
 func TestBindingsAreJudgedOnlyAgainstAModelTheDirectoryReads(t *testing.T) {
 	meaning := "id: chinook\nlicense: CC0-1.0\nmodels:\n  chinook: chinook.modelspec.hcl\nconcepts:\n  - id: a\n    bindings:\n      - model: modelspec:///chinook.Album\n        property: Nope\n        role: identifier\n"
 	m := goodRepository()
 	m.Nodes[meaningPth] = Node{Kind: File, Content: []byte(meaning)}
 	only(t, Check(m, publisher()), "meaning-binding", meaningPth, 9, `names property "Nope", which Album does not have in the ModelSpec`)
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(strings.Replace(goodModel, `"Album": {"properties": {"Id": {"type": "int"}}}`, `"Album": {}`, 1))}
-	only(t, Check(m, publisher()), RuleModelEntity, modelPath, 0, "entity Album has no properties")
+	only(t, Check(m, publisher()), "meaning-binding", meaningPth, 9, `names property "Nope", which Album does not have in the ModelSpec`)
 }

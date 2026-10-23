@@ -17,11 +17,12 @@ import (
 const maxJSONDepth = 100
 
 var (
-	errNotObject = errors.New("it must be a JSON object")
-	errTrailing  = errors.New("there is text after the JSON value")
-	errDepth     = errors.New("it is nested too deep")
-	errEntities  = errors.New("it has too many entities")
-	errRecords   = errors.New("it has too many records")
+	errNotObject    = errors.New("it must be a JSON object")
+	errTrailing     = errors.New("there is text after the JSON value")
+	errDepth        = errors.New("it is nested too deep")
+	errEntities     = errors.New("it has too many entities")
+	errRecords      = errors.New("it has too many records")
+	errDeclarations = errors.New("it has too many components or enums")
 )
 
 // The two identifiers of the JSON form of a model, which decide its vocabulary (ModelSpec's spec/json-format.md, "Format Identity" and "The
@@ -61,14 +62,19 @@ var (
 // what it refuses of those is in issues. The names entities and properties are kept for what the earlier vocabulary calls them: a model in the current
 // vocabulary has its records in entities and their fields in properties, and spelling says which words a finding uses.
 type modelSpec struct {
-	module      string   // module.name when it is a ModelSpec module name (a letter, then letters, digits and _), else ""
-	hasEntities bool     // the group of record types (entities, or records) is an object
-	entities    []string // its keys, sorted
-	set         map[string]struct{}
-	issues      []modelIssue                   // what parseModelSpec refuses beyond the module and the entities object, in the order of entity and property names
-	size        int                            // about what this reading holds, in bytes: the names of the entities and of the properties, and the issues
-	properties  map[string]map[string]struct{} // for each entity, the names of its properties as the Directory reads them (the bindings of a concept name them)
-	spelling    spelling                       // the vocabulary the document is read in
+	module                     string   // module.name when it is a ModelSpec module name (a letter, then letters, digits and _), else ""
+	hasEntities                bool     // the group of record types (entities, or records) is an object
+	entities                   []string // its keys, sorted
+	set                        map[string]struct{}
+	issues                     []modelIssue                   // what parseModelSpec refuses beyond the module and the entities object, in the order of entity and property names
+	size                       int                            // about what this reading holds, in bytes: the names of the entities and of the properties, and the issues
+	properties                 map[string]map[string]struct{} // for each entity, the names of its properties as the Directory reads them (the bindings of a concept name them)
+	spelling                   spelling                       // the vocabulary the document is read in
+	source                     []byte                         // original immutable JSON bytes, including constraints and authored order
+	records, components, enums map[string]*entityInfo         // distinct source declaration origins
+	inherited                  map[string]map[string]string   // effective field -> component source origin, own fields stay in records
+	componentVocabulary        bool
+	incomplete                 map[string][]modelDiagnostic // field capability is independent of source validity
 }
 
 // maxModelIssues is the most issues kept of one model file (see judgeEntities).
@@ -80,10 +86,13 @@ type modelIssue struct{ rule, text string }
 // entityInfo is what is kept of one entity of the model file, as the last member of its name has it (JSON.parse keeps the last of a repeated key): only what
 // can be refused, so that a file of 4 MiB of valid properties keeps nothing.
 type entityInfo struct {
-	badName bool                // the name is not an identifier: the Directory refuses it and reads nothing of the entity
-	noProps bool                // no properties object with a property in it
-	props   map[string]propInfo // the properties that are refused, or that reference an entity (judged when every entity is known)
-	names   map[string]struct{} // the names of the properties that are not refused (the last of a repeated name)
+	badName   bool // not a source concept name
+	badObject bool // declaration is not an object
+	badUse    bool
+	use       []string
+	noProps   bool                // an authored fields/properties value is not an object
+	props     map[string]propInfo // the properties that are refused, or that reference an entity (judged when every entity is known)
+	names     map[string]struct{} // the names of the properties that are not refused (the last of a repeated name)
 }
 
 type propKind int
@@ -93,11 +102,17 @@ const (
 	propBadType
 	propNeither
 	propReference
+	propComponent
+	propEnum
+	propShape
 )
 
 type propInfo struct {
-	kind propKind
-	text string // the type, or the entity that is referenced
+	kind          propKind
+	text          string // the authored type/reference
+	enum          string // optional enum reference, kept independently
+	badEnum       bool
+	enumReference bool
 }
 
 // groupRead is what is read of one top-level group of record types, the one that a vocabulary names: entities or records. A document is read for both
@@ -108,6 +123,7 @@ type groupRead struct {
 	keys         map[string]*entityInfo // its record types by name, the last of a repeated name
 	otherMembers bool                   // a record type of it has the key of the members of the other vocabulary
 	otherRef     bool                   // a member of one has the reference key of the other vocabulary
+	ownRef       bool
 }
 
 // refKeys are the reference keys that members of the components have (a component has fields in both vocabularies, so only the reference key tells them
@@ -118,10 +134,10 @@ func (k refKeys) has(key string) bool {
 	return key == "entity" && k.entity || key == "record" && k.record
 }
 
-// readModel reads a model file as JSON.parse does and nothing more: the value must be one JSON value and an object (a repeated key is the last of
+// readModel reads source JSON with the existing bounded token reader: the value must be one JSON value and an object (a repeated key is the last of
 // them, as JSON.parse has it; a string with a byte that is not UTF-8 or half of a surrogate pair is read, as it is there; a number is not
 // converted, so 1e999 is read; a byte order mark is not white space, in either). It takes no more than maxJSONDepth levels. The decoder is
-// used for its tokens only, which it checks as it reads them: no value is built that the file chooses the size of but the keys of entities.
+// used for its tokens, retaining bounded declaration names, authored references/uses and the original source bytes; arbitrary constraints are not copied into a second AST.
 //
 // The identifier of the document ("modelspec") decides the vocabulary it is read in: "1.0-draft-2" has records, fields and record, and anything else the
 // entities, properties and entity that this check has always read (see spelling). A document under either identifier that carries a key of the other
@@ -142,6 +158,7 @@ func readModel(data []byte) (modelSpec, error) {
 	var versioned bool
 	var earlierRead, currentRead groupRead
 	var components refKeys
+	var componentGroup, enumGroup groupRead
 	var withheld []string // the removed and reserved top-level keys the document has
 	err = members(dec, func(key string, tok json.Token) error {
 		switch key {
@@ -166,7 +183,9 @@ func readModel(data []byte) (modelSpec, error) {
 		case "records":
 			return readGroup(dec, tok, current, &currentRead)
 		case "components":
-			return readComponents(dec, tok, &components)
+			return readComponents(dec, tok, &components, &componentGroup)
+		case "enums":
+			return readEnums(dec, tok, &enumGroup)
 		case "collections", "recordsets", "migrations", "projections":
 			// The top-level keys of the constructs that ModelSpec removed (collections, recordsets) and reserved with no content (migrations, projections): decision
 			// 0019 of ModelSpec, and its spec/json-format.md, "Removed And Reserved Fields". A document that has one is refused under either identifier (RuleModelRemoved).
@@ -182,7 +201,7 @@ func readModel(data []byte) (modelSpec, error) {
 	} else if err != io.EOF {
 		return spec, err
 	}
-	if isModulePattern(name) {
+	if rules.ModelSourceName(name) {
 		spec.module = name
 	}
 	words, group, other := earlier, earlierRead, currentRead
@@ -245,22 +264,19 @@ func readModel(data []byte) (modelSpec, error) {
 		}
 		spec.issues = append(spec.issues, modelIssue{RuleModelRemoved, text})
 	}
-	if spec.hasEntities {
-		spec.judgeEntities(keys)
-		spec.properties = make(map[string]map[string]struct{}, len(keys))
-		for name, info := range keys {
-			spec.size += len(name) + 64
-			if info != nil {
-				spec.properties[name] = info.names
-				for prop := range info.names {
-					spec.size += len(prop) + 48
-				}
-			}
-		}
-		for _, issue := range spec.issues {
-			spec.size += len(issue.text) + 32
-		}
+	spec.source = data
+	spec.records, spec.components, spec.enums = keys, componentGroup.keys, enumGroup.keys
+	spec.componentVocabulary = componentGroup.otherMembers
+	if componentGroup.present && !componentGroup.object {
+		spec.issues = append(spec.issues, modelIssue{RuleModelEntity, "components must be an object"})
 	}
+	if enumGroup.present && !enumGroup.object {
+		spec.issues = append(spec.issues, modelIssue{RuleModelEntity, "enums must be an object"})
+	}
+	spec.size += len(data)
+	spec.judgeSource()
+	spec.composeFields()
+
 	return spec, nil
 }
 
@@ -285,109 +301,65 @@ func readGroup(dec *json.Decoder, first json.Token, words spelling, group *group
 
 // readComponents reads the value of the top-level components, whose first token is first, for the reference keys of the members of its components. Nothing
 // else of a component is judged here: the check has never read the components.
-func readComponents(dec *json.Decoder, first json.Token, found *refKeys) error {
+// readComponents reads actual declarations while retaining both reference spellings
+// for vocabulary checks even in JSON members later overwritten by duplicate keys.
+func readComponents(dec *json.Decoder, first json.Token, found *refKeys, group *groupRead) error {
+	words := earlier
+	words.members, words.otherMembers, words.ref = "fields", "properties", "*"
+	words.limit = errDeclarations
+	err := readGroup(dec, first, words, group)
+	found.entity = found.entity || group.ownRef
+	found.record = found.record || group.otherRef
+	return err
+}
+
+func readEnums(dec *json.Decoder, first json.Token, group *groupRead) error {
+	group.present, group.object, group.keys = true, false, map[string]*entityInfo{}
 	if open, ok := first.(json.Delim); !ok || open != '{' {
 		return consume(dec, first, 1)
 	}
-	return members(dec, func(_ string, tok json.Token) error { // a component, level 3
+	group.object = true
+	return members(dec, func(name string, tok json.Token) error {
+		info := &entityInfo{badName: !rules.ModelConceptName(name)}
 		if open, ok := tok.(json.Delim); !ok || open != '{' {
-			return consume(dec, tok, 2)
+			info.badObject = true
 		}
-		return members(dec, func(key string, tok json.Token) error {
-			if open, ok := tok.(json.Delim); key != "fields" || !ok || open != '{' {
-				return consume(dec, tok, 3)
-			}
-			return members(dec, func(_ string, tok json.Token) error { // a field of it, level 5
-				if open, ok := tok.(json.Delim); !ok || open != '{' {
-					return consume(dec, tok, 4)
-				}
-				return members(dec, func(key string, tok json.Token) error {
-					found.entity = found.entity || key == "entity"
-					found.record = found.record || key == "record"
-					return consume(dec, tok, 5)
-				})
-			})
-		})
+		group.keys[name] = info
+		if len(group.keys) > MaxEntities {
+			return errDeclarations
+		}
+		return consume(dec, tok, 2)
 	})
 }
 
-// judgeEntities turns what was kept of the entities into issues, the entities and their properties by name. The Directory reads an entity whose name is
-// an identifier (the others it refuses), and refuses a reference to an entity that the model does not have by name, whatever that entity is like. A model in the
-// current vocabulary is judged the same, and the findings call its entities records and its properties fields.
-//
-// It keeps at most maxModelIssues issues: the findings of a check are capped far below that (manifest.MaxFindings), a model file is refused as soon as it has
-// one, and what is kept of a reading is held for every manifest that names the file, so what a hostile file can make it keep must not grow with the file.
-func (spec *modelSpec) judgeEntities(keys map[string]*entityInfo) {
-	words := spec.spelling
-	for _, name := range spec.entities {
-		if len(spec.issues) >= maxModelIssues {
-			return
-		}
-		info := keys[name]
-		switch {
-		case info.badName:
-			spec.issues = append(spec.issues, modelIssue{RuleModelEntity, words.record + " name " + rules.Quote(name) + " must be an identifier (letters, digits and _, not starting with a digit)"})
-			continue
-		case info.noProps:
-			spec.issues = append(spec.issues, modelIssue{RuleModelEntity, words.record + " " + name + " has no " + words.memberPlural + " (an object with at least one " + words.member + ")"})
-			continue
-		}
-		props := make([]string, 0, len(info.props))
-		for prop := range info.props {
-			props = append(props, prop)
-		}
-		slices.Sort(props)
-		for _, prop := range props {
-			if len(spec.issues) >= maxModelIssues {
-				return
-			}
-			p := info.props[prop]
-			switch at := name + "." + prop; p.kind {
-			case propBadName:
-				spec.issues = append(spec.issues, modelIssue{RuleModelProperty, words.member + " name " + rules.Quote(at) + " must be an identifier (letters, digits and _, not starting with a digit)"})
-			case propBadType:
-				spec.issues = append(spec.issues, modelIssue{RuleModelProperty, at + " has type " + rules.Quote(p.text) + ", which is not a type name (a word, optionally a list: string, int, datetime[])"})
-			case propNeither:
-				spec.issues = append(spec.issues, modelIssue{RuleModelProperty, at + " has neither a type nor " + words.aRef})
-			case propReference:
-				if _, ok := spec.set[p.text]; !ok {
-					spec.issues = append(spec.issues, modelIssue{RuleModelProperty, at + " references " + words.record + " " + p.text + ", which the model does not have"})
-				}
-			}
-		}
-	}
-}
-
-// readEntity reads the value of the entity called name, whose first token is first, inside the entities object (level 2), and keeps what the
-// Directory refuses of it. An entity whose name is not an identifier is read for its depth only. The members are under the key that the vocabulary words
-// names; the key of the other vocabulary is noted in group and not read.
+// readEntity retains source field names/references and record uses. Component
+// values are declarations; this reader never recursively expands their values.
 func readEntity(dec *json.Decoder, first json.Token, name string, words spelling, group *groupRead) (*entityInfo, error) {
-	if !isIdentifier(name) {
-		return &entityInfo{badName: true}, consume(dec, first, 2)
-	}
-	info := &entityInfo{noProps: true}
+	info := &entityInfo{badName: !rules.ModelConceptName(name)}
 	if open, ok := first.(json.Delim); !ok || open != '{' {
-		return info, consume(dec, first, 2) // null, text, a number or a list: no properties
+		info.badObject = true
+		return info, consume(dec, first, 2)
 	}
 	err := members(dec, func(key string, tok json.Token) error {
 		if key == words.otherMembers {
 			group.otherMembers = true
 		}
+		if key == "use" {
+			return readUses(dec, tok, info)
+		}
 		if key != words.members {
 			return consume(dec, tok, 3)
 		}
-		info.props, info.names, info.noProps = nil, nil, true // the last of a repeated properties
+		info.props, info.names, info.noProps = nil, nil, false
 		if open, ok := tok.(json.Delim); !ok || open != '{' {
+			info.noProps = true
 			return consume(dec, tok, 3)
 		}
-		count := 0
 		return members(dec, func(prop string, tok json.Token) error {
-			count++
-			info.noProps = false
-			delete(info.props, prop) // the last of a repeated property
+			delete(info.props, prop)
 			delete(info.names, prop)
 			judged, kept, err := readProperty(dec, tok, prop, words, group)
-			if !kept || judged.kind == propReference {
+			if !kept || judged.kind == propReference || judged.kind == propComponent || judged.kind == propEnum {
 				if info.names == nil {
 					info.names = map[string]struct{}{}
 				}
@@ -405,22 +377,54 @@ func readEntity(dec *json.Decoder, first json.Token, name string, words spelling
 	return info, err
 }
 
-// readProperty reads the value of the property called name, whose first token is first, in the properties of an entity (level 4), and says what the
-// Directory refuses of it, when it does: a name that is not an identifier, a type that is not a type name, neither a type nor an entity; and, for a
-// property that is a reference, the entity it names, which is judged when every entity is known. The reference is under the key that the vocabulary
-// words names; the key of the other vocabulary is noted in group and not read.
+func readUses(dec *json.Decoder, first json.Token, info *entityInfo) error {
+	info.use, info.badUse = nil, false
+	if open, ok := first.(json.Delim); !ok || open != '[' {
+		info.badUse = true
+		return consume(dec, first, 3)
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if ref, ok := tok.(string); ok {
+			info.use = append(info.use, ref)
+		} else {
+			info.badUse = true
+		}
+		if err := consume(dec, tok, 4); err != nil {
+			return err
+		}
+	}
+	_, err := dec.Token()
+	return err
+}
+
 func readProperty(dec *json.Decoder, first json.Token, name string, words spelling, group *groupRead) (propInfo, bool, error) {
-	var typ, entity string
-	var hasType, hasEntity bool
+	var typ, entity, component, enum string
+	var hasType, hasEntity, hasComponent, hasEnum, enumString, enumInline bool
+	var typeWritten, entityWritten, componentWritten bool
 	if open, ok := first.(json.Delim); ok && open == '{' {
 		err := members(dec, func(key string, tok json.Token) error {
 			switch key {
 			case "type":
+				typeWritten = true
 				typ, hasType = tok.(string)
-			case words.ref:
-				entity, hasEntity = tok.(string)
-			case words.otherRef:
-				group.otherRef = true
+			case "entity", "record":
+				group.ownRef = group.ownRef || key == words.ref || words.ref == "*" && key == "entity"
+				group.otherRef = group.otherRef || key == words.otherRef
+				if key == words.ref || words.ref == "*" {
+					entityWritten = true
+					entity, hasEntity = tok.(string)
+				}
+			case "component":
+				componentWritten = true
+				component, hasComponent = tok.(string)
+			case "enum":
+				hasEnum = true
+				enum, enumString = tok.(string)
+				enumInline = tok == json.Delim('[')
 			}
 			return consume(dec, tok, 5)
 		})
@@ -430,28 +434,36 @@ func readProperty(dec *json.Decoder, first json.Token, name string, words spelli
 	} else if err := consume(dec, first, 4); err != nil {
 		return propInfo{}, false, err
 	}
-	switch {
-	case !isIdentifier(name):
+	if !rules.ModelSourceName(name) {
 		return propInfo{kind: propBadName}, true, nil
-	case hasType && !isTypeName(typ):
-		return propInfo{kind: propBadType, text: typ}, true, nil
-	case hasType:
-		return propInfo{}, false, nil
-	case !hasEntity:
-		return propInfo{kind: propNeither}, true, nil
 	}
-	return propInfo{kind: propReference, text: entity}, true, nil
-}
-
-// isIdentifier is the Directory's /^[A-Za-z_][A-Za-z0-9_]*$/ (modelspec.mjs identifierPattern).
-func isIdentifier(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '_' && (i == 0 || c < '0' || c > '9') {
-			return false
+	count := 0
+	for _, present := range []bool{typeWritten, entityWritten, componentWritten} {
+		if present {
+			count++
 		}
 	}
-	return s != ""
+	if count > 1 {
+		return propInfo{kind: propShape}, true, nil
+	}
+	if hasType && !isTypeName(typ) {
+		return propInfo{kind: propBadType, text: typ}, true, nil
+	}
+	if !hasType && !hasEntity && !hasComponent {
+		return propInfo{kind: propNeither}, true, nil
+	}
+	info := propInfo{enum: enum, enumReference: hasEnum && enumString, badEnum: hasEnum && !enumString && !enumInline}
+	switch {
+	case hasEntity:
+		info.kind, info.text = propReference, entity
+	case hasComponent:
+		info.kind, info.text = propComponent, component
+	case hasEnum && enumString || hasEnum && !enumInline:
+		info.kind, info.text = propEnum, typ
+	default:
+		return propInfo{}, false, nil
+	}
+	return info, true, nil
 }
 
 // isTypeName is the Directory's /^[A-Za-z][A-Za-z0-9_]*(?:\[\])?$/ (modelspec.mjs typePattern): a word, optionally a list.

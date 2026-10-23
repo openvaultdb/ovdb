@@ -1,0 +1,17 @@
+{
+  "checker": "github.com/modelspec-org/cli@v0.3.0 ProfileDefault via registry adapter",
+  "fixtures": {
+    "modelspec-source-reader.modelspec": {
+      "modelspec-source-reader.modelspec.hcl": "17d000c307fc02be03302cacbea67f50c3e39d0e89e723cab25c1a2d80b7f4c0",
+      "modelspec-source-reader.modelspec.json": "a5334af89dee940ff88e0ad0c7fdc997f54288b85ab6104eceab29181447419b"
+    },
+    "modelspec-source-reader-earlier.modelspec": {
+      "modelspec-source-reader-earlier.modelspec.hcl": "72a7d54cf8046e4abc25862a09759ea5d706895069649d653d51c76c61d556a2",
+      "modelspec-source-reader-earlier.modelspec.json": "bc85f59e7414fa80f51831ad858b91a5e58b71803903bb89235e977d2363000e"
+    }
+  },
+  "inheritedChinook": {
+    "inherited-chinook.modelspec.hcl": "6e1f8c93ca246238c477e1dd313355062538cff81d4c9fcb5aa35f7f252ad8ce",
+    "inherited-chinook.modelspec.json": "a3d4621fe7e6112455f73fa9469479f7a268663f1c49f76940e4eea3f1e9e7ef"
+  }
+}
