@@ -1,0 +1,12 @@
+{
+  "repository": "demo-db/chinook",
+  "commit": "bbb0ff328199377f17d3f29aba9bf8d2a6565833",
+  "files": {
+    "OVDB.md": "069896565bf20903e58c102bf0ca7faefa947d804763d9981ccca52d4df22ee8",
+    "ovdb.yaml": "382d708266b20530de20e214dc69214b77ce041c35a7ef8ca33c72c342f2a99b",
+    "model/chinook.modelspec.hcl": "8e507ec6f212e300ddaa7bc12494b97c98301b316e9f545112f5dea85b14f16d",
+    "model/chinook.modelspec.json": "19be3e0f575e14aa999769da79ba3ecb7fe3cb7e6a7dee151399dcbebfc56a7b",
+    "model/chinook.meaning.yaml": "08070167da1626c3fd51f6555e846cd8aa1aa068a533db45c53394127bb0fcad",
+    "ovdb-database.json": "e851d1709633a43958fbabe9eb1710ea895838d8a2fb6c225adc21b085dbf26b"
+  }
+}

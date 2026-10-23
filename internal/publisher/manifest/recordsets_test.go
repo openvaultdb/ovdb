@@ -61,7 +61,7 @@ func TestRecordsetEntities(t *testing.T) {
 		{"an empty value", "recordset_entities:\n", base, true, nil},
 		{"a name that is not listed", "recordset_entities:\n  Missing: Artist\n", base, true, nil},
 		{"a name that is not a recordset name", "recordset_entities:\n  'a/b': Artist\n", "  - Album\n  - a/b\n", true, nil},
-		{"an entity that is not an identifier", "recordset_entities:\n  dbo.Artist: 'not an entity'\n", base, true, nil},
+		{"a broad source entity name", "recordset_entities:\n  dbo.Artist: 'not an entity'\n", base, false, map[string]string{"dbo.Artist": "not an entity"}},
 		{"an entity that is a number", "recordset_entities:\n  dbo.Artist: 7\n", base, true, nil},
 		{"an entity that is empty", "recordset_entities:\n  dbo.Artist:\n", base, true, nil},
 		{"one entity twice", "recordset_entities:\n  dbo.Artist: Artist\n  Order Details: Artist\n", base, true, nil},

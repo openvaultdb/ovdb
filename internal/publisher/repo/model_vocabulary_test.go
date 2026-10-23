@@ -62,10 +62,10 @@ func TestReadModelVocabularies(t *testing.T) {
 		"the current, empty":                             {in: `{"modelspec":"1.0-draft-2","records":{}}`, group: "records", object: true},
 		"the current, not an object":                     {in: `{"modelspec":"1.0-draft-2","records":[]}`, group: "records"},
 		"the current, null":                              {in: `{"modelspec":"1.0-draft-2","records":null}`, group: "records"},
-		"the current, repeated":                          {in: `{"modelspec":"1.0-draft-2","records":{"X":{}},"records":{"Y":{}}}`, group: "records", names: []string{"Y"}, object: true, issues: []string{RuleModelEntity + "|record Y has no fields (an object with at least one field)"}},
+		"the current, repeated":                          {in: `{"modelspec":"1.0-draft-2","records":{"X":{}},"records":{"Y":{}}}`, group: "records", names: []string{"Y"}, object: true, issues: nil},
 		"the current, repeated and then a list":          {in: `{"modelspec":"1.0-draft-2","records":{"X":{}},"records":[]}`, group: "records"},
-		"the current, a name that is not an identifier":  {in: `{"modelspec":"1.0-draft-2","records":{"a-b":{"fields":{"x":{"type":"int"}}}}}`, group: "records", names: []string{"a-b"}, object: true, issues: []string{RuleModelEntity + `|record name "a-b" must be an identifier`}},
-		"the current, a field that is not an identifier": {in: `{"modelspec":"1.0-draft-2","records":{"A":{"fields":{"a-b":{"type":"int"}}}}}`, group: "records", names: []string{"A"}, object: true, issues: []string{RuleModelProperty + `|field name "A.a-b" must be an identifier`}},
+		"the current, a name that is not an identifier":  {in: `{"modelspec":"1.0-draft-2","records":{"a-b":{"fields":{"x":{"type":"int"}}}}}`, group: "records", names: []string{"a-b"}, object: true, issues: nil},
+		"the current, a field that is not an identifier": {in: `{"modelspec":"1.0-draft-2","records":{"A":{"fields":{"a-b":{"type":"int"}}}}}`, group: "records", names: []string{"A"}, object: true, issues: nil},
 		"the current, a type that is not a type name":    {in: `{"modelspec":"1.0-draft-2","records":{"A":{"fields":{"a":{"type":"1x"}}}}}`, group: "records", names: []string{"A"}, object: true, issues: []string{RuleModelProperty + `|A.a has type "1x"`}},
 		"the current, a field with neither":              {in: `{"modelspec":"1.0-draft-2","records":{"A":{"fields":{"a":{}}}}}`, group: "records", names: []string{"A"}, object: true, issues: []string{RuleModelProperty + "|A.a has neither a type nor a record"}},
 		"the current, a record the model lacks":          {in: `{"modelspec":"1.0-draft-2","records":{"A":{"fields":{"a":{"record":"Z"}}}}}`, group: "records", names: []string{"A"}, object: true, issues: []string{RuleModelProperty + "|A.a references record Z, which the model does not have"}},
@@ -74,27 +74,27 @@ func TestReadModelVocabularies(t *testing.T) {
 		"the current beside entities":          {in: strings.Replace(currentDoc, `"records"`, `"entities":{},"records"`, 1), group: "records", names: []string{"A", "B"}, object: true, issues: []string{RuleModelVocabulary + `|it has "entities", which`}},
 		"the current, entities that is a list": {in: strings.Replace(currentDoc, `"records"`, `"entities":[],"records"`, 1), group: "records", names: []string{"A", "B"}, object: true, issues: []string{RuleModelVocabulary + `|it has "entities", which`}},
 		"the current with properties": {in: strings.Replace(currentDoc, `"fields":{"id":{"type":"int"},"b"`, `"properties":{"id":{"type":"int"},"b"`, 1), group: "records", names: []string{"A", "B"}, object: true,
-			issues: []string{RuleModelVocabulary + `|it has "properties", which`, RuleModelEntity + "|record A has no fields"}},
+			issues: []string{RuleModelVocabulary + "|it has \"properties\", which"}},
 		"the current with entity": {in: strings.Replace(currentDoc, `"record":"B"`, `"entity":"B"`, 1), group: "records", names: []string{"A", "B"}, object: true,
 			issues: []string{RuleModelVocabulary + `|it has "entity", which`, RuleModelProperty + "|A.b has neither a type nor a record"}},
 		"the earlier beside records": {in: strings.Replace(earlierDoc, `"entities"`, `"records":{},"entities"`, 1), group: "entities", names: []string{"A", "B"}, object: true, issues: []string{RuleModelVocabulary + `|it has "records", which`}},
 		"the earlier with fields": {in: strings.Replace(earlierDoc, `"properties":{"id":{"type":"int"},"b"`, `"fields":{"id":{"type":"int"},"b"`, 1), group: "entities", names: []string{"A", "B"}, object: true,
-			issues: []string{RuleModelVocabulary + `|it has "fields", which`, RuleModelEntity + "|entity A has no properties"}},
+			issues: []string{RuleModelVocabulary + "|it has \"fields\", which"}},
 		"the earlier with record": {in: strings.Replace(earlierDoc, `"entity":"B"`, `"record":"B"`, 1), group: "entities", names: []string{"A", "B"}, object: true,
 			issues: []string{RuleModelVocabulary + `|it has "record", which`, RuleModelProperty + "|A.b has neither a type nor an entity"}},
 		"the earlier with all three": {in: `{"modelspec":"1.0-draft","entities":{"A":{"fields":{},"properties":{"b":{"record":"B"}}}},"records":{}}`, group: "entities", names: []string{"A"}, object: true,
 			issues: []string{RuleModelVocabulary + `|it has "records", "fields", "record", which`, RuleModelProperty + "|A.b has neither a type nor an entity"}},
 
-		"the earlier, a component with an entity": {in: `{"modelspec":"1.0-draft","components":{"C":{"fields":{"x":{"entity":"A"}}}},"entities":{}}`, group: "entities", object: true},
+		"the earlier, a component with an entity": {in: `{"modelspec":"1.0-draft","components":{"C":{"fields":{"x":{"entity":"A"}}}},"entities":{}}`, group: "entities", object: true, issues: []string{RuleModelProperty + "|C.x references entity A"}},
 		"the earlier, a component with a record": {in: `{"modelspec":"1.0-draft","components":{"C":{"fields":{"x":{"record":"A"}}}},"entities":{}}`, group: "entities", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "record", which`}},
-		"the current, a component with a record": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"record":"A"}}}},"records":{}}`, group: "records", object: true},
+			issues: []string{RuleModelVocabulary + "|it has \"record\", which", RuleModelProperty + "|C.x references entity A"}},
+		"the current, a component with a record": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"record":"A"}}}},"records":{}}`, group: "records", object: true, issues: []string{RuleModelProperty + "|C.x references record A"}},
 		"the current, a component with an entity": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"entity":"A"}}}},"records":{}}`, group: "records", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "entity", which`}},
+			issues: []string{RuleModelVocabulary + "|it has \"entity\", which", RuleModelProperty + "|C.x references record A"}},
 		"a component of every shape": {in: `{"modelspec":"1.0-draft","components":{"C":{"use":["D"],"fields":{"x":{"type":"int"},"y":5,"z":{"record":"R"}}},"D":{"fields":[]},"E":7},"entities":{}}`, group: "entities", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "record", which`}},
-		"a component of every shape, in order": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"use":["D"],"fields":{"x":{"type":"int"},"y":5,"z":{"record":"R"}}},"D":{"fields":[]},"E":7},"records":{}}`, group: "records", object: true},
-		"components that are not an object":    {in: `{"modelspec":"1.0-draft-2","components":[1,2],"records":{}}`, group: "records", object: true},
+			issues: []string{RuleModelVocabulary + "|it has \"record\", which", RuleModelProperty + "|C.y has neither", RuleModelProperty + "|C.z references entity R", RuleModelEntity + "|component \"D\" properties must be an object", RuleModelEntity + "|component \"E\" must be an object"}},
+		"a component of every shape, in order": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"use":["D"],"fields":{"x":{"type":"int"},"y":5,"z":{"record":"R"}}},"D":{"fields":[]},"E":7},"records":{}}`, group: "records", object: true, issues: []string{RuleModelProperty + "|C.y has neither", RuleModelProperty + "|C.z references record R", RuleModelEntity + "|component \"D\" fields must be an object", RuleModelEntity + "|component \"E\" must be an object"}},
+		"components that are not an object":    {in: `{"modelspec":"1.0-draft-2","components":[1,2],"records":{}}`, group: "records", object: true, issues: []string{RuleModelEntity + "|components must be an object"}},
 
 		// A member that carries both words of the reference is refused, whichever it is the member of, and whichever vocabulary names the document.
 		"the earlier, a member with both reference words": {in: strings.Replace(earlierDoc, `"entity":"B"`, `"entity":"B","record":"B"`, 1), group: "entities", names: []string{"A", "B"}, object: true,
@@ -106,13 +106,13 @@ func TestReadModelVocabularies(t *testing.T) {
 		"the current, both reference words the other way round": {in: strings.Replace(currentDoc, `"record":"B"`, `"entity":"B","record":"B"`, 1), group: "records", names: []string{"A", "B"}, object: true,
 			issues: []string{RuleModelVocabulary + `|it has "entity", which`}},
 		"the earlier, a component member with both reference words": {in: `{"modelspec":"1.0-draft","components":{"C":{"fields":{"x":{"entity":"A","record":"A"}}}},"entities":{}}`, group: "entities", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "record", which`}},
+			issues: []string{RuleModelVocabulary + "|it has \"record\", which", RuleModelProperty + "|C.x references entity A"}},
 		"the current, a component member with both reference words": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"entity":"A","record":"A"}}}},"records":{}}`, group: "records", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "entity", which`}},
+			issues: []string{RuleModelVocabulary + "|it has \"entity\", which", RuleModelProperty + "|C.x references record A"}},
 		"the earlier, a component member with both reference words the other way round": {in: `{"modelspec":"1.0-draft","components":{"C":{"fields":{"x":{"record":"A","entity":"A"}}}},"entities":{}}`, group: "entities", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "record", which`}},
+			issues: []string{RuleModelVocabulary + "|it has \"record\", which", RuleModelProperty + "|C.x references entity A"}},
 		"the current, a component member with both reference words the other way round": {in: `{"modelspec":"1.0-draft-2","components":{"C":{"fields":{"x":{"record":"A","entity":"A"}}}},"records":{}}`, group: "records", object: true,
-			issues: []string{RuleModelVocabulary + `|it has "entity", which`}},
+			issues: []string{RuleModelVocabulary + "|it has \"entity\", which", RuleModelProperty + "|C.x references record A"}},
 
 		// A key is noticed in every occurrence of a repeated key, also in one that a later occurrence overwrites: the verdict is the safer one, and the reading is the last's.
 		"the earlier, a stray members key in a group that is repeated": {in: `{"modelspec":"1.0-draft","entities":{"A":{"fields":{}}},"entities":{"A":{"properties":{"id":{"type":"int"}}}}}`, group: "entities", names: []string{"A"}, object: true,
@@ -134,11 +134,11 @@ func TestReadModelVocabularies(t *testing.T) {
 		"an unknown identifier, entities and records": {in: `{"modelspec":"1.0-Draft-2","entities":{"A":{"properties":{"id":{"type":"int"}}}},"records":{"B":{}}}`, group: "entities", names: []string{"A"}, object: true,
 			issues: []string{RuleModelVersion + `|"modelspec" is "1.0-Draft-2", which this check does not know`}},
 		"an unknown identifier, fields in an entity": {in: `{"modelspec":"1.0-draft ","entities":{"A":{"fields":{}}}}`, group: "entities", names: []string{"A"}, object: true,
-			issues: []string{RuleModelVersion + `|and the model has "fields", which belong to`, RuleModelEntity + "|entity A has no properties"}},
+			issues: []string{RuleModelVersion + "|and the model has \"fields\", which belong to"}},
 		"an unknown identifier, a record reference": {in: `{"modelspec":"2","entities":{"A":{"properties":{"x":{"record":"A"}}}}}`, group: "entities", names: []string{"A"}, object: true,
 			issues: []string{RuleModelVersion + `|and the model has "record", which belong to`, RuleModelProperty + "|A.x has neither a type nor an entity"}},
 		"an unknown identifier, a record reference in a component": {in: `{"modelspec":"2","components":{"C":{"fields":{"x":{"record":"A"}}}},"entities":{}}`, group: "entities", object: true,
-			issues: []string{RuleModelVersion + `|and the model has "record", which belong to`}},
+			issues: []string{RuleModelVersion + "|and the model has \"record\", which belong to", RuleModelProperty + "|C.x references entity A"}},
 		"an unknown identifier, all three": {in: `{"modelspec":"2","entities":{"A":{"fields":{},"properties":{"x":{"record":"A"}}}},"records":{}}`, group: "entities", names: []string{"A"}, object: true,
 			issues: []string{RuleModelVersion + `|and the model has "records", "fields", "record", which belong to`, RuleModelProperty + "|A.x has neither a type nor an entity"}},
 		"an unknown identifier with the keys of the earlier vocabulary only": {in: `{"modelspec":"2","components":{"C":{"fields":{"x":{"entity":"A"}}}},"entities":{"A":{"properties":{"b":{"entity":"A"}}}}}`, group: "entities", names: []string{"A"}, object: true},
@@ -147,7 +147,7 @@ func TestReadModelVocabularies(t *testing.T) {
 		"a later identifier with records only": {in: `{"modelspec":"1.0-draft-3","records":{"B":{}}}`, group: "entities",
 			issues: []string{RuleModelVersion + `|"modelspec" is "1.0-draft-3", which this check does not know`}},
 		"no identifier, records":            {in: `{"module":{"name":"m"},"records":{"A":{}}}`, group: "entities", issues: []string{missingVersion}},
-		"no identifier, entities":           {in: `{"entities":{"A":{"fields":{}}}}`, group: "entities", names: []string{"A"}, object: true, issues: []string{missingVersion, RuleModelEntity + "|entity A has no properties"}},
+		"no identifier, entities":           {in: `{"entities":{"A":{"fields":{}}}}`, group: "entities", names: []string{"A"}, object: true, issues: []string{missingVersion}},
 		"an identifier that is a number":    {in: `{"modelspec":2,"entities":{}}`, group: "entities", object: true, issues: []string{missingVersion}},
 		"the identifier last":               {in: `{"records":{"A":{"fields":{"x":{"type":"int"}}}},"modelspec":"1.0-draft-2"}`, group: "records", names: []string{"A"}, object: true},
 		"the identifier repeated, the last": {in: `{"modelspec":"1.0-draft","modelspec":"1.0-draft-2","records":{"A":{"fields":{"x":{"type":"int"}}}}}`, group: "records", names: []string{"A"}, object: true},
@@ -202,7 +202,7 @@ func TestReadModelRefusesRemovedAndReservedKeys(t *testing.T) {
 		`{"modelspec":"1.0-draft-2","records":{"collections":{"fields":{"projections":{"type":"int"},"migrations":{"type":"int"}}}},"module":{"recordsets":1}}`,
 	} {
 		spec, _ = readModel([]byte(in))
-		wantIssues(t, in, spec, nil)
+		wantIssues(t, in, spec, []string{RuleModelEntity + "|reserved concept word"})
 	}
 }
 
@@ -252,6 +252,8 @@ func TestTheCurrentVocabularyIsReadAsTheEarlierOne(t *testing.T) {
 // sameReading says whether two readings are the same in everything but the vocabulary they were read in.
 func sameReading(a, b modelSpec) bool {
 	a.spelling, b.spelling = spelling{}, spelling{}
+	a.source, b.source = nil, nil
+	a.size, b.size = 0, 0
 	return reflect.DeepEqual(a, b)
 }
 

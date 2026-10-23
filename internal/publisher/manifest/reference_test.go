@@ -208,8 +208,8 @@ func verdictOf(t testing.TB, b byte) bool {
 func TestGoldenDigests(t *testing.T) {
 	var want map[string]string
 	readGolden(t, "digests.json", &want)
-	if len(want) != 9 {
-		t.Fatalf("digests.json holds %d digests, want 9", len(want))
+	if len(want) != 10 {
+		t.Fatalf("digests.json holds %d digests, want 10", len(want))
 	}
 	for name, digest := range want {
 		raw, err := os.ReadFile("../" + name)
@@ -319,9 +319,11 @@ func (a *accounting) record(c referenceCase, goAccepts bool, first Finding) bool
 	return true
 }
 
-// d0Classes are the problems of the frozen Chinook checker that D0 explains Go not having: D, the rule that a recordset name looks like a ModelSpec entity
-// name, which the Directory at its pin no longer has (it takes native names) and K, recordset_entities as an unknown key, which the Directory reads.
-const d0Classes = "DK"
+// d0Classes are the problems of the Chinook checker that D0 and the stages of Go explain Go not having when it judges a manifest alone: D, the rule that a
+// recordset name looks like a ModelSpec entity name, which the Directory at its pin no longer has (it takes native names); and F, a rule that the checker
+// makes with the model file read and that Go makes in package repo, with the model file, and not in the manifest stage (the same record type on two recordsets of
+// the first format, decision 0012 N32; a path through a component, N11): conformance_test.go runs the Directory's cases of both through the repository check.
+const d0Classes = "DF"
 
 // d0Explained says whether a document that the Publisher profile accepts and the frozen Chinook checker refuses is explained by D0 (the Directory at its pin
 // is the reference for both profiles): the Directory accepts it too (the caller checks) and every problem the checker found in it is of a class in d0Classes.
@@ -432,7 +434,9 @@ func runReference(t *testing.T, spec referenceSpec) {
 	if spec.profile == Directory {
 		allowed = driftCorpusLooser(t)
 	}
-	d0 := 0 // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains (see d0Explained)
+	sourceNames := 0     // exact broader logical-name source transformations
+	optionalMeaning := 0 // optional-section contract extension; frozen verdicts stay intact
+	d0 := 0              // the documents of the corpus that the Publisher profile accepts and the frozen Chinook checker refuses, which D0 explains (see d0Explained)
 	var chinookClasses []string
 	if spec.profile == Publisher {
 		chinookClasses = strings.Split(verdicts.Manifest.ChinookClasses, ",")
@@ -444,10 +448,14 @@ func runReference(t *testing.T, spec referenceSpec) {
 		ok, first := acceptManifest(spec.profile, c.Document)
 		directoryAccepts := c.Verdict
 		c.Verdict = spec.verdict(c)
-		if !total.record(c, ok, first) && allowed == 0 {
-			if spec.profile == Publisher && directoryAccepts && d0Explained(chinookClasses[at]) {
+		if !total.record(c, ok, first) {
+			if sourceNameReferenceCase(c, corpus.Bases) {
+				sourceNames++
+			} else if optionalMeaningReferenceCase(c, corpus.Bases, spec.profile) {
+				optionalMeaning++
+			} else if spec.profile == Publisher && directoryAccepts && d0Explained(chinookClasses[at]) {
 				d0++
-			} else {
+			} else if allowed == 0 {
 				t.Errorf("manifest accepted where the %s refuses (%s): %q", spec.refName, c.Family, c.Document)
 			}
 		}
@@ -466,8 +474,9 @@ func runReference(t *testing.T, spec referenceSpec) {
 	if spec.profile == Publisher {
 		allowed = d0
 	}
+	allowed += optionalMeaning + sourceNames
 	if total.looser != allowed {
-		t.Fatalf("%d documents are accepted by Go and refused by the %s; %d are accounted for (the Directory profile: drift.json's looser entries; the Publisher profile: the documents that D0 explains, by the classes of the Chinook checker's problems) (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
+		t.Fatalf("%d documents are accepted by Go and refused by the %s; %d are accounted for (the Directory profile: drift.json's looser entries; the Publisher profile: the documents that D0 explains, by the classes of the Chinook checker's problems; both profiles: exact optional-meaning source transformations) (a document that Go accepts and the reference refuses is a drift to list, in its slice's class, and one that Go has come to refuse is an entry to remove)", total.looser, spec.refName, allowed)
 	}
 
 	// The corpus is as large and as varied as the proof claims.
@@ -583,7 +592,6 @@ func runReference(t *testing.T, spec referenceSpec) {
 // publisherKinds are the ways in which the Publisher profile is stricter than the Chinook checker through rules that only it has (the
 // others are sharedKinds).
 var publisherKinds = map[string]string{
-	"manifest-recordsets":     "Not a bound: D0 (the lead's default; the Directory at its pin is the reference for both profiles). The Directory refuses a recordset name over 256 UTF-16 code units (nativeRecordsetNameProblem, 1c7e126); the Chinook checker, which read every name as an entity identifier, accepted it.",
 	"graph-address-host-case": "The host of an own-form meaning.graph.address must be written in lower case, as the Directory's repositoryKey knows only that spelling (a record carries no other); the checker lower-cases the whole address, the host included, and accepts GitHub.com.",
 	"graph-address-case":      "An own-form meaning.graph.address is compared with the repository in ASCII case only (A to Z); the checker lower-cases with JavaScript's toLowerCase, which also folds non-ASCII letters, among them the Kelvin sign onto k. Go refuses what the checker accepts through such a fold, and never the other way round.",
 	"graph-address-scheme":    "An own-form meaning.graph.address must start with the literal meaning:// (a rule of the Directory); the checker only compares it in lower case and accepts MEANING:// or Meaning://.",
@@ -703,6 +711,19 @@ func orNil(s string) any {
 	return s
 }
 
+// mappingValue is the normalised mapping as the reference's facts hold it: for each recordset its name, its record type and its columns as [column, field] pairs.
+func mappingValue(recordsets []Recordset) any {
+	out := make([]any, len(recordsets))
+	for i, r := range recordsets {
+		columns := make([]any, len(r.Columns))
+		for j, c := range r.Columns {
+			columns[j] = []any{c.Name, c.Field}
+		}
+		out[i] = map[string]any{"name": r.Name, "recordType": r.RecordType, "columns": columns}
+	}
+	return out
+}
+
 // factValues are the facts of a manifest by the names of the README table.
 func factValues(m Manifest) map[string]any {
 	text := func(f Fact[string]) any { return state(f, str) }
@@ -727,6 +748,7 @@ func factValues(m Manifest) map[string]any {
 			return out
 		}),
 		"form":                       string(m.Form),
+		"mapping":                    state(m.Mapping, mappingValue),
 		"model.address.repository":   address(m.ModelAddress, func(a Address) any { return orNil(a.Repository) }),
 		"model.address.module":       address(m.ModelAddress, func(a Address) any { return orNil(a.Module) }),
 		"model.address.ref":          address(m.ModelAddress, func(a Address) any { return orNil(a.Ref) }),
@@ -743,7 +765,7 @@ var factFields = map[string]string{
 	"meaning.address": "MeaningAddress", "meaning.file": "MeaningFile", "meaning.graph.id": "GraphID", "meaning.graph.address": "GraphAddress",
 	"licences.model": "LicenceModel", "licences.meaning": "LicenceMeaning", "licences.data": "LicenceData",
 	"publisher.name": "PublisherName", "publisher.url": "PublisherURL", "publisher.repository": "PublisherRepository",
-	"recordsets": "Recordsets", "recordsets_partial": "RecordsetsPartial", "recordset_entities": "RecordsetEntities", "form": "Form",
+	"recordsets": "Recordsets", "recordsets_partial": "RecordsetsPartial", "recordset_entities": "RecordsetEntities", "form": "Form", "mapping": "Mapping",
 	"model.address.repository": "ModelAddress.Repository", "model.address.module": "ModelAddress.Module", "model.address.ref": "ModelAddress.Ref",
 	"meaning.address.repository": "MeaningAddress.Repository", "meaning.address.ref": "MeaningAddress.Ref",
 }
@@ -855,14 +877,14 @@ func TestFactsAgreeWithTheReference(t *testing.T) {
 		t.Errorf("README lists %d fields, the generator %d", len(rows), len(facts.Fields))
 	}
 	// Legacy fields are carried by reference rows. Opt-in rights and HTTP source
-	// extensions have independent tests and are absent from this frozen reference.
+	// extensions have independent tests and are absent from this frozen reference, and so are the notices (Notices): mapping_test.go holds them.
 	carried := map[string]bool{}
 	for _, name := range rows {
 		carried[strings.SplitN(name, ".", 2)[0]] = true
 	}
 	for _, typ := range []reflect.Type{reflect.TypeOf(Manifest{})} {
 		for i := 0; i < typ.NumField(); i++ {
-			if name := typ.Field(i).Name; name != "Read" && name != "DataDeclaration" && name != "DataRights" && name != "SourceRights" && name != "SourceDefinition" && name != "SourceDefinitionEvidence" && !carried[name] {
+			if name := typ.Field(i).Name; name != "Read" && name != "DataDeclaration" && name != "DataRights" && name != "SourceRights" && name != "SourceDefinition" && name != "SourceDefinitionEvidence" && name != "Notices" && !carried[name] {
 				t.Errorf("Manifest.%s is in no row of the README table", name)
 			}
 		}
@@ -1019,6 +1041,7 @@ var madeByRepo = map[string]string{
 	"the meaning file is YAML whose id and license are the manifest's":                                    "package manifest, `Judge.Meaning`: `meaning-shape`, `meaning-id`, `meaning-license`, and the reader's rules",
 	"the meaning file's models: entry for the module is model.hcl":                                        "package manifest, `Judge.Meaning`: `meaning-models`, `meaning-hcl`",
 	"own form: recordsets are exactly the model's entities":                                               "package repo: `repo-recordsets`",
+	"own form: the columns a draft-2 recordset lists hold fields of its record type":                      "package repo: `repo-columns`",
 }
 
 var readmeRule = regexp.MustCompile(`(?m)^\| (.+) \| (documents|files|input|dropped) \| (.+) \| ovdb-manifest\.mjs ([0-9, ]+) \|$`)

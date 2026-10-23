@@ -28,6 +28,10 @@ type MeaningWants struct {
 // ModelFacts are the entities of a model file and, for each, the names of its properties.
 type ModelFacts struct {
 	Entities map[string]map[string]struct{}
+	// IncompleteFields distinguishes an unavailable proof from an absent field.
+	// Record identity may be known even when a foreign use or ambiguous origin
+	// prevents complete field evidence. It confers no external closure evidence.
+	IncompleteFields map[string]string
 }
 
 // Meaning judges the meaning file of an own-form manifest: it is YAML that the reader reads, a mapping with a concepts list, whose id and license are the
@@ -52,7 +56,8 @@ func (j *Judge) Meaning(doc []byte, w MeaningWants) []Finding {
 	if concepts := root.Field("concepts"); concepts == nil || concepts.Kind != kindSeq {
 		c.add("meaning-concepts", fieldLine(root, "concepts"), "has no concepts list: a MeaningGraph file lists its concepts under concepts:, got %s", describe(concepts))
 	} else {
-		c.concepts(concepts, w)
+		format := root.Field("format")
+		c.concepts(concepts, w, format != nil && format.Kind == kindString && format.Text == meaningDraft2)
 	}
 	for _, same := range []struct {
 		key, label string
@@ -78,7 +83,7 @@ func (c *collector) modelsEntry(root *Node, w MeaningWants) {
 	}
 	// The checker wants text that is not blank; a blank entry fails the spelling below, which every entry must pass, so it is not asked for twice.
 	if entry == nil || entry.Kind != kindString {
-		c.add("meaning-models", fieldLine(root, "models"), "has no models: entry for module %s: write models: {%s: <the path of model.hcl, relative to this file>}", rules.Quote(w.Module), w.Module)
+		c.add("meaning-models", fieldLine(root, "models"), "has no models: entry for module %s: write models: {%s: <the path of model.hcl, relative to this file>}", rules.Quote(w.Module), rules.ModelLabel(w.Module))
 		return
 	}
 	resolved := path.Join(path.Dir(w.File), entry.Text)
@@ -86,14 +91,14 @@ func (c *collector) modelsEntry(root *Node, w MeaningWants) {
 	if !entrySpelling(entry.Text) || !rules.IsRepositoryPath(resolved) {
 		c.add("meaning-models", entry.Line, "models must name the ModelSpec module %s with a relative path that stays inside the repository (letters, digits and . _ / - only, no leading / or trailing /, no empty segment, no .. that leaves it), got %s", rules.Quote(w.Module), rules.Quote(entry.Text))
 	} else if !strings.HasSuffix(resolved, ".modelspec.hcl") {
-		c.add("meaning-models", entry.Line, "the %s model %s must be a .modelspec.hcl file (the model's source)", w.Module, rules.Quote(resolved))
+		c.add("meaning-models", entry.Line, "the %s model %s must be a .modelspec.hcl file (the model's source)", rules.ModelLabel(w.Module), rules.Quote(resolved))
 	} else if w.ModelHCL != "" {
 		if resolved != w.ModelHCL {
 			c.add("meaning-hcl", entry.Line, "model.hcl is %s, but the models: entry for %s is %s", rules.Quote(w.ModelHCL), rules.Quote(w.Module), rules.Quote(resolved))
 		}
 	} else if what := w.EntryFile; what != nil {
 		if found := what(resolved); found != "" {
-			c.add("meaning-model-file", entry.Line, "the %s model %s %s: the models: entry must name a regular file of the repository", w.Module, rules.Quote(resolved), found)
+			c.add("meaning-model-file", entry.Line, "the %s model %s %s: the models: entry must name a regular file of the repository", rules.ModelLabel(w.Module), rules.Quote(resolved), found)
 		}
 	}
 }

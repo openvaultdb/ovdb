@@ -1,0 +1,815 @@
+{
+  "format": "ovdb-database/draft-1",
+  "id": "https://demodb.dev/chinook/",
+  "localId": "chinook",
+  "serverId": "https://demodb.dev/ovdb",
+  "serverDbBaseUrl": "https://demodb.dev/ovdb/db/chinook/",
+  "title": "Chinook music store",
+  "description": "The Chinook sample database: a digital music store with artists, albums, tracks, playlists, customers, employees and invoices. Read-only, served from a pinned copy of the upstream SQLite fixture.",
+  "homepage": "https://chinook.demodb.dev/",
+  "apiUrl": "https://demodb.dev/ovdb/v1/databases/chinook",
+  "capabilities": {
+    "read": true,
+    "query": true,
+    "write": false
+  },
+  "deployment": {
+    "engine": "sqlite",
+    "url": "https://cloud.openvaultdb.com/ovdb/dbs/chinook",
+    "discovery": "https://demodb.dev/.well-known/openvaultdb"
+  },
+  "model": {
+    "id": "modelspec://github.com/demo-db/chinook/chinook",
+    "url": "https://chinook.demodb.dev/model/chinook.modelspec.json",
+    "hclUrl": "https://chinook.demodb.dev/model/chinook.modelspec.hcl"
+  },
+  "meaning": {
+    "id": "meaning://github.com/demo-db/chinook",
+    "url": "https://chinook.demodb.dev/model/chinook.meaning.yaml"
+  },
+  "publisher": {
+    "name": "DemoDB",
+    "url": "https://github.com/demo-db",
+    "repository": "https://github.com/demo-db/chinook"
+  },
+  "provenance": {
+    "repository": "https://github.com/lerocha/chinook-database",
+    "revision": "7f67772503d71ba90f19283c38e93923addb43fa",
+    "path": "data-source/source.sqlite",
+    "sha256": "7651ba378ac2fcd0dfc3c66fb101f7a7eed3ba39a612ec642b96e20702061f15",
+    "license": "MIT",
+    "notes": "The checked-in SQLite fixture is byte-for-byte the upstream SQLite file from the pinned revision."
+  },
+  "licences": {
+    "data": "MIT",
+    "model": "MIT",
+    "meaning": "CC0-1.0"
+  },
+  "recordsets": [
+    {
+      "name": "Album",
+      "kind": "table",
+      "description": "Albums released by an artist.",
+      "rowCount": 347,
+      "columns": [
+        {
+          "name": "AlbumId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "Title",
+          "type": "NVARCHAR(160)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "ArtistId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "AlbumId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "ArtistId",
+          "table": "Artist",
+          "referencedColumn": "ArtistId",
+          "constraint": 0,
+          "position": 0
+        }
+      ]
+    },
+    {
+      "name": "Artist",
+      "kind": "table",
+      "description": "Artists represented in the music catalogue.",
+      "rowCount": 275,
+      "columns": [
+        {
+          "name": "ArtistId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "Name",
+          "type": "NVARCHAR(120)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "ArtistId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "Customer",
+      "kind": "table",
+      "description": "Customers who purchase music from the store.",
+      "rowCount": 59,
+      "columns": [
+        {
+          "name": "CustomerId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "FirstName",
+          "type": "NVARCHAR(40)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "LastName",
+          "type": "NVARCHAR(20)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Company",
+          "type": "NVARCHAR(80)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Address",
+          "type": "NVARCHAR(70)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "City",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "State",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Country",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "PostalCode",
+          "type": "NVARCHAR(10)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Phone",
+          "type": "NVARCHAR(24)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Fax",
+          "type": "NVARCHAR(24)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Email",
+          "type": "NVARCHAR(60)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "SupportRepId",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "CustomerId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "SupportRepId",
+          "table": "Employee",
+          "referencedColumn": "EmployeeId",
+          "constraint": 0,
+          "position": 0
+        }
+      ]
+    },
+    {
+      "name": "Employee",
+      "kind": "table",
+      "description": "Store employees and their reporting relationships.",
+      "rowCount": 8,
+      "columns": [
+        {
+          "name": "EmployeeId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "LastName",
+          "type": "NVARCHAR(20)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "FirstName",
+          "type": "NVARCHAR(20)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Title",
+          "type": "NVARCHAR(30)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "ReportsTo",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "BirthDate",
+          "type": "DATETIME",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "HireDate",
+          "type": "DATETIME",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Address",
+          "type": "NVARCHAR(70)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "City",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "State",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Country",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "PostalCode",
+          "type": "NVARCHAR(10)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Phone",
+          "type": "NVARCHAR(24)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Fax",
+          "type": "NVARCHAR(24)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Email",
+          "type": "NVARCHAR(60)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "EmployeeId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "ReportsTo",
+          "table": "Employee",
+          "referencedColumn": "EmployeeId",
+          "constraint": 0,
+          "position": 0
+        }
+      ]
+    },
+    {
+      "name": "Genre",
+      "kind": "table",
+      "description": "Music genres assigned to tracks.",
+      "rowCount": 25,
+      "columns": [
+        {
+          "name": "GenreId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "Name",
+          "type": "NVARCHAR(120)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "GenreId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "Invoice",
+      "kind": "table",
+      "description": "Billing invoices issued to customers for music purchases.",
+      "rowCount": 412,
+      "columns": [
+        {
+          "name": "InvoiceId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "CustomerId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "InvoiceDate",
+          "type": "DATETIME",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "BillingAddress",
+          "type": "NVARCHAR(70)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "BillingCity",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "BillingState",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "BillingCountry",
+          "type": "NVARCHAR(40)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "BillingPostalCode",
+          "type": "NVARCHAR(10)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Total",
+          "type": "NUMERIC(10,2)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "InvoiceId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "CustomerId",
+          "table": "Customer",
+          "referencedColumn": "CustomerId",
+          "constraint": 0,
+          "position": 0
+        }
+      ]
+    },
+    {
+      "name": "InvoiceLine",
+      "kind": "table",
+      "description": "Individual tracks and quantities on an invoice.",
+      "rowCount": 2240,
+      "columns": [
+        {
+          "name": "InvoiceLineId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "InvoiceId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "TrackId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "UnitPrice",
+          "type": "NUMERIC(10,2)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Quantity",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "InvoiceLineId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "TrackId",
+          "table": "Track",
+          "referencedColumn": "TrackId",
+          "constraint": 0,
+          "position": 0
+        },
+        {
+          "column": "InvoiceId",
+          "table": "Invoice",
+          "referencedColumn": "InvoiceId",
+          "constraint": 1,
+          "position": 0
+        }
+      ]
+    },
+    {
+      "name": "MediaType",
+      "kind": "table",
+      "description": "File and encoding types used by tracks.",
+      "rowCount": 5,
+      "columns": [
+        {
+          "name": "MediaTypeId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "Name",
+          "type": "NVARCHAR(120)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "MediaTypeId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "Playlist",
+      "kind": "table",
+      "description": "Named collections of tracks.",
+      "rowCount": 18,
+      "columns": [
+        {
+          "name": "PlaylistId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "Name",
+          "type": "NVARCHAR(120)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "PlaylistId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": []
+    },
+    {
+      "name": "PlaylistTrack",
+      "kind": "table",
+      "description": "The many-to-many link between playlists and tracks.",
+      "rowCount": 8715,
+      "columns": [
+        {
+          "name": "PlaylistId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "TrackId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 2,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "PlaylistId",
+          "position": 1
+        },
+        {
+          "column": "TrackId",
+          "position": 2
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "TrackId",
+          "table": "Track",
+          "referencedColumn": "TrackId",
+          "constraint": 0,
+          "position": 0
+        },
+        {
+          "column": "PlaylistId",
+          "table": "Playlist",
+          "referencedColumn": "PlaylistId",
+          "constraint": 1,
+          "position": 0
+        }
+      ]
+    },
+    {
+      "name": "Track",
+      "kind": "table",
+      "description": "Individual audio tracks available in the store.",
+      "rowCount": 3503,
+      "columns": [
+        {
+          "name": "TrackId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": true,
+          "primaryKeyPosition": 1,
+          "defaultValue": null
+        },
+        {
+          "name": "Name",
+          "type": "NVARCHAR(200)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "AlbumId",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "MediaTypeId",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "GenreId",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Composer",
+          "type": "NVARCHAR(220)",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Milliseconds",
+          "type": "INTEGER",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "Bytes",
+          "type": "INTEGER",
+          "nullable": true,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        },
+        {
+          "name": "UnitPrice",
+          "type": "NUMERIC(10,2)",
+          "nullable": false,
+          "primaryKey": false,
+          "primaryKeyPosition": null,
+          "defaultValue": null
+        }
+      ],
+      "primaryKey": [
+        {
+          "column": "TrackId",
+          "position": 1
+        }
+      ],
+      "foreignKeys": [
+        {
+          "column": "MediaTypeId",
+          "table": "MediaType",
+          "referencedColumn": "MediaTypeId",
+          "constraint": 0,
+          "position": 0
+        },
+        {
+          "column": "GenreId",
+          "table": "Genre",
+          "referencedColumn": "GenreId",
+          "constraint": 1,
+          "position": 0
+        },
+        {
+          "column": "AlbumId",
+          "table": "Album",
+          "referencedColumn": "AlbumId",
+          "constraint": 2,
+          "position": 0
+        }
+      ]
+    }
+  ]
+}

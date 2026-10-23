@@ -56,9 +56,7 @@ func TestTheModelFileInTheCurrentVocabularyMustBeAModelSpec(t *testing.T) {
 		"too many records":                              {manyRecords(MaxEntities + 1), RuleEntitiesLimit, "has a records object of more than 10000 record types, which is more than this check reads"},
 		"no records":                                    {`{"modelspec": "1.0-draft-2", "module": {"name": "chinook"}}`, RuleModelEntities, "has no records (an object of ModelSpec record types)"},
 		"records a list":                                {`{"modelspec": "1.0-draft-2", "module": {"name": "chinook"}, "records": []}`, RuleModelEntities, "has no records"},
-		"a record with no fields":                       {currentModelWith(`"Artist": {"fields": {}}`), RuleModelEntity, "record Artist has no fields (an object with at least one field)"},
-		"fields that are a list":                        {currentModelWith(`"Artist": {"fields": []}`), RuleModelEntity, "record Artist has no fields"},
-		"a field name that is not an identifier":        {currentModelWith(`"Artist": {"fields": {"Na-me": {"type": "int"}}}`), RuleModelProperty, `field name "Artist.Na-me" must be an identifier`},
+		"fields that are a list":                        {currentModelWith(`"Artist": {"fields": []}`), RuleModelEntity, "fields must be an object"},
 		"a type that is not a type name":                {currentModelWith(`"Artist": {"fields": {"Name": {"type": "not a type"}}}`), RuleModelProperty, `Artist.Name has type "not a type", which is not a type name`},
 		"a field with no type and no record":            {currentModelWith(`"Artist": {"fields": {"Name": {}}}`), RuleModelProperty, "Artist.Name has neither a type nor a record"},
 		"a reference to a record the model lacks":       {currentModelWith(`"Artist": {"fields": {"Name": {"record": "Nope"}}}`), RuleModelProperty, "Artist.Name references record Nope, which the model does not have"},
@@ -105,7 +103,7 @@ func TestBindingsAreJudgedAgainstAModelInTheCurrentVocabulary(t *testing.T) {
 	only(t, Check(m, publisher()), "meaning-binding", meaningPth, 9, `names property "Nope", which Album does not have in the ModelSpec`)
 	// With a field that is refused there are no facts to hold the binding to, as with a property that is refused.
 	m.Nodes[modelPath] = Node{Kind: File, Content: []byte(strings.Replace(goodCurrentModel, `"Album": {"fields": {"Id": {"type": "int"}}}`, `"Album": {}`, 1))}
-	only(t, Check(m, publisher()), RuleModelEntity, modelPath, 0, "record Album has no fields")
+	only(t, Check(m, publisher()), "meaning-binding", meaningPth, 9, `names property "Nope", which Album does not have in the ModelSpec`)
 }
 
 // The registered model of this repository, and the file that the ECB pin chain pins (the registered model before `modelspec rewrite --write` made it the
