@@ -27,7 +27,7 @@ export function installFetch(routes: Record<string, Handler>) {
     try {
       body = init.body ? JSON.parse(String(init.body)) : undefined
     } catch {
-      body = String(init.body) // a DTQL YAML document
+      body = String(init.body) // a TugQL YAML document
     }
     calls.push({ method, path, body })
     const handler = routes[`${method} ${path}`]

@@ -330,7 +330,7 @@ func isWrite(r *http.Request) bool {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return false
 	}
-	return !strings.HasSuffix(r.URL.Path, "/query") && !strings.HasSuffix(r.URL.Path, "/dtql")
+	return !strings.HasSuffix(r.URL.Path, "/query") && !strings.HasSuffix(r.URL.Path, "/tugql")
 }
 
 // serveWrite serves a data write. When it fails inside openvaultdb-go

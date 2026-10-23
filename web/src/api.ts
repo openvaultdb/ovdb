@@ -277,7 +277,7 @@ export function resetConnection() {
   serverMoving = false
 }
 
-/** A body sent as is, such as a DTQL YAML document. */
+/** A body sent as is, such as a TugQL YAML document. */
 export interface RawBody {
   text: string
   contentType: string

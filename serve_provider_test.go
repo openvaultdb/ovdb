@@ -148,8 +148,8 @@ func TestServeHTTPProviderReadsExplicitOptIn(t *testing.T) {
 				}{
 					{"/v1/databases/ecb/query", `{"collection":"daily"}`, false},
 					{"/v1/databases/ecb/query", `{"collection":"daily","where":[{"field":"currency","op":"==","value":"ZZZ"}]}`, true},
-					{"/v1/databases/ecb/dtql", "from: {name: daily}\n", false},
-					{"/v1/databases/ecb/dtql", "from: {name: daily}\nwhere: {op: '==', left: {field: currency}, right: {value: ZZZ}}\n", true},
+					{"/v1/databases/ecb/tugql", "from: {name: daily}\n", false},
+					{"/v1/databases/ecb/tugql", "from: {name: daily}\nwhere: {op: '==', left: {field: currency}, right: {value: ZZZ}}\n", true},
 				} {
 					// Freeze every expected admission field before sending the request;
 					// response metadata must never supply the expected nonce or rights.
@@ -374,7 +374,7 @@ func TestServeHTTPProviderReadsNonceAndOperationsRefusedBeforeRead(t *testing.T)
 			"uppercase": {strings.Repeat("A", 32)}, "space": {" " + plan.Execution.ID}, "duplicate": {plan.Execution.ID, plan.Execution.ID},
 			"coalesced": {plan.Execution.ID + "," + plan.Execution.ID},
 		} {
-			for _, route := range []struct{ path, body string }{{"/v1/databases/ecb/query", `{"collection":"daily"}`}, {"/v1/databases/ecb/dtql", "from: {name: daily}\n"}} {
+			for _, route := range []struct{ path, body string }{{"/v1/databases/ecb/query", `{"collection":"daily"}`}, {"/v1/databases/ecb/tugql", "from: {name: daily}\n"}} {
 				w := serveHTTPRequest(h, "POST", route.path, route.body, http.Header{server.ProviderExecutionIDHeader: values})
 				if w.Code != 400 || w.Header().Get("Cache-Control") != "no-store" || !strings.Contains(w.Body.String(), `"invalid_execution_id"`) || strings.Contains(w.Body.String(), plan.Execution.ID) {
 					t.Fatalf("invalid %s accepted/reflected", name)

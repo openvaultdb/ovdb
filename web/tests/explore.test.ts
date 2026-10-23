@@ -64,7 +64,7 @@ describe('Explore data', () => {
     const wrapper = mount(ExploreScreen)
     await flushPromises()
     const option = wrapper.get('[data-option="datatug-cli"]')
-    expect(option.text()).toContain('Read-only DTQL queries on root collections')
+    expect(option.text()).toContain('Read-only TugQL queries on root collections')
     expect(option.text()).not.toContain('In the terminal with DataTug CLI\n    In the terminal with DataTug CLI')
     const heading = option.find('span.text-lg')
     const help = option.find('span.text-muted')

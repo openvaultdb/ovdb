@@ -73,7 +73,7 @@ var Rows = []Row{
 		API: []string{"GET /api/local/v1/context", "GET /api/local/v1/home", "GET /api/local/v1/status"}, Implemented: true},
 	// Reads go through the existing /v1 data API in every interface.
 	{ID: "15", Capability: "Browse data (read-only)", CLI: []string{"ovdb list", "ovdb get"}, TUI: "browse", Web: "/browse",
-		API:         []string{"GET /v1/databases/{db}", "POST /v1/databases/{db}/query", "POST /v1/databases/{db}/dtql", "GET /v1/databases/{db}/records/{key}"},
+		API:         []string{"GET /v1/databases/{db}", "POST /v1/databases/{db}/query", "POST /v1/databases/{db}/tugql", "GET /v1/databases/{db}/records/{key}"},
 		Implemented: true},
 	// A working directory is a shell concept; the TUI and web console show a
 	// browsable tree instead (E4).

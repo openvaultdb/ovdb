@@ -91,7 +91,7 @@ async function load() {
     else problem.value = result.error
   } else if (kind.value === 'collection') {
     // One record more than a page says whether there is a next one. A root
-    // collection pages on the server (DTQL offset); DTQL takes root
+    // collection pages on the server (TugQL offset); TugQL takes root
     // collections only, so a nested one reads up to the page's end.
     const offset = page.value * pageSize
     const name = segments.value[segments.value.length - 1]
@@ -100,7 +100,7 @@ async function load() {
     let from = 0
     if (segments.value.length === 1 && offset <= 10000) {
       const doc = `from: {name: ${JSON.stringify(name)}}\nlimit: ${pageSize + 1}\noffset: ${offset}\n`
-      result = await api<{ records: DataRecord[] }>('POST', base + '/dtql', { text: doc, contentType: 'application/yaml' })
+      result = await api<{ records: DataRecord[] }>('POST', base + '/tugql', { text: doc, contentType: 'application/yaml' })
     } else {
       const query = { collection: name, limit: offset + pageSize + 1, parent: keyOf(segments.value.slice(0, -1)) }
       result = await api<{ records: DataRecord[] }>('POST', base + '/query', query)
