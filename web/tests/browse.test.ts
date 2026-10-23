@@ -51,7 +51,7 @@ function routes(extra: Record<string, Handler> = {}): Record<string, Handler> {
     'GET /api/local/v1/databases': () => json(200, databases),
     'GET /api/local/v1/context': () => json(200, context('todo')),
     'GET /v1/databases/notes': () => json(200, { id: 'notes', engine: 'ingitdb', schemaMode: 'schemaless', collections: ['items'] }),
-    'POST /v1/databases/notes/dtql': (init) => {
+    'POST /v1/databases/notes/tugql': (init) => {
       const doc = String(init.body)
       const limit = Number(/limit: (\d+)/.exec(doc)![1])
       const offset = Number(/offset: (\d+)/.exec(doc)![1])
@@ -155,7 +155,7 @@ describe('Browse data', () => {
     expect(wrapper.findAll('button').some((b) => b.text() === 'Next page')).toBe(false)
     expect(wrapper.findAll('button').some((b) => b.text() === 'Previous page')).toBe(true)
     // Each page asks the server for 51 records from its offset (review F8).
-    expect(calls.filter((c) => c.path.endsWith('/dtql')).map((c) => c.body)).toEqual([0, 50, 100].map(
+    expect(calls.filter((c) => c.path.endsWith('/tugql')).map((c) => c.body)).toEqual([0, 50, 100].map(
       (offset) => `from: {name: "items"}\nlimit: 51\noffset: ${offset}\n`,
     ))
   })

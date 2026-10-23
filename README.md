@@ -116,11 +116,11 @@ ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
 
 ### Queries
 
-`ovdb serve` answers DTQL documents on two routes: `/v1/databases/{db}/dtql` for
-the sources of one database, and `/v1/dtql` for one or several databases, where
+`ovdb serve` answers TugQL documents on two routes: `/v1/databases/{db}/tugql` for
+the sources of one database, and `/v1/tugql` for one or several databases, where
 every source names its `database`. On the per-database route a document of one
 plain collection that names no other database is answered as before, with a key
-on every record; every document on `/v1/dtql` is relational, and so is any
+on every record; every document on `/v1/tugql` is relational, and so is any
 other document on the per-database route. A relational document has inner and
 left joins, `groupBy` and `having`, the aggregates `count`, `sum`, `avg`, `min`
 and `max`, column aliases, null tests and subqueries. Its answer is
@@ -137,7 +137,7 @@ it is.
 What is refused:
 
 - `first` and `last` are not aggregates of the profile: a document that uses
-  either, in any position, is `400 invalid_dtql` before anything is read.
+  either, in any position, is `400 invalid_tugql` before anything is read.
 - A relational document that names a database with access policies is
   `422 authorization_unsupported`, with one fixed message, whichever
   collections it names. A document of one plain collection is still read
@@ -155,9 +155,9 @@ What is refused:
   asked. A SQLite collection written in the manifest as its SQL-quoted
   identifier is read by its public name.
 
-**PostgreSQL and MySQL mounts.** PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /dtql) only when the environment of the server that mounts it (ovdb serve, or the local server that ovdb databases connect uses) holds OVDB_PREVIEW_POSTGRES_QUERIES=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called, and so do ovdb list and the web console's browse, which read records through those routes. Key reads and writes are unaffected. With the switch on, a relational document is still refused on a PostgreSQL mount with 422 join_engine_unsupported, because postgres is not among the join engines, which neither server lists: every document on /v1/dtql is relational, and on /v1/databases/{db}/dtql so is a join, grouping, aggregate, alias or subquery. On /v1/databases/{db}/dtql a document of one plain collection is answered as before. MySQL mounts refuse structured queries whatever the switch says. Earlier releases answered these queries on a PostgreSQL or MySQL mount.
+**PostgreSQL and MySQL mounts.** PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /tugql) only when the environment of the server that mounts it (ovdb serve, or the local server that ovdb databases connect uses) holds OVDB_PREVIEW_POSTGRES_QUERIES=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called, and so do ovdb list and the web console's browse, which read records through those routes. Key reads and writes are unaffected. With the switch on, a relational document is still refused on a PostgreSQL mount with 422 join_engine_unsupported, because postgres is not among the join engines, which neither server lists: every document on /v1/tugql is relational, and on /v1/databases/{db}/tugql so is a join, grouping, aggregate, alias or subquery. On /v1/databases/{db}/tugql a document of one plain collection is answered as before. MySQL mounts refuse structured queries whatever the switch says. Earlier releases answered these queries on a PostgreSQL or MySQL mount.
 
-Query limits: a relational query (join, grouping, aggregate, subquery) reads at most 8 sources with 4 levels of subquery, takes limit up to 1,000 and offset up to 10,000, and answers at most 1,000 rows and 8 MiB. A request runs for at most 10 seconds and reads at most 100,000 rows and 64 MiB from its sources; a join read in memory holds at most 10,000 rows and 16 MiB, and a grouping 100,000 groups. At most 2 in-memory and 4 database-side queries run at once, and a paged /dtql snapshot is at most 512 MiB and 1,000,000 rows, 2 at a time. GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there. ovdb serve and the local server run with these defaults and have no flag to change them.
+Query limits: a relational query (join, grouping, aggregate, subquery) reads at most 8 sources with 4 levels of subquery, takes limit up to 1,000 and offset up to 10,000, and answers at most 1,000 rows and 8 MiB. A request runs for at most 10 seconds and reads at most 100,000 rows and 64 MiB from its sources; a join read in memory holds at most 10,000 rows and 16 MiB, and a grouping 100,000 groups. At most 2 in-memory and 4 database-side queries run at once, and a paged /tugql snapshot is at most 512 MiB and 1,000,000 rows, 2 at a time. GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there. ovdb serve and the local server run with these defaults and have no flag to change them.
 
 **Manifests.** A manifest that cannot be read is reported with the line and the
 kind of each mistake and never with the text of the line. A manifest that

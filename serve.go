@@ -32,10 +32,10 @@ import (
 // openvaultdb-go when a mount opens, in the environment of the server process
 // that mounts the database: ovdb serve, or the local server that
 // `ovdb databases connect` starts. ovdb never sets it.
-const postgresPreviewHelp = "PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /dtql) only when the environment of the server that mounts it (ovdb serve, or the local server that ovdb databases connect uses) holds " +
+const postgresPreviewHelp = "PostgreSQL queries are a preview, and the preview is off by default. A manifest mount with engine: postgres answers structured queries (/query and /tugql) only when the environment of the server that mounts it (ovdb serve, or the local server that ovdb databases connect uses) holds " +
 	core.PreviewPostgresQueriesEnv + "=1 when the mount opens; without it the mount refuses them with 501 query_unsupported and the driver is not called, and so do ovdb list and the web console's browse, which read records through those routes. " +
-	"Key reads and writes are unaffected. With the switch on, a relational document is still refused on a PostgreSQL mount with 422 join_engine_unsupported, because postgres is not among the join engines, which neither server lists: every document on /v1/dtql is relational, and on /v1/databases/{db}/dtql so is a join, grouping, aggregate, alias or subquery. " +
-	"On /v1/databases/{db}/dtql a document of one plain collection is answered as before. MySQL mounts refuse structured queries whatever the switch says."
+	"Key reads and writes are unaffected. With the switch on, a relational document is still refused on a PostgreSQL mount with 422 join_engine_unsupported, because postgres is not among the join engines, which neither server lists: every document on /v1/tugql is relational, and on /v1/databases/{db}/tugql so is a join, grouping, aggregate, alias or subquery. " +
+	"On /v1/databases/{db}/tugql a document of one plain collection is answered as before. MySQL mounts refuse structured queries whatever the switch says."
 
 // queryLimitsHelp names the limits the server applies to a query. Every number
 // in it is read from openvaultdb-go's own values, so a release of the library
@@ -48,7 +48,7 @@ var queryLimitsHelp = queryLimitsText(server.DefaultQueryLimits(), server.Defaul
 func queryLimitsText(q server.QueryLimits, snap server.SnapshotLimits, b core.ProfileBounds) string {
 	return fmt.Sprintf("Query limits: a relational query (join, grouping, aggregate, subquery) reads at most %d sources with %d levels of subquery, takes limit up to %s and offset up to %s, and answers at most %s rows and %s. "+
 		"A request runs for at most %d seconds and reads at most %s rows and %s from its sources; a join read in memory holds at most %s rows and %s, and a grouping %s groups. "+
-		"At most %d in-memory and %d database-side queries run at once, and a paged /dtql snapshot is at most %s and %s rows, %d at a time. "+
+		"At most %d in-memory and %d database-side queries run at once, and a paged /tugql snapshot is at most %s and %s rows, %d at a time. "+
 		"GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there. "+
 		"ovdb serve and the local server run with these defaults and have no flag to change them.",
 		b.MaxSources, b.MaxSubqueryDepth, grouped(int64(b.MaxLimit)), grouped(int64(b.MaxOffset)), grouped(int64(joinexec.MaxResultRows)), mebibytes(joinexec.MaxResultBytes),
