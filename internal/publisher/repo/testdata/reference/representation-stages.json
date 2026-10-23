@@ -3,7 +3,7 @@
   "references": {
     "directory": {
       "repository": "openvaultdb/directory",
-      "commit": "ec53d7539aafd23d006b4943acdd7a31f4eb9340"
+      "commit": "3f52255cbaaaa987b705079cf771eb2544faf3ae"
     }
   },
   "strength": "structural-metadata-and-offline-raw-bytes-only",

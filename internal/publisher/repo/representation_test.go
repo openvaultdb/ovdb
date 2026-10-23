@@ -135,7 +135,11 @@ type pinnedFixtureReader struct {
 }
 
 func (r pinnedFixtureReader) Head() (string, error) { return r.revision, nil }
-func TestNativeRepresentationRepository(t *testing.T) {
+
+// nativeFixture is the repository of a contract that is read by the native identifier (real ROR files), the manifest that goes with it as the facts of its
+// own-form manifest, the attachment and the dependencies.
+func nativeFixture(t *testing.T) (Reader, manifest.Manifest, representation.Reference, DependencyReaders) {
+	t.Helper()
 	dir := "../../../publisher/representation/testdata/real-ror/"
 	data, err := os.ReadFile(dir + "contract.json")
 	if err != nil {
@@ -173,7 +177,11 @@ func TestNativeRepresentationRepository(t *testing.T) {
 	}
 	m := manifest.Manifest{Form: manifest.FormOwn, PublisherRepository: manifest.Fact[string]{Present: true, Valid: true, Value: "https://github.com/ingitdb/ror-ingitdb"}, ModelSpec: manifest.Fact[string]{Present: true, Valid: true, Value: "model/ror.modelspec.json"}, MeaningFile: manifest.Fact[string]{Present: true, Valid: true, Value: "model/ror.meaning.yaml"}, Recordsets: manifest.Fact[[]string]{Present: true, Valid: true, Value: []string{"organizations"}}}
 	r := pinnedFixtureReader{Memory: provider, revision: "bbbec903248680caea04e68f94b9a957b6efc55b"}
-	a := representation.Reference{Path: "contract.json", SHA256: representation.Hash(data)}
+	return r, m, representation.Reference{Path: "contract.json", SHA256: representation.Hash(data)}, deps
+}
+
+func TestNativeRepresentationRepository(t *testing.T) {
+	r, m, a, deps := nativeFixture(t)
 	if problems := CheckRepresentation(r, m, a, deps); len(problems) > 0 {
 		t.Fatal(problems)
 	}

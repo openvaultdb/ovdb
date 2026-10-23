@@ -93,6 +93,9 @@ func TestDrift(t *testing.T) {
 		t.Fatalf("probes format %q", probes.Format)
 	}
 
+	reference, _, _, _ := loadReference(t)
+	sourceProbes := 0
+
 	// What is listed.
 	type key struct{ profile, direction, probe string }
 	listed := map[key]string{}
@@ -154,7 +157,11 @@ func TestDrift(t *testing.T) {
 			}
 			switch {
 			case ok && p.Reference == 0:
-				observed[key{profile.name, "looser", p.ID}] = true
+				if p.ID == "recordset-entities-bad-entity" && sourceNameReferenceProbe([]byte(p.Document), reference.Bases) {
+					sourceProbes++
+				} else {
+					observed[key{profile.name, "looser", p.ID}] = true
+				}
 			case !ok && p.Reference == 1:
 				observed[key{profile.name, "stricter", p.ID}] = true
 			}
@@ -221,15 +228,24 @@ func TestDrift(t *testing.T) {
 		}
 	}
 
+	if sourceProbes != 2 {
+		t.Errorf("%d exact source-name probe differences, want both profiles", sourceProbes)
+	}
+
 	// What Go does with the corpus.
-	_, _, manifests, mds := loadReference(t)
+	reference, _, manifests, mds := loadReference(t)
+	sourceNames := 0
 	loose := 0
 	families := map[string]bool{}
 	for _, c := range manifests {
 		ok, _ := acceptManifest(Directory, c.Document)
-		if ok && !directorySpec.verdict(c) {
-			loose++
-			families[c.Family] = true
+		if ok && !directorySpec.verdict(c) && !optionalMeaningReferenceCase(c, reference.Bases, Directory) {
+			if sourceNameReferenceCase(c, reference.Bases) {
+				sourceNames++
+			} else {
+				loose++
+				families[c.Family] = true
+			}
 		}
 	}
 	for _, c := range mds {
@@ -238,6 +254,9 @@ func TestDrift(t *testing.T) {
 			loose++
 			families[c.Family] = true
 		}
+	}
+	if sourceNames != 39 {
+		t.Errorf("%d exact source-name corpus differences, want 39", sourceNames)
 	}
 	if loose != corpus {
 		t.Errorf("the corpus has %d documents on which the Directory profile is looser than the reference, and drift.json accounts for %d", loose, corpus)
