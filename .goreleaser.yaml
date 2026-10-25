@@ -126,8 +126,12 @@ release:
 homebrew_casks:
   - name: ovdb
     ids: [archive]
-    description: "ovdb — the OpenVaultDB command-line interface"
-    homepage: https://github.com/openvaultdb/openvaultdb-go
+    # brew style: HomepageUrlStyling requires a trailing slash, and
+    # RuboCop's Cask/Desc rejects a description that starts with the cask
+    # token (ovdb), case-insensitively. GoReleaser rewrites the tap cask
+    # from these two fields on every release.
+    description: "OpenVaultDB (OVDB) command-line interface"
+    homepage: "https://openvaultdb.com/"
     license: Apache-2.0
     repository:
       owner: openvaultdb
