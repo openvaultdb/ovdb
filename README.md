@@ -1,11 +1,19 @@
-# ovdb
+# OVDB
 
-<img src="assets/logo/ovdb-logo-512.png" alt="ovdb logo: an open safe holding a database, with a branch symbol on its door" width="160" align="right">
+<img src="assets/logo/ovdb-logo-512.png" alt="OVDB logo: an open safe holding a database, with a branch symbol on its door" width="160" align="right">
 
-`ovdb` is the OpenVaultDB command-line interface — the canonical
-developer/admin tool for creating, running, and operating an OpenVaultDB
-instance: user-owned, portable databases with pluggable storage engines
-(SQLite, inGitDB, ...).
+OVDB is the [OpenVaultDB](https://openvaultdb.com) command-line interface
+(`ovdb`): the canonical developer and admin tool for creating, running, and
+operating an OpenVaultDB instance. Those instances are user-owned, portable
+databases with pluggable storage engines (SQLite, inGitDB, ...).
+
+OpenVaultDB (OVDB) is an open protocol and platform for user-owned application
+databases. Apps connect to your vault and store data in namespaces they manage
+— but the vault, and everything in it, belongs to you.
+
+The project site is [openvaultdb.com](https://openvaultdb.com). Install from
+the [install page](https://openvaultdb.com/install). Design notes are in the
+[OVDB docs](https://openvaultdb.com/docs).
 
 The reference implementation and Go libraries backing this CLI live at
 [`github.com/openvaultdb/openvaultdb-go`](https://github.com/openvaultdb/openvaultdb-go).
@@ -15,6 +23,9 @@ The reference implementation and Go libraries backing this CLI live at
 [DataTug](https://datatug.app)’s in-progress OpenVaultDB session-storage exploration currently centers on the Go implementation behind this CLI. Read [how DataTug’s development tools were built](https://datatug.app/en/under-the-hood/tools-we-built/).
 
 ## Install
+
+Guided options, including a checksum-verified installer and an AI-agent
+prompt, are on the [Install OVDB](https://openvaultdb.com/install) page.
 
 Via Homebrew (macOS/Linux):
 
@@ -116,7 +127,7 @@ ovdb self-update --version v0.3.0 # github.com/openvaultdb/ovdb release
 
 ### Queries
 
-`ovdb serve` answers DTQL documents on two routes: `/v1/databases/{db}/dtql` for
+`ovdb serve` answers [TugQL](https://tugql.org/) documents on two routes: `/v1/databases/{db}/dtql` for
 the sources of one database, and `/v1/dtql` for one or several databases, where
 every source names its `database`. On the per-database route a document of one
 plain collection that names no other database is answered as before, with a key
