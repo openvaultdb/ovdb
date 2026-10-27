@@ -18,7 +18,8 @@ import (
 
 // demoCmd is `ovdb demo install|open|status`, defaulting to the TODO demo so
 // an `--app <name>` option can join without breaking them
-// (todo-demo#REQ:demo-command-shape).
+// (todo-demo#REQ:demo-command-shape). The bounded Listus session is
+// `ovdb demo serve`, attached to this command from package main.
 func (a *App) demoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "demo",
