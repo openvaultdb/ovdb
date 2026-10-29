@@ -18,6 +18,15 @@ the [install page](https://openvaultdb.com/install). Design notes are in the
 The reference implementation and Go libraries backing this CLI live at
 [`github.com/openvaultdb/openvaultdb-go`](https://github.com/openvaultdb/openvaultdb-go).
 
+## Video
+
+<p>
+  <a href="https://youtu.be/LMTcLntUWJM"><img src="assets/video/openvaultdb-en-poster.webp" alt="Play the 1:35 film: OpenVaultDB — your vault" width="640"></a><br>
+  ▶ <b><a href="https://youtu.be/LMTcLntUWJM">Watch the OpenVaultDB film (1:35)</a></b>
+</p>
+
+Русская версия: https://youtu.be/G6qINgqifaQ
+
 ## OpenVaultDB Go in DataTug session storage
 
 [DataTug](https://datatug.app)’s in-progress OpenVaultDB session-storage exploration currently centers on the Go implementation behind this CLI. Read [how DataTug’s development tools were built](https://datatug.app/en/under-the-hood/tools-we-built/).
