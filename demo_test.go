@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -178,8 +177,10 @@ func TestRunListusDemoHarness(t *testing.T) {
 	if _, err := os.Stat(tokenPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("token file remains: %v", err)
 	}
-	if err := syscall.Kill(captured.Process.Pid, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Fatalf("connector is still live: %v", err)
+	// cleanup waits for the connector, so a reaped process has a ProcessState.
+	// This is portable, unlike syscall.Kill, which Windows does not have.
+	if captured.ProcessState == nil {
+		t.Fatal("connector is still live")
 	}
 	if _, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/v1/databases", client.request.LocalPort)); err == nil {
 		t.Fatal("listener remains reachable")
