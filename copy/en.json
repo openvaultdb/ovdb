@@ -674,7 +674,7 @@
   "home.menu.explore": "Explore data",
   "home.menu.explore_help": "Choose DataTug CLI or DataTug.app",
   "explore.menu.datatug_cli": "In the terminal with DataTug CLI",
-  "explore.menu.datatug_cli_help": "Read-only DTQL queries on root collections, from your terminal.",
+  "explore.menu.datatug_cli_help": "Read-only TugQL queries on root collections, from your terminal.",
   "explore.menu.datatug_cli_demo": "DataTug shows your two lists, not their items yet. See items in the TODO app, in Browse data, or with `ovdb list /lists/to-buy/items --db todo`.",
   "explore.menu.datatug_app": "In the browser with DataTug.app",
   "explore.menu.datatug_app_help": "DataTug.app can't open an OpenVaultDB database directly yet.",

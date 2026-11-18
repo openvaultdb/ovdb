@@ -40,6 +40,13 @@ import (
 var ovdbBinPath string
 
 func TestMain(m *testing.M) {
+	// Listus demo tests re-exec this binary as a cloudflared stand-in with
+	// only PATH set. Building ovdb here needs the module cache, so that
+	// child would exit 1 before its /ready listener starts.
+	if len(os.Args) >= 2 && os.Args[1] == demoConnectorHelperArg {
+		os.Exit(m.Run())
+	}
+
 	dir, err := os.MkdirTemp("", "ovdb-legacy-bin-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "legacy_test: mkdir temp:", err)

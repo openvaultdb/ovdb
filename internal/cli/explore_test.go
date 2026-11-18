@@ -41,7 +41,7 @@ func TestExploreMenuNamesCurrentDatabase(t *testing.T) {
 	if strings.Contains(human.stdout, "In the terminal with DataTug CLI\n    In the terminal with DataTug CLI") {
 		t.Errorf("the option's description repeats its own label:\n%s", human.stdout)
 	}
-	if !strings.Contains(human.stdout, "Read-only DTQL queries on root collections") {
+	if !strings.Contains(human.stdout, "Read-only TugQL queries on root collections") {
 		t.Errorf("human output lacks the real DataTug CLI description:\n%s", human.stdout)
 	}
 }

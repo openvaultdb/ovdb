@@ -15,12 +15,12 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
-	github.com/dal-go/dalgo v0.90.2
-	github.com/dal-go/dalgo2http v0.3.0
-	github.com/dal-go/record v0.1.4
-	github.com/ingitdb/ingitdb-go/ingitdb v0.7.4
+	github.com/dal-go/dalgo v0.95.2
+	github.com/dal-go/dalgo2http v0.4.0
+	github.com/dal-go/record v0.1.5
+	github.com/ingitdb/ingitdb-go/ingitdb v0.9.0
 	github.com/meaninggraph/cli v0.2.0
-	github.com/openvaultdb/openvaultdb-go v0.20.2
+	github.com/openvaultdb/openvaultdb-go v0.26.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
 	github.com/strongo/buildinfo v0.3.2
@@ -28,7 +28,7 @@ require (
 	github.com/strongo/deviceauth v0.0.2
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.60.1
+	modernc.org/sqlite v1.61.0
 )
 
 require (
@@ -53,11 +53,11 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dal-go/dalgo2firestore v0.10.3 // indirect
 	github.com/dal-go/dalgo2mysql v0.2.2 // indirect
-	github.com/dal-go/dalgo2postgres v0.6.3 // indirect
-	github.com/dal-go/dalgo2sql v0.27.0 // indirect
-	github.com/dal-go/dalgo2sqlite v0.2.3 // indirect
+	github.com/dal-go/dalgo2postgres v0.9.4 // indirect
+	github.com/dal-go/dalgo2sql v0.29.7 // indirect
+	github.com/dal-go/dalgo2sqlite v0.4.5 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/georgysavva/scany/v2 v2.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -72,7 +72,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.20 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/ingitdb/dalgo2ingitdb v0.6.2 // indirect
+	github.com/ingitdb/dalgo2ingitdb v0.7.3 // indirect
 	github.com/ingitdb/dalgo2ingitdb4github v0.2.3 // indirect
 	github.com/ingr-io/ingr-go v0.0.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -88,7 +88,7 @@ require (
 	github.com/muesli/mango-cobra v1.2.0 // indirect
 	github.com/muesli/mango-pflag v0.1.0 // indirect
 	github.com/muesli/roff v0.1.0 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -106,8 +106,8 @@ require (
 	go.starlark.net v0.0.0-20260708150628-5395d018f003 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -117,7 +117,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/grpc v1.83.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	modernc.org/libc v1.77.1 // indirect
+	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
