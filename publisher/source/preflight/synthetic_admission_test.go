@@ -146,7 +146,11 @@ func (h *syntheticLogHandler) Handle(_ context.Context, r slog.Record) error {
 	h.counts.logEvents++
 	_, _ = h.counts.logSink.Write([]byte(r.Message))
 	r.Attrs(func(a slog.Attr) bool { h.inspectAttr(a); return true })
-	if r.Level == slog.LevelError && r.Message == "JSON response write failed" && r.NumAttrs()+h.attrs == 0 {
+	// v0.20.2 logged a bare ERROR "JSON response write failed"; v0.26.1 logs
+	// a source-free WARN "query response stream aborted" carrying only the
+	// request method and path, then aborts the handler.
+	if r.Level == slog.LevelError && r.Message == "JSON response write failed" && r.NumAttrs()+h.attrs == 0 ||
+		r.Level == slog.LevelWarn && r.Message == "query response stream aborted" && r.NumAttrs()+h.attrs == 2 {
 		h.counts.writeFailureEvents++
 	}
 	return nil
@@ -284,7 +288,7 @@ func syntheticAssemble(t *testing.T, f syntheticFixture, tr *syntheticTransport,
 }
 
 func syntheticRequest(ctx context.Context, nonce, doc string) *http.Request {
-	r := httptest.NewRequest("POST", "http://synthetic.invalid/v1/databases/ecb/dtql", strings.NewReader(doc)).WithContext(ctx)
+	r := httptest.NewRequest("POST", "http://synthetic.invalid/v1/databases/ecb/tugql", strings.NewReader(doc)).WithContext(ctx)
 	r.Header.Set(server.ProviderExecutionIDHeader, nonce)
 	return r
 }
@@ -398,15 +402,15 @@ func TestSyntheticGeneratedOriginalsIgnoreDirtyMetadata(t *testing.T) {
 func TestSyntheticUnsupportedOperationsBeforeRead(t *testing.T) {
 	f := syntheticPublisher(t)
 	for _, tc := range []struct{ name, method, path, doc, header string }{
-		{"paging", "POST", "/v1/databases/ecb/dtql", "from: {name: daily}\n", "OVDB-Page-Size"},
-		{"continuation", "POST", "/v1/databases/ecb/dtql", "from: {name: daily}\n", "OVDB-Page-Token"},
+		{"paging", "POST", "/v1/databases/ecb/tugql", "from: {name: daily}\n", "OVDB-Page-Size"},
+		{"continuation", "POST", "/v1/databases/ecb/tugql", "from: {name: daily}\n", "OVDB-Page-Token"},
 		{"point get", "GET", "/v1/databases/ecb/records/daily/AAA", "", ""},
 		{"write", "POST", "/v1/databases/ecb/records/daily", "{}", ""},
-		{"offset", "POST", "/v1/databases/ecb/dtql", "from: {name: daily}\noffset: 1\n", ""},
-		{"order", "POST", "/v1/databases/ecb/dtql", "from: {name: daily}\norderBy: [{field: currency}]\n", ""},
-		{"aggregate", "POST", "/v1/databases/ecb/dtql", "from: {name: daily}\ncolumns: [{aggregate: {function: count, args: []}, as: n}]\n", ""},
-		{"join", "POST", "/v1/databases/ecb/dtql", "from: {name: daily, as: a}\njoins: [{from: {name: daily, as: b}, on: {left: a.currency, right: b.currency}}]\n", ""},
-		{"federation", "POST", "/v1/dtql", "from: {database: ecb, name: daily}\n", ""},
+		{"offset", "POST", "/v1/databases/ecb/tugql", "from: {name: daily}\noffset: 1\n", ""},
+		{"order", "POST", "/v1/databases/ecb/tugql", "from: {name: daily}\norderBy: [{field: currency}]\n", ""},
+		{"aggregate", "POST", "/v1/databases/ecb/tugql", "from: {name: daily}\ncolumns: [{aggregate: {function: count, args: []}, as: n}]\n", ""},
+		{"join", "POST", "/v1/databases/ecb/tugql", "from: {name: daily, as: a}\njoins: [{from: {name: daily, as: b}, on: {left: a.currency, right: b.currency}}]\n", ""},
+		{"federation", "POST", "/v1/tugql", "from: {database: ecb, name: daily}\n", ""},
 		// These absent endpoints prove route refusal, not retention sink hardening.
 		{"history absent route", "GET", "/v1/databases/ecb/history", "", ""},
 		{"export absent route", "GET", "/v1/databases/ecb/export", "", ""},
@@ -576,16 +580,28 @@ func TestSyntheticResponseWriterFailureBoundary(t *testing.T) {
 			consumer := syntheticNewConsumer(t, rt)
 			w := &syntheticWriteProbe{header: http.Header{}, fail: fail}
 			r := syntheticRequest(context.Background(), consumer.plan.Execution.ID, "from: {name: daily}\n")
-			rt.handler.ServeHTTP(w, r)
-			if w.status != http.StatusOK || w.writes != 1 || !w.marker || c.calls.Load() != 1 || c.closes.Load() != 1 {
+			aborted := false
+			func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						aborted = rec == http.ErrAbortHandler
+						if !aborted {
+							panic(rec)
+						}
+					}
+				}()
+				rt.handler.ServeHTTP(w, r)
+			}()
+			if aborted != fail || w.status != http.StatusOK || w.writes < 1 || w.marker == fail || c.calls.Load() != 1 || c.closes.Load() != 1 {
 				t.Fatal("writer positive control or owned upstream close failed")
 			}
 			wantEvents := 0
 			if fail {
 				wantEvents = 1
 			}
-			// Released openvaultdb-go v0.20.2 emits one fixed ERROR event with
-			// no attributes on write failure, and none for a successful writer.
+			// Released openvaultdb-go v0.26.1 aborts the handler and emits one
+			// fixed WARN event (method and path only) on write failure, and none
+			// for a successful writer.
 			// Caller-owned context cancellation is not inferred; upstream has
 			// already closed before either write. No harness cancel is installed.
 			if c.writeFailureEvents != wantEvents || c.logEvents != wantEvents || c.logSink.marker {

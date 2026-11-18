@@ -71,8 +71,8 @@ func (l *Local) Query(ctx context.Context, op DataOp, limit int, noStart bool) (
 }
 
 // Page reads limit records of the collection at op.Path starting at offset.
-// A root collection pages on the server with a DTQL offset; openvaultdb-go
-// v0.6.0's DTQL takes root collections only, so a nested collection reads
+// A root collection pages on the server with a TugQL offset; openvaultdb-go
+// v0.6.0's TugQL takes root collections only, so a nested collection reads
 // offset+limit records and drops the first offset (review F8; the query
 // endpoint has no offset).
 func (l *Local) Page(ctx context.Context, op DataOp, offset, limit int, noStart bool) ([]Record, error) {
@@ -89,7 +89,7 @@ func (l *Local) Page(ctx context.Context, op DataOp, offset, limit int, noStart 
 	}
 	name, _ := json.Marshal(op.Path.Name()) // a JSON string is a YAML string
 	doc := fmt.Sprintf("from: {name: %s}\nlimit: %d\noffset: %d\n", name, limit, offset)
-	body, err := l.Data(ctx, DataRequest{Op: op, Method: http.MethodPost, URLPath: DatabaseURL(op.Database) + "/dtql",
+	body, err := l.Data(ctx, DataRequest{Op: op, Method: http.MethodPost, URLPath: DatabaseURL(op.Database) + "/tugql",
 		Raw: []byte(doc), ContentType: "application/yaml"}, noStart)
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ type v1ErrorBody struct {
 // v1Codes is the /v1-to-envelope code table of configuration parity.
 var v1Codes = map[string]envelope.Code{
 	"bad_request":    envelope.InvalidArgument,
-	"invalid_dtql":   envelope.InvalidArgument,
+	"invalid_tugql":  envelope.InvalidArgument,
 	"invalid_key":    envelope.InvalidArgument,
 	"invalid_grant":  envelope.Unauthorized,
 	"forbidden":      envelope.Forbidden,

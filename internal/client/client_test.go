@@ -217,7 +217,7 @@ func TestMapV1QueryUnsupportedIsAnUnsupportedOperationNotAServerFault(t *testing
 	t.Parallel()
 	path, _ := datapath.Parse("/customers")
 	op := DataOp{Verb: "list", Database: "ledger", Path: path, Suffix: " --db ledger"}
-	postgres := []byte(`{"error":{"code":"query_unsupported","message":"the \"postgres\" storage engine is not yet supported for queries: structured queries (/query, /dtql) are refused on it; key reads and writes still work"}}`)
+	postgres := []byte(`{"error":{"code":"query_unsupported","message":"the \"postgres\" storage engine is not yet supported for queries: structured queries (/query, /tugql) are refused on it; key reads and writes still work"}}`)
 	e := MapV1(http.StatusNotImplemented, postgres, op).Envelope
 	if e.Code != envelope.Unsupported || e.Code.HTTPStatus() != http.StatusNotImplemented {
 		t.Fatalf("code = %s, want %s: %+v", e.Code, envelope.Unsupported, e)

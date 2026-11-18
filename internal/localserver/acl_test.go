@@ -70,7 +70,7 @@ schemas:
 			t.Fatal(err)
 		}
 	}
-	writeTestFile(t, filepath.Join(dir, "policy.yaml"), `apiVersion: dtql.org/access/v1
+	writeTestFile(t, filepath.Join(dir, "policy.yaml"), `apiVersion: tugql.org/access/v1
 kind: AccessPolicy
 metadata:
   name: irish-readers
@@ -113,7 +113,7 @@ func TestOwnerForwardingMatchesInstanceSecretUnderACL(t *testing.T) {
 		{path: "/v1/databases/crm/records/customers/01"},
 		{path: "/v1/databases/crm/records/customers/02"},
 		{path: "/v1/databases/crm/records/customers"},
-		{method: http.MethodPost, path: "/v1/databases/crm/dtql", contentType: "application/yaml", body: "from: {name: customers}\n"},
+		{method: http.MethodPost, path: "/v1/databases/crm/tugql", contentType: "application/yaml", body: "from: {name: customers}\n"},
 		{path: "/v1/databases/crm/access/layers"},
 		{method: http.MethodPut, path: "/v1/databases/crm/records/customers/03", body: `{"data":{"name":"Customer 03","country":"FR"}}`},
 	} {
@@ -140,16 +140,16 @@ func TestOwnerForwardingMatchesInstanceSecretUnderACL(t *testing.T) {
 // its data reads (auth.Config.OwnerToken: "database policies still apply").
 // A default-deny policy with no rule for the owner's (empty) role set hides
 // every customer from the owner too — through the CLI's secret and the
-// console alike: DTQL is 403 access_denied and a record GET is 404
+// console alike: TugQL is 403 access_denied and a record GET is 404
 // resource_unavailable.
 func TestACLBindsTheOwner(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(o *Options) { o.Databases = aclDatabase(t) })
-	rec := f.do(t, request{method: http.MethodPost, path: "/v1/databases/crm/dtql", contentType: "application/yaml",
+	rec := f.do(t, request{method: http.MethodPost, path: "/v1/databases/crm/tugql", contentType: "application/yaml",
 		body: "from: {name: customers}\n", bearer: testSecret})
 	get := f.do(t, request{path: "/v1/databases/crm/records/customers/01", bearer: testSecret})
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "access_denied") ||
 		get.Code != http.StatusNotFound || strings.Contains(get.Body.String(), "Customer 01") {
-		t.Errorf("policies did not bind the owner: dtql %d %s; get %d %s", rec.Code, rec.Body, get.Code, get.Body)
+		t.Errorf("policies did not bind the owner: tugql %d %s; get %d %s", rec.Code, rec.Body, get.Code, get.Body)
 	}
 }

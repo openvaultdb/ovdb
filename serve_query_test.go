@@ -155,7 +155,7 @@ func TestServeDiscoveryStatesTheQueryProfile(t *testing.T) {
 		if err := json.Unmarshal([]byte(body), &doc); err != nil {
 			t.Fatalf("discovery body: %v\n%s", err, body)
 		}
-		if doc.Query.Endpoint != "/v1/dtql" || strings.Join(doc.Query.Features.Joins, ",") != "inner,left" ||
+		if doc.Query.Endpoint != "/v1/tugql" || strings.Join(doc.Query.Features.Joins, ",") != "inner,left" ||
 			strings.Join(doc.Query.Features.Aggregate, ",") != "count,sum,avg,min,max" {
 			t.Errorf("query block = %+v", doc.Query)
 		}
@@ -189,7 +189,7 @@ func TestServeAnswersAJoinAcrossTwoCollections(t *testing.T) {
 				t.Fatalf("write %s = %d %s", w.path, status, body)
 			}
 		}
-		status, body := call(t, handler, http.MethodPost, "/v1/dtql", "application/yaml", shopJoin)
+		status, body := call(t, handler, http.MethodPost, "/v1/tugql", "application/yaml", shopJoin)
 		if status != http.StatusOK {
 			t.Fatalf("join = %d %s", status, body)
 		}
@@ -215,14 +215,14 @@ func TestServeAnswersAJoinAcrossTwoCollections(t *testing.T) {
 		}
 
 		// An aggregate over the join, one answer per customer.
-		status, body = call(t, handler, http.MethodPost, "/v1/dtql", "application/yaml", shopGrouped)
+		status, body = call(t, handler, http.MethodPost, "/v1/tugql", "application/yaml", shopGrouped)
 		if status != http.StatusOK || !strings.Contains(body, `"revenue":30`) || !strings.Contains(body, `"revenue":5`) {
 			t.Errorf("grouped = %d %s", status, body)
 		}
 
 		// first and last are not in the profile on any route.
-		status, body = call(t, handler, http.MethodPost, "/v1/dtql", "application/yaml", shopFirst)
-		if status != http.StatusBadRequest || !strings.Contains(body, "invalid_dtql") || !strings.Contains(body, "first") {
+		status, body = call(t, handler, http.MethodPost, "/v1/tugql", "application/yaml", shopFirst)
+		if status != http.StatusBadRequest || !strings.Contains(body, "invalid_tugql") || !strings.Contains(body, "first") {
 			t.Errorf("first = %d %s", status, body)
 		}
 	})
@@ -339,19 +339,19 @@ func TestServePostgresQueriesAreOffByDefault(t *testing.T) {
 
 		// The metadata says the database cannot be queried.
 		status, body := call(t, handler, http.MethodGet, "/v1/databases/ledger", "", "")
-		if status != http.StatusOK || !strings.Contains(body, `"query":false`) || !strings.Contains(body, `"dtql":false`) || !strings.Contains(body, `"joins":false`) {
+		if status != http.StatusOK || !strings.Contains(body, `"query":false`) || !strings.Contains(body, `"tugql":false`) || !strings.Contains(body, `"joins":false`) {
 			t.Errorf("metadata = %d %s", status, body)
 		}
 		// Every structured route answers with the library's refusal.
-		const dtql = "from: {name: customers}\n"
+		const tugql = "from: {name: customers}\n"
 		for name, request := range map[string]struct {
 			method, target, contentType, body string
 			headers                           map[string]string
 		}{
-			"per-database dtql": {http.MethodPost, "/v1/databases/ledger/dtql", "application/yaml", dtql, nil},
-			"query":             {http.MethodPost, "/v1/databases/ledger/query", "application/json", `{"collection":"customers"}`, nil},
-			"cross-database":    {http.MethodPost, "/v1/dtql", "application/yaml", "from: {database: ledger, name: customers}\n", nil},
-			"paged dtql":        {http.MethodPost, "/v1/databases/ledger/dtql", "application/yaml", dtql, map[string]string{"OVDB-Page-Size": "10"}},
+			"per-database tugql": {http.MethodPost, "/v1/databases/ledger/tugql", "application/yaml", tugql, nil},
+			"query":              {http.MethodPost, "/v1/databases/ledger/query", "application/json", `{"collection":"customers"}`, nil},
+			"cross-database":     {http.MethodPost, "/v1/tugql", "application/yaml", "from: {database: ledger, name: customers}\n", nil},
+			"paged tugql":        {http.MethodPost, "/v1/databases/ledger/tugql", "application/yaml", tugql, map[string]string{"OVDB-Page-Size": "10"}},
 		} {
 			status, body := callWith(t, handler, request.method, request.target, request.contentType, request.body, request.headers)
 			if status != http.StatusNotImplemented || !strings.Contains(body, `"query_unsupported"`) || !strings.Contains(body, "postgres") {
@@ -382,7 +382,7 @@ func TestServePostgresPreviewReachesTheDriverForOneCollectionOnly(t *testing.T) 
 		if status == http.StatusNotImplemented || driver.queries != 1 {
 			t.Errorf("query of one collection = %d %s with %d driver calls, want the driver reached once", status, body, driver.queries)
 		}
-		status, body = call(t, handler, http.MethodPost, "/v1/dtql", "application/yaml", ledgerDocument)
+		status, body = call(t, handler, http.MethodPost, "/v1/tugql", "application/yaml", ledgerDocument)
 		if status != http.StatusUnprocessableEntity || !strings.Contains(body, "join_engine_unsupported") || driver.queries != 1 {
 			t.Errorf("relational document = %d %s with %d driver calls, want a refusal and no new call", status, body, driver.queries)
 		}
@@ -463,15 +463,15 @@ func TestServeMySQLQueriesAreRefusedWhateverTheSwitchSays(t *testing.T) {
 		if mounted != 1 {
 			t.Fatalf("the mysql manifest was mounted %d times", mounted)
 		}
-		const dtql = "from: {name: customers}\n"
+		const tugql = "from: {name: customers}\n"
 		for name, request := range map[string]struct {
 			target, contentType, body string
 			headers                   map[string]string
 		}{
-			"per-database dtql": {"/v1/databases/orders/dtql", "application/yaml", dtql, nil},
-			"query":             {"/v1/databases/orders/query", "application/json", `{"collection":"customers"}`, nil},
-			"cross-database":    {"/v1/dtql", "application/yaml", "from: {database: orders, name: customers}\n", nil},
-			"paged dtql":        {"/v1/databases/orders/dtql", "application/yaml", dtql, map[string]string{"OVDB-Page-Size": "10"}},
+			"per-database tugql": {"/v1/databases/orders/tugql", "application/yaml", tugql, nil},
+			"query":              {"/v1/databases/orders/query", "application/json", `{"collection":"customers"}`, nil},
+			"cross-database":     {"/v1/tugql", "application/yaml", "from: {database: orders, name: customers}\n", nil},
+			"paged tugql":        {"/v1/databases/orders/tugql", "application/yaml", tugql, map[string]string{"OVDB-Page-Size": "10"}},
 		} {
 			status, body := callWith(t, handler, http.MethodPost, request.target, request.contentType, request.body, request.headers)
 			if status != http.StatusNotImplemented || !strings.Contains(body, `"query_unsupported"`) || !strings.Contains(body, "mysql") {
@@ -494,7 +494,7 @@ func TestServeHelpSaysWhatPostgresAndMySQLMountsDo(t *testing.T) {
 			// Both servers read the switch from their own environment.
 			"ovdb serve, or the local server that ovdb databases connect uses", "which neither server lists",
 			// What the preview does to the commands and routes an existing user has.
-			"ovdb list and the web console's browse", "every document on /v1/dtql is relational", "a document of one plain collection is answered as before",
+			"ovdb list and the web console's browse", "every document on /v1/tugql is relational", "a document of one plain collection is answered as before",
 		} {
 			if !strings.Contains(text, want) {
 				t.Errorf("help lacks %q:\n%s", want, text)
@@ -538,7 +538,7 @@ func TestServeHelpNamesTheQueryLimitsTheServerEnforces(t *testing.T) {
 		fmt.Sprintf("reads at most %s rows and %s from its sources", grouped(n("maxSourceRows")), mebibytes(n("maxSourceBytes"))),
 		fmt.Sprintf("holds at most %s rows and %s, and a grouping %s groups", grouped(n("maxInMemoryJoinRows")), mebibytes(n("maxInMemoryJoinBytes")), grouped(n("maxGroups"))),
 		fmt.Sprintf("At most %d in-memory and %d database-side queries run at once", queue.InMemory, queue.Database),
-		fmt.Sprintf("a paged /dtql snapshot is at most %s and %s rows, %d at a time", mebibytes(snapshot.Bytes), grouped(int64(snapshot.Rows)), snapshot.Slots),
+		fmt.Sprintf("a paged /tugql snapshot is at most %s and %s rows, %d at a time", mebibytes(snapshot.Bytes), grouped(int64(snapshot.Rows)), snapshot.Slots),
 		"GET /.well-known/openvaultdb lists the per-request limits as query.limits; the concurrency and snapshot limits are not listed there.",
 	} {
 		for _, text := range []string{newServeCmd().Long, newInitCmd().Long} {

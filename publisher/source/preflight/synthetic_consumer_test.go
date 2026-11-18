@@ -68,12 +68,17 @@ func syntheticOuter(raw []byte) (map[string]json.RawMessage, error) {
 		if _, ok = out[key]; ok {
 			return nil, errors.New("duplicate outer key")
 		}
-		if key != "records" && key != "sourceRights" && key != "usedSourceIds" && key != "providerReads" {
+		if key != "records" && key != "sourceRights" && key != "usedSourceIds" && key != "providerReads" && key != "complete" {
 			return nil, errors.New("unknown outer key")
 		}
 		var value json.RawMessage
 		if d.Decode(&value) != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			return nil, errors.New("null or invalid outer field")
+		}
+		// openvaultdb-go v0.26.1 closes a streamed success with "complete":true;
+		// a stream that ends without it is not a finished response.
+		if key == "complete" && !bytes.Equal(bytes.TrimSpace(value), []byte("true")) {
+			return nil, errors.New("incomplete stream")
 		}
 		// records remain opaque bytes until the independent metadata gate passes.
 		out[key] = value
@@ -81,7 +86,7 @@ func syntheticOuter(raw []byte) (map[string]json.RawMessage, error) {
 	if _, err := d.Token(); err != nil {
 		return nil, errors.New("outer object incomplete")
 	}
-	if _, err := d.Token(); err != io.EOF || len(out) != 4 {
+	if _, err := d.Token(); err != io.EOF || len(out) != 5 {
 		return nil, errors.New("outer fields missing or trailing data")
 	}
 	return out, nil

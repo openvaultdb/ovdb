@@ -164,7 +164,7 @@ func serveShutdownProcessChild(t *testing.T) {
 		return db, err
 	}
 	deps.run = func(_ *cobra.Command, srv *http.Server) error {
-		go serveHTTPRequest(srv.Handler, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
+		go serveHTTPRequest(srv.Handler, "POST", "/v1/databases/shop/tugql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
 		<-reader.entered
 		return context.DeadlineExceeded
 	}
@@ -287,7 +287,7 @@ func TestServeHTTPNoRetentionAndRightsThroughCLI(t *testing.T) {
 	_, err := serveRun(t, deps, []string{"--manifest", path, "--read-only", "--server-id", "synthetic-cli"}, func(h http.Handler) {
 		for _, r := range []struct{ method, path, body string }{
 			{"POST", "/v1/databases/ecb/query", `{"collection":"daily"}`},
-			{"POST", "/v1/databases/ecb/dtql", "from: {name: daily}\n"},
+			{"POST", "/v1/databases/ecb/tugql", "from: {name: daily}\n"},
 		} {
 			w := serveHTTPRequest(h, r.method, r.path, r.body, nil)
 			var answer struct {
@@ -308,8 +308,8 @@ func TestServeHTTPNoRetentionAndRightsThroughCLI(t *testing.T) {
 		for _, headers := range []http.Header{{"OVDB-Page-Size": {"1"}}, {"OVDB-Page-Token": {""}}, {"OVDB-Page-Close": {"true"}}, {"OVDB-Page-Future": {""}}} {
 			for _, r := range []struct{ path, body string }{
 				{"/v1/databases/ecb/query", `{"collection":"daily"}`},
-				{"/v1/databases/ecb/dtql", "from: {name: daily}\n"},
-				{"/v1/dtql", "from: {database: ecb, name: daily}\n"},
+				{"/v1/databases/ecb/tugql", "from: {name: daily}\n"},
+				{"/v1/tugql", "from: {database: ecb, name: daily}\n"},
 			} {
 				w := serveHTTPRequest(h, "POST", r.path, r.body, headers)
 				if w.Code != 422 || w.Header().Get("Cache-Control") != "no-store" || !strings.Contains(w.Body.String(), "retention_not_authorized") {
@@ -373,7 +373,7 @@ func TestServeMountFailureClosesEarlierHTTPDatabase(t *testing.T) {
 func TestServeShutdownRemovesAuthorizedSyntheticSnapshot(t *testing.T) {
 	temp := isolatedServeTemp(t)
 	_, err := serveRun(t, defaultServeDeps(), []string{"--manifest", writeShop(t)}, func(h http.Handler) {
-		w := serveHTTPRequest(h, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
+		w := serveHTTPRequest(h, "POST", "/v1/databases/shop/tugql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
 		if runtime.GOOS == "windows" {
 			// v0.18.0's POSIX-mode snapshot privacy guard refuses Windows
 			// rather than admitting storage with unverified ACL privacy.
@@ -489,7 +489,7 @@ func TestServeShutdownOwnsActiveSnapshotUntilHandlerSettles(t *testing.T) {
 			forced := false
 			deps.run = func(_ *cobra.Command, srv *http.Server) error {
 				go func() {
-					requestDone <- serveHTTPRequest(srv.Handler, "POST", "/v1/databases/shop/dtql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
+					requestDone <- serveHTTPRequest(srv.Handler, "POST", "/v1/databases/shop/tugql", "from: {name: customers}\n", http.Header{"OVDB-Page-Size": {"1"}})
 				}()
 				select {
 				case <-reader.entered:
